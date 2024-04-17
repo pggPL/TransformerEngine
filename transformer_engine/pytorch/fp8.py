@@ -81,8 +81,6 @@ class FP8GlobalStateManager:
     fp8_tensors_recompute_buffer = []
     fp8_available = None
     reason_for_no_fp8 = ""
-    multi_grad_hook_tensors = []
-    bwd_amax_update_hook_registered = False
     autocast_arguments = {}
     autocast_to_fp8_params = {}
     fp8_param_to_autocast = {}
@@ -106,8 +104,6 @@ class FP8GlobalStateManager:
         cls.fp8_tensors_recompute_buffer = []
         cls.fp8_available = None
         cls.reason_for_no_fp8 = ""
-        cls.multi_grad_hook_tensors = []
-        cls.bwd_amax_update_hook_registered = False
         cls.autocast_arguments = {}
         cls.autocast_to_fp8_params = {}
         cls.fp8_param_to_autocast = {}
@@ -206,6 +202,11 @@ class FP8GlobalStateManager:
             # `fp8_param_to_autocast`. This is used for keeping track of FP8 weights
             # in an autocasted region and cross reference them in `float8_tensor.py`
             # to perform the forward amax reduction.
+            fp8_meta_tensor_key = cls.get_meta_tensor_key(forward=forward)
+            if fp8_meta_tensor_key not in fp8_meta:
+                # Handles non-parameter FP8 modules, e.g. DPA.
+                continue
+
             if forward and fp8_weights is not None:
                 autocast_key = cls.get_unique_autocast_key(
                                     fp8_meta["recipe"], fp8_meta["fp8_group"])
@@ -221,7 +222,6 @@ class FP8GlobalStateManager:
 
             key = cls.get_key_in_buffer(
                 forward, fp8_weights is not None, fp8_meta["recipe"], fp8_meta["fp8_group"])
-            fp8_meta_tensor_key = cls.get_meta_tensor_key(forward=forward)
 
             if key not in cls.global_amax_buffer:
                 cls.global_amax_buffer[key] = [fp8_meta[fp8_meta_tensor_key].amax_history[0]]
@@ -371,16 +371,6 @@ class FP8GlobalStateManager:
                         amax_history, scale, scale_inv, get_fp8_max(recipe, forward), recipe)
 
     @classmethod
-    def add_tensor_for_bwd_reduction_multi_grad_hook(cls, tensor):
-        """Add tensor to list for multi grad hook."""
-        cls.multi_grad_hook_tensors.append(tensor)
-
-    @classmethod
-    def hook_for_bwd_amax_reduction(cls, grads: Tuple[torch.Tensor]) -> None: # pylint: disable=unused-argument
-        """Executes at the end of backward pass."""
-        cls.reduce_and_update_fp8_tensors(forward=False)
-
-    @classmethod
     def get_unique_autocast_key(
         cls,
         recipe: Optional[DelayedScaling] = None,
@@ -406,13 +396,6 @@ class FP8GlobalStateManager:
         fp8_recipe = get_default_fp8_recipe() if fp8_recipe is None else fp8_recipe
         autocast_key = cls.get_unique_autocast_key(fp8_recipe, fp8_group)
         cls.autocast_arguments[autocast_key] = (fp8_recipe, fp8_group)
-
-        if enabled and cls.FP8_AUTOCAST_DEPTH == 0 and not _graph and torch.is_grad_enabled():
-            if not cls.bwd_amax_update_hook_registered and len(cls.multi_grad_hook_tensors) > 0:
-                # This hook does not fire for graphed modules.
-                torch.autograd.graph.register_multi_grad_hook(
-                    tuple(cls.multi_grad_hook_tensors), cls.hook_for_bwd_amax_reduction)
-                cls.bwd_amax_update_hook_registered = True
 
         cls.FP8_ENABLED = enabled
         cls.FP8_CALIBRATION = calibrating

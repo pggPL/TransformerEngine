@@ -33,6 +33,7 @@ from ..utils import (
     cast_if_needed,
     assert_dim_for_fp8_exec,
     clear_tensor_data,
+    requires_grad,
 )
 from ..distributed import (
     set_tensor_model_parallel_attributes,
@@ -49,7 +50,7 @@ from .. import cpp_extensions as tex
 
 from ..constants import dist_group_type, TE_DType
 from ..jit import no_torch_dynamo
-
+from ..graph import is_graph_capturing
 from ..float8_tensor import Float8Tensor
 from ._common import _apply_normalization
 
@@ -121,7 +122,6 @@ class _LayerNormMLP(torch.autograd.Function):
         ub_overlap_rs: bool,
         ub_overlap_ag: bool,
         gemm_gelu_fusion: bool,
-        dummy_tensor: torch.Tensor, # pylint: disable=unused-argument,
     ) -> Union[Tuple[torch.Tensor, ...], torch.Tensor]:
         # Make sure input dimensions are compatible
         in_features = ln_weight.numel()
@@ -545,6 +545,10 @@ class _LayerNormMLP(torch.autograd.Function):
             ctx.requires_dgrad = inp.requires_grad
             ctx.normalization = normalization
             ctx.primary_weights_in_fp8 = primary_weights_in_fp8
+            ctx.reduce_and_update_bwd_fp8_tensors = False
+            if ctx.fp8 and requires_grad(
+                inp, ln_weight, ln_bias, fc1_weight, fc2_weight, fc1_bias, fc2_bias):
+                ctx.reduce_and_update_bwd_fp8_tensors = FP8GlobalStateManager.is_first_fp8_module()
 
         # Row Parallel Linear
         if ub_overlap_rs:
@@ -1121,6 +1125,9 @@ class _LayerNormMLP(torch.autograd.Function):
         else:
             fc2_wgrad = None
 
+        if ctx.reduce_and_update_bwd_fp8_tensors and not is_graph_capturing():
+            FP8GlobalStateManager.reduce_and_update_fp8_tensors(forward=False)
+
         return (
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
             dgamma,
@@ -1134,7 +1141,6 @@ class _LayerNormMLP(torch.autograd.Function):
             None,
             None,
             fc2_bias_grad if ctx.use_fc2_bias else None,
-            None,
             None,
             None,
             None,
@@ -1427,10 +1433,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
         # communication overlap with LN.
         self.fwd_ln_sm_margin = int(os.getenv("NVTE_FWD_LAYERNORM_SM_MARGIN", "0"))
         self.bwd_ln_sm_margin = int(os.getenv("NVTE_BWD_LAYERNORM_SM_MARGIN", "0"))
-
-        # Initialize a dummy tensor to be used as gradient hook for bwd amax reduction.
-        self.dummy_tensor = torch.zeros(1, device=device, requires_grad=True)
-        FP8GlobalStateManager.add_tensor_for_bwd_reduction_multi_grad_hook(self.dummy_tensor)
+        self.inf_ln_sm_margin = int(os.getenv("NVTE_INF_LAYERNORM_SM_MARGIN", "0"))
 
     def reset_layer_norm_parameters(self) -> None:
         """Init LN params"""
@@ -1575,7 +1578,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
                 self.bias_gelu_nvfusion,
                 self.set_parallel_mode,
                 torch.is_grad_enabled(),
-                self.fwd_ln_sm_margin,
+                self.fwd_ln_sm_margin if torch.is_grad_enabled() else self.inf_ln_sm_margin,
                 self.bwd_ln_sm_margin,
                 self.zero_centered_gamma,
                 self.activation,
@@ -1587,7 +1590,6 @@ class LayerNormMLP(TransformerEngineBaseModule):
                 self.ub_overlap_rs,
                 self.ub_overlap_ag,
                 self.gemm_gelu_fusion,
-                self.dummy_tensor,
             )
             out = fwd_fn(*args)
 
