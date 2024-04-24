@@ -130,6 +130,7 @@ class InferenceParams: # pylint: disable=too-few-public-methods
         self.batch_size_offset = 0
         self.key_value_memory_dict = {}
         self.thd = False
+        self.seq_len=torch.tensor((1000))
 
     def swap_key_value_dict(self, batch_indices):
         """
@@ -2476,8 +2477,8 @@ class FusedAttnFunc(torch.autograd.Function):
                 print('[DotProductAttention]: using non-FP8 forward')
             out_ret, aux_ctx_tensors = fused_attn_fwd(
                 is_training, max_seqlen_q, max_seqlen_kv, cu_seqlens_q, cu_seqlens_kv,
-                q, k, v, qkv_dtype, fused_attention_backend, attn_bias,
-                None, None, None, None, None, None,
+                q, k, v, qkv_dtype, fused_attention_backend,
+                seq_offsets_q, seq_offsets_k, seq_offsets_v, attn_bias, None, None, None, None, None, None,
                 attn_scale, dropout_p, fast_zero_fill, qkv_layout, attn_bias_type, attn_mask_type,
                 rng_gen)
             out_save = out_ret
@@ -2887,10 +2888,12 @@ class FusedAttention(TransformerEngineBaseModule):
                             f"""fp8_recipe.fp8_dpa={self.fp8_meta["recipe"].fp8_dpa}"""
                             f"""{forced_fp8_dpa} and """
                             f"""NVTE_FP8_DPA_BWD={int(os.getenv("NVTE_FP8_DPA_BWD", "1"))}""")
+
                     output = FusedAttnFunc.apply(
                         self.training,
                         max_seqlen_q, max_seqlen_kv,
                         cu_seqlens_q, cu_seqlens_kv,
+                        seq_offsets_q, seq_offsets_k, seq_offsets_v,
                         query_layer, key_layer, value_layer,
                         qkv_dtype,
                         core_attention_bias,
@@ -2908,6 +2911,11 @@ class FusedAttention(TransformerEngineBaseModule):
                         self.tp_size,
                         self.tp_group,
                     )
+
+
+        if self.layer_number == 1:
+            print(output.shape)
+
 
         # ...hd -> ...(hd)
         return output.view(*output.shape[:-2], -1)
@@ -3308,8 +3316,8 @@ class DotProductAttention(torch.nn.Module):
                                first microbatch (since it is the first gradient being
                                produced)
         """
-
-
+        value_layer = value_layer.contiguous()
+        
         assert (
             query_layer.is_cuda and key_layer.is_cuda and value_layer.is_cuda
             ), 'DotProductAttention only supports CUDA tensors.'
@@ -3346,6 +3354,9 @@ class DotProductAttention(torch.nn.Module):
         if qkv_format is None:
             qkv_format = self.qkv_format
 
+        
+
+
         if inference_params is not None:
             assert self.layer_number is not None, "Layer number must be set!"
 
@@ -3356,7 +3367,6 @@ class DotProductAttention(torch.nn.Module):
             (inference_key_memory, inference_value_memory,
             ) = inference_params.key_value_memory_dict[self.layer_number]
 
-
             if not inference_params.thd:
                 batch_start = inference_params.batch_size_offset
                 batch_end = batch_start + key_layer.size(1)
@@ -3366,6 +3376,8 @@ class DotProductAttention(torch.nn.Module):
                 sequence_end = sequence_start + key_layer.size(0)
                 assert sequence_end <= inference_key_memory.size(0)
 
+
+
                 # Copy keys and values into KV-cache
                 inference_key_memory[
                     sequence_start:sequence_end, batch_start:batch_end, ...] = key_layer
@@ -3374,26 +3386,44 @@ class DotProductAttention(torch.nn.Module):
                 key_layer = inference_key_memory[:sequence_end, batch_start:batch_end, ...]
                 value_layer = inference_value_memory[:sequence_end, batch_start:batch_end, ...]
             else:
-                cuda.attention_copy(inference_key_memory, inference_params.seq_len + 1, key_layer, inference_params.max_batch_size, self.channels)
-                cuda.attention_copy(inference_value_memory, inference_params.seq_len + 1, value_layer, inference_params.max_batch_size, self.channels)
+                bs = query_layer.shape[0]    
+                cuda.attention_copy(
+                    inference_key_memory, 
+                    inference_params.seq_len, 
+                    key_layer, 
+                    inference_params.max_sequence_length,  
+                    bs,
+                    self.channels
+                    )
+                cuda.attention_copy(
+                    inference_value_memory, 
+                    inference_params.seq_len, 
+                    value_layer, 
+                    inference_params.max_sequence_length,  
+                    bs,
+                    self.channels) 
 
-                q = query_layer.view(-1, query_layer.shape[2], query_layer.shape[3])
-                k = inference_key_memory.view(-1, inference_key_memory.shape[2], inference_key_memory.shape[3])
-                v = inference_value_memory.view(-1, inference_value_memory.shape[2], inference_value_memory.shape[3])
+                seqlens_q = torch.ones([bs], dtype=torch.int32, device="cuda")
+                cu_seqlens_q = torch.zeros(bs + 1, dtype=torch.int32, device="cuda")
+                cu_seqlens_kv = torch.zeros(bs + 1, dtype=torch.int32, device="cuda")
+                cu_seqlens_q[1:] = torch.cumsum(seqlens_q, dim=0)
+                cu_seqlens_kv[1:] = torch.cumsum(inference_params.seq_len + 1, dim=0)
 
-                q, k, v = q.to(torch.bfloat16), k.to(torch.bfloat16), v.to(torch.bfloat16), 
+                max_seqlen_q = 1
+                max_seqlen_kv = inference_params.max_sequence_length
+                
 
-                out, _, _ = fused_attn_fwd(
-                    False, 1, key_layer.shape[1], inference_params.seq_len, inference_params.seq_len, 
-                    q, k, v,
-                    TE_DType[q.dtype], FusedAttnBackend["F16_max512_seqlen"],
-                    qkv_layout="t3hd", attn_bias_type=core_attention_bias_type,
-                    attn_bias=core_attention_bias, fast_zero_fill=fast_zero_fill
-                )
-                print("xd")
-                exit()
-                return out
+                seq_offsets_q = torch.arange(0, bs + 1, dtype=torch.int32, device="cuda") * self.channels * max_seqlen_q 
+                seq_offsets_k = torch.arange(0, bs + 1, dtype=torch.int32, device="cuda") * self.channels * max_seqlen_kv
+                seq_offsets_k[1:] = seq_offsets_k[1:] + inference_params.begin_offsets * self.channels
+                seq_offsets_v = seq_offsets_k.clone()
 
+
+                query_layer = query_layer.view(-1, query_layer.shape[2], query_layer.shape[3]).to(torch.bfloat16)
+                key_layer = inference_key_memory.view(-1, inference_key_memory.shape[2], inference_key_memory.shape[3]).to(torch.bfloat16)
+                value_layer = inference_value_memory.view(-1, inference_value_memory.shape[2], inference_value_memory.shape[3]).to(torch.bfloat16)
+
+                qkv_format="thd"
 
             if qkv_format == "bshd":
                 key_layer = key_layer.transpose(0, 1)
@@ -3463,6 +3493,7 @@ class DotProductAttention(torch.nn.Module):
         # The following section filters out some backends based on
         # certain asserts before executing the forward pass.
 
+
         # Filter: QKV layout.
         if qkv_format == 'thd':
             use_unfused_attention = False
@@ -3517,6 +3548,8 @@ class DotProductAttention(torch.nn.Module):
             use_fused_attention = False
             if (not _flash_attn_2_3_plus) or context_parallel:
                 use_flash_attention = False
+        
+
 
         # Filter: Attention mask type.
         #   attn_mask_type(s)    |     supported backends
@@ -3536,6 +3569,7 @@ class DotProductAttention(torch.nn.Module):
             and max_seqlen_q != max_seqlen_kv
         ):
             use_unfused_attention = False
+
 
         # Filter: bias.
         global _alibi_cache
@@ -3593,6 +3627,9 @@ class DotProductAttention(torch.nn.Module):
                 max_seqlen_kv,
                 query_layer.shape[-1], # head_dim
             )
+            if inference_params is not None:
+                if inference_params.thd:
+                    fused_attention_backend = FusedAttnBackend["F16_arbitrary_seqlen"]
             # DPA does not support FP8; for FP8, use cpp_extensions modules directly
             is_backend_avail = (fused_attention_backend in
                 [FusedAttnBackend["F16_max512_seqlen"],
@@ -3632,6 +3669,13 @@ class DotProductAttention(torch.nn.Module):
             and fused_attention_backend == FusedAttnBackend["F16_arbitrary_seqlen"]):
             if self.device_compute_capability == (9, 0):
                 use_flash_attention = False
+
+        if inference_params is not None:
+            if inference_params.thd:
+                use_flash_attention = False
+
+        if len(query_layer.shape) == 4:
+            use_flash_attention=True
 
         if use_flash_attention:
             if _NVTE_DEBUG:
@@ -3683,7 +3727,8 @@ class DotProductAttention(torch.nn.Module):
                     cp_global_ranks=self.cp_global_ranks,
                     cp_stream=self.cp_stream,
                     is_first_microbatch=is_first_microbatch)
-            return self.fused_attention(
+
+            out =  self.fused_attention(
                 query_layer,
                 key_layer,
                 value_layer,
@@ -3705,6 +3750,13 @@ class DotProductAttention(torch.nn.Module):
                 cp_global_ranks=self.cp_global_ranks,
                 cp_stream=self.cp_stream,
                 is_first_microbatch=is_first_microbatch)
+            if inference_params.thd:
+                out = out.unsqueeze(1)
+
+                
+
+                
+            return out
 
         assert (not context_parallel), \
             "Context parallelism is only implemented with Flash Attention and Fused Attention!"
@@ -4094,7 +4146,7 @@ class MultiheadAttention(torch.nn.Module):
     def _allocate_memory(
         self, inference_max_sequence_len: int, batch_size: int, dtype: torch.dtype
     ) -> torch.Tensor:
-        return torch.empty(
+        return torch.zeros(
             inference_max_sequence_len,
             batch_size,
             self.num_gqa_groups_per_partition,
@@ -4219,8 +4271,6 @@ class MultiheadAttention(torch.nn.Module):
         """
         # hidden_states: [sq, b, h]
 
-
-
         if attn_mask_type is not None:
             window_size = check_set_window_size(attn_mask_type, window_size)
         if attn_mask_type is None:
@@ -4284,6 +4334,7 @@ class MultiheadAttention(torch.nn.Module):
                 )
             num_queries_per_key_value = (self.num_attention_heads_per_partition //
                                          self.num_gqa_groups_per_partition)
+            
             if self.qkv_weight_interleaved:
                 # [sq, b, ng * (np/ng + 2) * hn] --> [sq, b, ng, (np/ng + 2), hn]
                 new_tensor_shape = mixed_x_layer.size()[:-1] + (
@@ -4304,6 +4355,7 @@ class MultiheadAttention(torch.nn.Module):
                 split_dim = -3
 
             mixed_x_layer = mixed_x_layer.view(*new_tensor_shape)
+
 
             # qkv_weight_interleaved:
             #  [sq, b, ng, (np/ng + 2), hn]
@@ -4390,6 +4442,7 @@ class MultiheadAttention(torch.nn.Module):
             )
             query_layer = query_layer.view(*new_tensor_shape)
 
+
         # ======================================================
         # Apply relative positional encoding (rotary embedding)
         # ======================================================
@@ -4419,6 +4472,7 @@ class MultiheadAttention(torch.nn.Module):
 
             query_layer = apply_rotary_pos_emb(query_layer, q_pos_emb, self.qkv_format, fused=True)
             key_layer = apply_rotary_pos_emb(key_layer, k_pos_emb, self.qkv_format, fused=True)
+        
 
         # ===========================
         # Core attention computation
