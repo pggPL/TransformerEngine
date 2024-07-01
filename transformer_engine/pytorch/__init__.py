@@ -37,6 +37,7 @@ from transformer_engine.pytorch.module import Linear
 from transformer_engine.pytorch.module import LayerNormMLP
 from transformer_engine.pytorch.module import LayerNorm
 from transformer_engine.pytorch.module import RMSNorm
+from transformer_engine.pytorch.module import GroupedLinear
 from transformer_engine.pytorch.attention import DotProductAttention
 from transformer_engine.pytorch.attention import InferenceParams
 from transformer_engine.pytorch.attention import MultiheadAttention
