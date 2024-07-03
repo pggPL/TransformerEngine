@@ -14,6 +14,9 @@ from pathlib import Path
 import setuptools
 from torch.utils.cpp_extension import BuildExtension
 
+from importlib.metadata import version as get_pkg_version
+from packaging.version import Version as PkgVersion
+
 try:
     import torch  # pylint: disable=unused-import
 except ImportError as e:
@@ -45,6 +48,16 @@ if __name__ == "__main__":
         )
     ]
 
+    # FA for blackwell.
+    try:
+        fa_version = PkgVersion(get_pkg_version("flash-attn"))
+    except PackageNotFoundError:
+        fa_version = "unknown"
+    if fa_version != PkgVersion("2.4.2.dev0"):
+        import subprocess
+        fa_path = current_file_path.parent.parent / "3rdparty/flashattn_internal"
+        subprocess.check_call([sys.executable, "-m", "pip", "install", fa_path])
+
     # Configure package
     setuptools.setup(
         name="transformer_engine_torch",
@@ -53,7 +66,7 @@ if __name__ == "__main__":
         description="Transformer acceleration library - Torch Lib",
         ext_modules=ext_modules,
         cmdclass={"build_ext": CMakeBuildExtension},
-        install_requires=["torch", "flash-attn>=2.0.6,<=2.4.2,!=2.0.9,!=2.1.0"],
+        install_requires=["torch", "flash-attn==2.4.2.dev0"],
         tests_require=["numpy", "onnxruntime", "torchvision"],
         include_package_data=True,
         package_data={
