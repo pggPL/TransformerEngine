@@ -92,6 +92,21 @@ if __name__ == "__main__":
         # results in a single binary with FW extensions included.
         uninstall_te_fw_packages()
         if "pytorch" in frameworks:
+            from importlib.metadata import PackageNotFoundError
+            from importlib.metadata import version as get_pkg_version
+            from packaging.version import Version as PkgVersion
+
+            # FA for blackwell.
+            try:
+                fa_version = PkgVersion(get_pkg_version("flash-attn"))
+            except PackageNotFoundError:
+                fa_version = "unknown"
+
+            if fa_version != PkgVersion("2.4.2.dev0"):
+                import subprocess
+                fa_path = current_file_path / "3rdparty/flashattn_internal"
+                subprocess.check_call([sys.executable, "-m", "pip", "install", fa_path])
+
             from build_tools.pytorch import setup_pytorch_extension
 
             ext_modules.append(
