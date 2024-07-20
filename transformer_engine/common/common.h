@@ -36,17 +36,35 @@ struct SimpleTensor {
   SimpleTensor() : SimpleTensor(nullptr, {}, DType::kFloat32) {}
 };
 
+class ScalingMode : public NVTEScalingMode {
+ public:
+  ScalingMode() {
+    x = -1;
+    y = -1;
+    delayed_scaling = true;
+  }
+
+  ScalingMode(NVTEScalingMode &other) {
+    x = other.x;
+    y = other.y;
+    delayed_scaling = other.delayed_scaling;
+  }
+};
+
 struct Tensor {
   SimpleTensor data;
   SimpleTensor amax;
   SimpleTensor scale;
   SimpleTensor scale_inv;
 
+  ScalingMode scaling_mode;
+
   Tensor()
       : data(),
         amax(nullptr, {1}, DType::kFloat32),
         scale(nullptr, {1}, DType::kFloat32),
-        scale_inv(nullptr, {1}, DType::kFloat32) {}
+        scale_inv(nullptr, {1}, DType::kFloat32),
+        scaling_mode() {}
 };
 
 template <typename T>
@@ -261,6 +279,42 @@ void CheckInputTensor(const Tensor &t, const std::string &name);
 void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empty = false);
 
 bool is_fp8_dtype(const DType t);
+
+template <typename T>
+std::string to_string(const std::vector<T> &v) {
+  std::string s = "(";
+  for (size_t i = 0; i < v.size(); ++i) {
+    s += std::to_string(v[i]);
+    if (i < v.size() - 1) {
+      s += ", ";
+    }
+  }
+  s += ")";
+  return s;
+}
+
+std::string to_string(const DType type) {
+  switch (type) {
+    case DType::kByte:
+      return "Byte";
+    case DType::kBFloat16:
+      return "BFloat16";
+    case DType::kFloat16:
+      return "Float16";
+    case DType::kFloat32:
+      return "Float32";
+    case DType::kFloat8E4M3:
+      return "Float8E4M3";
+    case DType::kFloat8E5M2:
+      return "Float8E5M2";
+    case DType::kInt32:
+      return "Int32";
+    case DType::kInt64:
+      return "Int64";
+    case DType::kNumTypes:
+      return "Invalid type " + std::to_string(static_cast<int>(type));
+  }
+}
 
 #define NVTE_API_CALL(api_name) \
   transformer_engine::nvtx::NVTXWrapper _##api_name##_nvtx_wrapper(#api_name);
