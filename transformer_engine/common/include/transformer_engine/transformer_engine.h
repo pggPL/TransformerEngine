@@ -43,6 +43,23 @@ struct NVTEShape {
   size_t ndim;
 };
 
+/*! \struct NVTEScalingMode
+ * \brief Granularity of scaling in each direction:
+ *  - {-1, -1, 1} - per tensor delayed scaling
+ *  - {-1, -1, 0} - per tensor current scaling
+ *  - {1, -1, 0} - rowwise scaling (not implemented)
+ *  - {-1, 1, 0} - columnwise scaling (not implemented)
+ *  - {1, 32, 0} - 1D blockwise scaling (rowwise)
+ *  - {32, 1, 0} - 1D blockwise scaling (columnwise)
+ *  - {32, 32, 0} - 2D blockwise scaling
+ */
+struct NVTEScalingMode {
+  int x;
+  int y;
+
+  int delayed_scaling;
+};
+
 /*! \brief TE Tensor type
  *
  * NVTETensor is a contiguous tensor type storing a pointer
@@ -63,11 +80,13 @@ typedef void *NVTETensor;
  *  \param[in] amax_dptr       Pointer to the AMAX value.
  *  \param[in] scale_dptr      Pointer to the scale value.
  *  \param[in] scale_inv_dptr  Pointer to the inverse of scale value.
+ *  \param[in] scaling_mode    Scaling mode of the tensor.
  *
  *  \return A new TE tensor.
  */
 NVTETensor nvte_create_tensor(void *dptr, const NVTEShape shape, const NVTEDType dtype,
-                              float *amax_dptr, float *scale_dptr, float *scale_inv_dptr);
+                              float *amax_dptr, float *scale_dptr, float *scale_inv_dptr,
+                              NVTEScalingMode scaling_mode);
 
 /*! \brief Destroy a TE tensor.
  *
@@ -125,6 +144,14 @@ float *nvte_tensor_scale(const NVTETensor tensor);
  *  \return A pointer to tensor's inverse of scale data.
  */
 float *nvte_tensor_scale_inv(const NVTETensor tensor);
+
+/*! \brief Get the granularity of scaling of this tensor.
+ *
+ *  \param[in] tensor Tensor.
+ *
+ *  \return A struct containing the granularity of tensor's scaling.
+ */
+NVTEScalingMode nvte_tensor_scaling_mode(const NVTETensor tensor);
 
 /*! \struct NVTETensorPack
     \brief Pack of tensors, generally used for auxiliary outputs.
@@ -190,9 +217,11 @@ class TensorWrapper {
    *  \param[in] scale_inv_dptr  Pointer to the inverse of scale value.
    */
   TensorWrapper(void *dptr, const NVTEShape &shape, const DType dtype, float *amax_dptr = nullptr,
-                float *scale_dptr = nullptr, float *scale_inv_dptr = nullptr)
+                float *scale_dptr = nullptr, float *scale_inv_dptr = nullptr,
+                NVTEScalingMode scaling_mode = {-1, -1, 1})
       : tensor_(nvte_create_tensor(dptr, shape, static_cast<NVTEDType>(dtype), amax_dptr,
-                                   scale_dptr, scale_inv_dptr)) {}
+                                   scale_dptr, scale_inv_dptr,
+                                   scaling_mode)) {}
 
   /*! \brief Constructs new TensorWrapper.
    *
@@ -209,9 +238,9 @@ class TensorWrapper {
    */
   TensorWrapper(void *dptr, const std::vector<size_t> &shape, const DType dtype,
                 float *amax_dptr = nullptr, float *scale_dptr = nullptr,
-                float *scale_inv_dptr = nullptr)
+                float *scale_inv_dptr = nullptr, NVTEScalingMode scaling_mode = {-1, -1, 1})
       : TensorWrapper(dptr, NVTEShape{shape.data(), shape.size()}, dtype, amax_dptr, scale_dptr,
-                      scale_inv_dptr) {}
+                      scale_inv_dptr, scaling_mode) {}
 
   /*! \brief Constructs new empty TensorWrapper.
    *
@@ -308,6 +337,15 @@ class TensorWrapper {
   float *scale_inv() const noexcept {
     if (tensor_ == nullptr) return nullptr;
     return nvte_tensor_scale_inv(tensor_);
+  }
+
+  /*! \brief Get a scaling mode of the tensor.
+   *
+   *  \return Scaling mode of the tensor.
+   */
+  NVTEScalingMode scaling_mode() const noexcept {
+    if (tensor_ == nullptr) return {-1, -1, 1};
+    return nvte_tensor_scaling_mode(tensor_);
   }
 
  private:
