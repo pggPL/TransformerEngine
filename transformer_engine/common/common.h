@@ -293,28 +293,7 @@ std::string to_string(const std::vector<T> &v) {
   return s;
 }
 
-std::string to_string(const DType type) {
-  switch (type) {
-    case DType::kByte:
-      return "Byte";
-    case DType::kBFloat16:
-      return "BFloat16";
-    case DType::kFloat16:
-      return "Float16";
-    case DType::kFloat32:
-      return "Float32";
-    case DType::kFloat8E4M3:
-      return "Float8E4M3";
-    case DType::kFloat8E5M2:
-      return "Float8E5M2";
-    case DType::kInt32:
-      return "Int32";
-    case DType::kInt64:
-      return "Int64";
-    case DType::kNumTypes:
-      return "Invalid type " + std::to_string(static_cast<int>(type));
-  }
-}
+std::string to_string(const DType type);
 
 #define NVTE_API_CALL(api_name) \
   transformer_engine::nvtx::NVTXWrapper _##api_name##_nvtx_wrapper(#api_name);
