@@ -50,7 +50,8 @@ void CheckScaleTensor(const SimpleTensor &scale, const ScalingMode &mode,
   NVTE_CHECK(scale.dtype == DType::kFloat32 || scale.dtype == DType::kByte,
              "Unsupported type of scaling factor input " + name + suffix +
              ". Expected Float32 or Byte, got " + to_string(scale.dtype));
-  constexpr size_t alignment = 4ul;
+  // Need 4B alignment even for e8 scaling factor
+  size_t alignment = 4ul / typeToSize(scale.dtype);
   size_t expected_x;
   if (mode.x == -1) {
     expected_x = 1;
