@@ -294,6 +294,15 @@ std::string to_string(const std::vector<T> &v) {
 }
 
 std::string to_string(const DType type);
+std::string to_string(const ScalingMode &type);
+
+inline bool is_tensor_scaling(const ScalingMode &mode) {
+  return (mode.x == -1) && (mode.y == -1);
+}
+
+inline bool is_delayed_tensor_scaling(const ScalingMode &mode) {
+  return is_tensor_scaling(mode) && mode.delayed_scaling;
+}
 
 #define NVTE_API_CALL(api_name) \
   transformer_engine::nvtx::NVTXWrapper _##api_name##_nvtx_wrapper(#api_name);
