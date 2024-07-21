@@ -42,6 +42,11 @@ std::string to_string(const DType type) {
   }
 }
 
+std::string to_string(const ScalingMode &mode) {
+  return "{(" + std::to_string(mode.x) + ", " + std::to_string(mode.y) + "), " +
+         std::to_string(static_cast<bool>(mode.delayed_scaling)) + "}";
+}
+
 void CheckScaleTensor(const SimpleTensor &scale, const ScalingMode &mode,
                       const SimpleTensor &data, const std::string &name,
                       const std::string &suffix) {
