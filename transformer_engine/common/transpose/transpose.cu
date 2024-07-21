@@ -288,6 +288,10 @@ void transpose(const Tensor &input, const Tensor &noop, Tensor *output_, cudaStr
                                                     static_cast<Type *>(output.data.dptr),
                                                     row_length, num_rows);
       });  // NOLINT(*)
+
+  output->scaling_mode.x = input.scaling_mode.y;
+  output->scaling_mode.y = input.scaling_mode.x;
+  // TODO: do we need to transpose the scaling factors?
 }
 
 }  // namespace transformer_engine
