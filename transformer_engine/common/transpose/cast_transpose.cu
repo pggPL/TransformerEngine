@@ -260,10 +260,11 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output
       input.data.dtype, InputType,
       TRANSFORMER_ENGINE_TYPE_SWITCH_OUTPUT(
           cast_output.data.dtype, OutputType,
-          constexpr const char *itype_name = TypeInfo<InputType>::name;
-          constexpr const char *otype_name = TypeInfo<OutputType>::name;
-          constexpr size_t itype_size = sizeof(InputType);
-          constexpr size_t otype_size = sizeof(OutputType);
+          if (is_delayed_tensor_scaling(cast_output.scaling_mode)) {
+            constexpr const char *itype_name = TypeInfo<InputType>::name;
+            constexpr const char *otype_name = TypeInfo<OutputType>::name;
+            constexpr size_t itype_size = sizeof(InputType);
+            constexpr size_t otype_size = sizeof(OutputType);
 
           // Choose between runtime-compiled or statically-compiled kernel
           const bool aligned =
@@ -300,47 +301,53 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output
             const size_t store_size = kernel_config.store_size;
             const size_t num_blocks = kernel_config.num_blocks;
 
-            // Compile NVRTC kernel if needed and launch
-            auto &rtc_manager = rtc::KernelManager::instance();
-            const std::string kernel_label = concat_strings(
-                "cast_transpose"
-                ",itype=",
-                itype_name, ",otype=", otype_name, ",load_size=", load_size,
-                ",store_size=", store_size);
-            if (!rtc_manager.is_compiled(kernel_label)) {
-              std::string code = string_code_transpose_rtc_cast_transpose_cu;
-              code = regex_replace(code, "__ITYPE__", itype_name);
-              code = regex_replace(code, "__OTYPE__", otype_name);
-              code = regex_replace(code, "__LOAD_SIZE__", load_size);
-              code = regex_replace(code, "__STORE_SIZE__", store_size);
-              code = regex_replace(code, "__WARPS_PER_TILE__", warps_per_tile);
-              code = regex_replace(code, "__BLOCK_SIZE__", block_size);
-              rtc_manager.compile(kernel_label, "cast_transpose_optimized_kernel", code,
-                                  "transformer_engine/common/transpose/rtc/cast_transpose.cu");
+              // Compile NVRTC kernel if needed and launch
+              auto &rtc_manager = rtc::KernelManager::instance();
+              const std::string kernel_label = concat_strings(
+                  "cast_transpose"
+                  ",itype=",
+                  itype_name, ",otype=", otype_name, ",load_size=", load_size,
+                  ",store_size=", store_size);
+              if (!rtc_manager.is_compiled(kernel_label)) {
+                std::string code = string_code_transpose_rtc_cast_transpose_cu;
+                code = regex_replace(code, "__ITYPE__", itype_name);
+                code = regex_replace(code, "__OTYPE__", otype_name);
+                code = regex_replace(code, "__LOAD_SIZE__", load_size);
+                code = regex_replace(code, "__STORE_SIZE__", store_size);
+                code = regex_replace(code, "__WARPS_PER_TILE__", warps_per_tile);
+                code = regex_replace(code, "__BLOCK_SIZE__", block_size);
+                rtc_manager.compile(kernel_label, "cast_transpose_optimized_kernel", code,
+                                    "transformer_engine/common/transpose/rtc/cast_transpose.cu");
+              }
+              rtc_manager.launch(kernel_label, num_blocks, block_size, 0, stream,
+                                 static_cast<const InputType *>(input.data.dptr),
+                                 reinterpret_cast<const CType *>(noop.data.dptr),
+                                 static_cast<OutputType *>(cast_output.data.dptr),
+                                 static_cast<OutputType *>(transposed_output.data.dptr),
+                                 static_cast<const CType *>(cast_output.scale.dptr),
+                                 static_cast<CType *>(cast_output.amax.dptr),
+                                 row_length, num_rows);
+            } else {  // Statically-compiled general kernel
+              constexpr size_t load_size = 4;
+              constexpr size_t store_size = 4;
+              constexpr size_t row_tile_size = load_size / itype_size * THREADS_PER_WARP;
+              constexpr size_t col_tile_size = store_size / otype_size * THREADS_PER_WARP;
+              const int num_blocks =
+                  (DIVUP(row_length, row_tile_size) * DIVUP(num_rows, col_tile_size));
+              cast_transpose_general_kernel<load_size, store_size, InputType, OutputType>
+                  <<<num_blocks, block_size, 0, stream>>>(
+                      static_cast<const InputType *>(input.data.dptr),
+                      reinterpret_cast<const CType *>(noop.data.dptr),
+                      static_cast<OutputType *>(cast_output.data.dptr),
+                      static_cast<OutputType *>(transposed_output.data.dptr),
+                      static_cast<const CType *>(cast_output.scale.dptr),
+                      static_cast<CType *>(cast_output.amax.dptr), row_length, num_rows);
             }
-            rtc_manager.launch(kernel_label, num_blocks, block_size, 0, stream,
-                               static_cast<const InputType *>(input.data.dptr),
-                               reinterpret_cast<const CType *>(noop.data.dptr),
-                               static_cast<OutputType *>(cast_output.data.dptr),
-                               static_cast<OutputType *>(transposed_output.data.dptr),
-                               static_cast<const CType *>(cast_output.scale.dptr),
-                               static_cast<CType *>(cast_output.amax.dptr), row_length, num_rows);
-          } else {  // Statically-compiled general kernel
-            constexpr size_t load_size = 4;
-            constexpr size_t store_size = 4;
-            constexpr size_t row_tile_size = load_size / itype_size * THREADS_PER_WARP;
-            constexpr size_t col_tile_size = store_size / otype_size * THREADS_PER_WARP;
-            const int num_blocks =
-                (DIVUP(row_length, row_tile_size) * DIVUP(num_rows, col_tile_size));
-            cast_transpose_general_kernel<load_size, store_size, InputType, OutputType>
-                <<<num_blocks, block_size, 0, stream>>>(
-                    static_cast<const InputType *>(input.data.dptr),
-                    reinterpret_cast<const CType *>(noop.data.dptr),
-                    static_cast<OutputType *>(cast_output.data.dptr),
-                    static_cast<OutputType *>(transposed_output.data.dptr),
-                    static_cast<const CType *>(cast_output.scale.dptr),
-                    static_cast<CType *>(cast_output.amax.dptr), row_length, num_rows);
-          });  // NOLINT(*)
+          } else {
+            NVTE_ERROR("Not implemented scaling mode: " +
+                       to_string(cast_output.scaling_mode) + ".");
+          }
+      );       // NOLINT(*)
   );           // NOLINT(*)
 }
 
