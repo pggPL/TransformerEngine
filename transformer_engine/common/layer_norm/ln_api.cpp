@@ -157,6 +157,10 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
   const auto wtype = gamma.data.dtype;
   const auto otype = z->data.dtype;
   const bool fp8_out = is_fp8_dtype(otype);
+  if (fp8_out && !is_delayed_tensor_scaling(z->scaling_mode)) {
+    NVTE_ERROR("Not implemented scaling mode: " +
+               to_string(z->scaling_mode) + ".");
+  }
   const auto ctype = layer_norm::DType::kFloat32;
 
   NVTE_CHECK(x.data.shape.size() == 2);

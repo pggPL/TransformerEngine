@@ -125,6 +125,10 @@ void rmsnorm_fwd(const Tensor &x, const Tensor &gamma, const float epsilon, Tens
   auto wtype = gamma.data.dtype;
   auto otype = z->data.dtype;
   const bool fp8_out = is_fp8_dtype(otype);
+  if (fp8_out && !is_delayed_tensor_scaling(z->scaling_mode)) {
+    NVTE_ERROR("Not implemented scaling mode: " +
+               to_string(z->scaling_mode) + ".");
+  }
   auto ctype = DType::kFloat32;
 
   NVTE_CHECK(x.data.shape.size() == 2);
