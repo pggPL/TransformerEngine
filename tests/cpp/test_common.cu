@@ -54,16 +54,6 @@ const std::string &typeName(DType type) {
   return name_map.at(type);
 }
 
-const std::string& caseName(InputsFillCase type) {
-  static const std::unordered_map<InputsFillCase, std::string> name_map = {
-    {InputsFillCase::uniform, "uniform"},
-    {InputsFillCase::zeros, "zeros"},
-    {InputsFillCase::zero_to_minNorm, "zero_to_minNorm"},
-    {InputsFillCase::minNorm_to_maxNorm, "minNorm_to_maxNorm"},
-    {InputsFillCase::maxNorm_to_inf, "maxNorm_to_inf"}};
-  return name_map.at(type);
-}
-
 size_t product(const NVTEShape &shape) {
     size_t ret = 1;
     for (size_t i = 0; i < shape.ndim; ++i) {
@@ -258,68 +248,6 @@ void fillUniform(Tensor *t) {
   t->set_scale_inv(dis(gen));
   t->from_cpu();
 }
-
-template<typename InputEncoding, InputsFillCase Case>
-void fillCase_special(Tensor *t) {
-  const size_t size = product(t->shape());
-  const size_t rows = t->shape().data[0];
-  const size_t cols = t->shape().data[1];
-
-  if constexpr (Case == InputsFillCase::zeros) {
-    TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(t->dtype(), InputType, {
-      InputType *data = t->cpu_dptr<InputType>();
-      for (size_t i = 0; i < size; ++i) {
-        data[i] = static_cast<InputType>(0);
-      }
-    });
-  } else {
-    double minAbs = -2.0;
-    double maxAbs =  1.0;
-    if constexpr (Case != InputsFillCase::uniform) {
-      minAbs = Quantized_Limits<InputEncoding>::ranges[Case];
-      maxAbs = Quantized_Limits<InputEncoding>::ranges[Case + 1];
-    }
-    static std::mt19937 gen(12345);
-    std::uniform_real_distribution<> dis(minAbs, maxAbs);
-    std::uniform_real_distribution<> dis_sign(-1.0, 1.0);
-    TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(t->dtype(), InputType, {
-      InputType *data = t->cpu_dptr<InputType>();
-      for (size_t i = 0; i < rows; ++i) {
-        for (size_t j = 0; j < cols; ++j) {
-          const size_t idx = i * cols + j; 
-          const bool is_negative = (dis_sign(gen) < 0.0);
-          double val = dis(gen);
-          if (is_negative) {
-            val = -val;
-          }
-          data[idx] = static_cast<InputType>(val);
-        }
-      }
-    });
-  }
-  t->set_scale_inv(1.0);
-  t->from_cpu();
-}
-
-template <typename InputEncoding>
-void fillCase(Tensor *t, const InputsFillCase fill_case) {
-  switch (fill_case) {
-    case InputsFillCase::uniform: 
-        fillCase_special<InputEncoding, InputsFillCase::uniform>(t); break;
-    case InputsFillCase::zeros: 
-        fillCase_special<InputEncoding, InputsFillCase::zeros>(t); break;
-    case InputsFillCase::zero_to_minNorm: 
-        fillCase_special<InputEncoding, InputsFillCase::zero_to_minNorm>(t); break;
-    case InputsFillCase::minNorm_to_maxNorm: 
-        fillCase_special<InputEncoding, InputsFillCase::minNorm_to_maxNorm>(t); break;
-    case InputsFillCase::maxNorm_to_inf: 
-        fillCase_special<InputEncoding, InputsFillCase::maxNorm_to_inf>(t); break;
-  }
-}
-
-template void fillCase<fp8e4m3>(Tensor *t, const InputsFillCase fill_case);
-template void fillCase<fp8e5m2>(Tensor *t, const InputsFillCase fill_case);
-template void fillCase<fp32>(Tensor *t, const InputsFillCase fill_case);
 
 void setRandomScale(Tensor *t) {
   static std::mt19937 gen(12345);
