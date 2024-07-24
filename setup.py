@@ -105,6 +105,7 @@ if __name__ == "__main__":
 
             if fa_version != PkgVersion("2.4.2.dev0"):
                 import subprocess
+
                 fa_path = current_file_path / "3rdparty/flashattn_internal"
                 subprocess.check_call([sys.executable, "-m", "pip", "install", fa_path])
 

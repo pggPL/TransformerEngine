@@ -15,9 +15,7 @@ size_t typeToSize(const DType type) {
                                      return TypeInfo<T>::size;);  // NOLINT(*)
 }
 
-bool is_fp8_dtype(const DType t) {
-  return t == DType::kFloat8E4M3 || t == DType::kFloat8E5M2;
-}
+bool is_fp8_dtype(const DType t) { return t == DType::kFloat8E4M3 || t == DType::kFloat8E5M2; }
 
 std::string to_string(const DType type) {
   switch (type) {
@@ -47,46 +45,39 @@ std::string to_string(const ScalingMode &mode) {
          std::to_string(static_cast<bool>(mode.delayed_scaling)) + "}";
 }
 
-void CheckScaleTensor(const SimpleTensor &scale, const ScalingMode &mode,
-                      const SimpleTensor &data, const std::string &name,
-                      const std::string &suffix) {
+void CheckScaleTensor(const SimpleTensor &scale, const ScalingMode &mode, const SimpleTensor &data,
+                      const std::string &name, const std::string &suffix) {
   NVTE_CHECK(scale.dptr != nullptr,
              "FP8 scaling factor input " + name + suffix + " must be allocated.");
   NVTE_CHECK(scale.dtype == DType::kFloat32 || scale.dtype == DType::kByte,
              "Unsupported type of scaling factor input " + name + suffix +
-             ". Expected Float32 or Byte, got " + to_string(scale.dtype));
+                 ". Expected Float32 or Byte, got " + to_string(scale.dtype));
   // Need 4B alignment even for e8 scaling factor
   size_t alignment = 4ul / typeToSize(scale.dtype);
   size_t expected_x;
   if (mode.x == -1) {
     expected_x = 1;
   } else {
-    NVTE_CHECK(data.shape.size() == 2,
-               "Invalid shape of the tensor " + name +
-               ". Expected 2 dimensions for fine granularity scaling.");
-    expected_x = DIVUP(DIVUP(data.shape.at(0),
-                             static_cast<size_t>(mode.x)),
-                       alignment);
+    NVTE_CHECK(data.shape.size() == 2, "Invalid shape of the tensor " + name +
+                                           ". Expected 2 dimensions for fine granularity scaling.");
+    expected_x = DIVUP(DIVUP(data.shape.at(0), static_cast<size_t>(mode.x)), alignment);
   }
   size_t expected_y;
   if (mode.y == -1) {
     expected_y = 1;
   } else {
-    NVTE_CHECK(data.shape.size() == 2,
-               "Invalid shape of the tensor " + name +
-               ". Expected 2 dimensions for fine granularity scaling.");
-    expected_y = DIVUP(DIVUP(data.shape.at(1),
-                             static_cast<size_t>(mode.y)),
-                       alignment);
+    NVTE_CHECK(data.shape.size() == 2, "Invalid shape of the tensor " + name +
+                                           ". Expected 2 dimensions for fine granularity scaling.");
+    expected_y = DIVUP(DIVUP(data.shape.at(1), static_cast<size_t>(mode.y)), alignment);
   }
   if (expected_x == 1 && expected_y == 1) {
     // per-tensor scaling
     NVTE_CHECK(scale.shape == std::vector<size_t>{1});
   } else {
     const auto &expected = std::vector<size_t>{expected_x, expected_y};
-    NVTE_CHECK(scale.shape == expected,
-               "Tensor " + name + suffix + " has invalid shape. Expected (" +
-               to_string(expected) + ", while got " + to_string(scale.shape));
+    NVTE_CHECK(scale.shape == expected, "Tensor " + name + suffix +
+                                            " has invalid shape. Expected (" + to_string(expected) +
+                                            ", while got " + to_string(scale.shape));
   }
 }
 
@@ -130,8 +121,7 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
 }  // namespace transformer_engine
 
 NVTETensor nvte_create_tensor(void *dptr, const NVTEShape shape, const NVTEDType dtype, float *amax,
-                              float *scale, float *scale_inv,
-                              NVTEScalingMode scaling_mode) {
+                              float *scale, float *scale_inv, NVTEScalingMode scaling_mode) {
   transformer_engine::Tensor *ret = new transformer_engine::Tensor;
   ret->data.dptr = dptr;
   ret->data.shape = std::vector<size_t>(shape.data, shape.data + shape.ndim);
