@@ -51,8 +51,7 @@ void fp8_quantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
                 stream););  // NOLINT(*)
     );                      // NOLINT(*)
   } else {
-    NVTE_ERROR("Not implemented scaling mode: " +
-               to_string(output->scaling_mode) + ".");
+    NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
   }
 }
 
@@ -78,8 +77,7 @@ void fp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
                 stream););  // NOLINT(*)
     );                      // NOLINT(*)
   } else {
-    NVTE_ERROR("Not implemented scaling mode: " +
-               to_string(input.scaling_mode) + ".");
+    NVTE_ERROR("Not implemented scaling mode: " + to_string(input.scaling_mode) + ".");
   }
 }
 

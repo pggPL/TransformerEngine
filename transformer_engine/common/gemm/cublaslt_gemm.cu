@@ -73,11 +73,9 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   }
   const bool gelu = pre_gelu_out != nullptr;
   const bool use_fp8 = is_fp8_dtype(inputA->data.dtype) || is_fp8_dtype(inputB->data.dtype);
-  if (use_fp8 &&
-      !(is_delayed_tensor_scaling(inputA->scaling_mode) &&
-        is_delayed_tensor_scaling(inputB->scaling_mode))) {
-    NVTE_ERROR("Not implemented scaling modes: " +
-               to_string(inputA->scaling_mode) + " and  " +
+  if (use_fp8 && !(is_delayed_tensor_scaling(inputA->scaling_mode) &&
+                   is_delayed_tensor_scaling(inputB->scaling_mode))) {
+    NVTE_ERROR("Not implemented scaling modes: " + to_string(inputA->scaling_mode) + " and  " +
                to_string(inputB->scaling_mode) + ".");
   }
   const cudaDataType_t A_type = get_cuda_dtype(inputA->data.dtype);

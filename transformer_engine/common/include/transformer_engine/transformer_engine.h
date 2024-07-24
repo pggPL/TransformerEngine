@@ -220,8 +220,7 @@ class TensorWrapper {
                 float *scale_dptr = nullptr, float *scale_inv_dptr = nullptr,
                 NVTEScalingMode scaling_mode = {-1, -1, 1})
       : tensor_(nvte_create_tensor(dptr, shape, static_cast<NVTEDType>(dtype), amax_dptr,
-                                   scale_dptr, scale_inv_dptr,
-                                   scaling_mode)) {}
+                                   scale_dptr, scale_inv_dptr, scaling_mode)) {}
 
   /*! \brief Constructs new TensorWrapper.
    *
