@@ -105,7 +105,6 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
       NVTE_CHECK(t.amax.shape == std::vector<size_t>{1});
     }
     CheckScaleTensor(t.scale_inv, t.scaling_mode, t.data, name, "_scale_inverse");
-    CheckScaleTensor(t.scale, t.scaling_mode, t.data, name, "_scale");
   } else {
     NVTE_CHECK(t.scale.dptr == nullptr, "Scale is not supported for non-FP8 output " + name + ".");
     NVTE_CHECK(t.amax.dptr == nullptr, "Amax is not supported for non-FP8 output " + name + ".");
