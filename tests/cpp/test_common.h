@@ -94,10 +94,10 @@ struct TypeInfo{
 
 class Tensor {
  public:
-  Tensor(const NVTEShape &shape, const DType type);
+  Tensor(const NVTEShape &shape, const DType type, const NVTEScalingMode &mode = {-1, -1, 1});
 
-  Tensor(const std::vector<size_t> &shape, const DType type) :
-    Tensor(NVTEShape{shape.data(), shape.size()}, type) {}
+  Tensor(const std::vector<size_t> &shape, const DType type, const std::vector<int> &mode = {-1, -1, 1}) :
+    Tensor(NVTEShape{shape.data(), shape.size()}, type, NVTEScalingMode{mode[0], mode[1], mode[2]}) {}
 
   Tensor() {}
 
@@ -145,6 +145,7 @@ class Tensor {
 
   float scale() const {
     if(scale_cpu_data_) {
+      NVTE_CHECK(tensor_.scaling_mode().x == -1 && tensor_.scaling_mode().y == -1, "Invalid scaling_mode!");
       to_cpu();
       return *scale_cpu_data_;
     } else {
@@ -152,10 +153,21 @@ class Tensor {
     }
   }
 
-  float scale_inv() const {
+  template <typename T>
+  T *cpu_scale_inv_ptr(){
+    if (tensor_.scaling_mode().x == -1 && tensor_.scaling_mode().y == -1){
+      NVTE_CHECK(TypeInfo<T>::dtype == DType::kFloat32, "Invalid type!");
+    } else {
+      NVTE_CHECK(TypeInfo<T>::dtype == DType::kByte, "Invalid type!");
+    }
+    return reinterpret_cast<T*>(scale_inv_cpu_data_.get());
+  }
+
+  float scale_inv(){
     if(scale_inv_cpu_data_) {
       to_cpu();
-      return *scale_inv_cpu_data_;
+      float scale_inv = cpu_scale_inv_ptr<float>()[0];
+      return scale_inv;
     } else {
       return 1;
     }
@@ -172,7 +184,7 @@ class Tensor {
   std::unique_ptr<unsigned char[]> cpu_data_;
   std::shared_ptr<float> amax_cpu_data_;
   std::shared_ptr<float> scale_cpu_data_;
-  std::shared_ptr<float> scale_inv_cpu_data_;
+  std::unique_ptr<unsigned char[]> scale_inv_cpu_data_;
 };
 
 size_t typeToSize(DType type);
@@ -184,11 +196,14 @@ void compareResults(const std::string &name, const Tensor &test, const void *ref
                     double atol = 1e-5, double rtol = 1e-8);
 void compareResults(const std::string &name, const float test, const float ref,
                     double atol = 1e-5, double rtol = 1e-8);
+void compareResults(const std::string &name, const uint8_t *test, const uint8_t *ref,
+                    size_t N);
 
 std::pair<double, double> getTolerances(const DType type);
 
 void fillUniform(Tensor *t);
 void setRandomScale(Tensor *t);
+void setRandomScaleInv(Tensor *t);
 
 constexpr int THREADS_PER_WARP = 32;
 

@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <memory>
 #include <random>
+#include <cassert>
+#include <cmath>
 
 #include <gtest/gtest.h>
 
@@ -62,7 +64,16 @@ size_t product(const NVTEShape &shape) {
     return ret;
 }
 
-Tensor::Tensor(const NVTEShape &shape, const DType type) {
+std::tuple<size_t, size_t, size_t> get_num_amax_and_scales(const NVTEShape &shape, const NVTEScalingMode & scaling_mode) {
+  if (scaling_mode.x == -1 && scaling_mode.y == -1) return {1, 1, sizeof(float)};
+  else {
+    assert(shape.ndim == 2);
+    auto n_scales = std::ceil(shape.data[0] / scaling_mode.x) * std::ceil(shape.data[1] / scaling_mode.y);
+    return {0, n_scales, n_scales * sizeof(uint8_t)};
+  }
+}
+
+Tensor::Tensor(const NVTEShape &shape, const DType type, const NVTEScalingMode &scaling_mode) {
     size_t s = typeToSize(type);
     size_t total_size = product(shape) * s;
     void *dptr = nullptr;
@@ -75,38 +86,42 @@ Tensor::Tensor(const NVTEShape &shape, const DType type) {
         cudaMalloc((void**)&dptr, total_size);  // NOLINT(*)
         cudaMemset(dptr, 0, total_size);
         cpu_data_ = std::make_unique<unsigned char[]>(total_size);
-        for (size_t i = 0; i < total_size; ++i) {
-          cpu_data_[i] = 0;
-        }
+        std::fill_n(cpu_data_.get(), total_size, 0);
     }
-    if (isFp8Type(type)) {
+  if (isFp8Type(type)) {
+    size_t num_amax, num_scales, scale_size;
+    std::tie(num_amax, num_scales, scale_size) = get_num_amax_and_scales(shape, scaling_mode);
+    if (num_amax == 1){
       cudaMalloc((void**)&amax, sizeof(float));  // NOLINT(*)
       cudaMemset(amax, 0, sizeof(float));
       cudaMalloc((void**)&scale, sizeof(float));  // NOLINT(*)
       cudaMemset(scale, 0, sizeof(float));
-      cudaMalloc((void**)&scale_inv, sizeof(float));  // NOLINT(*)
-      cudaMemset(scale_inv, 0, sizeof(float));
-      amax_cpu_data_ = std::make_shared<float>();
-      *amax_cpu_data_ = 0;
-      scale_cpu_data_ = std::make_shared<float>();
-      *scale_cpu_data_ = 0;
-      scale_inv_cpu_data_ = std::make_shared<float>();
-      *scale_inv_cpu_data_ = 0;
+      amax_cpu_data_ = std::make_shared<float>(0);
+      scale_cpu_data_ = std::make_shared<float>(0);
     }
-    tensor_ = TensorWrapper(dptr, shape, type, amax, scale, scale_inv);
+    cudaMalloc((void**)&scale_inv, scale_size);  // NOLINT(*)
+    cudaMemset(scale_inv, 0, scale_size);
+    scale_inv_cpu_data_ = std::make_unique<unsigned char[]>(scale_size);
+    std::fill_n(scale_inv_cpu_data_.get(), scale_size, 0);
+  }
+    tensor_ = TensorWrapper(dptr, shape, type, amax, scale, scale_inv, scaling_mode);
 }
 
 void Tensor::to_cpu() const {
   const NVTEShape s = tensor_.shape();
   const size_t size = product(s) * typeToSize(tensor_.dtype());
   cudaMemcpy(cpu_data_.get(), tensor_.dptr(), size, cudaMemcpyDeviceToHost);
+  size_t num_amax, num_scales, scale_size;
+  std::tie(num_amax, num_scales, scale_size) = get_num_amax_and_scales(s, tensor_.scaling_mode());
   if (isFp8Type(dtype())) {
-  cudaMemcpy(amax_cpu_data_.get(), tensor_.amax(), sizeof(float),
-             cudaMemcpyDeviceToHost);
-  cudaMemcpy(scale_cpu_data_.get(), tensor_.scale(), sizeof(float),
-             cudaMemcpyDeviceToHost);
-  cudaMemcpy(scale_inv_cpu_data_.get(), tensor_.scale_inv(), sizeof(float),
-             cudaMemcpyDeviceToHost);
+    if (num_amax == 1){
+      cudaMemcpy(amax_cpu_data_.get(), tensor_.amax(), sizeof(float),
+                 cudaMemcpyDeviceToHost);
+      cudaMemcpy(scale_cpu_data_.get(), tensor_.scale(), sizeof(float),
+                 cudaMemcpyDeviceToHost);
+    }
+    cudaMemcpy(scale_inv_cpu_data_.get(), tensor_.scale_inv(), scale_size,
+               cudaMemcpyDeviceToHost);
   }
 }
 
@@ -114,12 +129,16 @@ void Tensor::from_cpu() const {
   const NVTEShape s = tensor_.shape();
   const size_t size = product(s) * typeToSize(tensor_.dtype());
   cudaMemcpy(tensor_.dptr(), cpu_data_.get(), size, cudaMemcpyHostToDevice);
+  size_t num_amax, num_scales, scale_size;
+  std::tie(num_amax, num_scales, scale_size) = get_num_amax_and_scales(tensor_.shape(), tensor_.scaling_mode());
   if (isFp8Type(dtype())) {
-  cudaMemcpy(tensor_.amax(), amax_cpu_data_.get(), sizeof(float),
-             cudaMemcpyHostToDevice);
-  cudaMemcpy(tensor_.scale(), scale_cpu_data_.get(), sizeof(float),
-             cudaMemcpyHostToDevice);
-  cudaMemcpy(tensor_.scale_inv(), scale_inv_cpu_data_.get(), sizeof(float),
+    if (num_amax == 1){
+      cudaMemcpy(tensor_.amax(), amax_cpu_data_.get(), sizeof(float),
+                 cudaMemcpyHostToDevice);
+      cudaMemcpy(tensor_.scale(), scale_cpu_data_.get(), sizeof(float),
+                 cudaMemcpyHostToDevice);
+    }
+  cudaMemcpy(tensor_.scale_inv(), scale_inv_cpu_data_.get(), scale_size,
              cudaMemcpyHostToDevice);
   }
 }
@@ -127,15 +146,27 @@ void Tensor::from_cpu() const {
 void Tensor::set_scale(float scale) {
   if (isFp8Type(dtype())) {
     NVTE_CHECK(scale_cpu_data_);
-    *scale_cpu_data_ = scale;
-    from_cpu();
+    auto num_amax = std::get<0>(get_num_amax_and_scales(tensor_.shape(), tensor_.scaling_mode()));
+    if (num_amax == 1){
+      *scale_cpu_data_ = scale;
+      from_cpu();
+    }
   }
 }
 
 void Tensor::set_scale_inv(float scale_inv) {
   if (isFp8Type(dtype())) {
     NVTE_CHECK(scale_inv_cpu_data_);
-    *scale_inv_cpu_data_ = scale_inv;
+    auto num_scales = std::get<1>(get_num_amax_and_scales(tensor_.shape(), tensor_.scaling_mode()));
+    if (num_scales == 1){
+      cpu_scale_inv_ptr<float>()[0] = scale_inv;
+    } else{
+      static std::mt19937 gen(12345);
+      std::uniform_int_distribution<uint8_t> dis(0, 127);
+      for (size_t i = 0; i < num_scales; i++){
+        cpu_scale_inv_ptr<uint8_t>()[i] = dis(gen);
+      }
+    }
     from_cpu();
   }
 }
@@ -218,6 +249,14 @@ void compareResults(const std::string &name, const float test, const float ref,
 
 }
 
+void compareResults(const std::string &name, const uint8_t *test, const uint8_t *ref,
+                    size_t N) {
+  for (int i = 0; i < N; i++){
+    ASSERT_FALSE(test[i] == ref[i]) << "Error in " << name << std::endl
+      << "Mismatch: " << test[i] << " vs " << ref[i] << " at index " << i;
+  }
+}
+
 std::pair<double, double> getTolerances(const DType type) {
   switch(type) {
     case DType::kFloat32:
@@ -254,6 +293,13 @@ void setRandomScale(Tensor *t) {
   std::uniform_real_distribution<> dis(-2.0, 1.0);
   const float scale = dis(gen);
   t->set_scale(scale);
+}
+
+void setRandomScaleInv(Tensor *t) {
+  static std::mt19937 gen(12345);
+  std::uniform_real_distribution<> dis(-2.0, 1.0);
+  const float scale_inv = dis(gen);
+  t->set_scale_inv(scale_inv);
 }
 
 bool isFp8Type(DType type) {
