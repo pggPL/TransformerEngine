@@ -120,15 +120,18 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
 }  // namespace transformer_engine
 
 NVTETensor nvte_create_tensor(void *dptr, const NVTEShape shape, const NVTEDType dtype, float *amax,
-                              float *scale, float *scale_inv, NVTEScalingMode scaling_mode) {
+                              float *scale, float *scale_inv, const NVTEShape scale_inv_shape,
+                              NVTEScalingMode scaling_mode) {
   transformer_engine::Tensor *ret = new transformer_engine::Tensor;
   ret->data.dptr = dptr;
   ret->data.shape = std::vector<size_t>(shape.data, shape.data + shape.ndim);
   ret->data.dtype = static_cast<transformer_engine::DType>(dtype);
   ret->amax.dptr = amax;
   ret->scale.dptr = scale;
-  ret->scale_inv.dptr = scale_inv;
   ret->scaling_mode = scaling_mode;
+  ret->scale_inv.dptr = scale_inv;
+  ret->scale_inv.shape =
+      std::vector<size_t>(scale_inv_shape.data, scale_inv_shape.data + scale_inv_shape.ndim);
   return ret;
 }
 
@@ -175,6 +178,14 @@ float *nvte_tensor_scale_inv(const NVTETensor tensor) {
   NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kFloat32,
              "Tensor's inverse of scale must have Float32 type!");
   return reinterpret_cast<float *>(t.scale_inv.dptr);
+}
+
+NVTEShape nvte_tensor_scale_inv_shape(const NVTETensor tensor) {
+  const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
+  NVTEShape ret;
+  ret.data = t.scale_inv.shape.data();
+  ret.ndim = t.scale_inv.shape.size();
+  return ret;
 }
 
 NVTEScalingMode nvte_tensor_scaling_mode(const NVTETensor tensor) {
