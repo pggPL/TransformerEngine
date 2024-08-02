@@ -221,11 +221,7 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output
 
   // Check no-op flag
   if (noop.data.dptr != nullptr) {
-    size_t numel = 1;
-    for (const auto &dim : noop.data.shape) {
-      numel *= dim;
-    }
-    NVTE_CHECK(numel == 1, "Expected 1 element, but found ", numel, ".");
+    NVTE_CHECK(noop.numel() == 1, "Expected 1 element, but found ", noop.numel(), ".");
     NVTE_CHECK(noop.data.dtype == DType::kFloat32);
     NVTE_CHECK(noop.data.dptr != nullptr);
   }

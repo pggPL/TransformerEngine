@@ -159,7 +159,12 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
     } else if ((is_columnwise_block32_scaling(inputA->scaling_mode) &&
                 is_columnwise_block32_scaling(inputB->scaling_mode))) {
       scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0;
-      // TODO(ksivamani): add assert for A_scale_inverse and B_scale_inverse dims.
+      NVTE_CHECK((inputA->numel() % 32 == 0) &&
+		 (inputA->numel() / 32 == (inputA->scale_inv).numel()),
+		  "Incorrect number of block scaling factors for gemm inputA.");
+      NVTE_CHECK((inputB->numel() % 32 == 0) &&
+		 (inputB->numel() / 32 == (inputB->scale_inv).numel()),
+                  "Incorrect number of block scaling factors for gemm inputB.");
     } else {
       NVTE_ERROR("Not implemented scaling modes: " + to_string(inputA->scaling_mode) + " and  " +
       to_string(inputB->scaling_mode) + ".");

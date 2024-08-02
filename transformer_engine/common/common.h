@@ -34,6 +34,14 @@ struct SimpleTensor {
   SimpleTensor(void *dptr, const std::vector<size_t> &shape, DType dtype)
       : dptr(dptr), shape(shape), dtype(dtype) {}
   SimpleTensor() : SimpleTensor(nullptr, {}, DType::kFloat32) {}
+
+  int numel() const {
+    size_t acc = 1;
+    for (const auto& dim : shape) {
+      acc *= dim;
+    }
+    return acc;
+  }
 };
 
 class ScalingMode : public NVTEScalingMode {
@@ -65,6 +73,14 @@ struct Tensor {
         scale(nullptr, {1}, DType::kFloat32),
         scale_inv(nullptr, {1}, DType::kFloat32),
         scaling_mode() {}
+
+  int numel() const {
+    size_t acc = 1;
+    for (const auto& dim : data.shape) {
+      acc *= dim;
+    }
+    return acc;
+  }
 };
 
 template <typename T>
