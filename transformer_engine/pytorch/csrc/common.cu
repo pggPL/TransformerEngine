@@ -36,19 +36,24 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor)
   return makeTransformerEngineTensor(tensor.data_ptr(), shape, dtype);
 }
 
-transformer_engine::TensorWrapper makeTransformerEngineTensor(void* data_ptr,
-                                                              const std::vector<size_t>& shape,
-                                                              const transformer_engine::DType type,
-                                                              void* amax_ptr, void* scale_ptr,
-                                                              void* scale_inv_ptr) {
+transformer_engine::TensorWrapper makeTransformerEngineTensor(
+  void* data_ptr,
+  const std::vector<size_t>& shape,
+  const transformer_engine::DType type,
+  void* amax_ptr, void* scale_ptr,
+  void* scale_inv_ptr,
+  NVTEScalingMode scaling_mode) {
   return transformer_engine::TensorWrapper(
       data_ptr, shape, type, reinterpret_cast<float*>(amax_ptr),
-      reinterpret_cast<float*>(scale_ptr), reinterpret_cast<float*>(scale_inv_ptr));
+      reinterpret_cast<float*>(scale_ptr), reinterpret_cast<float*>(scale_inv_ptr),
+      scaling_mode);
 }
 
-transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor, at::Tensor amax,
-                                                              const at::Tensor scale,
-                                                              at::Tensor scale_inv) {
+transformer_engine::TensorWrapper makeTransformerEngineTensor(
+  at::Tensor tensor, at::Tensor amax,
+  const at::Tensor scale,
+  at::Tensor scale_inv,
+  NVTEScalingMode scaling_mode) {
   transformer_engine::DType dtype = GetTransformerEngineDType(tensor.scalar_type());
   std::vector<size_t> shape;
 
@@ -60,7 +65,7 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor,
   NVTE_CHECK(scale_inv.scalar_type() == at::kFloat);
 
   return makeTransformerEngineTensor(tensor.data_ptr(), shape, dtype, amax.data_ptr(),
-                                     scale.data_ptr(), scale_inv.data_ptr());
+                                     scale.data_ptr(), scale_inv.data_ptr(), scaling_mode);
 }
 
 size_t product(const std::vector<size_t>& shape) {
