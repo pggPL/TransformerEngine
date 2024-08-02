@@ -73,11 +73,7 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   }
   const bool gelu = pre_gelu_out != nullptr;
   const bool use_fp8 = is_fp8_dtype(inputA->data.dtype) || is_fp8_dtype(inputB->data.dtype);
-  if (use_fp8 && !(is_delayed_tensor_scaling(inputA->scaling_mode) &&
-                   is_delayed_tensor_scaling(inputB->scaling_mode))) {
-    NVTE_ERROR("Not implemented scaling modes: " + to_string(inputA->scaling_mode) + " and  " +
-               to_string(inputB->scaling_mode) + ".");
-  }
+
   const cudaDataType_t A_type = get_cuda_dtype(inputA->data.dtype);
   const cudaDataType_t B_type = get_cuda_dtype(inputB->data.dtype);
   const cudaDataType_t D_type = get_cuda_dtype(outputD->data.dtype);
@@ -154,6 +150,27 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
     NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
                                                      CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
                                                      &B_scale_inverse, sizeof(B_scale_inverse)));
+
+    // Scaling factors.
+    cublasLtMatmulMatrixScale_t scaling_mode;
+    if ((is_delayed_tensor_scaling(inputA->scaling_mode) &&
+         is_delayed_tensor_scaling(inputB->scaling_mode))) {
+      scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR_32F;
+    } else if ((is_columnwise_block32_scaling(inputA->scaling_mode) &&
+                is_columnwise_block32_scaling(inputB->scaling_mode))) {
+      scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0;
+      // TODO(ksivamani): add assert for A_scale_inverse and B_scale_inverse dims.
+    } else {
+      NVTE_ERROR("Not implemented scaling modes: " + to_string(inputA->scaling_mode) + " and  " +
+      to_string(inputB->scaling_mode) + ".");
+    }
+
+    NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
+                                                     CUBLASLT_MATMUL_DESC_A_SCALE_MODE,
+                                                     &scaling_mode, sizeof(scaling_mode)));
+    NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
+                                                     CUBLASLT_MATMUL_DESC_B_SCALE_MODE,
+                                                     &scaling_mode, sizeof(scaling_mode)));
     if (is_fp8_dtype(outputD->data.dtype)) {
       // Accumulation mode not supported for FP8 output
       C = nullptr;
