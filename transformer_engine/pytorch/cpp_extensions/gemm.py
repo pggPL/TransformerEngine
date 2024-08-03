@@ -24,6 +24,8 @@ def fp8_gemm(
     B_dtype: tex.DType,
     out_dtype: torch.dtype,
     workspace: torch.Tensor,
+    A_scaling_mode: Tuple = (-1, -1, 1),
+    B_scaling_mode: Tuple = (-1, -1, 1),
     gelu: bool = False,
     accumulate: bool = False,
     out: Optional[torch.Tensor] = None,
@@ -70,11 +72,13 @@ def fp8_gemm(
         A_scale_inv,
         A_fp8_tensor,
         A_dtype,
+        A_scaling_mode,
         True,  # transa
         B,
         B_scale_inv,
         B_fp8_tensor,
         B_dtype,
+        B_scaling_mode,
         False,  # transb
         out,
         empty_tensor if out_index is None else fp8_meta_tensor.scale[out_index],
@@ -123,6 +127,9 @@ def fp8_gemm(
             )
             args = tuple(args + (extra_output_tensor,))
         elif ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_AG_P2P:
+            assert (
+                A_scaling_mode == (-1, -1, 1) and B_scaling_mode == (-1, -1, 1)
+            ), "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_ag_p2p
             extra_output_tensor = (
                 empty_tensor if extra_output_tensor is None else extra_output_tensor
@@ -147,6 +154,9 @@ def fp8_gemm(
             ), "SPLIT_PIPELINED_RS_P2P requires extra output tensor"
             args = tuple(args + (extra_output_tensor,))
         elif ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_RS:
+            assert (
+                A_scaling_mode == (-1, -1, 1) and B_scaling_mode == (-1, -1, 1)
+            ), "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_rs
             assert extra_output_tensor is not None, "ATOMIC_GEMM_RS requires extra output tensor"
             args = tuple(
@@ -157,6 +167,9 @@ def fp8_gemm(
                 )
             )
         elif ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_RS_P2P:
+            assert (
+                A_scaling_mode == (-1, -1, 1) and B_scaling_mode == (-1, -1, 1)
+            ), "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_rs_p2p
             assert (
                 extra_output_tensor is not None
@@ -230,11 +243,13 @@ def gemm(
         empty_tensor,
         fp8_index,
         input_dtype,
+        (-1, -1, 1),  # A_scaling_mode
         transa,
         B,
         empty_tensor,
         fp8_index,
         input_dtype,
+        (-1, -1, 1),  # B_scaling_mode
         transb,
         out,
         empty_tensor,  # out_scale
@@ -339,11 +354,13 @@ def grouped_gemm(
         empty_tensor,
         0,  # A_offset
         input_dtype,
+        (-1, -1, 1),  # A_scaling_mode
         transa,
         B,
         empty_tensor,
         0,  # B_offset
         input_dtype,
+        (-1, -1, 1),  # B_scaling_mode
         transb,
         out,
         0,  # out_offset
@@ -375,6 +392,8 @@ def fp8_grouped_gemm(
     out: List[torch.Tensor],
     out_dtype: torch.dtype,
     workspaces: List[torch.Tensor],
+    A_scaling_mode: Tuple = (-1, -1, 1),
+    B_scaling_mode: Tuple = (-1, -1, 1),
     out_offset: Optional[int] = None,
     fp8_meta_tensor: tex.FP8TensorMeta = None,
     gelu: bool = False,
@@ -418,11 +437,13 @@ def fp8_grouped_gemm(
         A_scale_inv,
         A_fp8_tensor_offset,
         A_dtype,
+        A_scaling_mode,
         True,  # transa
         B,
         B_scale_inv,
         B_fp8_tensor_offset,
         B_dtype,
+        B_scaling_mode,
         False,  # transb
         out,
         0 if out_offset is None else out_offset,

@@ -379,6 +379,10 @@ void nvte_cublas_atomic_gemm(const NVTETensor A, const NVTETensor B, NVTETensor 
   const Tensor *inputCounter = reinterpret_cast<const Tensor *>(counter);
   Tensor *wspace = reinterpret_cast<Tensor *>(workspace);
 
+  NVTE_CHECK(is_delayed_tensor_scaling(inputA->scaling_mode) &&
+             is_delayed_tensor_scaling(inputB->scaling_mode),
+             "Atomic GEMM only supports delayed scaling.");
+
   const int m = transa ? inputA->data.shape[0] : inputA->data.shape[1];
   const int k = transa ? inputA->data.shape[1] : inputA->data.shape[0];
   const int n = transb ? inputB->data.shape[1] : inputB->data.shape[0];
