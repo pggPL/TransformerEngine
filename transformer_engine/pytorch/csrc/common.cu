@@ -42,23 +42,19 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
   const transformer_engine::DType type,
   void* amax_ptr, void* scale_ptr,
   void* scale_inv_ptr,
-  std::vector<int> scaling_mode) {
-
-  auto dim = scaling_mode.size();
-  NVTE_CHECK(dim == 3, "Incorrect size ", dim, " for scaling mode.");
-  NVTEScalingMode nvte_scaling_mode = {scaling_mode[0], scaling_mode[1], scaling_mode[2]};
+  NVTEScalingMode scaling_mode) {
 
   return transformer_engine::TensorWrapper(
       data_ptr, shape, type, reinterpret_cast<float*>(amax_ptr),
       reinterpret_cast<float*>(scale_ptr), reinterpret_cast<float*>(scale_inv_ptr),
-      nvte_scaling_mode);
+      scaling_mode);
 }
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
   at::Tensor tensor, at::Tensor amax,
   const at::Tensor scale,
   at::Tensor scale_inv,
-  std::vector<int> scaling_mode) {
+  NVTEScalingMode scaling_mode) {
   transformer_engine::DType dtype = GetTransformerEngineDType(tensor.scalar_type());
   std::vector<size_t> shape;
 

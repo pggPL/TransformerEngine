@@ -111,16 +111,16 @@ at::Tensor fa_prepare_bwd(at::Tensor q, at::Tensor k, at::Tensor v);
 
 void te_gemm(
     at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType A_type,
-    std::vector<int> A_scaling_mode, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
-    transformer_engine::DType B_type, std::vector<int> B_scaling_mode, bool transb, at::Tensor D,
+    NVTEScalingMode A_scaling_mode, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
+    transformer_engine::DType B_type, NVTEScalingMode B_scaling_mode, bool transb, at::Tensor D,
     at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
     transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
     size_t workspaceSize, bool accumulate, bool use_split_accumulator, int math_sm_count);
 
 void te_atomic_gemm(
     at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType A_type,
-    std::vector<int> A_scaling_mode, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
-    transformer_engine::DType B_type, std::vector<int> B_scaling_mode, bool transb, at::Tensor D,
+    NVTEScalingMode A_scaling_mode, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
+    transformer_engine::DType B_type, NVTEScalingMode B_scaling_mode, bool transb, at::Tensor D,
     at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
     transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
     size_t workspaceSize, bool accumulate, bool use_split_accumulator, int math_sm_count,
@@ -128,9 +128,9 @@ void te_atomic_gemm(
 
 void te_grouped_gemm(
     std::vector<at::Tensor> A, at::Tensor A_scale_inverse, int A_offset,
-    transformer_engine::DType A_type, std::vector<int> A_scaling_mode, bool transa,
+    transformer_engine::DType A_type, NVTEScalingMode A_scaling_mode, bool transa,
     std::vector<at::Tensor> B, at::Tensor B_scale_inverse, int B_offset,
-    transformer_engine::DType B_type, std::vector<int> B_scaling_mode, bool transb,
+    transformer_engine::DType B_type, NVTEScalingMode B_scaling_mode, bool transb,
     std::vector<at::Tensor> D, int D_offset, at::Tensor D_scale, transformer_engine::DType D_type,
     at::Tensor D_amax, std::vector<at::Tensor> bias, transformer_engine::DType bias_type,
     std::vector<at::Tensor> pre_gelu_out, bool grad, std::vector<at::Tensor> workspace,

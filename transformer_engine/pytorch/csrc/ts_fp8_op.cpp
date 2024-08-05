@@ -261,12 +261,20 @@ at::Tensor te_gemm_ts(
   const int sm_count = transformer_engine::cuda::sm_count();
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
+  auto dimA = A_scaling_mode.size();
+  NVTE_CHECK(dimA == 3, "Incorrect size ", dimA, " for scaling mode.");
+  auto dimB = B_scaling_mode.size();
+  NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
+
+  NVTEScalingMode nvte_scaling_modeA = {A_scaling_mode[0], A_scaling_mode[1], A_scaling_mode[2]};
+  NVTEScalingMode nvte_scaling_modeB = {B_scaling_mode[0], B_scaling_mode[1], B_scaling_mode[2]};
+
   if (A_scale_inverse.numel()) A_scale_inverse = A_scale_inverse[A_fp8_tensor];
 
   if (B_scale_inverse.numel()) B_scale_inverse = B_scale_inverse[B_fp8_tensor];
 
-  te_gemm(A, A_scale_inverse, A_type_arg, A_scaling_mode, transa_arg, B, B_scale_inverse,
-          B_type_arg, B_scaling_mode, transb_arg, D, D_scale, D_type_arg, D_amax, bias,
+  te_gemm(A, A_scale_inverse, A_type_arg, nvte_scaling_modeA, transa_arg, B, B_scale_inverse,
+          B_type_arg, nvte_scaling_modeB, transb_arg, D, D_scale, D_type_arg, D_amax, bias,
           bias_type_arg, pre_gelu_out, grad_arg, workspace, workspaceSize_arg, accumulate_arg,
           use_split_accumulator_arg, num_math_sms);
   return D;
@@ -298,10 +306,18 @@ std::vector<at::Tensor> te_grouped_gemm_ts(
   const int sm_count = transformer_engine::cuda::sm_count();
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
-  te_grouped_gemm(A, A_scale_inverse, A_offset, A_type_arg, A_scaling_mode, transa_arg, B,
-                  B_scale_inverse, B_offset, B_type_arg, B_scaling_mode, transb_arg, D, D_offset,
-                  D_scale, D_type_arg, D_amax, bias, bias_type_arg, pre_gelu_out, grad_arg,
-                  workspace, workspaceSize_arg, accumulate_arg, use_split_accumulator_arg,
+  auto dimA = A_scaling_mode.size();
+  NVTE_CHECK(dimA == 3, "Incorrect size ", dimA, " for scaling mode.");
+  auto dimB = B_scaling_mode.size();
+  NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
+
+  NVTEScalingMode nvte_scaling_modeA = {A_scaling_mode[0], A_scaling_mode[1], A_scaling_mode[2]};
+  NVTEScalingMode nvte_scaling_modeB = {B_scaling_mode[0], B_scaling_mode[1], B_scaling_mode[2]};
+
+  te_grouped_gemm(A, A_scale_inverse, A_offset, A_type_arg, nvte_scaling_modeA, transa_arg, B,
+                  B_scale_inverse, B_offset, B_type_arg, nvte_scaling_modeB, transb_arg, D,
+                  D_offset, D_scale, D_type_arg, D_amax, bias, bias_type_arg, pre_gelu_out,
+                  grad_arg, workspace, workspaceSize_arg, accumulate_arg, use_split_accumulator_arg,
                   num_math_sms);
   return D;
 }

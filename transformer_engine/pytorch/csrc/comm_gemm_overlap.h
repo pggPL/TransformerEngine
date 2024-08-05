@@ -258,9 +258,9 @@ struct UbufCommOverlap : torch::CustomClassHolder, UbufBase {
   */
   std::vector<at::Tensor> bulk_overlap(
       at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-      transformer_engine::DType A_type, std::vector<int> A_scaling_mode, bool transa, at::Tensor B,
+      transformer_engine::DType A_type, NVTEScalingMode A_scaling_mode, bool transa, at::Tensor B,
       at::Tensor B_scale_inverse, int64_t B_fp8_tensor, transformer_engine::DType B_type,
-      std::vector<int> B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
+      NVTEScalingMode B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
       transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
       transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
       size_t workspaceSize, bool accumulate, bool use_split_accumulator, int comm_type,
@@ -329,9 +329,9 @@ struct UbufCommOverlap : torch::CustomClassHolder, UbufBase {
   */
   void atomic_gemm_overlap_rs(
     at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-    transformer_engine::DType A_type, std::vector<int> A_scaling_mode, bool transa, at::Tensor B,
+    transformer_engine::DType A_type, NVTEScalingMode A_scaling_mode, bool transa, at::Tensor B,
     at::Tensor B_scale_inverse, int64_t B_fp8_tensor, transformer_engine::DType B_type,
-    std::vector<int> B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
+    NVTEScalingMode B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
     transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias, 
     transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
     size_t workspaceSize, bool accumulate, bool use_split_accumulator, bool gemm_overlap,
@@ -439,9 +439,9 @@ struct UbufCommOverlap : torch::CustomClassHolder, UbufBase {
   */
   void split_overlap_rs(
     at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-    transformer_engine::DType A_type, std::vector<int> A_scaling_mode, bool transa, at::Tensor B,
+    transformer_engine::DType A_type, NVTEScalingMode A_scaling_mode, bool transa, at::Tensor B,
     at::Tensor B_scale_inverse, int64_t B_fp8_tensor, transformer_engine::DType B_type,
-    std::vector<int> B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
+    NVTEScalingMode B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
     transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
     transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
     size_t workspaceSize, bool accumulate, bool use_split_accumulator, bool gemm_overlap,
@@ -814,9 +814,9 @@ struct UbufP2PCommOverlap : torch::CustomClassHolder, UbufBase {
   */
   torch::Tensor atomic_gemm_overlap_ag(
       at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-      transformer_engine::DType A_type, std::vector<int> A_scaling_mode, bool transa, at::Tensor B,
+      transformer_engine::DType A_type, NVTEScalingMode A_scaling_mode, bool transa, at::Tensor B,
       at::Tensor B_scale_inverse, int64_t B_fp8_tensor, transformer_engine::DType B_type,
-      std::vector<int> B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
+      NVTEScalingMode B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
       transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
       transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
       size_t workspaceSize, bool accumulate, bool use_split_accumulator, at::Tensor B_copy) {
@@ -921,9 +921,9 @@ struct UbufP2PCommOverlap : torch::CustomClassHolder, UbufBase {
   */
   torch::Tensor split_overlap_ag(
     at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-    transformer_engine::DType A_type, std::vector<int> A_scaling_mode, bool transa, at::Tensor B,
+    transformer_engine::DType A_type, NVTEScalingMode A_scaling_mode, bool transa, at::Tensor B,
     at::Tensor B_scale_inverse, int64_t B_fp8_tensor, transformer_engine::DType B_type,
-    std::vector<int> B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
+    NVTEScalingMode B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
     transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
     transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
     size_t workspaceSize, bool accumulate, bool use_split_accumulator, at::Tensor B_copy) {
@@ -1088,9 +1088,9 @@ struct UbufP2PCommOverlap : torch::CustomClassHolder, UbufBase {
   */
   void atomic_gemm_overlap_rs(
     at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-    transformer_engine::DType A_type, std::vector<int> A_scaling_mode, bool transa, at::Tensor B,
+    transformer_engine::DType A_type, NVTEScalingMode A_scaling_mode, bool transa, at::Tensor B,
     at::Tensor B_scale_inverse, int64_t B_fp8_tensor, transformer_engine::DType B_type,
-    std::vector<int> B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
+    NVTEScalingMode B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
     transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
     transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
     size_t workspaceSize, bool accumulate, bool use_split_accumulator, at::Tensor rs_output) {
@@ -1164,9 +1164,9 @@ struct UbufP2PCommOverlap : torch::CustomClassHolder, UbufBase {
   */
   void split_overlap_rs(
     at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
-    transformer_engine::DType A_type, std::vector<int> A_scaling_mode, bool transa, at::Tensor B,
+    transformer_engine::DType A_type, NVTEScalingMode A_scaling_mode, bool transa, at::Tensor B,
     at::Tensor B_scale_inverse, int64_t B_fp8_tensor, transformer_engine::DType B_type,
-    std::vector<int> B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
+    NVTEScalingMode B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
     transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
     transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad, at::Tensor workspace,
     size_t workspaceSize, bool accumulate, bool use_split_accumulator, at::Tensor rs_output) {
