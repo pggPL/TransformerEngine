@@ -4,6 +4,7 @@
 
 add_executable(test_operator
                test_qdq.cu
+               test_cast_mxfp8.cu
                test_cast_transpose.cu
                test_transpose.cu
                test_cast_transpose_dbias.cu

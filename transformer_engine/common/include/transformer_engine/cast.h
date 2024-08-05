@@ -19,11 +19,13 @@ extern "C" {
 
 /*! \brief Cast tensor to FP8.
  *
- *  \param[in]     input     Input tensor to be cast.
- *  \param[in,out] output    Output FP8 tensor.
- *  \param[in]     stream    CUDA stream used for the operation.
+ *  \param[in]     input            Input tensor to be cast.
+ *  \param[in,out] output           Output FP8 tensor.
+ *  \param[in]     stream           CUDA stream used for the operation.
+ *  \param[in,out] scaling_factors  MXFP8 Scaling factors of E8M0 type.
  */
-void nvte_fp8_quantize(const NVTETensor input, NVTETensor output, cudaStream_t stream);
+void nvte_fp8_quantize(const NVTETensor input, NVTETensor output, cudaStream_t stream,
+                       NVTETensor scaling_factors = nullptr);
 
 /*! \brief Cast tensor from FP8.
  *

@@ -187,6 +187,66 @@ class Tensor {
   std::unique_ptr<unsigned char[]> scale_inv_cpu_data_;
 };
 
+template <typename T>
+struct Numeric_Traits {
+    static constexpr double minSubnorm = 1.0;
+    static constexpr double maxSubnorm = 1.0;
+    static constexpr double minNorm    = 1.0;
+    static constexpr double maxNorm    = 1.0;
+    static constexpr double artifInf   = 1.0;
+};
+
+template <>
+struct Numeric_Traits<fp8e4m3> {
+    static constexpr double minSubnorm = 1.0   / static_cast<double>(1 << 9);   // std::pow(2.0, -9.0);
+    static constexpr double maxSubnorm = 0.875 / static_cast<double>(1 << 6);   // std::pow(2.0, -6.0);
+    static constexpr double minNorm    = 1.0   / static_cast<double>(1 << 6);   // std::pow(2.0, -6.0);
+    static constexpr double maxNorm    = 448.0;
+    static constexpr double artifInf   = 10.0 * maxNorm;                        // artificial Infinity
+};
+
+template <>
+struct Numeric_Traits<fp8e5m2> {
+    static constexpr double minSubnorm = 1.0  / static_cast<double>(1 << 16);   // std::pow(2.0, -16.0);
+    static constexpr double maxSubnorm = 0.75 / static_cast<double>(1 << 14);   // std::pow(2.0, -14.0);
+    static constexpr double minNorm    = 1.0  / static_cast<double>(1 << 14);   // std::pow(2.0, -14.0);
+    static constexpr double maxNorm    = 57344.0;
+    static constexpr double artifInf   = 10.0 * maxNorm;                        // artificial Infinity
+};
+
+template <>
+struct Numeric_Traits<fp32> {
+    static constexpr double minSubnorm = std::numeric_limits<fp32>::denorm_min();   // std::pow(2.0, -149.0);
+    static constexpr double maxSubnorm = std::numeric_limits<fp32>::min()
+                                         - std::numeric_limits<fp32>::denorm_min(); // minNormalized - minDenormalized
+    static constexpr double minNorm    = std::numeric_limits<fp32>::min();          // std::pow(2.0, -126.0);
+    static constexpr double maxNorm    = std::numeric_limits<fp32>::max();          // (1 - pow(2, -24)) * pow(2, 128)
+    static constexpr double artifInf   = std::numeric_limits<fp32>::infinity();
+};
+
+template <typename T>
+struct Quantized_Limits {
+    static constexpr double ranges[]  = {
+        0.0,
+        Numeric_Traits<T>::minNorm,
+        Numeric_Traits<T>::maxNorm,
+        Numeric_Traits<T>::artifInf
+    };
+    static constexpr inline fp32 max() { return static_cast<fp32>(Numeric_Traits<T>::maxNorm); }
+    static constexpr inline fp32 max_reciprocal() { return static_cast<fp32>(1.0 / max()); }
+};
+
+// Input data filling cases
+// Considering normal and subnormal magnitudes of E4M3 and E5M2 formats
+// with nearest to even rounding per OFP8 specification
+enum InputsFillCase {
+    zero_to_minNorm             = 0,    // [0, min_normal)
+    minNorm_to_maxNorm          = 1,    // [min_normal, max_normal)
+    maxNorm_to_inf              = 2,    // [max_normal, inf)
+    zeros                       = 3,    // {0}
+    uniform                     = 4,    // std::uniform_real_distribution<> dis(-2.0, 1.0)
+};
+
 size_t typeToSize(DType type);
 size_t product(const NVTEShape &shape);
 
@@ -202,12 +262,17 @@ void compareResults(const std::string &name, const uint8_t *test, const uint8_t 
 std::pair<double, double> getTolerances(const DType type);
 
 void fillUniform(Tensor *t);
+
+template <typename InputEncoding>
+void fillCase(Tensor *t, const InputsFillCase fill_case);
+
 void setRandomScale(Tensor *t);
 void setRandomScaleInv(Tensor *t);
 
 constexpr int THREADS_PER_WARP = 32;
 
 const std::string &typeName(DType type);
+const std::string& caseName(InputsFillCase type);
 
 extern std::vector<DType> all_fp_types;
 
@@ -263,6 +328,50 @@ bool isFp8Type(DType type);
         case DType::kFloat8E5M2: \
             { \
                 using type = fp8e5m2; \
+                {__VA_ARGS__} \
+            } \
+        break; \
+        default: \
+            NVTE_ERROR("Invalid type."); \
+    }
+
+#define TRANSFORMER_ENGINE_TYPE_SWITCH_FP8_ONLY(dtype, type, ...) \
+    switch (dtype) { \
+        using namespace transformer_engine; \
+        case DType::kFloat8E4M3: \
+            { \
+                using type = fp8e4m3; \
+                {__VA_ARGS__} \
+            } \
+        break; \
+        case DType::kFloat8E5M2: \
+            { \
+                using type = fp8e5m2; \
+                {__VA_ARGS__} \
+            } \
+        break; \
+        default: \
+            NVTE_ERROR("Invalid type."); \
+    }
+
+#define TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(dtype, type, ...) \
+    switch (dtype) { \
+        using namespace transformer_engine; \
+        case DType::kFloat32: \
+            { \
+                using type = float; \
+                {__VA_ARGS__} \
+            } \
+        break; \
+        case DType::kFloat16: \
+            { \
+                using type = fp16; \
+                {__VA_ARGS__} \
+            } \
+        break; \
+        case DType::kBFloat16: \
+            { \
+                using type = bf16; \
                 {__VA_ARGS__} \
             } \
         break; \
