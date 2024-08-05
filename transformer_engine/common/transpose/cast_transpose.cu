@@ -266,40 +266,40 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output
             constexpr size_t itype_size = sizeof(InputType);
             constexpr size_t otype_size = sizeof(OutputType);
 
-          // Choose between runtime-compiled or statically-compiled kernel
-          const bool aligned =
-              (row_length % THREADS_PER_WARP == 0 && num_rows % THREADS_PER_WARP == 0);
-          if (aligned && rtc::is_enabled()) {  // Runtime-compiled tuned kernel
-            // Pick kernel config
-            std::vector<KernelConfig> kernel_configs;
-            kernel_configs.reserve(16);
-            const size_t sm_count = static_cast<size_t>(cuda::sm_count());
-            auto add_config = [&](size_t load_size, size_t store_size) {
-              kernel_configs.emplace_back(row_length, num_rows, itype_size, otype_size, load_size,
-                                          store_size, sm_count);
-            };
-            add_config(8, 8);
-            add_config(4, 8);
-            add_config(8, 4);
-            add_config(4, 4);
-            add_config(2, 8);
-            add_config(8, 2);
-            add_config(2, 4);
-            add_config(4, 2);
-            add_config(2, 2);
-            add_config(1, 8);
-            add_config(8, 1);
-            add_config(1, 4);
-            add_config(4, 1);
-            add_config(1, 2);
-            add_config(2, 1);
-            add_config(1, 1);
-            const auto &kernel_config =
-                *std::min_element(kernel_configs.begin(), kernel_configs.end());
-            NVTE_CHECK(kernel_config.valid, "invalid kernel config");
-            const size_t load_size = kernel_config.load_size;
-            const size_t store_size = kernel_config.store_size;
-            const size_t num_blocks = kernel_config.num_blocks;
+            // Choose between runtime-compiled or statically-compiled kernel
+            const bool aligned =
+                (row_length % THREADS_PER_WARP == 0 && num_rows % THREADS_PER_WARP == 0);
+            if (aligned && rtc::is_enabled()) {  // Runtime-compiled tuned kernel
+              // Pick kernel config
+              std::vector<KernelConfig> kernel_configs;
+              kernel_configs.reserve(16);
+              const size_t sm_count = static_cast<size_t>(cuda::sm_count());
+              auto add_config = [&](size_t load_size, size_t store_size) {
+                kernel_configs.emplace_back(row_length, num_rows, itype_size, otype_size, load_size,
+                                            store_size, sm_count);
+              };
+              add_config(8, 8);
+              add_config(4, 8);
+              add_config(8, 4);
+              add_config(4, 4);
+              add_config(2, 8);
+              add_config(8, 2);
+              add_config(2, 4);
+              add_config(4, 2);
+              add_config(2, 2);
+              add_config(1, 8);
+              add_config(8, 1);
+              add_config(1, 4);
+              add_config(4, 1);
+              add_config(1, 2);
+              add_config(2, 1);
+              add_config(1, 1);
+              const auto &kernel_config =
+                  *std::min_element(kernel_configs.begin(), kernel_configs.end());
+              NVTE_CHECK(kernel_config.valid, "invalid kernel config");
+              const size_t load_size = kernel_config.load_size;
+              const size_t store_size = kernel_config.store_size;
+              const size_t num_blocks = kernel_config.num_blocks;
 
               // Compile NVRTC kernel if needed and launch
               auto &rtc_manager = rtc::KernelManager::instance();
