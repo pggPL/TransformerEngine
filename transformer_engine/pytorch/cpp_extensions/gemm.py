@@ -24,8 +24,8 @@ def fp8_gemm(
     B_dtype: tex.DType,
     out_dtype: torch.dtype,
     workspace: torch.Tensor,
-    A_scaling_mode: Tuple = (-1, -1, 1),
-    B_scaling_mode: Tuple = (-1, -1, 1),
+    A_scaling_mode: List = [-1, -1, 1],
+    B_scaling_mode: List = [-1, -1, 1],
     gelu: bool = False,
     accumulate: bool = False,
     out: Optional[torch.Tensor] = None,
@@ -128,7 +128,7 @@ def fp8_gemm(
             args = tuple(args + (extra_output_tensor,))
         elif ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_AG_P2P:
             assert (
-                A_scaling_mode == (-1, -1, 1) and B_scaling_mode == (-1, -1, 1)
+                A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [-1, -1, 1]
             ), "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_ag_p2p
             extra_output_tensor = (
@@ -155,7 +155,7 @@ def fp8_gemm(
             args = tuple(args + (extra_output_tensor,))
         elif ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_RS:
             assert (
-                A_scaling_mode == (-1, -1, 1) and B_scaling_mode == (-1, -1, 1)
+                A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [-1, -1, 1]
             ), "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_rs
             assert extra_output_tensor is not None, "ATOMIC_GEMM_RS requires extra output tensor"
@@ -168,7 +168,7 @@ def fp8_gemm(
             )
         elif ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_RS_P2P:
             assert (
-                A_scaling_mode == (-1, -1, 1) and B_scaling_mode == (-1, -1, 1)
+                A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [-1, -1, 1]
             ), "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_rs_p2p
             assert (
@@ -243,13 +243,13 @@ def gemm(
         empty_tensor,
         fp8_index,
         input_dtype,
-        (-1, -1, 1),  # A_scaling_mode
+        [-1, -1, 1],  # A_scaling_mode
         transa,
         B,
         empty_tensor,
         fp8_index,
         input_dtype,
-        (-1, -1, 1),  # B_scaling_mode
+        [-1, -1, 1],  # B_scaling_mode
         transb,
         out,
         empty_tensor,  # out_scale
@@ -354,13 +354,13 @@ def grouped_gemm(
         empty_tensor,
         0,  # A_offset
         input_dtype,
-        (-1, -1, 1),  # A_scaling_mode
+        [-1, -1, 1],  # A_scaling_mode
         transa,
         B,
         empty_tensor,
         0,  # B_offset
         input_dtype,
-        (-1, -1, 1),  # B_scaling_mode
+        [-1, -1, 1],  # B_scaling_mode
         transb,
         out,
         0,  # out_offset
@@ -392,8 +392,8 @@ def fp8_grouped_gemm(
     out: List[torch.Tensor],
     out_dtype: torch.dtype,
     workspaces: List[torch.Tensor],
-    A_scaling_mode: Tuple = (-1, -1, 1),
-    B_scaling_mode: Tuple = (-1, -1, 1),
+    A_scaling_mode: List = [-1, -1, 1],
+    B_scaling_mode: List = [-1, -1, 1],
     out_offset: Optional[int] = None,
     fp8_meta_tensor: tex.FP8TensorMeta = None,
     gelu: bool = False,

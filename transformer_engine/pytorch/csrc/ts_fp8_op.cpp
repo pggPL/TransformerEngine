@@ -238,8 +238,8 @@ at::Tensor srelu_ts(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Ten
 
 at::Tensor te_gemm_ts(
   at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor, int64_t A_type,
-  std::vector<int> A_scaling_mode, int64_t transa, at::Tensor B, at::Tensor B_scale_inverse,
-  int64_t B_fp8_tensor, int64_t B_type, std::vector<int> B_scaling_mode, int64_t transb,
+  std::vector<int64_t> A_scaling_mode, int64_t transa, at::Tensor B, at::Tensor B_scale_inverse,
+  int64_t B_fp8_tensor, int64_t B_type, std::vector<int64_t> B_scaling_mode, int64_t transb,
   at::Tensor D, at::Tensor D_scale, int64_t D_type, at::Tensor D_amax, at::Tensor bias,
   int64_t bias_type, at::Tensor pre_gelu_out, int64_t grad, at::Tensor workspace,
   int64_t workspaceSize, int64_t accumulate, int64_t use_split_accumulator) {
@@ -261,20 +261,12 @@ at::Tensor te_gemm_ts(
   const int sm_count = transformer_engine::cuda::sm_count();
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
-  auto dimA = A_scaling_mode.size();
-  NVTE_CHECK(dimA == 3, "Incorrect size ", dimA, " for scaling mode.");
-  auto dimB = B_scaling_mode.size();
-  NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
-
-  NVTEScalingMode nvte_scaling_modeA = {A_scaling_mode[0], A_scaling_mode[1], A_scaling_mode[2]};
-  NVTEScalingMode nvte_scaling_modeB = {B_scaling_mode[0], B_scaling_mode[1], B_scaling_mode[2]};
-
   if (A_scale_inverse.numel()) A_scale_inverse = A_scale_inverse[A_fp8_tensor];
 
   if (B_scale_inverse.numel()) B_scale_inverse = B_scale_inverse[B_fp8_tensor];
 
-  te_gemm(A, A_scale_inverse, A_type_arg, nvte_scaling_modeA, transa_arg, B, B_scale_inverse,
-          B_type_arg, nvte_scaling_modeB, transb_arg, D, D_scale, D_type_arg, D_amax, bias,
+  te_gemm(A, A_scale_inverse, A_type_arg, A_scaling_mode, transa_arg, B, B_scale_inverse,
+          B_type_arg, B_scaling_mode, transb_arg, D, D_scale, D_type_arg, D_amax, bias,
           bias_type_arg, pre_gelu_out, grad_arg, workspace, workspaceSize_arg, accumulate_arg,
           use_split_accumulator_arg, num_math_sms);
   return D;
@@ -282,8 +274,8 @@ at::Tensor te_gemm_ts(
 
 std::vector<at::Tensor> te_grouped_gemm_ts(
     std::vector<at::Tensor> A, at::Tensor A_scale_inverse, int64_t A_offset, int64_t A_type,
-    std::vector<int> A_scaling_mode, int64_t transa, std::vector<at::Tensor> B,
-    at::Tensor B_scale_inverse, int64_t B_offset, std::vector<int> B_scaling_mode, int64_t B_type,
+    std::vector<int64_t> A_scaling_mode, int64_t transa, std::vector<at::Tensor> B,
+    at::Tensor B_scale_inverse, int64_t B_offset, std::vector<int64_t> B_scaling_mode, int64_t B_type,
     int64_t transb, std::vector<at::Tensor> D, int64_t D_offset, at::Tensor D_scale,
     int64_t D_type, at::Tensor D_amax, std::vector<at::Tensor> bias, int64_t bias_type,
     std::vector<at::Tensor> pre_gelu_out, int64_t grad, std::vector<at::Tensor> workspace,
@@ -306,16 +298,8 @@ std::vector<at::Tensor> te_grouped_gemm_ts(
   const int sm_count = transformer_engine::cuda::sm_count();
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
-  auto dimA = A_scaling_mode.size();
-  NVTE_CHECK(dimA == 3, "Incorrect size ", dimA, " for scaling mode.");
-  auto dimB = B_scaling_mode.size();
-  NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
-
-  NVTEScalingMode nvte_scaling_modeA = {A_scaling_mode[0], A_scaling_mode[1], A_scaling_mode[2]};
-  NVTEScalingMode nvte_scaling_modeB = {B_scaling_mode[0], B_scaling_mode[1], B_scaling_mode[2]};
-
-  te_grouped_gemm(A, A_scale_inverse, A_offset, A_type_arg, nvte_scaling_modeA, transa_arg, B,
-                  B_scale_inverse, B_offset, B_type_arg, nvte_scaling_modeB, transb_arg, D,
+  te_grouped_gemm(A, A_scale_inverse, A_offset, A_type_arg, A_scaling_mode, transa_arg, B,
+                  B_scale_inverse, B_offset, B_type_arg, B_scaling_mode, transb_arg, D,
                   D_offset, D_scale, D_type_arg, D_amax, bias, bias_type_arg, pre_gelu_out,
                   grad_arg, workspace, workspaceSize_arg, accumulate_arg, use_split_accumulator_arg,
                   num_math_sms);
