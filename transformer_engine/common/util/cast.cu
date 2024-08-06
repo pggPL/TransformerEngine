@@ -228,11 +228,12 @@ cast_mxfp8_kernel(const __grid_constant__ CUtensorMap tensor_map_input,
                 const int chunk_stage_offset_y = chunk_offset_y + prefetch_stage * STAGE_DIM_Y;
                 const int chunk_stage_offset_x = chunk_offset_x;
                 // Initiate bulk tensor copy
-                cp_async_bulk_tensor_2d_global_to_shared((uint64_t*)&in_sh[prefetch_stage],
-                                                         (uint64_t*)&tensor_map_input,
-                                                         chunk_stage_offset_x,
-                                                         chunk_stage_offset_y,
-                                                         &mbar[prefetch_stage]);
+                cp_async_bulk_tensor_2d_global_to_shared(
+                    reinterpret_cast<uint64_t*>(&in_sh[prefetch_stage]),
+                    reinterpret_cast<const uint64_t*>(&tensor_map_input),
+                    chunk_stage_offset_x,
+                    chunk_stage_offset_y,
+                    &mbar[prefetch_stage]);
 
                 // Arrive on the barrier and tell how many bytes are expected to come in.
                 mbarrier_arrive_expect_tx(&mbar[prefetch_stage], shmem_buff_size);
@@ -262,11 +263,12 @@ cast_mxfp8_kernel(const __grid_constant__ CUtensorMap tensor_map_input,
                     const int chunk_it_offset_y = chunk_offset_y + next_it * STAGE_DIM_Y;
                     const int chunk_it_offset_x = chunk_offset_x;
                     // Initiate bulk tensor copy
-                    cp_async_bulk_tensor_2d_global_to_shared((uint64_t*)&in_sh[next_stage],
-                                                             (uint64_t*)&tensor_map_input,
-                                                             chunk_it_offset_x,
-                                                             chunk_it_offset_y,
-                                                             &mbar[next_it]);
+                    cp_async_bulk_tensor_2d_global_to_shared(
+                        reinterpret_cast<uint64_t*>(&in_sh[next_stage]),
+                        reinterpret_cast<const uint64_t*>(&tensor_map_input),
+                        chunk_it_offset_x,
+                        chunk_it_offset_y,
+                        &mbar[next_it]);
 
                     // Arrive on the barrier and tell how many bytes are expected to come in.
                     mbarrier_arrive_expect_tx(&mbar[next_it], shmem_buff_size);
@@ -321,10 +323,11 @@ cast_mxfp8_kernel(const __grid_constant__ CUtensorMap tensor_map_input,
             if (is_master_thread) {
                 const int chunk_it_offset_y = chunk_offset_y + it * STAGE_DIM_Y;
                 const int chunk_it_offset_x = chunk_offset_x;
-                cp_async_bulk_tensor_2d_shared_to_global((uint64_t*)&tensor_map_output,
-                                                         chunk_it_offset_x,
-                                                         chunk_it_offset_y,
-                                                         (uint64_t*)&out_sh[stage]);
+                cp_async_bulk_tensor_2d_shared_to_global(
+                    reinterpret_cast<const uint64_t*>(&tensor_map_output),
+                    chunk_it_offset_x,
+                    chunk_it_offset_y,
+                    reinterpret_cast<uint64_t*>(&out_sh[stage]));
                 // Create a "bulk async-group" out of the previous bulk copy operation.
                 cp_async_bulk_commit_group();
 

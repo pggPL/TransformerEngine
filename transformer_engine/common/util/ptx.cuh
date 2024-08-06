@@ -50,7 +50,7 @@ fence_mbarrier_init_release_cluster() {
 // global -> shared::cluster
 __device__ __forceinline__ void
 cp_async_bulk_tensor_2d_global_to_shared(uint64_t* dst_shmem,
-                                         uint64_t* tensor_map_ptr,
+                                         const uint64_t* tensor_map_ptr,
                                          const uint32_t offset_x,
                                          const uint32_t offset_y,
                                          uint64_t* mbar) {
@@ -74,7 +74,7 @@ cp_async_bulk_tensor_2d_global_to_shared(uint64_t* dst_shmem,
 // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cp-async-bulk-tensor
 // shared::cta -> global
 __device__ __forceinline__ void
-cp_async_bulk_tensor_2d_shared_to_global(uint64_t* tensor_map_ptr,
+cp_async_bulk_tensor_2d_shared_to_global(const uint64_t* tensor_map_ptr,
                                          const uint32_t offset_x,
                                          const uint32_t offset_y,
                                          uint64_t* src_shmem) {

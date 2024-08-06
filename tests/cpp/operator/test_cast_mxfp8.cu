@@ -163,8 +163,6 @@ std::vector<std::pair<size_t, size_t>> block_sizes = {
     // {128, 128}
 };
 
-}  // namespace
-
 std::vector<InputsFillCase> input_scenarios = {
     InputsFillCase::uniform,
     InputsFillCase::zeros,
@@ -172,6 +170,8 @@ std::vector<InputsFillCase> input_scenarios = {
     InputsFillCase::minNorm_to_maxNorm,
     InputsFillCase::maxNorm_to_inf
 };
+
+}  // namespace
 
 class CastMXFP8TestSuite : public ::testing::TestWithParam<std::tuple<std::pair<size_t, size_t>,
                                                                       std::pair<size_t, size_t>,
@@ -205,9 +205,7 @@ INSTANTIATE_TEST_SUITE_P(
         ::testing::ValuesIn(matrix_sizes),
         ::testing::ValuesIn(block_sizes),
         ::testing::Values(DType::kFloat32, DType::kBFloat16, DType::kFloat16),
-        ::testing::Values(DType::kBFloat16),
         ::testing::Values(DType::kFloat8E4M3, DType::kFloat8E5M2),
-        ::testing::Values(DType::kFloat8E4M3),
         ::testing::ValuesIn(input_scenarios)),
     [](const testing::TestParamInfo<CastMXFP8TestSuite::ParamType>& info) {
         std::string name = std::to_string(std::get<0>(info.param).first) + "X" +
