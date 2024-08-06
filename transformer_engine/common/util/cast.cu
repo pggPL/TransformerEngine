@@ -502,12 +502,24 @@ __device__ inline fp32 dequantize_func(fp32 value, const DequantizeParam &param)
 
 }  // namespace detail
 
-bool is_supported_on_CC_1000(const NVTEScalingMode& scaling_mode) {
+const static int32_t deviceComputeCapability = [](){
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0);
+    return 10 * deviceProp.major + deviceProp.minor;
+}();
+
+bool is_supported_on_CC_1000(const Tensor *scaling_factors) {
+    if (deviceComputeCapability < 100) {
+        return false;
+    }
+    if (scaling_factors == nullptr) {
+        return false;
+    }
+    const NVTEScalingMode& scaling_mode = scaling_factors->scaling_mode;
     const bool is_shape_supported = (scaling_mode.y == MXFP8_BLOCK_DIM_Y)
                                     && (scaling_mode.x == MXFP8_BLOCK_DIM_X)
                                     && (scaling_mode.delayed_scaling == 0);
-    constexpr bool is_CC_1000 = true;
-    return is_shape_supported && is_CC_1000;
+    return is_shape_supported;
 }
 
 void fp8_quantize(const Tensor &input, Tensor *output, cudaStream_t stream, Tensor *scaling_factors) {
@@ -519,9 +531,7 @@ void fp8_quantize(const Tensor &input, Tensor *output, cudaStream_t stream, Tens
   NVTE_CHECK(is_fp8_dtype(output->data.dtype), "Output must have FP8 type.");
   NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
 
-  const bool supported_on_CC_1000 = is_supported_on_CC_1000(scaling_factors->scaling_mode);
-  if (supported_on_CC_1000) {
-      NVTE_CHECK(scaling_factors != nullptr, "Scaling tensor must be allocated");
+  if (is_supported_on_CC_1000(scaling_factors)) {
       cast_mxfp8(input, output, scaling_factors, stream);
   } else if (is_delayed_tensor_scaling(output->scaling_mode)) {
     const size_t N = product(input.data.shape);

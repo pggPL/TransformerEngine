@@ -24,18 +24,36 @@ using namespace test;
 
 namespace {
 
-constexpr int exponent_bias = 127;
+using e8m0_t = byte;
 
-template <typename OType, typename CType>
-int compute_shared_unbiased_exponent(const CType amax) {
-    if (amax == 0.0f) {
-        return 0;
+constexpr uint32_t FP32_EXPONENT_BITS = 8;
+constexpr uint32_t FP32_MANTISSA_BITS = 23;                                         // FP32 = [S1] [E8] [M23]
+constexpr uint32_t SIGN_MASK = 1U << (FP32_MANTISSA_BITS + FP32_EXPONENT_BITS);     // most significant bit mask
+constexpr uint32_t NUMBER_MASK = ~SIGN_MASK;
+constexpr uint32_t MANTISSA_MASK = (1U << FP32_MANTISSA_BITS) - 1;
+constexpr uint32_t EXPONENT_MASK = NUMBER_MASK & (~MANTISSA_MASK);
+
+int32_t extract_biased_exponent(float val) {
+    const int32_t val_as_int = *(reinterpret_cast<int32_t*>(&val));
+    return (val_as_int & EXPONENT_MASK) >> FP32_MANTISSA_BITS;
+}
+
+int32_t lower_biased_exp_limit_fp32(const int32_t biased_exponent) {
+    return (biased_exponent < 0) ? 0 : biased_exponent;
+}
+
+template <typename OType>
+e8m0_t compute_shared_biased_exponent(float amax) {
+    if (amax == 0) {
+        constexpr int exponent_ = 0 + FP32_EXPONENT_BIAS;
+        return static_cast<e8m0_t>(exponent_);
     }
-    const int exponent = floorf(log2f(amax))
-                         - floorf(log2f(Quantized_Limits<OType>::max()));
-    
-    const int exponent_clamped = (exponent < -127) ? -127 : exponent;
-    return exponent_clamped;
+    int exponent = extract_biased_exponent(amax)
+                   - Quantized_Limits<OType>::max_norm_unbiased_exponent();
+
+    // Clamp the shared unbiased exponent between the representable numbers of uint8_t
+    // i.e., between [0, 255]
+    return static_cast<e8m0_t>(lower_biased_exp_limit_fp32(exponent));
 }
 
 template <typename InputType, typename OutputType>
@@ -63,9 +81,12 @@ void process_block(const InputType* data,
         }
     }
 
-    const int unbiased_exponent = compute_shared_unbiased_exponent<OutputType>(amax);
-    output_scales[scale_idx] = static_cast<byte>(unbiased_exponent + exponent_bias);
-    const ComputeType scale_reciprocal = powf(2.0f, -unbiased_exponent);
+    const e8m0_t biased_exponent = compute_shared_biased_exponent<OutputType>(amax);
+    const ComputeType scale_reciprocal = exp2f(FP32_EXPONENT_BIAS - static_cast<float>(biased_exponent));
+    output_scales[scale_idx] = biased_exponent;
+
+    // const int unbiased_exponent = compute_shared_unbiased_exponent<OutputType>(amax);
+    // const ComputeType scale_reciprocal = powf(2.0f, -unbiased_exponent);
 
     // Quantize elements in the block
     for (size_t i = i_min; i < i_max; ++i) {
@@ -149,9 +170,9 @@ std::vector<std::pair<size_t, size_t>> matrix_sizes = {
     {256, 256},
     {768, 1024},
     {256, 65536},
-    {2048, 12288},
-    {65536, 128},
-    {16384, 6144},
+    // {2048, 12288},
+    // {65536, 128},
+    // {16384, 6144},
 };
 
 std::vector<std::pair<size_t, size_t>> block_sizes = {

@@ -187,6 +187,8 @@ class Tensor {
   std::unique_ptr<unsigned char[]> scale_inv_cpu_data_;
 };
 
+constexpr uint32_t FP32_EXPONENT_BIAS = 127;
+
 template <typename T>
 struct Numeric_Traits {
     static constexpr double minSubnorm = 1.0;
@@ -194,6 +196,7 @@ struct Numeric_Traits {
     static constexpr double minNorm    = 1.0;
     static constexpr double maxNorm    = 1.0;
     static constexpr double artifInf   = 1.0;
+    static constexpr int maxBiasedExponent = 1;
 };
 
 template <>
@@ -203,6 +206,8 @@ struct Numeric_Traits<fp8e4m3> {
     static constexpr double minNorm    = 1.0   / static_cast<double>(1 << 6);   // std::pow(2.0, -6.0);
     static constexpr double maxNorm    = 448.0;
     static constexpr double artifInf   = 10.0 * maxNorm;                        // artificial Infinity
+    static constexpr int maxBiasedExponentAsFP32 = 8 + FP32_EXPONENT_BIAS;
+    static constexpr int maxUnbiasedExponentAsFP32 = 8;
 };
 
 template <>
@@ -212,6 +217,8 @@ struct Numeric_Traits<fp8e5m2> {
     static constexpr double minNorm    = 1.0  / static_cast<double>(1 << 14);   // std::pow(2.0, -14.0);
     static constexpr double maxNorm    = 57344.0;
     static constexpr double artifInf   = 10.0 * maxNorm;                        // artificial Infinity
+    static constexpr int maxBiasedExponentAsFP32 = 15 + FP32_EXPONENT_BIAS;
+    static constexpr int maxUnbiasedExponentAsFP32 = 15;
 };
 
 template <>
@@ -222,6 +229,8 @@ struct Numeric_Traits<fp32> {
     static constexpr double minNorm    = std::numeric_limits<fp32>::min();          // std::pow(2.0, -126.0);
     static constexpr double maxNorm    = std::numeric_limits<fp32>::max();          // (1 - pow(2, -24)) * pow(2, 128)
     static constexpr double artifInf   = std::numeric_limits<fp32>::infinity();
+    static constexpr int maxBiasedExponentAsFP32 = 255;
+    static constexpr int maxUnbiasedExponentAsFP32 = 128;
 };
 
 template <typename T>
@@ -234,6 +243,8 @@ struct Quantized_Limits {
     };
     static constexpr inline fp32 max() { return static_cast<fp32>(Numeric_Traits<T>::maxNorm); }
     static constexpr inline fp32 max_reciprocal() { return static_cast<fp32>(1.0 / max()); }
+    static constexpr inline int max_norm_biased_exponent() { return Numeric_Traits<T>::maxBiasedExponentAsFP32; }
+    static constexpr inline int max_norm_unbiased_exponent() { return Numeric_Traits<T>::maxUnbiasedExponentAsFP32; }
 };
 
 // Input data filling cases
