@@ -44,7 +44,7 @@ class ScalingMode : public NVTEScalingMode {
     delayed_scaling = true;
   }
 
-  ScalingMode(NVTEScalingMode &other) {   // NOLINT(*)
+  ScalingMode(const NVTEScalingMode &other) {
     x = other.x;
     y = other.y;
     delayed_scaling = other.delayed_scaling;
