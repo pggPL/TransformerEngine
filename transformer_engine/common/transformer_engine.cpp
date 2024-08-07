@@ -118,6 +118,21 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
   }
 }
 
+bool is_columnwise_block_scaling(const Tensor *t) {
+  ScalingMode mode = t->scaling_mode;
+  auto block_size = mode.x;
+  bool columnwise_block_scaling = mode.y == 1 && !(mode.delayed_scaling);
+  if (columnwise_block_scaling) {
+    auto nelem = t->numel();
+    NVTE_CHECK(nelem % block_size == 0, "Incorrect number of inputs elements ", nelem,
+               " for ", block_size, " block scaling.");
+  }
+  if (block_size != 32) {
+    NVTE_ERROR("Block size not supported.");
+  }
+  return columnwise_block_scaling;
+}
+
 }  // namespace transformer_engine
 
 NVTETensor nvte_create_tensor(void *dptr, const NVTEShape shape, const NVTEDType dtype, float *amax,

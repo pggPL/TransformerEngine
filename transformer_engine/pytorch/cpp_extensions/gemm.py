@@ -13,6 +13,18 @@ from ..utils import assert_dim_for_fp8_exec
 __all__ = ["gemm", "fp8_gemm", "grouped_gemm", "fp8_grouped_gemm"]
 
 
+# TODO(ksivamani): only for debug; to remove.
+import os
+_DUMMY_BLOCK_SCALING = bool(int(os.getenv("_NVTE_MXFP8_GEMM_DEBUG", "0")))
+_DUMMY_BLOCK_SCALING_SIZE = 32
+
+def _get_blocking_scaling_scale_inv(t, t_scale_inv):
+    """Dummy func to convert block scaling factors to correct format."""
+    assert t.numel() % _DUMMY_BLOCK_SCALING_SIZE == 0, f"Wrong nelems for input ({t.numel()})."
+    t_scale_inv = t_scale_inv.unsqueeze(1).expand(t_scale_inv.shape[0], t.numel() // _DUMMY_BLOCK_SCALING_SIZE)
+    return t_scale_inv
+
+
 def fp8_gemm(
     A: torch.Tensor,
     A_scale_inv: torch.Tensor,
@@ -66,6 +78,15 @@ def fp8_gemm(
     bias_dtype = TE_DType[bias_dtype]
 
     out_dtype = TE_DType[out.dtype] if D_dtype is None else D_dtype
+
+    if _DUMMY_BLOCK_SCALING:
+        assert (
+            A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [-1, -1, 1]
+        ), "Wrong mode for dummy block scaling."
+        A_scaling_mode = [32, 1, 0]
+        B_scaling_mode = [32, 1, 0]
+        A_scale_inv = _get_blocking_scaling_scale_inv(A, A_scale_inv)
+        B_scale_inv = _get_blocking_scaling_scale_inv(B, B_scale_inv)
 
     args = (
         A,

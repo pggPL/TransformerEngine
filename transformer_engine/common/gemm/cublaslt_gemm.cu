@@ -57,9 +57,7 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
                  int math_sm_count, int m_split, int n_split, bool gemm_producer,
                  const Tensor *inputCounter, cudaStream_t stream) {
   void *A = inputA->data.dptr;
-  void *A_scale_inverse = inputA->scale_inv.dptr;
   void *B = inputB->data.dptr;
-  void *B_scale_inverse = inputB->scale_inv.dptr;
   void *C = outputD->data.dptr;
   void *D = outputD->data.dptr;
   void *D_scale = outputD->scale.dptr;
@@ -79,9 +77,9 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   const cudaDataType_t D_type = get_cuda_dtype(outputD->data.dtype);
   const cudaDataType_t bias_type = get_cuda_dtype(inputBias->data.dtype);
 
-  NVTE_CHECK(!is_fp8_dtype(inputA->data.dtype) || A_scale_inverse != nullptr,
+  NVTE_CHECK(!is_fp8_dtype(inputA->data.dtype) || inputA->scale_inv.dptr != nullptr,
              "FP8 input to GEMM requires inverse of scale!");
-  NVTE_CHECK(!is_fp8_dtype(inputB->data.dtype) || B_scale_inverse != nullptr,
+  NVTE_CHECK(!is_fp8_dtype(inputB->data.dtype) || inputB->scale_inv.dptr != nullptr,
              "FP8 input to GEMM requires inverse of scale!");
 
   // check consistency of arguments:
@@ -144,27 +142,31 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
     const int8_t fastAccuMode = (use_split_accumulator) ? 0 : 1;
     NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_FAST_ACCUM,
                                                      &fastAccuMode, sizeof(fastAccuMode)));
-    NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
-                                                     CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
-                                                     &A_scale_inverse, sizeof(A_scale_inverse)));
-    NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
-                                                     CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
-                                                     &B_scale_inverse, sizeof(B_scale_inverse)));
 
     // Scaling factors.
     cublasLtMatmulMatrixScale_t scaling_mode;
     if ((is_delayed_tensor_scaling(inputA->scaling_mode) &&
          is_delayed_tensor_scaling(inputB->scaling_mode))) {
+      void *A_scale_inverse = inputA->scale_inv.dptr;
+      void *B_scale_inverse = inputB->scale_inv.dptr;
+      NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
+                                                       CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
+                                                       &A_scale_inverse, sizeof(A_scale_inverse)));
+      NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
+                                                       CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
+                                                       &B_scale_inverse, sizeof(B_scale_inverse)));
       scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR_32F;
-    } else if ((is_columnwise_block32_scaling(inputA->scaling_mode) &&
-                is_columnwise_block32_scaling(inputB->scaling_mode))) {
+    } else if ((is_columnwise_block_scaling(inputA) &&
+                is_columnwise_block_scaling(inputB))) {
+      __nv_fp8_e8m0 *A_scale_inverse = reinterpret_cast<__nv_fp8_e8m0 *>(inputA->scale_inv.dptr);
+      __nv_fp8_e8m0 *B_scale_inverse = reinterpret_cast<__nv_fp8_e8m0 *>(inputB->scale_inv.dptr);
+      NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
+                                                       CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
+                                                       &A_scale_inverse, sizeof(A_scale_inverse)));
+      NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
+                                                       CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
+                                                       &B_scale_inverse, sizeof(B_scale_inverse)));
       scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0;
-      NVTE_CHECK((inputA->numel() % 32 == 0) &&
-                 (inputA->numel() / 32 == (inputA->scale_inv).numel()),
-                 "Incorrect number of block scaling factors for gemm inputA.");
-      NVTE_CHECK((inputB->numel() % 32 == 0) &&
-                 (inputB->numel() / 32 == (inputB->scale_inv).numel()),
-                 "Incorrect number of block scaling factors for gemm inputB.");
     } else {
       NVTE_ERROR("Not implemented scaling modes: " + to_string(inputA->scaling_mode) + " and  " +
       to_string(inputB->scaling_mode) + ".");

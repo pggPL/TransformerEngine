@@ -318,9 +318,7 @@ inline bool is_delayed_tensor_scaling(const ScalingMode &mode) {
   return is_tensor_scaling(mode) && mode.delayed_scaling;
 }
 
-inline bool is_columnwise_block32_scaling(const ScalingMode &mode) {
-  return mode.x == 32 && mode.y == 1 && !(mode.delayed_scaling);
-}
+bool is_columnwise_block_scaling(const Tensor *t);
 
 #define NVTE_API_CALL(api_name) \
   transformer_engine::nvtx::NVTXWrapper _##api_name##_nvtx_wrapper(#api_name);
