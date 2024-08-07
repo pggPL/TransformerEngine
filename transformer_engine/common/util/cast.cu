@@ -502,7 +502,7 @@ __device__ inline fp32 dequantize_func(fp32 value, const DequantizeParam &param)
 
 }  // namespace detail
 
-const static int32_t deviceComputeCapability = [](){
+static const int32_t deviceComputeCapability = [](){
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0);
     return 10 * deviceProp.major + deviceProp.minor;

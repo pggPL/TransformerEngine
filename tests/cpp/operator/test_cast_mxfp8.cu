@@ -200,7 +200,20 @@ class CastMXFP8TestSuite : public ::testing::TestWithParam<std::tuple<std::pair<
                                                                       transformer_engine::DType,
                                                                       InputsFillCase>> {};
 
+static const int32_t deviceComputeCapability = [](){
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0);
+    return 10 * deviceProp.major + deviceProp.minor;
+}();
+
+constexpr int32_t blackwellComputeCapability = 100;
+
 TEST_P(CastMXFP8TestSuite, TestCastMXFP8) {
+    // Skip tests for pre-Blackwell architectures
+    if (deviceComputeCapability < blackwellComputeCapability) {
+        GTEST_SKIP();
+    }
+
     using namespace transformer_engine;
     using namespace test;
 
