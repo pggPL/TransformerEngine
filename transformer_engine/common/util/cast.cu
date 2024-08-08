@@ -93,8 +93,8 @@ struct Quantized_Limits {
 constexpr size_t MXFP8_BLOCK_DIM_Y = 1;
 constexpr size_t MXFP8_BLOCK_DIM_X = 32;
 constexpr size_t ELEMS_PER_THREAD = 16;         // along X-axis
-constexpr size_t CHUNK_DIM_Y = 128;
-constexpr size_t CHUNK_DIM_X = 128;
+constexpr size_t CHUNK_DIM_Y = 64;
+constexpr size_t CHUNK_DIM_X = 64;
 constexpr size_t CHUNKS_PER_BLOCK_Y = 1;
 constexpr size_t CHUNKS_PER_BLOCK_X = 1;
 constexpr size_t CHUNKS_PER_BLOCK = CHUNKS_PER_BLOCK_Y * CHUNKS_PER_BLOCK_X;
@@ -442,12 +442,8 @@ void create_tensor_map(CUtensorMap& tensorMap,
     cudaDeviceSynchronize();
 }
 
-void cast_mxfp8(const Tensor& input,
-                Tensor* output_,
-                Tensor* scales_,
-                cudaStream_t stream) {
+void cast_mxfp8(const Tensor& input, Tensor* output_, cudaStream_t stream) {
     Tensor& output = *output_;
-    Tensor& scales = *scales_;
 
     CheckInputTensor(input, "cast_mxfp8_input");
     NVTE_CHECK(input.data.shape.size() == 2, "Input must have 2 dimensions.");
@@ -462,7 +458,9 @@ void cast_mxfp8(const Tensor& input,
 
     const bool isFullTile = (rows % CHUNK_DIM_Y == 0) && (cols % CHUNK_DIM_X == 0);
     NVTE_CHECK(isFullTile, "Only full tiles are supported.");
-    NVTE_CHECK(scales.data.dptr != nullptr, "Scaling tensor must be allocated");
+
+    NVTE_CHECK(output.scale_inv.dptr != nullptr, "Scaling tensor must be allocated");
+    e8m0_t* scales_ptr = reinterpret_cast<e8m0_t*>(output.scale_inv.dptr);
 
     const dim3 block(THREADS_PER_CHUNK);
     const dim3 grid(blocks_X, blocks_Y);
@@ -471,8 +469,6 @@ void cast_mxfp8(const Tensor& input,
         TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output.data.dtype, OType,
             CUtensorMap tensor_map_input{};
             CUtensorMap tensor_map_output{};
-
-            e8m0_t* scales_ptr = reinterpret_cast<e8m0_t*>(scales.data.dptr);
 
             create_tensor_map<IType>(tensor_map_input, input, rows, cols, SHMEM_DIM_Y, SHMEM_DIM_X);
             create_tensor_map<OType>(tensor_map_output, output, rows, cols, SHMEM_DIM_Y, SHMEM_DIM_X);
@@ -508,21 +504,21 @@ static const int32_t deviceComputeCapability = [](){
     return 10 * deviceProp.major + deviceProp.minor;
 }();
 
-bool is_supported_on_CC_1000(const Tensor *scaling_factors) {
+bool is_supported_on_CC_100(const Tensor *output) {
     if (deviceComputeCapability < 100) {
         return false;
     }
-    if (scaling_factors == nullptr) {
+    if (output->scale_inv.dptr == nullptr) {
         return false;
     }
-    const NVTEScalingMode& scaling_mode = scaling_factors->scaling_mode;
-    const bool is_shape_supported = (scaling_mode.y == MXFP8_BLOCK_DIM_Y)
-                                    && (scaling_mode.x == MXFP8_BLOCK_DIM_X)
+    const NVTEScalingMode& scaling_mode = output->scaling_mode;
+    const bool is_shape_supported = (scaling_mode.x == MXFP8_BLOCK_DIM_Y)
+                                    && (scaling_mode.y == MXFP8_BLOCK_DIM_X)
                                     && (scaling_mode.delayed_scaling == 0);
     return is_shape_supported;
 }
 
-void fp8_quantize(const Tensor &input, Tensor *output, cudaStream_t stream, Tensor *scaling_factors) {
+void fp8_quantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
   CheckInputTensor(input, "cast_input");
   CheckOutputTensor(*output, "cast_output");
 
@@ -531,8 +527,8 @@ void fp8_quantize(const Tensor &input, Tensor *output, cudaStream_t stream, Tens
   NVTE_CHECK(is_fp8_dtype(output->data.dtype), "Output must have FP8 type.");
   NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
 
-  if (is_supported_on_CC_1000(scaling_factors)) {
-      cast_mxfp8(input, output, scaling_factors, stream);
+  if (is_supported_on_CC_100(output)) {
+      cast_mxfp8(input, output, stream);
   } else if (is_delayed_tensor_scaling(output->scaling_mode)) {
     const size_t N = product(input.data.shape);
     TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
@@ -579,12 +575,11 @@ void fp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
 
 }  // namespace transformer_engine
 
-void nvte_fp8_quantize(const NVTETensor input, NVTETensor output, cudaStream_t stream,
-                       NVTETensor scaling_factors) {
+void nvte_fp8_quantize(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize);
   using namespace transformer_engine;
   fp8_quantize(*reinterpret_cast<const Tensor *>(input), reinterpret_cast<Tensor *>(output),
-               stream, reinterpret_cast<Tensor *>(scaling_factors));
+               stream);
 }
 
 void nvte_fp8_dequantize(const NVTETensor input, NVTETensor output, cudaStream_t stream) {

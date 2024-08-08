@@ -269,6 +269,8 @@ void compareResults(const std::string &name, const float test, const float ref,
                     double atol = 1e-5, double rtol = 1e-8);
 void compareResults(const std::string &name, const uint8_t *test, const uint8_t *ref,
                     size_t N);
+void compare_e8m0_scaling_factors(const std::string &name, const uint8_t *test, const uint8_t *ref,
+                    size_t N);
 
 std::pair<double, double> getTolerances(const DType type);
 

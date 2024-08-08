@@ -277,6 +277,15 @@ void compareResults(const std::string &name, const uint8_t *test, const uint8_t 
   }
 }
 
+void compare_e8m0_scaling_factors(const std::string &name, const uint8_t *test, const uint8_t *ref,
+                    size_t N) {
+  for (int i = 0; i < N; i++){
+    ASSERT_FALSE(test[i] != ref[i]) << "Error in " << name << std::endl
+      << "Mismatch: " << static_cast<int>(test[i]) << " vs "
+      << static_cast<int>(ref[i]) << " at index " << i;
+  }
+}
+
 std::pair<double, double> getTolerances(const DType type) {
   switch(type) {
     case DType::kFloat32:

@@ -59,7 +59,7 @@ e8m0_t compute_shared_biased_exponent(float amax) {
 template <typename InputType, typename OutputType>
 void process_block(const InputType* data,
                    OutputType* output_c,
-                   byte* output_scales,
+                   e8m0_t* output_scales,
                    const size_t scale_idx,
                    const size_t i_min,
                    const size_t i_max,
@@ -101,7 +101,7 @@ void process_block(const InputType* data,
 template <typename InputType, typename OutputType>
 void compute_ref(const InputType* data,
                  OutputType* output_c,
-                 byte* output_scales,
+                 e8m0_t* output_scales,
                  const size_t rows,
                  const size_t cols,
                  const size_t block_size_Y,
@@ -133,21 +133,23 @@ void performTest(const size_t rows,
     using EncodingType = fp32;
     DType itype = TypeInfo<InputType>::dtype;
     DType otype = TypeInfo<OutputType>::dtype;
-    DType scale_type = TypeInfo<byte>::dtype;       // E8M0
 
     const size_t blocks_Y = (rows + block_size_rows - 1) / block_size_rows;
     const size_t blocks_X = (cols + block_size_cols - 1) / block_size_cols;
+    const size_t blocks_num = blocks_Y * blocks_X;
+    
+    const int block_rows = static_cast<int>(block_size_rows);
+    const int block_cols = static_cast<int>(block_size_cols);
+    const int is_delayed_scaling = false;
 
     Tensor input({ rows, cols }, itype);
-    Tensor output_c({ rows, cols }, otype);
-    Tensor output_scales({ blocks_Y, blocks_X }, scale_type,
-                         {static_cast<int>(block_size_cols), static_cast<int>(block_size_rows), 0});
+    Tensor output_c({ rows, cols }, otype, { block_rows, block_cols, is_delayed_scaling});
 
     std::unique_ptr<OutputType[]> ref_output_c = std::make_unique<OutputType[]>(rows * cols);
-    std::unique_ptr<byte[]> ref_output_scales = std::make_unique<byte[]>(blocks_Y * blocks_X);
+    std::unique_ptr<e8m0_t[]> ref_output_scales = std::make_unique<e8m0_t[]>(blocks_Y * blocks_X);
 
     fillCase<EncodingType>(&input, fill_case);
-    nvte_fp8_quantize(input.data(), output_c.data(), 0, output_scales.data());
+    nvte_fp8_quantize(input.data(), output_c.data(), 0);
 
     cudaDeviceSynchronize();
     auto err = cudaGetLastError();
@@ -163,7 +165,7 @@ void performTest(const size_t rows,
 
     auto [atol, rtol] = getTolerances(otype);
     compareResults("output_c", output_c, ref_output_c.get(), atol, rtol);
-    compareResults("scales", output_scales, ref_output_scales.get(), atol, rtol);
+    compare_e8m0_scaling_factors("scales", output_c.cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
 }
 
 std::vector<std::pair<size_t, size_t>> matrix_sizes = {
@@ -177,6 +179,7 @@ std::vector<std::pair<size_t, size_t>> matrix_sizes = {
 
 std::vector<std::pair<size_t, size_t>> block_sizes = {
     {1, 32},
+    // {32, 1},
     // {1, 64},
     // {1, 128},
     // {32, 32},
