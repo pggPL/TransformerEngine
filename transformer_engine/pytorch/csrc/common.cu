@@ -47,7 +47,7 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
   return transformer_engine::TensorWrapper(
       data_ptr, shape, type, reinterpret_cast<float*>(amax_ptr),
       reinterpret_cast<float*>(scale_ptr), reinterpret_cast<float*>(scale_inv_ptr),
-      scaling_mode);
+      {1}, scaling_mode);
 }
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
