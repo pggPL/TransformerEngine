@@ -23,6 +23,8 @@ void te_gemm(
     return;
   }
 
+  A = A.contiguous();
+  B = B.contiguous();
   auto dimA = A_scaling_mode.size();
   NVTE_CHECK(dimA == 3, "Incorrect size ", dimA, " for scaling mode.");
   auto dimB = B_scaling_mode.size();
@@ -160,12 +162,15 @@ void te_grouped_gemm(
     te_pre_gelu_out.emplace_back(make_tensor(
         pre_gelu_out[i].data_ptr(), gelu_shape,
         GetTransformerEngineDType(pre_gelu_out[i].scalar_type()), nullptr, nullptr, nullptr));
-    te_workspace.emplace_back(make_tensor(workspace[i % num_streams].data_ptr(), {workspaceSize},
-                                          DType::kByte, nullptr, nullptr, nullptr));
+  }
+  for (size_t i = 0; i < workspace.size(); i++) {
+    te_workspace.emplace_back(make_tensor(workspace[i].data_ptr(), {workspaceSize}, DType::kByte,
+                                          nullptr, nullptr, nullptr));
   }
 
   // For now, we only have multi-stream cublas backend.
-  nvte_multi_stream_cublas_gemm(te_A, te_B, te_D, te_bias, te_pre_gelu_out, transa, transb, grad,
-                                te_workspace, accumulate, use_split_accumulator, math_sm_count,
-                                at::cuda::getCurrentCUDAStream());
+  nvte_multi_stream_cublas_gemm(te_A.data(), te_B.data(), te_D.data(), te_bias.data(),
+                                te_pre_gelu_out.data(), te_A.size(), transa, transb, grad,
+                                te_workspace.data(), accumulate, use_split_accumulator,
+                                math_sm_count, at::cuda::getCurrentCUDAStream());
 }

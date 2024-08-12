@@ -45,39 +45,39 @@ std::string to_string(const ScalingMode &mode) {
          std::to_string(static_cast<bool>(mode.delayed_scaling)) + "}";
 }
 
-void CheckScaleTensor(const SimpleTensor &scale, const ScalingMode &mode, const SimpleTensor &data,
-                      const std::string &name, const std::string &suffix) {
-  NVTE_CHECK(scale.dptr != nullptr,
-             "FP8 scaling factor input " + name + suffix + " must be allocated.");
-  NVTE_CHECK(scale.dtype == DType::kFloat32 || scale.dtype == DType::kByte,
-             "Unsupported type of scaling factor input " + name + suffix +
-                 ". Expected Float32 or Byte, got " + to_string(scale.dtype));
-  // Need 4B alignment even for e8 scaling factor
-  size_t alignment = 4ul / typeToSize(scale.dtype);
-  size_t expected_x;
-  if (mode.x == -1) {
+void CheckScaleTensor(const Tensor *t) {
+  // Need (4, 128) alignment even for e8 scaling factor
+  auto block_alignment = std::vector<size_t>{4ul / typeToSize(t->scale_inv.dtype),
+                                             128ul / typeToSize(t->scale_inv.dtype)};
+  size_t expected_x, expected_y, alignment;
+  if (t->scaling_mode.x == -1) {
     expected_x = 1;
   } else {
-    NVTE_CHECK(data.shape.size() == 2, "Invalid shape of the tensor " + name +
-                                           ". Expected 2 dimensions for fine granularity scaling.");
-    expected_x = DIVUP(DIVUP(data.shape.at(0), static_cast<size_t>(mode.x)), alignment);
+    NVTE_CHECK(t->data.shape.size() == 2,
+               "Invalid shape of the tensor. Expected 2 dimensions for fine granularity scaling.");
+    alignment = block_alignment[t->scaling_mode.x < t->scaling_mode.y];
+    expected_x =
+        DIVUP(DIVUP(t->data.shape.at(0), static_cast<size_t>(t->scaling_mode.x)), alignment) *
+        alignment;
   }
-  size_t expected_y;
-  if (mode.y == -1) {
+  if (t->scaling_mode.y == -1) {
     expected_y = 1;
   } else {
-    NVTE_CHECK(data.shape.size() == 2, "Invalid shape of the tensor " + name +
-                                           ". Expected 2 dimensions for fine granularity scaling.");
-    expected_y = DIVUP(DIVUP(data.shape.at(1), static_cast<size_t>(mode.y)), alignment);
+    NVTE_CHECK(t->data.shape.size() == 2,
+               "Invalid shape of the tensor. Expected 2 dimensions for fine granularity scaling.");
+    alignment = block_alignment[t->scaling_mode.x > t->scaling_mode.y];
+    expected_y =
+        DIVUP(DIVUP(t->data.shape.at(1), static_cast<size_t>(t->scaling_mode.y)), alignment) *
+        alignment;
   }
   if (expected_x == 1 && expected_y == 1) {
     // per-tensor scaling
-    NVTE_CHECK(scale.shape == std::vector<size_t>{1});
+    NVTE_CHECK(t->scale_inv.shape == std::vector<size_t>{1});
   } else {
     const auto &expected = std::vector<size_t>{expected_x, expected_y};
-    NVTE_CHECK(scale.shape == expected, "Tensor " + name + suffix +
-                                            " has invalid shape. Expected (" + to_string(expected) +
-                                            ", while got " + to_string(scale.shape));
+    NVTE_CHECK(t->scale_inv.shape == expected, "Tensor has invalid scale_inv shape. Expected (" +
+                                                   to_string(expected) + ", while got " +
+                                                   to_string(t->scale_inv.shape));
   }
 }
 
@@ -85,7 +85,11 @@ void CheckInputTensor(const Tensor &t, const std::string &name) {
   const DType type = t.data.dtype;
   if (is_fp8_dtype(type)) {
     // FP8 input needs to have scale_inv
-    CheckScaleTensor(t.scale_inv, t.scaling_mode, t.data, name, "_scale_inverse");
+    NVTE_CHECK(t.scale_inv.dptr != nullptr,
+               "FP8 scaling factor input " + name + "_scale_inverse" + " must be allocated.");
+    NVTE_CHECK(t.scale_inv.dtype == DType::kFloat32 || t.scale_inv.dtype == DType::kByte,
+               "Unsupported type of scaling factor input " + name + "_scale_inverse" +
+                   ". Expected Float32 or Byte, got " + to_string(t.scale_inv.dtype));
   } else {
     NVTE_CHECK(t.scale.dptr == nullptr, "Scale is not supported for non-FP8 input " + name + ".");
     NVTE_CHECK(t.amax.dptr == nullptr, "Amax is not supported for non-FP8 input " + name + ".");
@@ -104,8 +108,11 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
       NVTE_CHECK(t.amax.dtype == DType::kFloat32);
       NVTE_CHECK(t.amax.shape == std::vector<size_t>{1});
     }
-    CheckScaleTensor(t.scale_inv, t.scaling_mode, t.data, name, "_scale_inverse");
-    CheckScaleTensor(t.scale, t.scaling_mode, t.data, name, "_scale");
+    NVTE_CHECK(t.scale_inv.dptr != nullptr,
+               "FP8 scaling factor input " + name + "_scale_inverse" + " must be allocated.");
+    NVTE_CHECK(t.scale_inv.dtype == DType::kFloat32 || t.scale_inv.dtype == DType::kByte,
+               "Unsupported type of scaling factor input " + name + "_scale_inverse" +
+                   ". Expected Float32 or Byte, got " + to_string(t.scale_inv.dtype));
   } else {
     NVTE_CHECK(t.scale.dptr == nullptr, "Scale is not supported for non-FP8 output " + name + ".");
     NVTE_CHECK(t.amax.dptr == nullptr, "Amax is not supported for non-FP8 output " + name + ".");
@@ -136,15 +143,22 @@ bool is_columnwise_block_scaling(const Tensor *t) {
 }  // namespace transformer_engine
 
 NVTETensor nvte_create_tensor(void *dptr, const NVTEShape shape, const NVTEDType dtype, float *amax,
-                              float *scale, float *scale_inv, NVTEScalingMode scaling_mode) {
+                              float *scale, float *scale_inv, const NVTEShape scale_inv_shape,
+                              NVTEScalingMode scaling_mode) {
   transformer_engine::Tensor *ret = new transformer_engine::Tensor;
   ret->data.dptr = dptr;
   ret->data.shape = std::vector<size_t>(shape.data, shape.data + shape.ndim);
   ret->data.dtype = static_cast<transformer_engine::DType>(dtype);
   ret->amax.dptr = amax;
   ret->scale.dptr = scale;
-  ret->scale_inv.dptr = scale_inv;
   ret->scaling_mode = scaling_mode;
+  ret->scale_inv.dptr = scale_inv;
+  if (!transformer_engine::is_tensor_scaling(scaling_mode)) {
+    ret->scale_inv.shape =
+        std::vector<size_t>(scale_inv_shape.data, scale_inv_shape.data + scale_inv_shape.ndim);
+    ret->scale_inv.dtype = transformer_engine::DType::kByte;
+  }
+  CheckScaleTensor(ret);
   return ret;
 }
 
@@ -188,9 +202,21 @@ float *nvte_tensor_scale(const NVTETensor tensor) {
 
 float *nvte_tensor_scale_inv(const NVTETensor tensor) {
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
-  NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kFloat32,
-             "Tensor's inverse of scale must have Float32 type!");
+  if (transformer_engine::is_tensor_scaling(t.scaling_mode))
+    NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kFloat32,
+               "Tensor's inverse of scale must have Float32 type!");
+  else
+    NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kByte,
+               "Tensor's inverse of scale must have Byte type!");
   return reinterpret_cast<float *>(t.scale_inv.dptr);
+}
+
+NVTEShape nvte_tensor_scale_inv_shape(const NVTETensor tensor) {
+  const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
+  NVTEShape ret;
+  ret.data = t.scale_inv.shape.data();
+  ret.ndim = t.scale_inv.shape.size();
+  return ret;
 }
 
 NVTEScalingMode nvte_tensor_scaling_mode(const NVTETensor tensor) {

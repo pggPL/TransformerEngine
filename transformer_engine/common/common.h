@@ -59,6 +59,21 @@ class ScalingMode : public NVTEScalingMode {
   }
 };
 
+class ScalingMode : public NVTEScalingMode {
+ public:
+  ScalingMode() {
+    x = -1;
+    y = -1;
+    delayed_scaling = true;
+  }
+
+  ScalingMode(const NVTEScalingMode &other) {
+    x = other.x;
+    y = other.y;
+    delayed_scaling = other.delayed_scaling;
+  }
+};
+
 struct Tensor {
   SimpleTensor data;
   SimpleTensor amax;

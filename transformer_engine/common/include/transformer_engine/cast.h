@@ -19,9 +19,9 @@ extern "C" {
 
 /*! \brief Cast tensor to FP8.
  *
- *  \param[in]     input     Input tensor to be cast.
- *  \param[in,out] output    Output FP8 tensor.
- *  \param[in]     stream    CUDA stream used for the operation.
+ *  \param[in]     input            Input tensor to be cast.
+ *  \param[in,out] output           Output FP8 tensor.
+ *  \param[in]     stream           CUDA stream used for the operation.
  */
 void nvte_fp8_quantize(const NVTETensor input, NVTETensor output, cudaStream_t stream);
 
