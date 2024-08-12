@@ -133,7 +133,7 @@ void Tensor::to_cpu() const {
   const size_t size = product(s) * typeToSize(tensor_.dtype());
   cudaMemcpy(cpu_data_.get(), tensor_.dptr(), size, cudaMemcpyDeviceToHost);
   if (isFp8Type(dtype())) {
-  if (is_tensor_scaling(tensor_.scaling_mode())) {
+    if (is_tensor_scaling(tensor_.scaling_mode())) {
       cudaMemcpy(amax_cpu_data_.get(), tensor_.amax(), sizeof(float),
                  cudaMemcpyDeviceToHost);
       cudaMemcpy(scale_cpu_data_.get(), tensor_.scale(), sizeof(float),
@@ -150,15 +150,15 @@ void Tensor::from_cpu() const {
   const size_t size = product(s) * typeToSize(tensor_.dtype());
   cudaMemcpy(tensor_.dptr(), cpu_data_.get(), size, cudaMemcpyHostToDevice);
   if (isFp8Type(dtype())) {
-  if (is_tensor_scaling(tensor_.scaling_mode())) {
+    if (is_tensor_scaling(tensor_.scaling_mode())) {
       cudaMemcpy(tensor_.amax(), amax_cpu_data_.get(), sizeof(float),
                  cudaMemcpyHostToDevice);
       cudaMemcpy(tensor_.scale(), scale_cpu_data_.get(), sizeof(float),
                  cudaMemcpyHostToDevice);
     }
     auto scale_size = std::get<1>(get_num_scales_and_scale_size(tensor_.shape(), tensor_.scaling_mode()));
-  cudaMemcpy(tensor_.scale_inv(), scale_inv_cpu_data_.get(), scale_size,
-             cudaMemcpyHostToDevice);
+    cudaMemcpy(tensor_.scale_inv(), scale_inv_cpu_data_.get(), scale_size,
+               cudaMemcpyHostToDevice);
   }
 }
 
@@ -272,8 +272,8 @@ void compareResults(const std::string &name, const float test, const float ref,
 void compareResults(const std::string &name, const uint8_t *test, const uint8_t *ref,
                     size_t N) {
   for (int i = 0; i < N; i++){
-    ASSERT_FALSE(test[i] == ref[i]) << "Error in " << name << std::endl
-      << "Mismatch: " << test[i] << " vs " << ref[i] << " at index " << i;
+    ASSERT_EQ(int(test[i]), int(ref[i])) << "Error in " << name
+      << ". Mismatch at index " << i << std::endl;
   }
 }
 
