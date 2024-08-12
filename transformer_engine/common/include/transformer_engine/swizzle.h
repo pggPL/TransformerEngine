@@ -25,7 +25,7 @@ extern "C" {
  *
  *  Requirements:
  *  - scale_inv is stored in row-major.
- *  - scale_inv size is padded to 128x16 for row-scale and 4x128 for col-scale.
+ *  - scale_inv size is padded to 128x4 for row-scale and 4x128 for col-scale.
  *  - data is quantitized along K-dimension, i.e. 1D-scaling block lies along the K-dimension.
  */
 void nvte_swizzle_scaling_factors(const NVTETensor input, NVTETensor output, cudaStream_t stream);
