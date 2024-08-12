@@ -16,6 +16,7 @@ add_executable(test_operator
                test_rmsnorm.cu
                test_multi_cast_transpose.cu
                test_causal_softmax.cu
+               test_swizzle.cu
                ../test_common.cu)
 
 list(APPEND test_operator_LINKER_LIBS CUDA::cudart GTest::gtest_main ${TE_LIB} CUDA::nvrtc CUDNN::cudnn)
