@@ -137,7 +137,7 @@ void performTest(const size_t rows,
     const size_t blocks_Y = (rows + block_size_rows - 1) / block_size_rows;
     const size_t blocks_X = (cols + block_size_cols - 1) / block_size_cols;
     const size_t blocks_num = blocks_Y * blocks_X;
-    
+
     const int block_rows = static_cast<int>(block_size_rows);
     const int block_cols = static_cast<int>(block_size_cols);
     const int is_delayed_scaling = false;

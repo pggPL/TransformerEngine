@@ -28,7 +28,7 @@ template <typename LType>
 __device__ inline void regs_shuffle_with_bit_shifts(LType* regs_vec) {
   // inp, 4-byte chunks [0,1,2,3, 4,5,6,7, 8,9,10,11, 12,13,14,15]
   // out, swapping byte to form new 4-byte chunks [0,4,8,12, 1,5,9,13, 2,6,10,14, 3,7,11,15]
-  
+
   constexpr int N_TILE_PER_TD = sizeof(LType) / sizeof(int);
   constexpr int size = N_SF_PER_TD_PER_TILE * N_TILE_PER_TD;
   int32_t new_regs[size];
@@ -102,7 +102,7 @@ __global__ void swizzle_col_scaling_kernel(const void* input, void* output, cons
                            tM / SF_TILE_DIM_M * k_tiles_in_tb * SF_TILE_SIZE_I32);
 #pragma unroll
     for (int i = 0; i < N_SF_PER_TD; i++) {
-      /* TODO rotate_i */ 
+      /* TODO rotate_i */
       slm_tile[(tM % SF_TILE_DIM_M) / NEW_SF_TILE_DIM_M_I32 +
                ((tM + i) % NEW_SF_TILE_DIM_M_I32) * NEW_SF_TILE_DIM_K_I32] =
           reinterpret_cast<int*>(regs_vec)[i];

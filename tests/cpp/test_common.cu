@@ -344,7 +344,7 @@ void fillCase_special(Tensor *t) {
       InputType *data = t->cpu_dptr<InputType>();
       for (size_t i = 0; i < rows; ++i) {
         for (size_t j = 0; j < cols; ++j) {
-          const size_t idx = i * cols + j; 
+          const size_t idx = i * cols + j;
           const bool is_negative = (dis_sign(gen) < 0.0);
           double val = dis(gen);
           if (is_negative) {
@@ -362,15 +362,15 @@ void fillCase_special(Tensor *t) {
 template <typename InputEncoding>
 void fillCase(Tensor *t, const InputsFillCase fill_case) {
   switch (fill_case) {
-    case InputsFillCase::uniform: 
+    case InputsFillCase::uniform:
         fillCase_special<InputEncoding, InputsFillCase::uniform>(t); break;
-    case InputsFillCase::zeros: 
+    case InputsFillCase::zeros:
         fillCase_special<InputEncoding, InputsFillCase::zeros>(t); break;
-    case InputsFillCase::zero_to_minNorm: 
+    case InputsFillCase::zero_to_minNorm:
         fillCase_special<InputEncoding, InputsFillCase::zero_to_minNorm>(t); break;
-    case InputsFillCase::minNorm_to_maxNorm: 
+    case InputsFillCase::minNorm_to_maxNorm:
         fillCase_special<InputEncoding, InputsFillCase::minNorm_to_maxNorm>(t); break;
-    case InputsFillCase::maxNorm_to_inf: 
+    case InputsFillCase::maxNorm_to_inf:
         fillCase_special<InputEncoding, InputsFillCase::maxNorm_to_inf>(t); break;
   }
 }
