@@ -7,6 +7,14 @@
 #include "common.h"
 #include "transformer_engine/transformer_engine.h"
 
+std::vector<size_t> getTensorShape(at::Tensor t) {
+  std::vector<size_t> shape;
+  for (auto s : t.sizes()) {
+    shape.push_back(s);
+  }
+  return shape;
+}
+
 transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
                                                       const std::string& fp8_recipe) {
   // if e4m3 or hybrid + forward
@@ -42,12 +50,13 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
   const transformer_engine::DType type,
   void* amax_ptr, void* scale_ptr,
   void* scale_inv_ptr,
+  std::vector<size_t> scale_inv_shape,
   NVTEScalingMode scaling_mode) {
 
   return transformer_engine::TensorWrapper(
       data_ptr, shape, type, reinterpret_cast<float*>(amax_ptr),
       reinterpret_cast<float*>(scale_ptr), reinterpret_cast<float*>(scale_inv_ptr),
-      {1}, scaling_mode);
+      scale_inv_shape, scaling_mode);
 }
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
@@ -56,17 +65,17 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
   at::Tensor scale_inv,
   NVTEScalingMode scaling_mode) {
   transformer_engine::DType dtype = GetTransformerEngineDType(tensor.scalar_type());
-  std::vector<size_t> shape;
 
-  for (auto s : tensor.sizes()) {
-    shape.push_back(s);
-  }
+  auto tensor_shape = getTensorShape(tensor);
+  auto scale_inv_shape = getTensorShape(scale_inv);
+
   NVTE_CHECK(amax.scalar_type() == at::kFloat);
   NVTE_CHECK(scale.scalar_type() == at::kFloat);
   NVTE_CHECK(scale_inv.scalar_type() == at::kFloat);
 
-  return makeTransformerEngineTensor(tensor.data_ptr(), shape, dtype, amax.data_ptr(),
-                                     scale.data_ptr(), scale_inv.data_ptr(), scaling_mode);
+  return makeTransformerEngineTensor(tensor.data_ptr(), tensor_shape, dtype, amax.data_ptr(),
+                                     scale.data_ptr(), scale_inv.data_ptr(), scale_inv_shape,
+                                     scaling_mode);
 }
 
 size_t product(const std::vector<size_t>& shape) {

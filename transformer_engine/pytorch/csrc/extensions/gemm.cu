@@ -35,10 +35,12 @@ void te_gemm(
 
   auto te_A = makeTransformerEngineTensor(
       A.data_ptr(), {static_cast<size_t>(A.size(0)), static_cast<size_t>(A.size(1))}, A_type,
-      nullptr, nullptr, A_scale_inverse.data_ptr(), nvte_scaling_modeA);
+      nullptr, nullptr, A_scale_inverse.data_ptr(), getTensorShape(A_scale_inverse),
+      nvte_scaling_modeA);
   auto te_B = makeTransformerEngineTensor(
       B.data_ptr(), {static_cast<size_t>(B.size(0)), static_cast<size_t>(B.size(1))}, B_type,
-      nullptr, nullptr, B_scale_inverse.data_ptr(), nvte_scaling_modeB);
+      nullptr, nullptr, B_scale_inverse.data_ptr(), getTensorShape(B_scale_inverse),
+      nvte_scaling_modeB);
   auto te_D = makeTransformerEngineTensor(
       D.data_ptr(), {static_cast<size_t>(D.size(0)), static_cast<size_t>(D.size(1))}, D_type,
       D_amax.data_ptr(), D_scale.data_ptr(), nullptr);
@@ -79,10 +81,12 @@ void te_atomic_gemm(
 
   auto te_A = makeTransformerEngineTensor(
       A.data_ptr(), {static_cast<size_t>(A.size(0)), static_cast<size_t>(A.size(1))}, A_type,
-      nullptr, nullptr, A_scale_inverse.data_ptr(), nvte_scaling_modeA);
+      nullptr, nullptr, A_scale_inverse.data_ptr(), getTensorShape(A_scale_inverse),
+      nvte_scaling_modeA);
   auto te_B = makeTransformerEngineTensor(
       B.data_ptr(), {static_cast<size_t>(B.size(0)), static_cast<size_t>(B.size(1))}, B_type,
-      nullptr, nullptr, B_scale_inverse.data_ptr(), nvte_scaling_modeB);
+      nullptr, nullptr, B_scale_inverse.data_ptr(), getTensorShape(B_scale_inverse),
+      nvte_scaling_modeB);
   auto te_D = makeTransformerEngineTensor(
       D.data_ptr(), {static_cast<size_t>(D.size(0)), static_cast<size_t>(D.size(1))}, D_type,
       D_amax.data_ptr(), D_scale.data_ptr(), nullptr);
@@ -131,9 +135,10 @@ void te_grouped_gemm(
                                         transformer_engine::DType dtype, void* amax_dptr,
                                         void* scale_dptr, void* scale_inv_dptr,
                                         NVTEScalingMode scaling_mode = {-1, -1, 1}) -> NVTETensor {
+    // TODO(ksivamani): check scaling factor shapes for mxfp8.
     tensor_wrappers.emplace_back(
         makeTransformerEngineTensor(
-            dptr, shape, dtype, amax_dptr, scale_dptr, scale_inv_dptr, scaling_mode));
+            dptr, shape, dtype, amax_dptr, scale_dptr, scale_inv_dptr, {1}, scaling_mode));
     return tensor_wrappers.back().data();
   };
   for (size_t i = 0; i < A.size(); i++) {

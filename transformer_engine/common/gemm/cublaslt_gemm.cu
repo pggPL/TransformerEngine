@@ -158,8 +158,8 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
       scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR_32F;
     } else if ((is_columnwise_block_scaling(inputA) &&
                 is_columnwise_block_scaling(inputB))) {
-      __nv_fp8_e8m0 *A_scale_inverse = reinterpret_cast<__nv_fp8_e8m0 *>(inputA->scale_inv.dptr);
-      __nv_fp8_e8m0 *B_scale_inverse = reinterpret_cast<__nv_fp8_e8m0 *>(inputB->scale_inv.dptr);
+      fp8e8m0 *A_scale_inverse = reinterpret_cast<fp8e8m0 *>(inputA->scale_inv.dptr);
+      fp8e8m0 *B_scale_inverse = reinterpret_cast<fp8e8m0 *>(inputB->scale_inv.dptr);
       NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
                                                        CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
                                                        &A_scale_inverse, sizeof(A_scale_inverse)));

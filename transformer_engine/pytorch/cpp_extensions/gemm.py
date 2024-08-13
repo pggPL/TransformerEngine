@@ -19,17 +19,12 @@ _DUMMY_BLOCK_SCALING = bool(int(os.getenv("_NVTE_MXFP8_GEMM_DEBUG", "0")))
 _DUMMY_BLOCK_SCALING_SIZE = 32
 
 
-def _get_blocking_scaling_scale_inv(t, t_scale_inv, trans = True):
+def _get_blocking_scaling_scale_inv(t, t_scale_inv):
     """Dummy func to convert block scaling factors to correct format."""
     assert t.dim() == 2, "Incorrect tensor dimensions for block scaling."
-    if trans:
-        assert t.shape[1] % _DUMMY_BLOCK_SCALING_SIZE == 0, "Wrong nelems for input."
-        assert t.shape[1] % (_DUMMY_BLOCK_SCALING_SIZE * 4) == 0, "Wrong nelems for input."  # This should be padded but keeping it simple.
-        shape = (t.shape[0], t.shape[1] // _DUMMY_BLOCK_SCALING_SIZE)
-    else:
-        assert t.shape[0] % _DUMMY_BLOCK_SCALING_SIZE == 0, "Wrong nelems for input."
-        assert t.shape[0] % (_DUMMY_BLOCK_SCALING_SIZE * 4) == 0, "Wrong nelems for input."  # This should be padded but keeping it simple.
-        shape = (t.shape[0] // _DUMMY_BLOCK_SCALING_SIZE, t.shape[1])
+    assert t.shape[0] % _DUMMY_BLOCK_SCALING_SIZE == 0, "Wrong nelems for input."
+    assert t.shape[0] % (_DUMMY_BLOCK_SCALING_SIZE * 4) == 0, "Wrong nelems for input."  # This should be padded but keeping it simple.
+    shape = (t_scale_inv.shape[0], t.shape[0] // _DUMMY_BLOCK_SCALING_SIZE, t.shape[1])
     s_inv = torch.Tensor([127]).to("cuda").to(torch.uint8).expand(shape)
     return s_inv
 
@@ -97,8 +92,8 @@ def fp8_gemm(
         ), "Wrong mode for dummy block scaling."
         A_scaling_mode = [32, 1, 0]
         B_scaling_mode = [32, 1, 0]
-        A_scale_inv = _get_blocking_scaling_scale_inv(A, A_scale_inv, True)
-        B_scale_inv = _get_blocking_scaling_scale_inv(B, B_scale_inv, False)
+        A_scale_inv = _get_blocking_scaling_scale_inv(A, A_scale_inv)
+        B_scale_inv = _get_blocking_scaling_scale_inv(B, B_scale_inv)
 
     args = (
         A,

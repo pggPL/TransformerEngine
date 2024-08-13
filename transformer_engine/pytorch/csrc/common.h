@@ -83,6 +83,8 @@ enum FP8BwdTensors {
 
 }  // namespace transformer_engine
 
+std::vector<size_t> getTensorShape(at::Tensor t);
+
 transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
                                                       const std::string& fp8_recipe);
 
@@ -142,6 +144,7 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
   const transformer_engine::DType type,
   void* amax_ptr, void* scale_ptr,
   void* scale_inv_ptr,
+  std::vector<size_t> scale_inv_shape = {1},
   NVTEScalingMode scaling_mode = {-1, -1, 1});
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(void* data_ptr,
