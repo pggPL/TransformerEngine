@@ -276,7 +276,7 @@ at::Tensor te_gemm_ts(
 std::vector<at::Tensor> te_grouped_gemm_ts(
     std::vector<at::Tensor> A, at::Tensor A_scale_inverse, int64_t A_offset, int64_t A_type,
     std::vector<int64_t> A_scaling_mode, int64_t transa, std::vector<at::Tensor> B,
-    at::Tensor B_scale_inverse, int64_t B_offset, std::vector<int64_t> B_scaling_mode, int64_t B_type,
+    at::Tensor B_scale_inverse, int64_t B_offset, int64_t B_type, std::vector<int64_t> B_scaling_mode,
     int64_t transb, std::vector<at::Tensor> D, int64_t D_offset, at::Tensor D_scale,
     int64_t D_type, at::Tensor D_amax, std::vector<at::Tensor> bias, int64_t bias_type,
     std::vector<at::Tensor> pre_gelu_out, int64_t grad, std::vector<at::Tensor> workspace,
