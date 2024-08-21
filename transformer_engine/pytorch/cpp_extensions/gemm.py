@@ -26,7 +26,7 @@ def _get_blocking_scaling_scale_inv(t, t_scale_inv):
     assert t.shape[0] % _DUMMY_BLOCK_SCALING_SIZE == 0, "Wrong nelems for input."
     assert t.shape[0] % (_DUMMY_BLOCK_SCALING_SIZE * 4) == 0, "Wrong nelems for input."  # This should be padded but keeping it simple.
     shape = (t_scale_inv.shape[0], t.shape[0] // _DUMMY_BLOCK_SCALING_SIZE, t.shape[1])
-    s_inv = torch.Tensor([127]).to("cuda").to(torch.uint8).expand(shape)
+    s_inv = torch.Tensor([127]).to("cuda").to(torch.uint8).expand(shape).contiguous()
     return s_inv
 
 
