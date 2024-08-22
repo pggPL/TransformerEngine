@@ -321,6 +321,13 @@ inline bool is_delayed_tensor_scaling(const ScalingMode &mode) {
 
 bool is_columnwise_block_scaling(const Tensor *t);
 
+/*! \brief Update a tensor's FP8 scale-inverse
+ *
+ * The FP8 scale-inverse (dequantization scaling factor) is updated
+ * with the reciprocal of the FP8 scale (quantization scaling factor).
+ */
+void update_tensor_scale_inv(Tensor *t, cudaStream_t stream);
+
 #define NVTE_API_CALL(api_name) \
   transformer_engine::nvtx::NVTXWrapper _##api_name##_nvtx_wrapper(#api_name);
 
