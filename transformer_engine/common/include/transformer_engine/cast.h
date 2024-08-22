@@ -27,8 +27,8 @@ void nvte_fp8_quantize(const NVTETensor input, NVTETensor output, cudaStream_t s
 
 /*! \brief Cast tensor to FP8 along both dimensions.
  *  Produces two sets of output data:
- *  1) Scaled rows + row-wise scaling factors, AND 
- *  2) Scaled columns + column-wise scaling factors 
+ *  1) Scaled rows + row-wise scaling factors, AND
+ *  2) Scaled columns + column-wise scaling factors
  *  \param[in]     input                Input tensor to be cast.
  *  \param[in,out] output_rowwise       Output FP8 tensor scaled along rows
  *  \param[in,out] output_columnwise    Output FP8 tensor scaled along columns
