@@ -31,8 +31,7 @@ void act_fn(const Tensor &input, Tensor *output, cudaStream_t stream) {
                 reinterpret_cast<OType *>(output->data.dptr),
                 reinterpret_cast<const ComputeType *>(output->scale.dptr),
                 reinterpret_cast<ComputeType *>(output->amax.dptr),
-                reinterpret_cast<ComputeType *>(output->scale_inv.dptr),
-                tot_elts, {}, stream);
+                reinterpret_cast<ComputeType *>(output->scale_inv.dptr), tot_elts, {}, stream);
           } else {
             NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
           });  // NOLINT(*)
@@ -61,8 +60,7 @@ void dact_fn(const Tensor &grad, const Tensor &input, Tensor *output, cudaStream
                 reinterpret_cast<OType *>(output->data.dptr),
                 reinterpret_cast<const ComputeType *>(output->scale.dptr),
                 reinterpret_cast<ComputeType *>(output->amax.dptr),
-                reinterpret_cast<ComputeType *>(output->scale_inv.dptr),
-                tot_elts, {}, stream);
+                reinterpret_cast<ComputeType *>(output->scale_inv.dptr), tot_elts, {}, stream);
           } else {
             NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
           });  // NOLINT(*)
@@ -92,8 +90,7 @@ void gated_act_fn(const Tensor &input, Tensor *output, cudaStream_t stream) {
                 reinterpret_cast<OType *>(output->data.dptr),
                 reinterpret_cast<const ComputeType *>(output->scale.dptr),
                 reinterpret_cast<ComputeType *>(output->amax.dptr),
-                reinterpret_cast<ComputeType *>(output->scale_inv.dptr),
-                output->data.shape[0],
+                reinterpret_cast<ComputeType *>(output->scale_inv.dptr), output->data.shape[0],
                 output->data.shape[1], {}, stream);
           } else {
             NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");

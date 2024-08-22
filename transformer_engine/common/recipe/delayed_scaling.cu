@@ -289,7 +289,7 @@ void amax_and_scale_update(const Tensor& amax_history, const Tensor& scale, cons
   NVTE_CHECK(scale.data.dtype == DType::kFloat32, "Found ", dtype_name(scale.data.dtype), ".");
   if (scale_inv_mask.data.dptr != nullptr) {
     NVTE_CHECK(scale_inv.numel() == num_scales, "Expected ", num_scales, " elements, ",
-                "but found ", scale_inv.numel(), ".");
+               "but found ", scale_inv.numel(), ".");
     NVTE_CHECK(scale_inv.data.dtype == DType::kFloat32);
     NVTE_CHECK(scale_inv_mask.numel() == num_scales, "Expected ", num_scales, " elements, ",
                "but found ", scale_inv_mask.numel(), ".");

@@ -156,8 +156,7 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
                                                        CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
                                                        &B_scale_inverse, sizeof(B_scale_inverse)));
       scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR_32F;
-    } else if ((is_columnwise_block_scaling(inputA) &&
-                is_columnwise_block_scaling(inputB))) {
+    } else if ((is_columnwise_block_scaling(inputA) && is_columnwise_block_scaling(inputB))) {
       fp8e8m0 *A_scale_inverse = reinterpret_cast<fp8e8m0 *>(inputA->scale_inv.dptr);
       fp8e8m0 *B_scale_inverse = reinterpret_cast<fp8e8m0 *>(inputB->scale_inv.dptr);
       NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
@@ -169,15 +168,13 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
       scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0;
     } else {
       NVTE_ERROR("Not implemented scaling modes: " + to_string(inputA->scaling_mode) + " and  " +
-      to_string(inputB->scaling_mode) + ".");
+                 to_string(inputB->scaling_mode) + ".");
     }
 
-    NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
-                                                     CUBLASLT_MATMUL_DESC_A_SCALE_MODE,
-                                                     &scaling_mode, sizeof(scaling_mode)));
-    NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
-                                                     CUBLASLT_MATMUL_DESC_B_SCALE_MODE,
-                                                     &scaling_mode, sizeof(scaling_mode)));
+    NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(
+        operationDesc, CUBLASLT_MATMUL_DESC_A_SCALE_MODE, &scaling_mode, sizeof(scaling_mode)));
+    NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(
+        operationDesc, CUBLASLT_MATMUL_DESC_B_SCALE_MODE, &scaling_mode, sizeof(scaling_mode)));
     if (is_fp8_dtype(outputD->data.dtype)) {
       // Accumulation mode not supported for FP8 output
       C = nullptr;
@@ -387,7 +384,7 @@ void nvte_cublas_atomic_gemm(const NVTETensor A, const NVTETensor B, NVTETensor 
   Tensor *wspace = reinterpret_cast<Tensor *>(workspace);
 
   NVTE_CHECK(is_delayed_tensor_scaling(inputA->scaling_mode) &&
-             is_delayed_tensor_scaling(inputB->scaling_mode),
+                 is_delayed_tensor_scaling(inputB->scaling_mode),
              "Atomic GEMM only supports delayed scaling.");
 
   const int m = transa ? inputA->data.shape[0] : inputA->data.shape[1];

@@ -16,6 +16,7 @@ __all__ = ["gemm", "fp8_gemm", "grouped_gemm", "fp8_grouped_gemm"]
 
 # TODO(ksivamani): only for debug; to remove.
 import os
+
 _DUMMY_BLOCK_SCALING = bool(int(os.getenv("_NVTE_MXFP8_GEMM_DEBUG", "0")))
 _DUMMY_BLOCK_SCALING_SIZE = 32
 
@@ -24,7 +25,9 @@ def _get_blocking_scaling_scale_inv(t, t_scale_inv):
     """Dummy func to convert block scaling factors to correct format."""
     assert t.dim() == 2, "Incorrect tensor dimensions for block scaling."
     assert t.shape[0] % _DUMMY_BLOCK_SCALING_SIZE == 0, "Wrong nelems for input."
-    assert t.shape[0] % (_DUMMY_BLOCK_SCALING_SIZE * 4) == 0, "Wrong nelems for input."  # This should be padded but keeping it simple.
+    assert (
+        t.shape[0] % (_DUMMY_BLOCK_SCALING_SIZE * 4) == 0
+    ), "Wrong nelems for input."  # This should be padded but keeping it simple.
     shape = (t_scale_inv.shape[0], t.shape[0] // _DUMMY_BLOCK_SCALING_SIZE, t.shape[1])
     s_inv = torch.Tensor([127]).to("cuda").to(torch.uint8).expand(shape).contiguous()
     return s_inv
@@ -94,9 +97,11 @@ def fp8_gemm(
     out_dtype = TE_DType[out.dtype] if D_dtype is None else D_dtype
 
     if _DUMMY_BLOCK_SCALING:
-        assert (
-            A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [-1, -1, 1]
-        ), "Wrong mode for dummy block scaling."
+        assert A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [
+            -1,
+            -1,
+            1,
+        ], "Wrong mode for dummy block scaling."
         A_scaling_mode = [32, 1, 0]
         B_scaling_mode = [32, 1, 0]
         A_scale_inv = _get_blocking_scaling_scale_inv(A, A_scale_inv)
@@ -162,9 +167,11 @@ def fp8_gemm(
             )
             args = tuple(args + (extra_output_tensor,))
         elif ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_AG_P2P:
-            assert (
-                A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [-1, -1, 1]
-            ), "Block scaling unsupported for atomic GEMM."
+            assert A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [
+                -1,
+                -1,
+                1,
+            ], "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_ag_p2p
             extra_output_tensor = (
                 empty_tensor if extra_output_tensor is None else extra_output_tensor
@@ -189,9 +196,11 @@ def fp8_gemm(
             ), "SPLIT_PIPELINED_RS_P2P requires extra output tensor"
             args = tuple(args + (extra_output_tensor,))
         elif ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_RS:
-            assert (
-                A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [-1, -1, 1]
-            ), "Block scaling unsupported for atomic GEMM."
+            assert A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [
+                -1,
+                -1,
+                1,
+            ], "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_rs
             assert extra_output_tensor is not None, "ATOMIC_GEMM_RS requires extra output tensor"
             args = tuple(
@@ -202,9 +211,11 @@ def fp8_gemm(
                 )
             )
         elif ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_RS_P2P:
-            assert (
-                A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [-1, -1, 1]
-            ), "Block scaling unsupported for atomic GEMM."
+            assert A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [
+                -1,
+                -1,
+                1,
+            ], "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_rs_p2p
             assert (
                 extra_output_tensor is not None

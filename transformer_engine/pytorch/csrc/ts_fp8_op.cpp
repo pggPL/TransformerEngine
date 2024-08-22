@@ -236,13 +236,14 @@ at::Tensor srelu_ts(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Ten
   return output;
 }
 
-at::Tensor te_gemm_ts(
-  at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor, int64_t A_type,
-  std::vector<int64_t> A_scaling_mode, int64_t transa, at::Tensor B, at::Tensor B_scale_inverse,
-  int64_t B_fp8_tensor, int64_t B_type, std::vector<int64_t> B_scaling_mode, int64_t transb,
-  at::Tensor D, at::Tensor D_scale, int64_t D_type, at::Tensor D_amax, at::Tensor bias,
-  int64_t bias_type, at::Tensor pre_gelu_out, int64_t grad, at::Tensor workspace,
-  int64_t workspaceSize, int64_t accumulate, int64_t use_split_accumulator) {
+at::Tensor te_gemm_ts(at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_tensor,
+                      int64_t A_type, std::vector<int64_t> A_scaling_mode, int64_t transa,
+                      at::Tensor B, at::Tensor B_scale_inverse, int64_t B_fp8_tensor,
+                      int64_t B_type, std::vector<int64_t> B_scaling_mode, int64_t transb,
+                      at::Tensor D, at::Tensor D_scale, int64_t D_type, at::Tensor D_amax,
+                      at::Tensor bias, int64_t bias_type, at::Tensor pre_gelu_out, int64_t grad,
+                      at::Tensor workspace, int64_t workspaceSize, int64_t accumulate,
+                      int64_t use_split_accumulator) {
   // cast inputs to types accepted by te_gemm
   transformer_engine::DType A_type_arg = reverse_map_dtype(A_type);
   bool transa_arg = static_cast<bool>(transa);
@@ -276,11 +277,12 @@ at::Tensor te_gemm_ts(
 std::vector<at::Tensor> te_grouped_gemm_ts(
     std::vector<at::Tensor> A, at::Tensor A_scale_inverse, int64_t A_offset, int64_t A_type,
     std::vector<int64_t> A_scaling_mode, int64_t transa, std::vector<at::Tensor> B,
-    at::Tensor B_scale_inverse, int64_t B_offset, int64_t B_type, std::vector<int64_t> B_scaling_mode,
-    int64_t transb, std::vector<at::Tensor> D, int64_t D_offset, at::Tensor D_scale,
-    int64_t D_type, at::Tensor D_amax, std::vector<at::Tensor> bias, int64_t bias_type,
-    std::vector<at::Tensor> pre_gelu_out, int64_t grad, std::vector<at::Tensor> workspace,
-    int64_t workspaceSize, int64_t accumulate, int64_t use_split_accumulator) {
+    at::Tensor B_scale_inverse, int64_t B_offset, int64_t B_type,
+    std::vector<int64_t> B_scaling_mode, int64_t transb, std::vector<at::Tensor> D,
+    int64_t D_offset, at::Tensor D_scale, int64_t D_type, at::Tensor D_amax,
+    std::vector<at::Tensor> bias, int64_t bias_type, std::vector<at::Tensor> pre_gelu_out,
+    int64_t grad, std::vector<at::Tensor> workspace, int64_t workspaceSize, int64_t accumulate,
+    int64_t use_split_accumulator) {
   // cast inputs to types accepted by te_gemm
   transformer_engine::DType A_type_arg = reverse_map_dtype(A_type);
   bool transa_arg = static_cast<bool>(transa);
@@ -301,9 +303,9 @@ std::vector<at::Tensor> te_grouped_gemm_ts(
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
   te_grouped_gemm(A, A_scale_inverse, A_offset, A_type_arg, A_scaling_mode, transa_arg, B,
-                  B_scale_inverse, B_offset, B_type_arg, B_scaling_mode, transb_arg, D,
-                  D_offset, D_scale, D_type_arg, D_amax, bias, bias_type_arg, pre_gelu_out,
-                  grad_arg, workspace, workspaceSize_arg, accumulate_arg, use_split_accumulator_arg,
+                  B_scale_inverse, B_offset, B_type_arg, B_scaling_mode, transb_arg, D, D_offset,
+                  D_scale, D_type_arg, D_amax, bias, bias_type_arg, pre_gelu_out, grad_arg,
+                  workspace, workspaceSize_arg, accumulate_arg, use_split_accumulator_arg,
                   num_math_sms);
   return D;
 }

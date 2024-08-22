@@ -131,8 +131,8 @@ bool is_columnwise_block_scaling(const Tensor *t) {
   bool columnwise_block_scaling = mode.y == 1 && !(mode.delayed_scaling);
   if (columnwise_block_scaling) {
     auto nelem = t->numel();
-    NVTE_CHECK(nelem % block_size == 0, "Incorrect number of inputs elements ", nelem,
-               " for ", block_size, " block scaling.");
+    NVTE_CHECK(nelem % block_size == 0, "Incorrect number of inputs elements ", nelem, " for ",
+               block_size, " block scaling.");
   }
   if (block_size != 32) {
     NVTE_ERROR("Block size not supported.");

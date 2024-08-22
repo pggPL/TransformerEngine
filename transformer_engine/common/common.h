@@ -37,7 +37,7 @@ struct SimpleTensor {
 
   int numel() const {
     size_t acc = 1;
-    for (const auto& dim : shape) {
+    for (const auto &dim : shape) {
       acc *= dim;
     }
     return acc;
@@ -76,7 +76,7 @@ struct Tensor {
 
   int numel() const {
     size_t acc = 1;
-    for (const auto& dim : data.shape) {
+    for (const auto &dim : data.shape) {
       acc *= dim;
     }
     return acc;

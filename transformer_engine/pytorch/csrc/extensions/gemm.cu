@@ -7,14 +7,14 @@
 #include "common/util/cuda_runtime.h"
 #include "extensions.h"
 
-void te_gemm(
-    at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType A_type,
-    std::vector<int64_t> A_scaling_mode, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
-    transformer_engine::DType B_type, std::vector<int64_t> B_scaling_mode, bool transb,
-    at::Tensor D, at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax,
-    at::Tensor bias, transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad,
-    at::Tensor workspace, size_t workspaceSize, bool accumulate, bool use_split_accumulator,
-    int math_sm_count) {
+void te_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType A_type,
+             std::vector<int64_t> A_scaling_mode, bool transa, at::Tensor B,
+             at::Tensor B_scale_inverse, transformer_engine::DType B_type,
+             std::vector<int64_t> B_scaling_mode, bool transb, at::Tensor D, at::Tensor D_scale,
+             transformer_engine::DType D_type, at::Tensor D_amax, at::Tensor bias,
+             transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad,
+             at::Tensor workspace, size_t workspaceSize, bool accumulate,
+             bool use_split_accumulator, int math_sm_count) {
   using namespace transformer_engine;
   if (A.data_ptr() == nullptr || B.data_ptr() == nullptr) {
     if (D.data_ptr() != nullptr && !accumulate) D.zero_();
@@ -61,14 +61,15 @@ void te_gemm(
                    math_sm_count, at::cuda::getCurrentCUDAStream());
 }
 
-void te_atomic_gemm(
-    at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType A_type,
-    std::vector<int64_t> A_scaling_mode, bool transa, at::Tensor B, at::Tensor B_scale_inverse,
-    transformer_engine::DType B_type, std::vector<int64_t> B_scaling_mode, bool transb,
-    at::Tensor D, at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax,
-    at::Tensor bias, transformer_engine::DType bias_type, at::Tensor pre_gelu_out, bool grad,
-    at::Tensor workspace, size_t workspaceSize, bool accumulate, bool use_split_accumulator,
-    int math_sm_count, int m_split, int n_split, bool gemm_producer, at::Tensor counter) {
+void te_atomic_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType A_type,
+                    std::vector<int64_t> A_scaling_mode, bool transa, at::Tensor B,
+                    at::Tensor B_scale_inverse, transformer_engine::DType B_type,
+                    std::vector<int64_t> B_scaling_mode, bool transb, at::Tensor D,
+                    at::Tensor D_scale, transformer_engine::DType D_type, at::Tensor D_amax,
+                    at::Tensor bias, transformer_engine::DType bias_type, at::Tensor pre_gelu_out,
+                    bool grad, at::Tensor workspace, size_t workspaceSize, bool accumulate,
+                    bool use_split_accumulator, int math_sm_count, int m_split, int n_split,
+                    bool gemm_producer, at::Tensor counter) {
   using namespace transformer_engine;
 
   auto dimA = A_scaling_mode.size();
@@ -110,15 +111,16 @@ void te_atomic_gemm(
                           gemm_producer, te_counter.data(), at::cuda::getCurrentCUDAStream());
 }
 
-void te_grouped_gemm(
-    std::vector<at::Tensor> A, at::Tensor A_scale_inverse, int A_offset,
-    transformer_engine::DType A_type, std::vector<int64_t> A_scaling_mode, bool transa,
-    std::vector<at::Tensor> B, at::Tensor B_scale_inverse, int B_offset,
-    transformer_engine::DType B_type, std::vector<int64_t> B_scaling_mode, bool transb,
-    std::vector<at::Tensor> D, int D_offset, at::Tensor D_scale, transformer_engine::DType D_type,
-    at::Tensor D_amax, std::vector<at::Tensor> bias, transformer_engine::DType bias_type,
-    std::vector<at::Tensor> pre_gelu_out, bool grad, std::vector<at::Tensor> workspace,
-    size_t workspaceSize, bool accumulate, bool use_split_accumulator, int math_sm_count) {
+void te_grouped_gemm(std::vector<at::Tensor> A, at::Tensor A_scale_inverse, int A_offset,
+                     transformer_engine::DType A_type, std::vector<int64_t> A_scaling_mode,
+                     bool transa, std::vector<at::Tensor> B, at::Tensor B_scale_inverse,
+                     int B_offset, transformer_engine::DType B_type,
+                     std::vector<int64_t> B_scaling_mode, bool transb, std::vector<at::Tensor> D,
+                     int D_offset, at::Tensor D_scale, transformer_engine::DType D_type,
+                     at::Tensor D_amax, std::vector<at::Tensor> bias,
+                     transformer_engine::DType bias_type, std::vector<at::Tensor> pre_gelu_out,
+                     bool grad, std::vector<at::Tensor> workspace, size_t workspaceSize,
+                     bool accumulate, bool use_split_accumulator, int math_sm_count) {
   using namespace transformer_engine;
   std::vector<NVTETensor> te_A, te_B, te_D, te_bias, te_pre_gelu_out, te_workspace;
   std::vector<transformer_engine::TensorWrapper> tensor_wrappers;
@@ -136,9 +138,8 @@ void te_grouped_gemm(
                                         void* scale_dptr, void* scale_inv_dptr,
                                         NVTEScalingMode scaling_mode = {-1, -1, 1}) -> NVTETensor {
     // TODO(ksivamani): check scaling factor shapes for mxfp8.
-    tensor_wrappers.emplace_back(
-        makeTransformerEngineTensor(
-            dptr, shape, dtype, amax_dptr, scale_dptr, scale_inv_dptr, {1}, scaling_mode));
+    tensor_wrappers.emplace_back(makeTransformerEngineTensor(
+        dptr, shape, dtype, amax_dptr, scale_dptr, scale_inv_dptr, {1}, scaling_mode));
     return tensor_wrappers.back().data();
   };
   for (size_t i = 0; i < A.size(); i++) {

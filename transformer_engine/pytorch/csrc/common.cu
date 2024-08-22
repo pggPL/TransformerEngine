@@ -45,25 +45,19 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor)
 }
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
-  void* data_ptr,
-  const std::vector<size_t>& shape,
-  const transformer_engine::DType type,
-  void* amax_ptr, void* scale_ptr,
-  void* scale_inv_ptr,
-  std::vector<size_t> scale_inv_shape,
-  NVTEScalingMode scaling_mode) {
-
+    void* data_ptr, const std::vector<size_t>& shape, const transformer_engine::DType type,
+    void* amax_ptr, void* scale_ptr, void* scale_inv_ptr, std::vector<size_t> scale_inv_shape,
+    NVTEScalingMode scaling_mode) {
   return transformer_engine::TensorWrapper(
       data_ptr, shape, type, reinterpret_cast<float*>(amax_ptr),
-      reinterpret_cast<float*>(scale_ptr), reinterpret_cast<float*>(scale_inv_ptr),
-      scale_inv_shape, scaling_mode);
+      reinterpret_cast<float*>(scale_ptr), reinterpret_cast<float*>(scale_inv_ptr), scale_inv_shape,
+      scaling_mode);
 }
 
-transformer_engine::TensorWrapper makeTransformerEngineTensor(
-  at::Tensor tensor, at::Tensor amax,
-  const at::Tensor scale,
-  at::Tensor scale_inv,
-  NVTEScalingMode scaling_mode) {
+transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor, at::Tensor amax,
+                                                              const at::Tensor scale,
+                                                              at::Tensor scale_inv,
+                                                              NVTEScalingMode scaling_mode) {
   transformer_engine::DType dtype = GetTransformerEngineDType(tensor.scalar_type());
 
   auto tensor_shape = getTensorShape(tensor);

@@ -205,7 +205,4 @@ class CurrentScaling:
         ), f"Unsupported scaling mode {self.scaling_mode}."
 
     def __repr__(self) -> str:
-        return (
-            f"margin={self.margin}, "
-            f"format={str(self.fp8_format).split('.')[1]},"
-        )
+        return f"margin={self.margin}, format={str(self.fp8_format).split('.')[1]},"

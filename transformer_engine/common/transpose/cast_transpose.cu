@@ -327,8 +327,8 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output
                                  static_cast<OutputType *>(transposed_output.data.dptr),
                                  static_cast<const CType *>(cast_output.scale.dptr),
                                  static_cast<CType *>(cast_output.amax.dptr),
-                                 static_cast<CType *>(cast_output.scale_inv.dptr),
-                                 row_length, num_rows);
+                                 static_cast<CType *>(cast_output.scale_inv.dptr), row_length,
+                                 num_rows);
             } else {  // Statically-compiled general kernel
               constexpr size_t load_size = 4;
               constexpr size_t store_size = 4;
@@ -344,8 +344,7 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output
                       static_cast<OutputType *>(transposed_output.data.dptr),
                       static_cast<const CType *>(cast_output.scale.dptr),
                       static_cast<CType *>(cast_output.amax.dptr),
-                      static_cast<CType *>(cast_output.scale_inv.dptr),
-                      row_length, num_rows);
+                      static_cast<CType *>(cast_output.scale_inv.dptr), row_length, num_rows);
             }
           } else {
             NVTE_ERROR("Not implemented scaling mode: " + to_string(cast_output.scaling_mode) +
