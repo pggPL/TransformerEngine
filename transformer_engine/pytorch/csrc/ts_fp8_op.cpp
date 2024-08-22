@@ -256,9 +256,14 @@ at::Tensor te_gemm_ts(at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_te
   bool accumulate_arg = static_cast<bool>(accumulate);
   bool use_split_accumulator_arg = static_cast<bool>(use_split_accumulator);
 
+  NVTE_CHECK(A.is_cuda() && B.is_cuda() && D.is_cuda(), "Tensors must be on device.");
+  NVTE_CHECK(A_scale_inverse.is_cuda() && B_scale_inverse.is_cuda(),
+             "Scaling factors must be on device.");
+  NVTE_CHECK(!(D_scale.numel()) || D_scale.is_cuda(), "Scaling factor must be on device.");
+  NVTE_CHECK(!(D_amax.numel()) || D_amax.is_cuda(), "Amax tensor must be on device.");
+
   // Set an external SM Margin to all the GEMMs.
   // This comes in handy when DP is overlapped with GEMMs
-
   const int device_id = at::cuda::current_device();
   const int sm_count = transformer_engine::cuda::sm_count(device_id);
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
