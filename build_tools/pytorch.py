@@ -79,6 +79,8 @@ def setup_pytorch_extension(
                 "arch=compute_90,code=sm_90",
             )
         )
+        if version >= (12, 7):
+            nvcc_flags.extend(["-gencode", "arch=compute_100,code=sm_100"])
 
     # Libraries
     library_dirs = []
