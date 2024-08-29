@@ -84,7 +84,7 @@ def _get_blocking_scaling_scale_inv(t, t_scale_inv):
 @functools.lru_cache(maxsize=None)
 def _empty_tensor() -> torch.Tensor:
     """Get tensor with no entries and no data"""
-    return torch.Tensor()
+    return torch.Tensor().cuda()
 
 
 def fp8_gemm(
