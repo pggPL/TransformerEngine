@@ -23,7 +23,7 @@ from build_tools.utils import (
     get_frameworks,
     install_and_import,
     remove_dups,
-    uninstall_te_fw_packages,
+    uninstall_te_wheel_packages,
 )
 
 frameworks = get_frameworks()
@@ -107,62 +107,85 @@ def setup_requirements() -> Tuple[List[str], List[str], List[str]]:
 
 
 if __name__ == "__main__":
-    # Dependencies
-    setup_requires, install_requires, test_requires = setup_requirements()
-
     __version__ = te_version()
 
-    ext_modules = [setup_common_extension()]
-    if not bool(int(os.getenv("NVTE_RELEASE_BUILD", "0"))):
-        # Remove residual FW packages since compiling from source
-        # results in a single binary with FW extensions included.
-        uninstall_te_fw_packages()
-        if "pytorch" in frameworks:
-            from importlib.metadata import PackageNotFoundError
-            from importlib.metadata import version as get_pkg_version
-            from packaging.version import Version as PkgVersion
+    with open("README.rst", encoding="utf-8") as f:
+        long_description = f.read()
 
-            # FA for blackwell.
-            try:
-                fa_version = PkgVersion(get_pkg_version("flash-attn"))
-            except PackageNotFoundError:
-                fa_version = "unknown"
+    # Settings for building top level empty package for dependency management.
+    if bool(int(os.getenv("NVTE_BUILD_METAPACKAGE", "0"))):
+        assert bool(
+            int(os.getenv("NVTE_RELEASE_BUILD", "0"))
+        ), "NVTE_RELEASE_BUILD env must be set for metapackage build."
+        ext_modules = []
+        cmdclass = {}
+        package_data = {}
+        include_package_data = False
+        setup_requires = []
+        install_requires = ([f"transformer_engine_cu12=={__version__}"],)
+        extras_require = {
+            "pytorch": [f"transformer_engine_torch=={__version__}"],
+            "jax": [f"transformer_engine_jax=={__version__}"],
+            "paddle": [f"transformer_engine_paddle=={__version__}"],
+        }
+    else:
+        setup_requires, install_requires, test_requires = setup_requirements()
+        ext_modules = [setup_common_extension()]
+        cmdclass = {"build_ext": CMakeBuildExtension, "bdist_wheel": TimedBdist}
+        package_data = {"": ["VERSION.txt"]}
+        include_package_data = True
+        extras_require = {"test": test_requires}
 
-            if fa_version != PkgVersion("2.4.2.dev0"):
-                import subprocess
+        if not bool(int(os.getenv("NVTE_RELEASE_BUILD", "0"))):
+            # Remove residual FW packages since compiling from source
+            # results in a single binary with FW extensions included.
+            uninstall_te_wheel_packages()
+            if "pytorch" in frameworks:
+                from importlib.metadata import PackageNotFoundError
+                from importlib.metadata import version as get_pkg_version
+                from packaging.version import Version as PkgVersion
 
-                fa_path = current_file_path / "3rdparty/flashattn_internal"
-                subprocess.check_call([sys.executable, "-m", "pip", "install", fa_path])
+                # FA for blackwell.
+                try:
+                    fa_version = PkgVersion(get_pkg_version("flash-attn"))
+                except PackageNotFoundError:
+                    fa_version = "unknown"
 
-            from build_tools.pytorch import setup_pytorch_extension
+                if fa_version != PkgVersion("2.4.2.dev0"):
+                    import subprocess
 
-            ext_modules.append(
-                setup_pytorch_extension(
-                    "transformer_engine/pytorch/csrc",
-                    current_file_path / "transformer_engine" / "pytorch" / "csrc",
-                    current_file_path / "transformer_engine",
+                    fa_path = current_file_path / "3rdparty/flashattn_internal"
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", fa_path])
+
+                from build_tools.pytorch import setup_pytorch_extension
+
+                ext_modules.append(
+                    setup_pytorch_extension(
+                        "transformer_engine/pytorch/csrc",
+                        current_file_path / "transformer_engine" / "pytorch" / "csrc",
+                        current_file_path / "transformer_engine",
+                    )
                 )
-            )
-        if "jax" in frameworks:
-            from build_tools.jax import setup_jax_extension
+            if "jax" in frameworks:
+                from build_tools.jax import setup_jax_extension
 
-            ext_modules.append(
-                setup_jax_extension(
-                    "transformer_engine/jax/csrc",
-                    current_file_path / "transformer_engine" / "jax" / "csrc",
-                    current_file_path / "transformer_engine",
+                ext_modules.append(
+                    setup_jax_extension(
+                        "transformer_engine/jax/csrc",
+                        current_file_path / "transformer_engine" / "jax" / "csrc",
+                        current_file_path / "transformer_engine",
+                    )
                 )
-            )
-        if "paddle" in frameworks:
-            from build_tools.paddle import setup_paddle_extension
+            if "paddle" in frameworks:
+                from build_tools.paddle import setup_paddle_extension
 
-            ext_modules.append(
-                setup_paddle_extension(
-                    "transformer_engine/paddle/csrc",
-                    current_file_path / "transformer_engine" / "paddle" / "csrc",
-                    current_file_path / "transformer_engine",
+                ext_modules.append(
+                    setup_paddle_extension(
+                        "transformer_engine/paddle/csrc",
+                        current_file_path / "transformer_engine" / "paddle" / "csrc",
+                        current_file_path / "transformer_engine",
+                    )
                 )
-            )
 
     # Configure package
     setuptools.setup(
@@ -175,13 +198,10 @@ if __name__ == "__main__":
                 "transformer_engine/build_tools",
             ],
         ),
-        extras_require={
-            "test": test_requires,
-            "pytorch": [f"transformer_engine_torch=={__version__}"],
-            "jax": [f"transformer_engine_jax=={__version__}"],
-            "paddle": [f"transformer_engine_paddle=={__version__}"],
-        },
+        extras_require=extras_require,
         description="Transformer acceleration library",
+        long_description=long_description,
+        long_description_content_type="text/x-rst",
         ext_modules=ext_modules,
         cmdclass={"build_ext": CMakeBuildExtension, "bdist_wheel": TimedBdist},
         python_requires=">=3.8, <3.13",
@@ -195,6 +215,6 @@ if __name__ == "__main__":
         setup_requires=setup_requires,
         install_requires=install_requires,
         license_files=("LICENSE",),
-        include_package_data=True,
-        package_data={"": ["VERSION.txt"]},
+        include_package_data=include_package_data,
+        package_data=package_data,
     )
