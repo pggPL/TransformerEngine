@@ -231,6 +231,7 @@ def skip_tests_for_blackwell(config, qkv_format, swa=False):
             or config.num_heads != config.num_gqa_groups
             )):
         fused_attn_supported = False
+    return fused_attn_supported
 
 
 @pytest.mark.skipif(get_cudnn_version() < (8, 9, 1), reason="cuDNN 8.9.1+ is required.")
