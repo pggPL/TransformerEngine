@@ -223,6 +223,7 @@ def skip_tests_for_blackwell(config, qkv_format, swa=False):
         get_device_compute_capability() == (10, 0)
         and (
             config.head_dim_qk == 256
+            or ("padding" in config.attn_mask_type and qkv_format in ["bshd", "sbhd"])
             or config.attn_mask_type == "causal_bottom_right"
             or config.attn_bias_type in ["post_scale_bias", "alibi"]
             or swa
