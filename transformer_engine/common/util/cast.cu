@@ -765,10 +765,8 @@ void fp8_quantize(const Tensor &input,
     NVTE_CHECK(input.data.shape == act_input.data.shape, "Shapes of both inputs must match.");
   }
 
-  NVTE_CHECK(input.data.shape.size() == 2, "Input must have 2 dimensions.");
   NVTE_CHECK(!is_fp8_dtype(input.data.dtype), "Input must be in higher precision.");
 
-  NVTE_CHECK(output->data.shape.size() == 2, "C output must have 2 dimensions.");
   NVTE_CHECK(is_fp8_dtype(output->data.dtype), "Output must have FP8 type.");
   NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
   NVTE_CHECK(output->scale_inv.dptr != nullptr, "Colwise scaling tensor must be allocated");
