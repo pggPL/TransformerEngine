@@ -585,13 +585,11 @@ def fp8_grouped_gemm(
             A_scale_inv,
             A_fp8_tensor_offset,
             A_dtype,
-            A_scaling_mode,
             True,  # transa
             B,
             B_scale_inv,
             B_fp8_tensor_offset,
             B_dtype,
-            B_scaling_mode,
             False,  # transb
             m_splits,
             out[0],
