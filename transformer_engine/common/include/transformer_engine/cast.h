@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 /*  Cast the tensor to FP8 (or MXFP8 if the compute capability of the device is 10.0 or newer)
- *  The implementation is per the microscaling format MXFP8 defined by the OCP specification:  
+ *  The implementation is per the microscaling format MXFP8 defined by the OCP specification:
  *  https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf
  *
  *  Supported modes of scaling (live scaling):
@@ -38,11 +38,11 @@ extern "C" {
  *  The required shape of the MX block must be specified in the 'output' argument,
  *  where the shapes [1,32] and [32,1] are currently supported.
  *
- *  To cast the input tensor to the MXFP8, the scaling_mode.delayed_scaling parameter 
+ *  To cast the input tensor to the MXFP8, the scaling_mode.delayed_scaling parameter
  *  of the output tensor should be set equal to 0.
  */
 
- /*! \brief Casts the tensor to FP8 (or MXFP8 if the compute capability of the device is 10.0 or newer).
+/*! \brief Casts the tensor to FP8 (or MXFP8 if the compute capability of the device is 10.0 or newer).
  *
  *  \param[in]     input            Input tensor to be cast.
  *  \param[in,out] output           Output FP8/MXFP8 tensor.
@@ -58,7 +58,7 @@ void nvte_fp8_quantize(const NVTETensor input, NVTETensor output, cudaStream_t s
  *
  *  Calling this function with workspace being an empty tensor will not perform the operation,
  *  but instead set the shape and type of the workspace tensor to the required values.
- * 
+ *
  *  \param[in]      input            Input tensor to be cast.
  *  \param[in,out]  output           Output MXFP8 tensor.
  *  \param[out]     dbias            Result of the reduction of the input along columns.
@@ -85,22 +85,22 @@ void nvte_fp8_quantize_dbias(const NVTETensor input, NVTETensor output, NVTETens
  *  \param[out]    dbias            Result of the reduction of the input along columns.
  *  \param[out]    workspace        Workspace tensor.
  *  \param[in]     stream           CUDA stream used for the operation.
- * 
+ *
  *  Supported activations: GeLU, SiLU, ReLU, QuickGeLU, SquaredReLU
  */
-void nvte_fp8_quantize_dbias_dgelu(const NVTETensor input, const NVTETensor act_input, 
+void nvte_fp8_quantize_dbias_dgelu(const NVTETensor input, const NVTETensor act_input,
                                    NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                    cudaStream_t stream);
-void nvte_fp8_quantize_dbias_dsilu(const NVTETensor input, const NVTETensor act_input, 
+void nvte_fp8_quantize_dbias_dsilu(const NVTETensor input, const NVTETensor act_input,
                                    NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                    cudaStream_t stream);
-void nvte_fp8_quantize_dbias_drelu(const NVTETensor input, const NVTETensor act_input, 
+void nvte_fp8_quantize_dbias_drelu(const NVTETensor input, const NVTETensor act_input,
                                    NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                    cudaStream_t stream);
-void nvte_fp8_quantize_dbias_dqgelu(const NVTETensor input, const NVTETensor act_input, 
+void nvte_fp8_quantize_dbias_dqgelu(const NVTETensor input, const NVTETensor act_input,
                                     NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                     cudaStream_t stream);
-void nvte_fp8_quantize_dbias_dsrelu(const NVTETensor input, const NVTETensor act_input, 
+void nvte_fp8_quantize_dbias_dsrelu(const NVTETensor input, const NVTETensor act_input,
                                     NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                     cudaStream_t stream);
 
@@ -111,16 +111,16 @@ void nvte_fp8_quantize_dbias_dsrelu(const NVTETensor input, const NVTETensor act
  *  Produces two sets of output data:
  *  1) Scaled rows + row-wise scaling factors, AND
  *  2) Scaled columns + column-wise scaling factors
- * 
+ *
  *  \param[in]     input                Input tensor to be cast.
  *  \param[in,out] output_rowwise       Output MXFP8 tensor scaled along rows.
  *  \param[in,out] output_columnwise    Output MXFP8 tensor scaled along columns.
  *  \param[in]     stream               CUDA stream used for the operation.
  */
-void nvte_fp8_quantize_x2(const NVTETensor input, NVTETensor output_rowwise, 
+void nvte_fp8_quantize_x2(const NVTETensor input, NVTETensor output_rowwise,
                           NVTETensor output_columnwise, cudaStream_t stream);
 
-/*! \brief Cast tensor to MXFP8 along both dimensions. 
+/*! \brief Cast tensor to MXFP8 along both dimensions.
  *         Additionally, reduce the input along columns.
  *         Supported by the devices with the compute capability 10.0 or newer.
  *
@@ -128,10 +128,10 @@ void nvte_fp8_quantize_x2(const NVTETensor input, NVTETensor output_rowwise,
  *  1) Scaled rows + row-wise scaling factors, AND
  *  2) Scaled columns + column-wise scaling factors
  *  3) dBias - the result of the reduction of the input along columns.
- * 
+ *
  *  Calling this function with workspace being an empty tensor will not perform the operation,
  *  but instead set the shape and type of the workspace tensor to the required values.
- *  
+ *
  *  \param[in]     input                Input tensor to be cast.
  *  \param[in,out] output_rowwise       Output MXFP8 tensor scaled along rows.
  *  \param[in,out] output_columnwise    Output MXFP8 tensor scaled along columns.
@@ -139,7 +139,7 @@ void nvte_fp8_quantize_x2(const NVTETensor input, NVTETensor output_rowwise,
  *  \param[out]    workspace            Workspace tensor.
  *  \param[in]     stream               CUDA stream used for the operation.
  */
-void nvte_fp8_quantize_dbias_x2(const NVTETensor input, NVTETensor output_rowwise, 
+void nvte_fp8_quantize_dbias_x2(const NVTETensor input, NVTETensor output_rowwise,
                                 NVTETensor output_columnwise, NVTETensor dbias,
                                 NVTETensor workplace, cudaStream_t stream);
 
@@ -162,29 +162,24 @@ void nvte_fp8_quantize_dbias_x2(const NVTETensor input, NVTETensor output_rowwis
  *  \param[out]    dbias                Result of the reduction of the input along columns.
  *  \param[out]    workspace            Workspace tensor.
  *  \param[in]     stream               CUDA stream used for the operation.
- * 
+ *
  *  Supported activations: GeLU, SiLU, ReLU, QuickGeLU, SquaredReLU
  */
-void nvte_fp8_quantize_dbias_dgelu_x2(const NVTETensor input, const NVTETensor act_input, 
+void nvte_fp8_quantize_dbias_dgelu_x2(const NVTETensor input, const NVTETensor act_input,
                                       NVTETensor output_rowwise, NVTETensor output_columnwise,
-                                      NVTETensor dbias, NVTETensor workplace,
-                                      cudaStream_t stream);
-void nvte_fp8_quantize_dbias_dsilu_x2(const NVTETensor input, const NVTETensor act_input, 
+                                      NVTETensor dbias, NVTETensor workplace, cudaStream_t stream);
+void nvte_fp8_quantize_dbias_dsilu_x2(const NVTETensor input, const NVTETensor act_input,
                                       NVTETensor output_rowwise, NVTETensor output_columnwise,
-                                      NVTETensor dbias, NVTETensor workplace,
-                                      cudaStream_t stream);
-void nvte_fp8_quantize_dbias_drelu_x2(const NVTETensor input, const NVTETensor act_input, 
+                                      NVTETensor dbias, NVTETensor workplace, cudaStream_t stream);
+void nvte_fp8_quantize_dbias_drelu_x2(const NVTETensor input, const NVTETensor act_input,
                                       NVTETensor output_rowwise, NVTETensor output_columnwise,
-                                      NVTETensor dbias, NVTETensor workplace,
-                                      cudaStream_t stream);
-void nvte_fp8_quantize_dbias_dqgelu_x2(const NVTETensor input, const NVTETensor act_input, 
+                                      NVTETensor dbias, NVTETensor workplace, cudaStream_t stream);
+void nvte_fp8_quantize_dbias_dqgelu_x2(const NVTETensor input, const NVTETensor act_input,
                                        NVTETensor output_rowwise, NVTETensor output_columnwise,
-                                       NVTETensor dbias, NVTETensor workplace,
-                                       cudaStream_t stream);
-void nvte_fp8_quantize_dbias_dsrelu_x2(const NVTETensor input, const NVTETensor act_input, 
+                                       NVTETensor dbias, NVTETensor workplace, cudaStream_t stream);
+void nvte_fp8_quantize_dbias_dsrelu_x2(const NVTETensor input, const NVTETensor act_input,
                                        NVTETensor output_rowwise, NVTETensor output_columnwise,
-                                       NVTETensor dbias, NVTETensor workplace,
-                                       cudaStream_t stream);
+                                       NVTETensor dbias, NVTETensor workplace, cudaStream_t stream);
 
 /*! \brief Cast tensor from FP8.
  *

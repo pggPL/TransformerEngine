@@ -496,12 +496,9 @@ def fp8_grouped_gemm(
     out: List[torch.Tensor],
     out_dtype: torch.dtype,
     workspaces: List[torch.Tensor],
-<<<<<<< HEAD
     A_scaling_mode: List = [-1, -1, 1],
     B_scaling_mode: List = [-1, -1, 1],
-=======
     m_splits: Optional[List[int]] = None,
->>>>>>> main
     out_offset: Optional[int] = None,
     fp8_meta_tensor: tex.FP8TensorMeta = None,
     gelu: bool = False,

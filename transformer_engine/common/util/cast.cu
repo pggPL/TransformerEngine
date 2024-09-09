@@ -65,13 +65,14 @@ constexpr size_t PREFETCH_BUFFERS_NUM = 1;
 static_assert(PREFETCH_BUFFERS_NUM < BUFFERS_NUM);
 
 constexpr size_t ELEMS_PER_THREAD = 16;
-constexpr size_t BUFFER_DIM_Y = 32;             // only 32 is supported
-constexpr size_t BUFFER_DIM_X = CHUNK_DIM_X;    // 64
-constexpr size_t SHMEM_DIM_Y = BUFFER_DIM_Y;    // 32
-constexpr size_t SHMEM_DIM_X = BUFFER_DIM_X;    // 64
+constexpr size_t BUFFER_DIM_Y = 32;           // only 32 is supported
+constexpr size_t BUFFER_DIM_X = CHUNK_DIM_X;  // 64
+constexpr size_t SHMEM_DIM_Y = BUFFER_DIM_Y;  // 32
+constexpr size_t SHMEM_DIM_X = BUFFER_DIM_X;  // 64
 
 constexpr size_t THREADS_PER_CHUNK_X_ROWWISE = CHUNK_DIM_X / ELEMS_PER_THREAD;  //   4 = 64 / 16
-constexpr size_t THREADS_PER_CHUNK_Y_ROWWISE = THREADS_PER_CHUNK / THREADS_PER_CHUNK_X_ROWWISE;   //  16 = 64 / 4
+constexpr size_t THREADS_PER_CHUNK_Y_ROWWISE =
+    THREADS_PER_CHUNK / THREADS_PER_CHUNK_X_ROWWISE;                            //  16 = 64 / 4
 constexpr size_t THREADS_PER_CHUNK_X_COLWISE = CHUNK_DIM_X;                     //  64
 constexpr size_t BUFF_STAGES_NUM = BUFFER_DIM_Y / THREADS_PER_CHUNK_Y_ROWWISE;  //   2 = 32 / 16
 constexpr size_t ITERATIONS = CHUNK_DIM_Y / BUFFER_DIM_Y;                       //   2 = 64 / 32
@@ -132,13 +133,9 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
                       const __grid_constant__ CUtensorMap tensor_map_act_input,
                       const __grid_constant__ CUtensorMap tensor_map_output_rowwise,
                       const __grid_constant__ CUtensorMap tensor_map_output_colwise,
-                      e8m0_t *const scales_rowwise,
-                      e8m0_t *const scales_colwise,
-                      float* const dbias_workspace,
-                      const size_t rows,
-                      const size_t cols,
-                      const size_t scale_stride_rowwise,
-                      const size_t scale_stride_colwise) {
+                      e8m0_t *const scales_rowwise, e8m0_t *const scales_colwise,
+                      float *const dbias_workspace, const size_t rows, const size_t cols,
+                      const size_t scale_stride_rowwise, const size_t scale_stride_colwise) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
   constexpr bool USE_ROWWISE_SCALING = SCALE_DIM_X > 1;
   constexpr bool USE_COLWISE_SCALING = SCALE_DIM_Y > 1;
@@ -146,19 +143,20 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 
   constexpr size_t SCALES_ROWWISE_PER_CHUNK_Y = CHUNK_DIM_Y;                //   2 = 64 / 32
   constexpr size_t SCALES_ROWWISE_PER_CHUNK_X = CHUNK_DIM_X / SCALE_DIM_X;  //  64 = 64 / 1
-  constexpr size_t SCALES_ROWWISE_PER_BLOCK_Y = SCALES_ROWWISE_PER_CHUNK_Y
-                                                * CHUNKS_PER_BLOCK_Y;       //   2 = 2 * 1
-  constexpr size_t SCALES_ROWWISE_PER_BLOCK_X = SCALES_ROWWISE_PER_CHUNK_X
-                                                * CHUNKS_PER_BLOCK_X;       //  64 = 64 * 1
+  constexpr size_t SCALES_ROWWISE_PER_BLOCK_Y =
+      SCALES_ROWWISE_PER_CHUNK_Y * CHUNKS_PER_BLOCK_Y;  //   2 = 2 * 1
+  constexpr size_t SCALES_ROWWISE_PER_BLOCK_X =
+      SCALES_ROWWISE_PER_CHUNK_X * CHUNKS_PER_BLOCK_X;  //  64 = 64 * 1
 
   constexpr size_t SCALES_COLWISE_PER_CHUNK_Y = CHUNK_DIM_Y / SCALE_DIM_Y;  //   2 = 64 / 32
   constexpr size_t SCALES_COLWISE_PER_CHUNK_X = CHUNK_DIM_X;                //  64 = 64 / 1
-  constexpr size_t SCALES_COLWISE_PER_BLOCK_Y = SCALES_COLWISE_PER_CHUNK_Y
-                                                * CHUNKS_PER_BLOCK_Y;       //   2 = 2 * 1
-  constexpr size_t SCALES_COLWISE_PER_BLOCK_X = SCALES_COLWISE_PER_CHUNK_X
-                                                * CHUNKS_PER_BLOCK_X;       //  64 = 64 * 1
+  constexpr size_t SCALES_COLWISE_PER_BLOCK_Y =
+      SCALES_COLWISE_PER_CHUNK_Y * CHUNKS_PER_BLOCK_Y;  //   2 = 2 * 1
+  constexpr size_t SCALES_COLWISE_PER_BLOCK_X =
+      SCALES_COLWISE_PER_CHUNK_X * CHUNKS_PER_BLOCK_X;  //  64 = 64 * 1
 
-  constexpr size_t THREADS_PER_SCALE_X_ROWWISE = DIVUP(SCALE_DIM_X, ELEMS_PER_THREAD);  //   2 = 32 / 16
+  constexpr size_t THREADS_PER_SCALE_X_ROWWISE =
+      DIVUP(SCALE_DIM_X, ELEMS_PER_THREAD);                      //   2 = 32 / 16
   constexpr size_t SUBWARP_WIDTH = THREADS_PER_SCALE_X_ROWWISE;  //   2
 
   const int block_offset_Y = blockIdx.y * CHUNKS_PER_BLOCK_Y * CHUNK_DIM_Y;
@@ -177,25 +175,25 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   const int thread_offset_X_rowwise = tid_rowwise_X * ELEMS_PER_THREAD;
   // const int thread_offset_X_colwise = tid_colwise_X;
 
-  const int dbias_rowwise_offset_Y = blockIdx.y * CHUNKS_PER_BLOCK_Y * THREADS_PER_CHUNK_Y_ROWWISE
-                                     + tid_rowwise_Y;
-  const int dbias_rowwise_block_offset_X = blockIdx.x * CHUNKS_PER_BLOCK_X * CHUNK_DIM_X
-                                           + thread_offset_X_rowwise;
+  const int dbias_rowwise_offset_Y =
+      blockIdx.y * CHUNKS_PER_BLOCK_Y * THREADS_PER_CHUNK_Y_ROWWISE + tid_rowwise_Y;
+  const int dbias_rowwise_block_offset_X =
+      blockIdx.x * CHUNKS_PER_BLOCK_X * CHUNK_DIM_X + thread_offset_X_rowwise;
   const int dbias_colwise_offset_Y = blockIdx.y;
-  const int dbias_colwise_block_offset_X = blockIdx.x * CHUNKS_PER_BLOCK_X * CHUNK_DIM_X
-                                           + tid_colwise_X;
+  const int dbias_colwise_block_offset_X =
+      blockIdx.x * CHUNKS_PER_BLOCK_X * CHUNK_DIM_X + tid_colwise_X;
   const int dbias_stride = cols;
 
   Vec<float, ELEMS_PER_THREAD> partial_dbias_rowwise[CHUNKS_PER_BLOCK_X];
   float partial_dbias_colwise[CHUNKS_PER_BLOCK_X];
   if constexpr (IS_DBIAS) {
     if constexpr (COMPUTE_DBIAS_IN_ROWWISE_SECTION) {
-      #pragma unroll
+#pragma unroll
       for (int i = 0; i < CHUNKS_PER_BLOCK_X; ++i) {
         partial_dbias_rowwise[i].clear();
       }
     } else {
-      #pragma unroll
+#pragma unroll
       for (int i = 0; i < CHUNKS_PER_BLOCK_X; ++i) {
         partial_dbias_colwise[i] = 0;
       }
@@ -213,13 +211,13 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 
   const bool is_master_thread = (threadIdx.x == 0);
 
-  // Initialize shared memory barrier with the number of threads participating in the barrier.
-  #pragma nv_diag_suppress static_var_with_dynamic_init
+// Initialize shared memory barrier with the number of threads participating in the barrier.
+#pragma nv_diag_suppress static_var_with_dynamic_init
   __shared__ alignas(8) uint64_t mbar[ITERATIONS];
 
   if (is_master_thread) {
-// Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
-    #pragma unroll
+    // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
+#pragma unroll
     for (int it = 0; it < ITERATIONS; ++it) {
       mbarrier_init(&mbar[it], THREADS_PER_CHUNK);
     }
@@ -229,7 +227,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   __syncthreads();
 
   int parity = 0;
-  #pragma unroll
+#pragma unroll
   for (int chunk = 0; chunk < CHUNKS_PER_BLOCK; ++chunk) {
     const int chunk_Y = chunk / CHUNKS_PER_BLOCK_X;
     const int chunk_X = chunk % CHUNKS_PER_BLOCK_X;
@@ -237,17 +235,17 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
     const int chunk_offset_Y = block_offset_Y + chunk_Y * CHUNK_DIM_Y;
     const int chunk_offset_X = block_offset_X + chunk_X * CHUNK_DIM_X;
 
-    const int scales_rowwise_chunk_offset_Y = scales_rowwise_block_offset_Y
-                                              + chunk_Y * SCALES_ROWWISE_PER_CHUNK_Y;
-    const int scales_rowwise_chunk_offset_X = scales_rowwise_block_offset_X
-                                              + chunk_X * SCALES_ROWWISE_PER_CHUNK_X;
-    const int scales_colwise_chunk_offset_Y = scales_colwise_block_offset_Y
-                                              + chunk_Y * SCALES_COLWISE_PER_CHUNK_Y;
-    const int scales_colwise_chunk_offset_X = scales_colwise_block_offset_X
-                                              + chunk_X * SCALES_COLWISE_PER_CHUNK_X;
+    const int scales_rowwise_chunk_offset_Y =
+        scales_rowwise_block_offset_Y + chunk_Y * SCALES_ROWWISE_PER_CHUNK_Y;
+    const int scales_rowwise_chunk_offset_X =
+        scales_rowwise_block_offset_X + chunk_X * SCALES_ROWWISE_PER_CHUNK_X;
+    const int scales_colwise_chunk_offset_Y =
+        scales_colwise_block_offset_Y + chunk_Y * SCALES_COLWISE_PER_CHUNK_Y;
+    const int scales_colwise_chunk_offset_X =
+        scales_colwise_block_offset_X + chunk_X * SCALES_COLWISE_PER_CHUNK_X;
 
     if (is_master_thread) {
-      #pragma unroll
+#pragma unroll
       for (int prefetch_buff = 0; prefetch_buff < PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
         const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * BUFFER_DIM_Y;
         const int chunk_stage_offset_X = chunk_offset_X;
@@ -256,7 +254,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
             reinterpret_cast<uint64_t *>(&in_sh[prefetch_buff]),
             reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_stage_offset_X,
             chunk_stage_offset_Y, &mbar[prefetch_buff]);
-        
+
         if constexpr (IS_DACT) {
           cp_async_bulk_tensor_2d_global_to_shared(
               reinterpret_cast<uint64_t *>(&act_in_sh[prefetch_buff]),
@@ -268,14 +266,14 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
         mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
       }
     } else {
-      // Other threads just arrive
-      #pragma unroll
+// Other threads just arrive
+#pragma unroll
       for (int prefetch_buff = 0; prefetch_buff < PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
         mbarrier_arrive(&mbar[prefetch_buff]);
       }
     }
 
-    #pragma unroll
+#pragma unroll
     for (int it = 0; it < ITERATIONS; ++it) {
       const int buff = it % BUFFERS_NUM;
       const int next_it = it + PREFETCH_BUFFERS_NUM;
@@ -313,10 +311,10 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
         Vec<IType, ELEMS_PER_THREAD> act_in;
         Vec<OType, ELEMS_PER_THREAD> out_c;
 
-        const int iteration_scale_rowwise_offset_Y = scales_rowwise_chunk_offset_Y
-                                                     + it * BUFFER_DIM_Y;
+        const int iteration_scale_rowwise_offset_Y =
+            scales_rowwise_chunk_offset_Y + it * BUFFER_DIM_Y;
 
-        #pragma unroll
+#pragma unroll
         for (int stage = 0; stage < BUFF_STAGES_NUM; ++stage) {
           const int stage_offset_Y = stage * THREADS_PER_CHUNK_Y_ROWWISE;
           const int shmem_offset_y = thread_offset_Y + stage_offset_Y;
@@ -329,7 +327,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
           float thread_amax = 0;
           float in_compute[ELEMS_PER_THREAD];
 
-          #pragma unroll
+#pragma unroll
           for (int j = 0; j < ELEMS_PER_THREAD; ++j) {
             float elt = static_cast<float>(in.data.elt[j]);
             if constexpr (IS_DACT) {
@@ -349,18 +347,18 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 
           // Only single thread writes the computed scaling factor
           if (tid_rowwise_X % THREADS_PER_SCALE_X_ROWWISE == 0) {
-            const int global_scales_offset_Y = iteration_scale_rowwise_offset_Y + stage_offset_Y
-                                               + tid_rowwise_Y;
-            const int global_scales_offset_X = scales_rowwise_chunk_offset_X
-                                               + tid_rowwise_X / THREADS_PER_SCALE_X_ROWWISE;
-            const int scale_idx = global_scales_offset_Y * scale_stride_rowwise
-                                  + global_scales_offset_X;
+            const int global_scales_offset_Y =
+                iteration_scale_rowwise_offset_Y + stage_offset_Y + tid_rowwise_Y;
+            const int global_scales_offset_X =
+                scales_rowwise_chunk_offset_X + tid_rowwise_X / THREADS_PER_SCALE_X_ROWWISE;
+            const int scale_idx =
+                global_scales_offset_Y * scale_stride_rowwise + global_scales_offset_X;
             scales_rowwise[scale_idx] = biased_exponent;
           }
 
-          const float block_scale_inverse = exp2f(FP32_EXPONENT_BIAS
-                                                  - static_cast<float>(biased_exponent));
-          #pragma unroll
+          const float block_scale_inverse =
+              exp2f(FP32_EXPONENT_BIAS - static_cast<float>(biased_exponent));
+#pragma unroll
           for (int j = 0; j < ELEMS_PER_THREAD; ++j) {
             out_c.data.elt[j] = static_cast<OType>(in_compute[j] * block_scale_inverse);
           }
@@ -372,7 +370,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
         float in_compute[SCALE_DIM_Y];
 
         float amax = 0;
-        #pragma unroll
+#pragma unroll
         for (int i = 0; i < SCALE_DIM_Y; ++i) {
           float elt = static_cast<float>(in_sh[buff][i][tid_colwise_X]);
           if constexpr (IS_DACT) {
@@ -390,13 +388,13 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 
         const int global_scales_offset_Y = scales_colwise_chunk_offset_Y + it;
         const int global_scales_offset_X = scales_colwise_chunk_offset_X + tid_colwise_X;
-        const int scale_idx = global_scales_offset_Y * scale_stride_colwise
-                              + global_scales_offset_X;
+        const int scale_idx =
+            global_scales_offset_Y * scale_stride_colwise + global_scales_offset_X;
         scales_colwise[scale_idx] = biased_exponent;
 
-        const float block_scale_inverse = exp2f(FP32_EXPONENT_BIAS
-                                                - static_cast<float>(biased_exponent));
-        #pragma unroll
+        const float block_scale_inverse =
+            exp2f(FP32_EXPONENT_BIAS - static_cast<float>(biased_exponent));
+#pragma unroll
         for (int i = 0; i < SCALE_DIM_Y; ++i) {
           out_colwise_sh[buff][i][tid_colwise_X] =
               static_cast<OType>(in_compute[i] * block_scale_inverse);
@@ -437,14 +435,14 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 
   if constexpr (IS_DBIAS) {
     if constexpr (COMPUTE_DBIAS_IN_ROWWISE_SECTION) {
-      #pragma unroll
+#pragma unroll
       for (int i = 0; i < CHUNKS_PER_BLOCK_X; ++i) {
         const int dbias_rowwise_offset_X = dbias_rowwise_block_offset_X + i * CHUNK_DIM_X;
         const int dbias_offset = dbias_rowwise_offset_Y * dbias_stride + dbias_rowwise_offset_X;
         partial_dbias_rowwise[i].store_to(&dbias_workspace[dbias_offset]);
       }
     } else {
-      #pragma unroll
+#pragma unroll
       for (int i = 0; i < CHUNKS_PER_BLOCK_X; ++i) {
         const int dbias_colwise_offset_X = dbias_colwise_block_offset_X + i * CHUNK_DIM_X;
         const int dbias_offset = dbias_colwise_offset_Y * dbias_stride + dbias_colwise_offset_X;
@@ -457,7 +455,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   // further computations were to take place in the kernel, this allows the
   // memory location of the shared memory barrier to be reused.
   if (is_master_thread) {
-    #pragma unroll
+#pragma unroll
     for (int it = 0; it < ITERATIONS; ++it) {
       mbarrier_invalid(&mbar[it]);
     }
@@ -538,9 +536,7 @@ void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, const u
 
 template <int nvec, typename OType>
 __global__ void __launch_bounds__(DBIAS_THREADS_PER_BLOCK)
-    reduce_dbias_kernel(OType *const dbias_output,
-                        const float *const dbias_partial,
-                        const int rows,
+    reduce_dbias_kernel(OType *const dbias_output, const float *const dbias_partial, const int rows,
                         const int cols) {
   using ComputeVec = Vec<float, nvec>;
   using OutputVec = Vec<OType, nvec>;
@@ -581,31 +577,19 @@ void reduce_dbias(const float *workspace_ptr, Tensor *dbias, const size_t rows, 
 
   reduce_dbias_kernel<ELEMS_PER_THREAD, IType>
       <<<reduce_dbias_num_blocks, DBIAS_THREADS_PER_BLOCK, 0, stream>>>(
-          reinterpret_cast<IType *>(dbias->data.dptr),
-          workspace_ptr,
-          rows,
-          cols);
+          reinterpret_cast<IType *>(dbias->data.dptr), workspace_ptr, rows, cols);
 }
 
-enum ScalingType {
-  ROWWISE = 0,
-  COLWISE = 1,
-  BIDIMENTIONAL = 2
-};
+enum ScalingType { ROWWISE = 0, COLWISE = 1, BIDIMENTIONAL = 2 };
 
-template <bool IS_DBIAS, bool IS_DACT, ScalingType SCALING,
-          typename ParamOP, float (*OP)(float, const ParamOP &)>
-void cast_mxfp8(const Tensor &input,
-                const Tensor &act_input,
-                Tensor *output_rowwise,
-                Tensor *output_colwise,
-                Tensor *dbias,
-                Tensor *workspace,
-                cudaStream_t stream) {
-  constexpr bool USE_ROWWISE_SCALING = (SCALING == ScalingType::BIDIMENTIONAL
-                                        || SCALING == ScalingType::ROWWISE);
-  constexpr bool USE_COLWISE_SCALING = (SCALING == ScalingType::BIDIMENTIONAL
-                                        || SCALING == ScalingType::COLWISE);
+template <bool IS_DBIAS, bool IS_DACT, ScalingType SCALING, typename ParamOP,
+          float (*OP)(float, const ParamOP &)>
+void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_rowwise,
+                Tensor *output_colwise, Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
+  constexpr bool USE_ROWWISE_SCALING =
+      (SCALING == ScalingType::BIDIMENTIONAL || SCALING == ScalingType::ROWWISE);
+  constexpr bool USE_COLWISE_SCALING =
+      (SCALING == ScalingType::BIDIMENTIONAL || SCALING == ScalingType::COLWISE);
 
   const size_t scale_dim_X_rowwise = USE_ROWWISE_SCALING ? output_rowwise->scaling_mode.y : 1;
   const size_t scale_dim_Y_colwise = USE_COLWISE_SCALING ? output_colwise->scaling_mode.x : 1;
@@ -622,15 +606,12 @@ void cast_mxfp8(const Tensor &input,
   const bool isFullTile = (rows % CHUNK_DIM_Y == 0) && (cols % CHUNK_DIM_X == 0);
   NVTE_CHECK(isFullTile, "Only full tiles are supported.");
 
-  e8m0_t *const scales_rowwise_ptr = USE_ROWWISE_SCALING
-                                     ? reinterpret_cast<e8m0_t *>(output_rowwise->scale_inv.dptr)
-                                     : nullptr;
-  e8m0_t *const scales_colwise_ptr = USE_COLWISE_SCALING
-                                     ? reinterpret_cast<e8m0_t *>(output_colwise->scale_inv.dptr)
-                                     : nullptr;
-  const size_t dbias_rows = (scale_dim_Y_colwise > 1)
-                            ? blocks_Y
-                            : blocks_Y * THREADS_PER_CHUNK_Y_ROWWISE;
+  e8m0_t *const scales_rowwise_ptr =
+      USE_ROWWISE_SCALING ? reinterpret_cast<e8m0_t *>(output_rowwise->scale_inv.dptr) : nullptr;
+  e8m0_t *const scales_colwise_ptr =
+      USE_COLWISE_SCALING ? reinterpret_cast<e8m0_t *>(output_colwise->scale_inv.dptr) : nullptr;
+  const size_t dbias_rows =
+      (scale_dim_Y_colwise > 1) ? blocks_Y : blocks_Y * THREADS_PER_CHUNK_Y_ROWWISE;
   const size_t dbias_cols = cols;
 
   if constexpr (IS_DBIAS) {
@@ -644,70 +625,69 @@ void cast_mxfp8(const Tensor &input,
       return;
     }
   }
-  float *const workspace_ptr = IS_DBIAS 
-                               ? reinterpret_cast<float *>(workspace->data.dptr)
-                               : nullptr;
+  float *const workspace_ptr = IS_DBIAS ? reinterpret_cast<float *>(workspace->data.dptr) : nullptr;
 
   const dim3 block(THREADS_PER_CHUNK);
   const dim3 grid(blocks_X, blocks_Y);
 
   DType OutputType = USE_ROWWISE_SCALING ? output_rowwise->data.dtype : output_colwise->data.dtype;
 
-  #define SCALE_DIM_SWITCH(SCALE_DIM, DIM, ...)               \
-    switch (SCALE_DIM) {                                      \
-      case 1: {                                               \
-        constexpr size_t DIM = 1;                             \
-        { __VA_ARGS__ }                                       \
-      } break;                                                \
-      case 32: {                                              \
-        constexpr size_t DIM = 32;                            \
-        { __VA_ARGS__ }                                       \
-      } break;                                                \
-      default: {                                              \
-        NVTE_ERROR("Invalid size of the MX scaling factor."); \
-      }                                                       \
-    }
+#define SCALE_DIM_SWITCH(SCALE_DIM, DIM, ...)               \
+  switch (SCALE_DIM) {                                      \
+    case 1: {                                               \
+      constexpr size_t DIM = 1;                             \
+      { __VA_ARGS__ }                                       \
+    } break;                                                \
+    case 32: {                                              \
+      constexpr size_t DIM = 32;                            \
+      { __VA_ARGS__ }                                       \
+    } break;                                                \
+    default: {                                              \
+      NVTE_ERROR("Invalid size of the MX scaling factor."); \
+    }                                                       \
+  }
 
-  SCALE_DIM_SWITCH(scale_dim_Y_colwise, SCALE_DIM_Y,
-    SCALE_DIM_SWITCH(scale_dim_X_rowwise, SCALE_DIM_X,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
-        TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(OutputType, OType,
+  SCALE_DIM_SWITCH(
+      scale_dim_Y_colwise, SCALE_DIM_Y,
+      SCALE_DIM_SWITCH(
+          scale_dim_X_rowwise, SCALE_DIM_X,
+          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+              input.data.dtype, IType,
+              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+                  OutputType, OType,
 
-          CUtensorMap tensor_map_input{};
-          CUtensorMap tensor_map_act_input{};
-          CUtensorMap tensor_map_output_rowwise{};
-          CUtensorMap tensor_map_output_colwise{};
+                  CUtensorMap tensor_map_input{};
+                  CUtensorMap tensor_map_act_input{}; CUtensorMap tensor_map_output_rowwise{};
+                  CUtensorMap tensor_map_output_colwise{};
 
-          create_tensor_map<IType>(tensor_map_input, &input, rows, cols, SHMEM_DIM_Y, SHMEM_DIM_X);
+                  create_tensor_map<IType>(tensor_map_input, &input, rows, cols, SHMEM_DIM_Y,
+                                           SHMEM_DIM_X);
 
-          if constexpr (IS_DACT) {
-            create_tensor_map<IType>(
-                tensor_map_act_input, &act_input, rows, cols, SHMEM_DIM_Y, SHMEM_DIM_X);
-          }
-          if constexpr (USE_ROWWISE_SCALING) {
-            create_tensor_map<OType>(
-                tensor_map_output_rowwise, output_rowwise, rows, cols, SHMEM_DIM_Y, SHMEM_DIM_X);
-          }
-          if constexpr (USE_COLWISE_SCALING) {
-            create_tensor_map<OType>(
-                tensor_map_output_colwise, output_colwise, rows, cols, SHMEM_DIM_Y, SHMEM_DIM_X);
-          }
+                  if constexpr (IS_DACT) {
+                    create_tensor_map<IType>(tensor_map_act_input, &act_input, rows, cols,
+                                             SHMEM_DIM_Y, SHMEM_DIM_X);
+                  } if constexpr (USE_ROWWISE_SCALING) {
+                    create_tensor_map<OType>(tensor_map_output_rowwise, output_rowwise, rows, cols,
+                                             SHMEM_DIM_Y, SHMEM_DIM_X);
+                  } if constexpr (USE_COLWISE_SCALING) {
+                    create_tensor_map<OType>(tensor_map_output_colwise, output_colwise, rows, cols,
+                                             SHMEM_DIM_Y, SHMEM_DIM_X);
+                  }
 
-          cast_mxfp8_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType, SCALE_DIM_Y, SCALE_DIM_X>
-              <<<grid, block, 0, stream>>>(
-                  tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
-                  tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr, workspace_ptr,
-                  rows, cols, scale_stride_rowwise, scale_stride_colwise);
+                  cast_mxfp8_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType, SCALE_DIM_Y,
+                                    SCALE_DIM_X><<<grid, block, 0, stream>>>(
+                      tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
+                      tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr,
+                      workspace_ptr, rows, cols, scale_stride_rowwise, scale_stride_colwise);
 
-          if constexpr (IS_DBIAS) {
-            reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
-          }
-        );    // NOLINT(*)
-      );      // NOLINT(*)
-    );        // NOLINT(*)
-  );          // NOLINT(*)
+                  if constexpr (IS_DBIAS) {
+                    reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
+                  });  // NOLINT(*)
+          );           // NOLINT(*)
+      );               // NOLINT(*)
+  );                   // NOLINT(*)
 
-  #undef SCALE_DIM_SWITCH
+#undef SCALE_DIM_SWITCH
 }
 
 namespace detail {
@@ -732,9 +712,7 @@ static const int32_t deviceComputeCapability = []() {
   return 10 * deviceProp.major + deviceProp.minor;
 }();
 
-static bool is_supported_by_CC_100() {
-    return deviceComputeCapability >= 100;
-}
+static bool is_supported_by_CC_100() { return deviceComputeCapability >= 100; }
 
 static bool is_supported_shape(const Tensor *output) {
   const NVTEScalingMode &scaling_mode = output->scaling_mode;
@@ -749,16 +727,14 @@ static bool is_supported(const Tensor *output) {
 }
 
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
-void fp8_quantize(const Tensor &input,
-                  const Tensor &act_input,
-                  Tensor *output,
-                  Tensor *dbias,
-                  Tensor *workspace,
-                  cudaStream_t stream) {
+void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, Tensor *dbias,
+                  Tensor *workspace, cudaStream_t stream) {
   CheckInputTensor(input, "cast_input");
   CheckOutputTensor(*output, "cast_output");
 
-  if constexpr (IS_DBIAS) { CheckOutputTensor(*dbias, "dbias"); }
+  if constexpr (IS_DBIAS) {
+    CheckOutputTensor(*dbias, "dbias");
+  }
   if constexpr (IS_DACT) {
     CheckInputTensor(act_input, "activation_input");
     NVTE_CHECK(input.data.dtype == act_input.data.dtype, "Types of both inputs must match.");
@@ -800,18 +776,15 @@ void fp8_quantize(const Tensor &input,
 }
 
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
-void fp8_quantize(const Tensor &input,
-                  const Tensor &act_input,
-                  Tensor *output_rowwise,
-                  Tensor *output_colwise,
-                  Tensor *dbias,
-                  Tensor *workspace,
-                  cudaStream_t stream) {
+void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output_rowwise,
+                  Tensor *output_colwise, Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
   CheckInputTensor(input, "cast_input");
   CheckOutputTensor(*output_rowwise, "cast_output_rowwise");
   CheckOutputTensor(*output_colwise, "cast_output_colwise");
 
-  if constexpr (IS_DBIAS) { CheckOutputTensor(*dbias, "dbias"); }
+  if constexpr (IS_DBIAS) {
+    CheckOutputTensor(*dbias, "dbias");
+  }
   if constexpr (IS_DACT) {
     CheckInputTensor(act_input, "activation_input");
     NVTE_CHECK(input.data.dtype == act_input.data.dtype, "Types of both inputs must match.");
@@ -840,9 +813,8 @@ void fp8_quantize(const Tensor &input,
     cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::BIDIMENTIONAL, ParamOP, OP>(
         input, act_input, output_rowwise, output_colwise, dbias, workspace, stream);
   } else {
-    NVTE_ERROR("Not implemented scaling mode: "
-               + to_string(output_rowwise->scaling_mode)
-               + to_string(output_colwise->scaling_mode) + ".");
+    NVTE_ERROR("Not implemented scaling mode: " + to_string(output_rowwise->scaling_mode) +
+               to_string(output_colwise->scaling_mode) + ".");
   }
 }
 
@@ -887,19 +859,13 @@ void nvte_fp8_quantize(const NVTETensor input, NVTETensor output, cudaStream_t s
   constexpr const NVTETensor activation_input = nullptr;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, nullptr>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
+      reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias(const NVTETensor input,
-                             NVTETensor output,
-                             NVTETensor dbias,
-                             NVTETensor workspace,
-                             cudaStream_t stream) {
+void nvte_fp8_quantize_dbias(const NVTETensor input, NVTETensor output, NVTETensor dbias,
+                             NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias);
   using namespace transformer_engine;
 
@@ -909,19 +875,13 @@ void nvte_fp8_quantize_dbias(const NVTETensor input,
   constexpr const NVTETensor activation_input = nullptr;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, nullptr>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
+      reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_dgelu(const NVTETensor input,
-                                   const NVTETensor activation_input,
-                                   NVTETensor output,
-                                   NVTETensor dbias,
-                                   NVTETensor workspace,
+void nvte_fp8_quantize_dbias_dgelu(const NVTETensor input, const NVTETensor activation_input,
+                                   NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                    cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_dgelu);
   using namespace transformer_engine;
@@ -932,19 +892,13 @@ void nvte_fp8_quantize_dbias_dgelu(const NVTETensor input,
   constexpr auto dActivation = &dgelu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
+      reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_dsilu(const NVTETensor input,
-                                   const NVTETensor activation_input,
-                                   NVTETensor output,
-                                   NVTETensor dbias,
-                                   NVTETensor workspace,
+void nvte_fp8_quantize_dbias_dsilu(const NVTETensor input, const NVTETensor activation_input,
+                                   NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                    cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_dsilu);
   using namespace transformer_engine;
@@ -955,19 +909,13 @@ void nvte_fp8_quantize_dbias_dsilu(const NVTETensor input,
   constexpr auto dActivation = &dsilu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
+      reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_drelu(const NVTETensor input,
-                                   const NVTETensor activation_input,
-                                   NVTETensor output,
-                                   NVTETensor dbias,
-                                   NVTETensor workspace,
+void nvte_fp8_quantize_dbias_drelu(const NVTETensor input, const NVTETensor activation_input,
+                                   NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                    cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_drelu);
   using namespace transformer_engine;
@@ -978,19 +926,13 @@ void nvte_fp8_quantize_dbias_drelu(const NVTETensor input,
   constexpr auto dActivation = &drelu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
+      reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_dqgelu(const NVTETensor input,
-                                    const NVTETensor activation_input,
-                                    NVTETensor output,
-                                    NVTETensor dbias,
-                                    NVTETensor workspace,
+void nvte_fp8_quantize_dbias_dqgelu(const NVTETensor input, const NVTETensor activation_input,
+                                    NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                     cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_dqgelu);
   using namespace transformer_engine;
@@ -1001,19 +943,13 @@ void nvte_fp8_quantize_dbias_dqgelu(const NVTETensor input,
   constexpr auto dActivation = &dqgelu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
+      reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_dsrelu(const NVTETensor input,
-                                    const NVTETensor activation_input,
-                                    NVTETensor output,
-                                    NVTETensor dbias,
-                                    NVTETensor workspace,
+void nvte_fp8_quantize_dbias_dsrelu(const NVTETensor input, const NVTETensor activation_input,
+                                    NVTETensor output, NVTETensor dbias, NVTETensor workspace,
                                     cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_dsrelu);
   using namespace transformer_engine;
@@ -1024,18 +960,13 @@ void nvte_fp8_quantize_dbias_dsrelu(const NVTETensor input,
   constexpr auto dActivation = &dsrelu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
+      reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_x2(const NVTETensor input,
-                          NVTETensor output_rowwise,
-                          NVTETensor output_colwise,
-                          cudaStream_t stream) {
+void nvte_fp8_quantize_x2(const NVTETensor input, NVTETensor output_rowwise,
+                          NVTETensor output_colwise, cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_x2);
   using namespace transformer_engine;
 
@@ -1048,20 +979,13 @@ void nvte_fp8_quantize_x2(const NVTETensor input,
   constexpr const NVTETensor activation_input = nullptr;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, nullptr>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output_rowwise),
-      reinterpret_cast<Tensor *>(output_colwise),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output_rowwise), reinterpret_cast<Tensor *>(output_colwise),
+      reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_x2(const NVTETensor input,
-                                NVTETensor output_rowwise,
-                                NVTETensor output_colwise,
-                                NVTETensor dbias,
-                                NVTETensor workspace,
+void nvte_fp8_quantize_dbias_x2(const NVTETensor input, NVTETensor output_rowwise,
+                                NVTETensor output_colwise, NVTETensor dbias, NVTETensor workspace,
                                 cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_x2);
   using namespace transformer_engine;
@@ -1072,22 +996,14 @@ void nvte_fp8_quantize_dbias_x2(const NVTETensor input,
   constexpr const NVTETensor activation_input = nullptr;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, nullptr>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output_rowwise),
-      reinterpret_cast<Tensor *>(output_colwise),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output_rowwise), reinterpret_cast<Tensor *>(output_colwise),
+      reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_dgelu_x2(const NVTETensor input,
-                                      const NVTETensor activation_input,
-                                      NVTETensor output_rowwise,
-                                      NVTETensor output_colwise,
-                                      NVTETensor dbias,
-                                      NVTETensor workspace,
-                                      cudaStream_t stream) {
+void nvte_fp8_quantize_dbias_dgelu_x2(const NVTETensor input, const NVTETensor activation_input,
+                                      NVTETensor output_rowwise, NVTETensor output_colwise,
+                                      NVTETensor dbias, NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_dgelu_x2);
   using namespace transformer_engine;
 
@@ -1097,22 +1013,14 @@ void nvte_fp8_quantize_dbias_dgelu_x2(const NVTETensor input,
   constexpr auto dActivation = &dgelu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output_rowwise),
-      reinterpret_cast<Tensor *>(output_colwise),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output_rowwise), reinterpret_cast<Tensor *>(output_colwise),
+      reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_dsilu_x2(const NVTETensor input,
-                                      const NVTETensor activation_input,
-                                      NVTETensor output_rowwise,
-                                      NVTETensor output_colwise,
-                                      NVTETensor dbias,
-                                      NVTETensor workspace,
-                                      cudaStream_t stream) {
+void nvte_fp8_quantize_dbias_dsilu_x2(const NVTETensor input, const NVTETensor activation_input,
+                                      NVTETensor output_rowwise, NVTETensor output_colwise,
+                                      NVTETensor dbias, NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_dsilu_x2);
   using namespace transformer_engine;
 
@@ -1122,22 +1030,14 @@ void nvte_fp8_quantize_dbias_dsilu_x2(const NVTETensor input,
   constexpr auto dActivation = &dsilu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output_rowwise),
-      reinterpret_cast<Tensor *>(output_colwise),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output_rowwise), reinterpret_cast<Tensor *>(output_colwise),
+      reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_drelu_x2(const NVTETensor input,
-                                      const NVTETensor activation_input,
-                                      NVTETensor output_rowwise,
-                                      NVTETensor output_colwise,
-                                      NVTETensor dbias,
-                                      NVTETensor workspace,
-                                      cudaStream_t stream) {
+void nvte_fp8_quantize_dbias_drelu_x2(const NVTETensor input, const NVTETensor activation_input,
+                                      NVTETensor output_rowwise, NVTETensor output_colwise,
+                                      NVTETensor dbias, NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_drelu_x2);
   using namespace transformer_engine;
 
@@ -1147,21 +1047,14 @@ void nvte_fp8_quantize_dbias_drelu_x2(const NVTETensor input,
   constexpr auto dActivation = &drelu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output_rowwise),
-      reinterpret_cast<Tensor *>(output_colwise),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output_rowwise), reinterpret_cast<Tensor *>(output_colwise),
+      reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_dqgelu_x2(const NVTETensor input,
-                                       const NVTETensor activation_input,
-                                       NVTETensor output_rowwise,
-                                       NVTETensor output_colwise,
-                                       NVTETensor dbias,
-                                       NVTETensor workspace,
+void nvte_fp8_quantize_dbias_dqgelu_x2(const NVTETensor input, const NVTETensor activation_input,
+                                       NVTETensor output_rowwise, NVTETensor output_colwise,
+                                       NVTETensor dbias, NVTETensor workspace,
                                        cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_dqgelu_x2);
   using namespace transformer_engine;
@@ -1172,21 +1065,14 @@ void nvte_fp8_quantize_dbias_dqgelu_x2(const NVTETensor input,
   constexpr auto dActivation = &dqgelu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output_rowwise),
-      reinterpret_cast<Tensor *>(output_colwise),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output_rowwise), reinterpret_cast<Tensor *>(output_colwise),
+      reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
 
-void nvte_fp8_quantize_dbias_dsrelu_x2(const NVTETensor input,
-                                       const NVTETensor activation_input,
-                                       NVTETensor output_rowwise,
-                                       NVTETensor output_colwise,
-                                       NVTETensor dbias,
-                                       NVTETensor workspace,
+void nvte_fp8_quantize_dbias_dsrelu_x2(const NVTETensor input, const NVTETensor activation_input,
+                                       NVTETensor output_rowwise, NVTETensor output_colwise,
+                                       NVTETensor dbias, NVTETensor workspace,
                                        cudaStream_t stream) {
   NVTE_API_CALL(nvte_fp8_quantize_dbias_dsrelu_x2);
   using namespace transformer_engine;
@@ -1197,13 +1083,9 @@ void nvte_fp8_quantize_dbias_dsrelu_x2(const NVTETensor input,
   constexpr auto dActivation = &dsrelu<fp32, fp32>;
 
   fp8_quantize<IS_DBIAS, IS_DACT, Empty, dActivation>(
-      *reinterpret_cast<const Tensor *>(input),
-      *reinterpret_cast<const Tensor *>(activation_input),
-      reinterpret_cast<Tensor *>(output_rowwise),
-      reinterpret_cast<Tensor *>(output_colwise),
-      reinterpret_cast<Tensor *>(dbias),
-      reinterpret_cast<Tensor *>(workspace),
-      stream);
+      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      reinterpret_cast<Tensor *>(output_rowwise), reinterpret_cast<Tensor *>(output_colwise),
+      reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
 
 void nvte_fp8_dequantize(const NVTETensor input, NVTETensor output, cudaStream_t stream) {

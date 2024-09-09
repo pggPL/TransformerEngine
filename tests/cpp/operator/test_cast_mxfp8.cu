@@ -192,7 +192,7 @@ void compute_ref_x2(const ProcessingMethod processing_method,
  * Produces one set of output data and the corresponding data of the fused operation (dbias):
  * 1) Scaled rows + row-wise scaling factors
  *       OR
- * 2) Scaled columns + column-wise scaling factors 
+ * 2) Scaled columns + column-wise scaling factors
  */
 
 template <typename InputType, typename OutputType, float (*OP)(const float)>
@@ -210,7 +210,7 @@ void performTest_x1(const ProcessingMethod processing_method,
     const size_t blocks_Y = (rows + block_size_rows - 1) / block_size_rows;
     const size_t blocks_X = (cols + block_size_cols - 1) / block_size_cols;
     const size_t blocks_num = blocks_Y * blocks_X;
-    
+
     const int block_rows_dim = static_cast<int>(block_size_rows);
     const int block_cols_dim = static_cast<int>(block_size_cols);
     const int is_delayed_scaling = false;
@@ -303,7 +303,7 @@ void performTest_x1(const ProcessingMethod processing_method,
  * Scaling along both dimensions (rows and columns)
  * Produces two sets of scaled output data and the corresponding data of the fused operation (dbias):
  * 1) Scaled rows + row-wise scaling factors
- *      AND 
+ *      AND
  * 2) Scaled columns + column-wise scaling factors
  */
 template <typename InputType, typename OutputType, float (*OP)(const float)>
@@ -322,7 +322,7 @@ void performTest_x2(const ProcessingMethod processing_method,
     const size_t blocks_X = (cols + block_size_cols - 1) / block_size_cols;
     const size_t blocks_num_rowwise = rows * blocks_X;
     const size_t blocks_num_colwise = blocks_Y * cols;
-    
+
     const int block_rows_dim = static_cast<int>(block_size_rows);
     const int block_cols_dim = static_cast<int>(block_size_cols);
     const int is_delayed_scaling = false;
@@ -502,21 +502,21 @@ TEST_P(FusedCastMXFP8TestSuite, TestFusedCastMXFP8) {
     using namespace transformer_engine;
     using namespace test;
 
-    const ProcessingMethod processing_method = std::get<0>(GetParam()); 
-    const dActivationType dAct_type = std::get<1>(GetParam()); 
+    const ProcessingMethod processing_method = std::get<0>(GetParam());
+    const dActivationType dAct_type = std::get<1>(GetParam());
     const auto matrix_size = std::get<2>(GetParam());
     const auto block_size = std::get<3>(GetParam());
     const DType input_type = std::get<4>(GetParam());
     const DType output_type = std::get<5>(GetParam());
     const InputsFillCase fill_case = std::get<6>(GetParam());
 
-    // Skips non dAct tests if the dActivation type is not an identity 
+    // Skips non dAct tests if the dActivation type is not an identity
     if (processing_method != ProcessingMethod::CAST_DBIAS_DACT
         && dAct_type != dActivationType::Identity) {
         GTEST_SKIP();
     }
 
-    // Skips dAct tests if the dActivation type is an identity 
+    // Skips dAct tests if the dActivation type is an identity
     if (processing_method == ProcessingMethod::CAST_DBIAS_DACT
         && dAct_type == dActivationType::Identity) {
         GTEST_SKIP();
