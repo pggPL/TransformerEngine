@@ -509,9 +509,9 @@ std::vector<size_t> NormalizationPlan::getWorkspaceShape() const {
   return {static_cast<size_t>(_graph.get_workspace_size())};
 }
 
-void NormalizationPlan::execute(void* x_dptr, void* gamma_dptr, void* beta_dptr, void* mean_dptr,
-                                void* eps_dptr, void* rsigma_dptr, void* z_dptr, void* amax_dptr,
-                                void* z_scale_dptr, void* z_scale_inv_dptr, void* workspace_dptr) {
+void NormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr,
+                                void* mean_dptr, void* eps_dptr, void* rsigma_dptr,
+                                void* workspace_dptr) {
   // Binding data pointers to graph tensors
   _variant_pack = {{_x, x_dptr}, {_rsigma, rsigma_dptr}, {_eps, eps_dptr}};
 
@@ -525,13 +525,14 @@ void NormalizationPlan::execute(void* x_dptr, void* gamma_dptr, void* beta_dptr,
     _variant_pack.insert({{_gamma, gamma_dptr}});
 
   if (_fp8_out)
-    _variant_pack.insert({{_z_scale, z_scale_dptr}, {_amax, amax_dptr}, {_z_fp8, z_dptr}});
+    _variant_pack.insert(
+        {{_z_scale, z->scale.dptr}, {_amax, z->amax.dptr}, {_z_fp8, z->data.dptr}});
   else
-    _variant_pack.insert({{_z, z_dptr}});
+    _variant_pack.insert({{_z, z->data.dptr}});
 
   // Execute the computation
   NVTE_CHECK(_graph.execute(_handle, _variant_pack, workspace_dptr).is_good());
-  if (_fp8_out) ComputeScaleInv(z_scale_dptr, z_scale_inv_dptr);
+  if (_fp8_out) update_tensor_scale_inv(z, 0);
 }
 
 void NormalizationPlan::execute(void* x_dptr, void* gamma_dptr, void* mean_dptr, void* rsigma_dptr,
