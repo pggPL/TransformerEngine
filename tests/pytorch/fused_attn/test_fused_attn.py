@@ -217,6 +217,22 @@ if is_bf16_compatible():  # bf16 requires sm_80 or higher
     param_types.append(torch.bfloat16)
 param_types_lean = [torch.bfloat16]
 
+def skip_tests_for_blackwell(config, qkv_format, swa=False):
+    fused_attn_supported = True
+    if (
+        get_device_compute_capability() == (10, 0)
+        and (
+            config.head_dim_qk == 256
+            or ("padding" in config.attn_mask_type and qkv_format in ["bshd", "sbhd"])
+            or config.attn_mask_type == "causal_bottom_right"
+            or config.attn_bias_type in ["post_scale_bias", "alibi"]
+            or swa
+            or qkv_format == "thd"
+            or config.num_heads != config.num_gqa_groups
+            )):
+        fused_attn_supported = False
+    return fused_attn_supported
+
 
 @pytest.mark.skipif(get_cudnn_version() < (8, 9, 1), reason="cuDNN 8.9.1+ is required.")
 @pytest.mark.parametrize("dtype", param_types)
@@ -259,6 +275,11 @@ def test_dot_product_attention(
         pad_between_seqs=pad_between_seqs,
     )
     flash_attn_supported, fused_attn_supported, unfused_attn_supported = available_backends
+
+    # Skip tests for Blackwell due to lack of support
+    qkv_format = "".join([i for i in qkv_layout.split("_")[0] if i.isalpha()])
+    fused_attn_supported = fused_attn_supported and skip_tests_for_blackwell(config, qkv_format, swa)
+
     # FlashAttention does not support pad_between_seqs, but _run_dot_product_attention
     # mannually pads and unpads the input and output of FlashAttention for testing purposes
     if pad_between_seqs and not (
@@ -1045,6 +1066,9 @@ def test_transformer_layer(
         qkv_layout="sbh3d" if fused_qkv_params else "sb3hd",
     )
     flash_attn_supported, fused_attn_supported, unfused_attn_supported = available_backends
+
+    # Skip tests for Blackwell due to lack of support
+    fused_attn_supported = fused_attn_supported and skip_tests_for_blackwell(config, qkv_format)
 
     # Skip if only unfused backend is supported
     if (len(fused_attn_backends) + flash_attn_supported + unfused_attn_supported) < 2:
