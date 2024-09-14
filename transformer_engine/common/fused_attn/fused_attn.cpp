@@ -90,7 +90,9 @@ NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
         (max_seqlen_kv % 128 == 0) && (head_dim_qk == 128) && (head_dim_v == 128) &&
         ((qkv_format == NVTE_QKV_Format::NVTE_BSHD) ||
          (qkv_format == NVTE_QKV_Format::NVTE_SBHD)) &&
-        ((attn_mask_type == NVTE_Mask_Type::NVTE_CAUSAL_MASK) ||
+        ((attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_CAUSAL_MASK) ||
+         (attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_MASK) ||
+         (attn_mask_type == NVTE_Mask_Type::NVTE_CAUSAL_MASK) ||
          (attn_mask_type == NVTE_Mask_Type::NVTE_NO_MASK))))) {
     if (cudnn_runtime_version >= 8900) {
       backend = NVTE_Fused_Attn_Backend::NVTE_FP8;
