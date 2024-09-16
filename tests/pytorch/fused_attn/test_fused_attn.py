@@ -217,19 +217,18 @@ if is_bf16_compatible():  # bf16 requires sm_80 or higher
     param_types.append(torch.bfloat16)
 param_types_lean = [torch.bfloat16]
 
+
 def skip_tests_for_blackwell(config, qkv_format, swa=False):
     fused_attn_supported = True
-    if (
-        get_device_compute_capability() == (10, 0)
-        and (
-            config.head_dim_qk == 256
-            or ("padding" in config.attn_mask_type and qkv_format in ["bshd", "sbhd"])
-            or config.attn_mask_type == "causal_bottom_right"
-            or config.attn_bias_type in ["post_scale_bias", "alibi"]
-            or swa
-            or qkv_format == "thd"
-            or config.num_heads != config.num_gqa_groups
-            )):
+    if get_device_compute_capability() == (10, 0) and (
+        config.head_dim_qk == 256
+        or ("padding" in config.attn_mask_type and qkv_format in ["bshd", "sbhd"])
+        or config.attn_mask_type == "causal_bottom_right"
+        or config.attn_bias_type in ["post_scale_bias", "alibi"]
+        or swa
+        or qkv_format == "thd"
+        or config.num_heads != config.num_gqa_groups
+    ):
         fused_attn_supported = False
     return fused_attn_supported
 
@@ -278,7 +277,9 @@ def test_dot_product_attention(
 
     # Skip tests for Blackwell due to lack of support
     qkv_format = "".join([i for i in qkv_layout.split("_")[0] if i.isalpha()])
-    fused_attn_supported = fused_attn_supported and skip_tests_for_blackwell(config, qkv_format, swa)
+    fused_attn_supported = fused_attn_supported and skip_tests_for_blackwell(
+        config, qkv_format, swa
+    )
 
     # FlashAttention does not support pad_between_seqs, but _run_dot_product_attention
     # mannually pads and unpads the input and output of FlashAttention for testing purposes
@@ -1630,7 +1631,9 @@ def test_dpa_fp8_vs_f16(dtype, model, qkv_layout, fp8_dpa_bwd, is_training):
         )
     if config.dropout_p != 0.0:
         # test cuDNN FP8 dropout
-        assert torch.all(fused_attn_fwd_fp8==1), "fused_attn_fwd_fp8 must be all 1s when Q/K/V are all 1s."
+        assert torch.all(
+            fused_attn_fwd_fp8 == 1
+        ), "fused_attn_fwd_fp8 must be all 1s when Q/K/V are all 1s."
     else:
         _error(
             fused_attn_fwd_fp8,

@@ -1796,34 +1796,31 @@ void fused_attn_fp8_fwd_impl_v1(
       // }
 
       if (is_padding) {
-          seq_q  = mha_graph->tensor(fe::graph::Tensor_attributes()
-                          .set_name("seq_q")
-                          .set_dim({b, 1, 1, 1})
-                          .set_stride({1, 1, 1, 1})
-                          .set_data_type(fe::DataType_t::INT32));
-          seq_kv = mha_graph->tensor(fe::graph::Tensor_attributes()
-                          .set_name("seq_kv")
-                          .set_dim({b, 1, 1, 1})
-                          .set_stride({1, 1, 1, 1})
-                          .set_data_type(fe::DataType_t::INT32));
-          sdpa_options.set_padding_mask(is_padding)
-                          .set_seq_len_q(seq_q)
-                          .set_seq_len_kv(seq_kv);
+        seq_q = mha_graph->tensor(fe::graph::Tensor_attributes()
+                                      .set_name("seq_q")
+                                      .set_dim({b, 1, 1, 1})
+                                      .set_stride({1, 1, 1, 1})
+                                      .set_data_type(fe::DataType_t::INT32));
+        seq_kv = mha_graph->tensor(fe::graph::Tensor_attributes()
+                                       .set_name("seq_kv")
+                                       .set_dim({b, 1, 1, 1})
+                                       .set_stride({1, 1, 1, 1})
+                                       .set_data_type(fe::DataType_t::INT32));
+        sdpa_options.set_padding_mask(is_padding).set_seq_len_q(seq_q).set_seq_len_kv(seq_kv);
       }
 
       if (is_dropout) {
-          dropout_seed = mha_graph->tensor(fe::graph::Tensor_attributes()
-                          .set_name("Seed")
-                          .set_dim({1, 1, 1, 1})
-                          .set_stride({1, 1, 1, 1})
-                          .set_data_type(fe::DataType_t::INT64));
-          dropout_offset = mha_graph->tensor(fe::graph::Tensor_attributes()
-                          .set_name("Offset")
-                          .set_dim({1, 1, 1, 1})
-                          .set_stride({1, 1, 1, 1})
-                          .set_data_type(fe::DataType_t::INT64));
-          sdpa_options.set_dropout(
-                          dropout_probability, dropout_seed, dropout_offset);
+        dropout_seed = mha_graph->tensor(fe::graph::Tensor_attributes()
+                                             .set_name("Seed")
+                                             .set_dim({1, 1, 1, 1})
+                                             .set_stride({1, 1, 1, 1})
+                                             .set_data_type(fe::DataType_t::INT64));
+        dropout_offset = mha_graph->tensor(fe::graph::Tensor_attributes()
+                                               .set_name("Offset")
+                                               .set_dim({1, 1, 1, 1})
+                                               .set_stride({1, 1, 1, 1})
+                                               .set_data_type(fe::DataType_t::INT64));
+        sdpa_options.set_dropout(dropout_probability, dropout_seed, dropout_offset);
       }
 
       auto [O, Stats, amax_s, amax_o] = mha_graph->sdpa_fp8(
@@ -1921,23 +1918,21 @@ void fused_attn_fp8_fwd_impl_v1(
     // }
 
     if (is_padding) {
-        constexpr size_t nthreads_per_block = 128;
-        const size_t grid = (b + nthreads_per_block - 1) / nthreads_per_block;
-        void *devActualSeqlenQ = static_cast<int8_t *>(workspace) + plan_workspace_size;
-        void *devActualSeqlenKV = static_cast<int8_t *>(devActualSeqlenQ)
-            + b * sizeof(int32_t);
-        cu_seqlens_to_actual_seqlens<<<grid, nthreads_per_block, 0, stream>>>(
-            b, static_cast<const int32_t *>(devPtrcuSeqlensQ),
-            static_cast<const int32_t *>(devPtrcuSeqlensKV),
-            static_cast<int32_t *>(devActualSeqlenQ),
-            static_cast<int32_t *>(devActualSeqlenKV));
-        variant_pack[seq_q]  = devActualSeqlenQ;
-        variant_pack[seq_kv] = devActualSeqlenKV;
+      constexpr size_t nthreads_per_block = 128;
+      const size_t grid = (b + nthreads_per_block - 1) / nthreads_per_block;
+      void* devActualSeqlenQ = static_cast<int8_t*>(workspace) + plan_workspace_size;
+      void* devActualSeqlenKV = static_cast<int8_t*>(devActualSeqlenQ) + b * sizeof(int32_t);
+      cu_seqlens_to_actual_seqlens<<<grid, nthreads_per_block, 0, stream>>>(
+          b, static_cast<const int32_t*>(devPtrcuSeqlensQ),
+          static_cast<const int32_t*>(devPtrcuSeqlensKV), static_cast<int32_t*>(devActualSeqlenQ),
+          static_cast<int32_t*>(devActualSeqlenKV));
+      variant_pack[seq_q] = devActualSeqlenQ;
+      variant_pack[seq_kv] = devActualSeqlenKV;
     }
 
     if (is_dropout) {
-        variant_pack[dropout_seed] = devPtrDropoutSeed;
-        variant_pack[dropout_offset] = devPtrDropoutOffset;
+      variant_pack[dropout_seed] = devPtrDropoutSeed;
+      variant_pack[dropout_offset] = devPtrDropoutOffset;
     }
     NVTE_CHECK_CUDNN_FE(mha_graph->execute(handle, variant_pack, workspace));
   } catch (cudnn_frontend::cudnnException& e) {
@@ -2147,34 +2142,33 @@ void fused_attn_fp8_bwd_impl_v1(
       // }
 
       if (is_padding) {
-          seq_q  = mha_graph->tensor(fe::graph::Tensor_attributes()
-                          .set_name("seq_q")
-                          .set_dim({b, 1, 1, 1})
-                          .set_stride({1, 1, 1, 1})
-                          .set_data_type(fe::DataType_t::INT32));
-          seq_kv = mha_graph->tensor(fe::graph::Tensor_attributes()
-                          .set_name("seq_kv")
-                          .set_dim({b, 1, 1, 1})
-                          .set_stride({1, 1, 1, 1})
-                          .set_data_type(fe::DataType_t::INT32));
-          sdpa_backward_options.set_padding_mask(is_padding)
-                          .set_seq_len_q(seq_q)
-                          .set_seq_len_kv(seq_kv);
+        seq_q = mha_graph->tensor(fe::graph::Tensor_attributes()
+                                      .set_name("seq_q")
+                                      .set_dim({b, 1, 1, 1})
+                                      .set_stride({1, 1, 1, 1})
+                                      .set_data_type(fe::DataType_t::INT32));
+        seq_kv = mha_graph->tensor(fe::graph::Tensor_attributes()
+                                       .set_name("seq_kv")
+                                       .set_dim({b, 1, 1, 1})
+                                       .set_stride({1, 1, 1, 1})
+                                       .set_data_type(fe::DataType_t::INT32));
+        sdpa_backward_options.set_padding_mask(is_padding)
+            .set_seq_len_q(seq_q)
+            .set_seq_len_kv(seq_kv);
       }
 
       if (is_dropout) {
-          dropout_seed = mha_graph->tensor(fe::graph::Tensor_attributes()
-                          .set_name("Seed")
-                          .set_dim({1, 1, 1, 1})
-                          .set_stride({1, 1, 1, 1})
-                          .set_data_type(fe::DataType_t::INT64));
-          dropout_offset = mha_graph->tensor(fe::graph::Tensor_attributes()
-                          .set_name("Offset")
-                          .set_dim({1, 1, 1, 1})
-                          .set_stride({1, 1, 1, 1})
-                          .set_data_type(fe::DataType_t::INT64));
-          sdpa_backward_options.set_dropout(
-                          dropout_probability, dropout_seed, dropout_offset);
+        dropout_seed = mha_graph->tensor(fe::graph::Tensor_attributes()
+                                             .set_name("Seed")
+                                             .set_dim({1, 1, 1, 1})
+                                             .set_stride({1, 1, 1, 1})
+                                             .set_data_type(fe::DataType_t::INT64));
+        dropout_offset = mha_graph->tensor(fe::graph::Tensor_attributes()
+                                               .set_name("Offset")
+                                               .set_dim({1, 1, 1, 1})
+                                               .set_stride({1, 1, 1, 1})
+                                               .set_data_type(fe::DataType_t::INT64));
+        sdpa_backward_options.set_dropout(dropout_probability, dropout_seed, dropout_offset);
       }
 
       auto [dQ, dK, dV, amax_dQ, amax_dK, amax_dV, amax_dP] = mha_graph->sdpa_fp8_backward(
@@ -2313,23 +2307,21 @@ void fused_attn_fp8_bwd_impl_v1(
     // }
 
     if (is_padding) {
-        constexpr size_t nthreads_per_block = 128;
-        const size_t grid = (b + nthreads_per_block - 1) / nthreads_per_block;
-        void *devActualSeqlenQ = static_cast<int8_t *>(workspace) + plan_workspace_size;
-        void *devActualSeqlenKV = static_cast<int8_t *>(devActualSeqlenQ)
-            + b * sizeof(int32_t);
-        cu_seqlens_to_actual_seqlens<<<grid, nthreads_per_block, 0, stream>>>(
-            b, static_cast<const int32_t *>(devPtrcuSeqlensQ),
-            static_cast<const int32_t *>(devPtrcuSeqlensKV),
-            static_cast<int32_t *>(devActualSeqlenQ),
-            static_cast<int32_t *>(devActualSeqlenKV));
-        variant_pack[seq_q]  = devActualSeqlenQ;
-        variant_pack[seq_kv] = devActualSeqlenKV;
+      constexpr size_t nthreads_per_block = 128;
+      const size_t grid = (b + nthreads_per_block - 1) / nthreads_per_block;
+      void* devActualSeqlenQ = static_cast<int8_t*>(workspace) + plan_workspace_size;
+      void* devActualSeqlenKV = static_cast<int8_t*>(devActualSeqlenQ) + b * sizeof(int32_t);
+      cu_seqlens_to_actual_seqlens<<<grid, nthreads_per_block, 0, stream>>>(
+          b, static_cast<const int32_t*>(devPtrcuSeqlensQ),
+          static_cast<const int32_t*>(devPtrcuSeqlensKV), static_cast<int32_t*>(devActualSeqlenQ),
+          static_cast<int32_t*>(devActualSeqlenKV));
+      variant_pack[seq_q] = devActualSeqlenQ;
+      variant_pack[seq_kv] = devActualSeqlenKV;
     }
 
     if (is_dropout) {
-        variant_pack[dropout_seed] = devPtrDropoutSeed;
-        variant_pack[dropout_offset] = devPtrDropoutOffset;
+      variant_pack[dropout_seed] = devPtrDropoutSeed;
+      variant_pack[dropout_offset] = devPtrDropoutOffset;
     }
 
     NVTE_CHECK_CUDNN_FE(mha_graph->execute(handle, variant_pack, workspace));
