@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # Language options
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES 70 80 89 90 100)
+  set(CMAKE_CUDA_ARCHITECTURES 70 80 90 100)
 endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
@@ -72,6 +72,7 @@ list(APPEND transformer_engine_SOURCES
      rmsnorm/rmsnorm_bwd_semi_cuda_kernel.cu
      rmsnorm/rmsnorm_fwd_cuda_kernel.cu
      util/cast.cu
+     util/cast_fused.cu
      util/padding.cu
      util/cuda_driver.cpp
      util/cuda_runtime.cpp

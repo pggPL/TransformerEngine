@@ -463,7 +463,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-PFN_cuTensorMapEncodeTiled get_cuTensorMapEncodeTiled() {
+static PFN_cuTensorMapEncodeTiled get_cuTensorMapEncodeTiled() {
   void *driver_ptr = nullptr;
   cudaDriverEntryPointQueryResult driver_status;
   NVTE_CHECK_CUDA(cudaGetDriverEntryPoint("cuTensorMapEncodeTiled", &driver_ptr, cudaEnableDefault,
@@ -471,7 +471,7 @@ PFN_cuTensorMapEncodeTiled get_cuTensorMapEncodeTiled() {
   return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
 }
 
-CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
+static CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
   static const std::unordered_map<DType, CUtensorMapDataType> dtypeMapping = {
       {DType::kByte, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8},
       {DType::kFloat32, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_FLOAT32},
@@ -484,8 +484,8 @@ CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
 
 // Set up parameters to create TMA descriptor.
 template <typename T>
-void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, const uint64_t globalY,
-                       const uint64_t globalX, const uint32_t shmemY, const uint32_t shmemX) {
+static void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, const uint64_t globalY,
+                              const uint64_t globalX, const uint32_t shmemY, const uint32_t shmemX) {
   const Tensor &tensor = *tensor_ptr;
   // rank is the number of dimensions of the array
   constexpr uint32_t rank = 2;
