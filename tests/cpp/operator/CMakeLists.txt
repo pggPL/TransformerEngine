@@ -3,10 +3,13 @@
 # See LICENSE for license information.
 
 add_executable(test_operator
+               test_cast.cu
+               test_cast_dbias.cu
+               test_cast_dbias_dgelu.cu
                test_qdq.cu
                test_cast_mxfp8.cu
-               test_cast_transpose.cu
                test_transpose.cu
+               test_cast_transpose.cu
                test_cast_transpose_dbias.cu
                test_cast_transpose_dbias_dgelu.cu
                test_cast_transpose_dgeglu.cu
