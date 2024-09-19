@@ -3,8 +3,8 @@
 	url = https://github.com/google/googletest.git
 [submodule "3rdparty/cudnn-frontend"]
 	path = 3rdparty/cudnn-frontend
-  url = ../../../cudnn/cudnn_frontend.git
-  branch = feature/blackwell
+  	url = ../../../cudnn/cudnn_frontend.git
+  	branch = develop
 [submodule "3rdparty/flashattn_internal"]
 	path = 3rdparty/flashattn_internal
 	url = ../../../ksivamani/flashattn_internal.git
