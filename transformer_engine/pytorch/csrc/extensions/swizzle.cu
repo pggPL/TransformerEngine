@@ -23,9 +23,9 @@ at::Tensor swizzle_scaling_factors(at::Tensor input, at::Tensor scale_inv,
   auto input_cu =
       makeTransformerEngineTensor(input.data_ptr(), getTensorShape(input), dtype, nullptr, nullptr,
                                   scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
-  auto output_cu = makeTransformerEngineTensor(input.data_ptr(), getTensorShape(input), dtype,
-                                               nullptr, nullptr, swizzled_scale_inv_dptr,
-                                               getTensorShape(swizzled_scale_inv), nvte_scaling_mode);
+  auto output_cu = makeTransformerEngineTensor(
+      input.data_ptr(), getTensorShape(input), dtype, nullptr, nullptr, swizzled_scale_inv_dptr,
+      getTensorShape(swizzled_scale_inv), nvte_scaling_mode);
 
   // Launch kernel
   nvte_swizzle_scaling_factors(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());

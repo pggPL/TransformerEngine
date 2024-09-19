@@ -105,9 +105,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("scale_inv_offset") = 0);
   m.def("fp8_cast_dbias", &fp8_cast_dbias, "FP8 cast + dbias",
         py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
+        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("scaling_mode"),
+        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fp8_cast_dbias_dgelu", &fp8_cast_dbias_dgelu, "Fused Cast + BGRAD + DGELU",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
         py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
@@ -135,8 +134,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("scale_inv_offset") = 0);
   m.def("fp8_cast_dbias_x2", &fp8_cast_dbias_x2, "FP8 cast + dbias",
         py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
+        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fp8_cast_dbias_dgelu_x2", &fp8_cast_dbias_dgelu_x2,
         "Fused Cast + BGRAD + DGELU with rowwise and columnwise scaled outputs",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),

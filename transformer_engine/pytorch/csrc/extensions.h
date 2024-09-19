@@ -380,38 +380,42 @@ std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor &input, const at::Tensor
 std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor act_input,
                                              at::Tensor scale, at::Tensor amax,
                                              at::Tensor scale_inv, transformer_engine::DType otype,
-                                             std::vector<int64_t> scaling_mode, int scale_offset = 0,
-                                             int amax_offset = 0, int scale_inv_offset = 0);
+                                             std::vector<int64_t> scaling_mode,
+                                             int scale_offset = 0, int amax_offset = 0,
+                                             int scale_inv_offset = 0);
 
 std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor act_input,
                                              at::Tensor scale, at::Tensor amax,
                                              at::Tensor scale_inv, transformer_engine::DType otype,
-                                             std::vector<int64_t> scaling_mode, int scale_offset = 0,
-                                             int amax_offset = 0, int scale_inv_offset = 0);
+                                             std::vector<int64_t> scaling_mode,
+                                             int scale_offset = 0, int amax_offset = 0,
+                                             int scale_inv_offset = 0);
 
 std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor act_input,
                                              at::Tensor scale, at::Tensor amax,
                                              at::Tensor scale_inv, transformer_engine::DType otype,
-                                             std::vector<int64_t> scaling_mode, int scale_offset = 0,
-                                             int amax_offset = 0, int scale_inv_offset = 0);
+                                             std::vector<int64_t> scaling_mode,
+                                             int scale_offset = 0, int amax_offset = 0,
+                                             int scale_inv_offset = 0);
 
 std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor act_input,
                                               at::Tensor scale, at::Tensor amax,
                                               at::Tensor scale_inv, transformer_engine::DType otype,
-                                              std::vector<int64_t> scaling_mode, int scale_offset = 0,
-                                              int amax_offset = 0, int scale_inv_offset = 0);
+                                              std::vector<int64_t> scaling_mode,
+                                              int scale_offset = 0, int amax_offset = 0,
+                                              int scale_inv_offset = 0);
 
 std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor act_input,
                                               at::Tensor scale, at::Tensor amax,
                                               at::Tensor scale_inv, transformer_engine::DType otype,
-                                              std::vector<int64_t> scaling_mode, int scale_offset = 0,
-                                              int amax_offset = 0, int scale_inv_offset = 0);
+                                              std::vector<int64_t> scaling_mode,
+                                              int scale_offset = 0, int amax_offset = 0,
+                                              int scale_inv_offset = 0);
 
 std::vector<at::Tensor> fp8_cast_dbias_x2(const at::Tensor &input, const at::Tensor &scale,
                                           at::Tensor amax, at::Tensor scale_inv,
-                                          transformer_engine::DType otype,
-                                          const int scale_offset, const int amax_offset,
-                                          const int scale_inv_offset);
+                                          transformer_engine::DType otype, const int scale_offset,
+                                          const int amax_offset, const int scale_inv_offset);
 
 std::vector<at::Tensor> fp8_cast_dbias_dgelu_x2(at::Tensor grad_output, at::Tensor act_input,
                                                 at::Tensor scale, at::Tensor amax,

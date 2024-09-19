@@ -340,9 +340,8 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
 
 std::vector<at::Tensor> fp8_cast_dbias_x2(const at::Tensor& input, const at::Tensor& scale,
                                           at::Tensor amax, at::Tensor scale_inv,
-                                          transformer_engine::DType otype,
-                                          const int scale_offset, const int amax_offset,
-                                          const int scale_inv_offset) {
+                                          transformer_engine::DType otype, const int scale_offset,
+                                          const int amax_offset, const int scale_inv_offset) {
   using namespace transformer_engine;
   auto input_shape = input.sizes().vec();
   std::vector<size_t> shape{input_shape.begin(), input_shape.end()};
