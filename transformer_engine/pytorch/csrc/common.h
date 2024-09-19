@@ -46,6 +46,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "common/util/cuda_runtime.h"
 #include "common/util/logging.h"
 
 namespace transformer_engine {
