@@ -492,7 +492,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-constexpr size_t FP8_CHUNK_DIM_Y = 64;
+constexpr size_t FP8_CHUNK_DIM_Y = 128;
 constexpr size_t FP8_CHUNK_DIM_X = 128;
 constexpr size_t FP8_CHUNKS_PER_BLOCK_Y = 1;
 constexpr size_t FP8_CHUNKS_PER_BLOCK_X = 1;
@@ -507,8 +507,8 @@ constexpr size_t FP8_BUFFER_DIM_X = FP8_CHUNK_DIM_X;  // 128
 constexpr size_t FP8_SHMEM_DIM_Y = FP8_BUFFER_DIM_Y;  // 16
 constexpr size_t FP8_SHMEM_DIM_X = FP8_BUFFER_DIM_X;  // 128
 
-constexpr size_t FP8_BUFF_STAGES_NUM = FP8_BUFFER_DIM_Y;               //  16
-constexpr size_t FP8_ITERATIONS = FP8_CHUNK_DIM_Y / FP8_BUFFER_DIM_Y;  //   4 = 64 / 16
+constexpr size_t FP8_BUFF_STAGES_NUM = FP8_BUFFER_DIM_Y;                //  16
+constexpr size_t FP8_ITERATIONS = FP8_CHUNK_DIM_Y / FP8_BUFFER_DIM_Y;   //   8 = 128 / 16
 static_assert(FP8_ITERATIONS >= FP8_PREFETCH_BUFFERS_NUM);
 
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &),
@@ -603,7 +603,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
       }
     }
 
-#pragma unroll
+#pragma unroll 2
     for (int it = 0; it < FP8_ITERATIONS; ++it) {
       const int buff = it % FP8_BUFFERS_NUM;
       const int next_it = it + FP8_PREFETCH_BUFFERS_NUM;
@@ -636,7 +636,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
       // Wait for the data to have arrived
       mbarrier_wait_parity(&mbar[it], parity);
 
-#pragma unroll
+#pragma unroll 4
       for (int stage = 0; stage < FP8_BUFF_STAGES_NUM; ++stage) {
         const int stage_offset_Y = stage;
         const int shmem_offset_y = thread_offset_Y + stage_offset_Y;
@@ -828,10 +828,13 @@ __global__ void __launch_bounds__(DBIAS_THREADS_PER_BLOCK)
 template <typename IType>
 void reduce_dbias(const float *workspace_ptr, Tensor *dbias, const size_t rows, const size_t cols,
                   cudaStream_t stream) {
-  NVTE_CHECK(cols % ELEMS_PER_THREAD == 0, "Unsupported shape.");
-  const size_t reduce_dbias_num_blocks = DIVUP(cols, DBIAS_THREADS_PER_BLOCK * ELEMS_PER_THREAD);
+  constexpr int reduce_dbias_store_bytes = 8;  // stg.64
+  constexpr int reduce_dbias_nvec = reduce_dbias_store_bytes / sizeof(IType);
 
-  reduce_dbias_kernel<ELEMS_PER_THREAD, IType>
+  NVTE_CHECK(cols % reduce_dbias_nvec == 0, "Unsupported shape.");
+  const size_t reduce_dbias_num_blocks = DIVUP(cols, DBIAS_THREADS_PER_BLOCK * reduce_dbias_nvec);
+
+  reduce_dbias_kernel<reduce_dbias_nvec, IType>
       <<<reduce_dbias_num_blocks, DBIAS_THREADS_PER_BLOCK, 0, stream>>>(
           reinterpret_cast<IType *>(dbias->data.dptr), workspace_ptr, rows, cols);
 }
