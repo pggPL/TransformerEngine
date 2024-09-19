@@ -14,7 +14,7 @@
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
-#include <transformer_engine/cast_fused.h>
+#include <transformer_engine/cast.h>
 #include "../test_common.h"
 
 using namespace transformer_engine;
@@ -52,7 +52,7 @@ void performTest(const size_t N, const size_t H) {
   fillUniform(&input);
   setRandomScale(&output_c);
 
-  nvte_cast(input.data(), output_c.data(), 0);
+  nvte_fp8_quantize(input.data(), output_c.data(), 0);
 
   float ref_amax;
   compute_ref<InputType, OutputType>(input.cpu_dptr<InputType>(), ref_output_c.get(),

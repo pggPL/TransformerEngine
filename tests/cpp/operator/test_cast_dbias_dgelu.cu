@@ -15,7 +15,7 @@
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
-#include <transformer_engine/cast_fused.h>
+#include <transformer_engine/cast.h>
 #include "../test_common.h"
 
 using namespace transformer_engine;
@@ -99,22 +99,22 @@ void performTest(const size_t N, const size_t H) {
 
   Tensor workspace;
 
-  nvte_cast_dbias_dgelu(input.data(),
-                        gelu_input.data(),
-                        output_c.data(),
-                        dbias.data(),
-                        workspace.data(),
-                        0);
+  nvte_fp8_quantize_dbias_dgelu(input.data(),
+                                gelu_input.data(),
+                                output_c.data(),
+                                dbias.data(),
+                                workspace.data(),
+                                0);
 
   workspace = Tensor(workspace.shape(), workspace.dtype());
 
 
-  nvte_cast_dbias_dgelu(input.data(),
-                        gelu_input.data(),
-                        output_c.data(),
-                        dbias.data(),
-                        workspace.data(),
-                        0);
+  nvte_fp8_quantize_dbias_dgelu(input.data(),
+                                gelu_input.data(),
+                                output_c.data(),
+                                dbias.data(),
+                                workspace.data(),
+                                0);
 
   cudaDeviceSynchronize();
   auto err = cudaGetLastError();
