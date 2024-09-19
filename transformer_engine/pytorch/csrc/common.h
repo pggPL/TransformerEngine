@@ -33,6 +33,7 @@
 #include <transformer_engine/recipe.h>
 #include <transformer_engine/rmsnorm.h>
 #include <transformer_engine/softmax.h>
+#include <transformer_engine/swizzle.h>
 #include <transformer_engine/transformer_engine.h>
 #include <transformer_engine/transpose.h>
 

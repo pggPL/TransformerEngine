@@ -368,6 +368,89 @@ at::Tensor cast_from_fp8(const at::Tensor &input, const at::Tensor &scale_inv,
                          const int scale_inv_offset = 0);
 
 /***************************************************************************************************
+ * Cast fusions
+ **************************************************************************************************/
+
+std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor &input, const at::Tensor &scale,
+                                       at::Tensor amax, at::Tensor scale_inv,
+                                       transformer_engine::DType otype,
+                                       transformer_engine::DType grad_bias_type,
+                                       NVTEScalingMode scaling_mode, const int scale_offset,
+                                       const int amax_offset, const int scale_inv_offset);
+
+std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor act_input,
+                                             at::Tensor scale, at::Tensor amax,
+                                             at::Tensor scale_inv, transformer_engine::DType otype,
+                                             NVTEScalingMode scaling_mode, int scale_offset = 0,
+                                             int amax_offset = 0, int scale_inv_offset = 0);
+
+std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor act_input,
+                                             at::Tensor scale, at::Tensor amax,
+                                             at::Tensor scale_inv, transformer_engine::DType otype,
+                                             NVTEScalingMode scaling_mode, int scale_offset = 0,
+                                             int amax_offset = 0, int scale_inv_offset = 0);
+
+std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor act_input,
+                                             at::Tensor scale, at::Tensor amax,
+                                             at::Tensor scale_inv, transformer_engine::DType otype,
+                                             NVTEScalingMode scaling_mode, int scale_offset = 0,
+                                             int amax_offset = 0, int scale_inv_offset = 0);
+
+std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor act_input,
+                                              at::Tensor scale, at::Tensor amax,
+                                              at::Tensor scale_inv, transformer_engine::DType otype,
+                                              NVTEScalingMode scaling_mode, int scale_offset = 0,
+                                              int amax_offset = 0, int scale_inv_offset = 0);
+
+std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor act_input,
+                                              at::Tensor scale, at::Tensor amax,
+                                              at::Tensor scale_inv, transformer_engine::DType otype,
+                                              NVTEScalingMode scaling_mode, int scale_offset = 0,
+                                              int amax_offset = 0, int scale_inv_offset = 0);
+
+std::vector<at::Tensor> fp8_cast_dbias_x2(const at::Tensor &input, const at::Tensor &scale,
+                                          at::Tensor amax, at::Tensor scale_inv,
+                                          transformer_engine::DType otype,
+                                          transformer_engine::DType grad_bias_type,
+                                          const int scale_offset, const int amax_offset,
+                                          const int scale_inv_offset);
+
+std::vector<at::Tensor> fp8_cast_dbias_dgelu_x2(at::Tensor grad_output, at::Tensor act_input,
+                                                at::Tensor scale, at::Tensor amax,
+                                                at::Tensor scale_inv,
+                                                transformer_engine::DType otype,
+                                                int scale_offset = 0, int amax_offset = 0,
+                                                int scale_inv_offset = 0);
+
+std::vector<at::Tensor> fp8_cast_dbias_dsilu_x2(at::Tensor grad_output, at::Tensor act_input,
+                                                at::Tensor scale, at::Tensor amax,
+                                                at::Tensor scale_inv,
+                                                transformer_engine::DType otype,
+                                                int scale_offset = 0, int amax_offset = 0,
+                                                int scale_inv_offset = 0);
+
+std::vector<at::Tensor> fp8_cast_dbias_drelu_x2(at::Tensor grad_output, at::Tensor act_input,
+                                                at::Tensor scale, at::Tensor amax,
+                                                at::Tensor scale_inv,
+                                                transformer_engine::DType otype,
+                                                int scale_offset = 0, int amax_offset = 0,
+                                                int scale_inv_offset = 0);
+
+std::vector<at::Tensor> fp8_cast_dbias_dqgelu_x2(at::Tensor grad_output, at::Tensor act_input,
+                                                 at::Tensor scale, at::Tensor amax,
+                                                 at::Tensor scale_inv,
+                                                 transformer_engine::DType otype,
+                                                 int scale_offset = 0, int amax_offset = 0,
+                                                 int scale_inv_offset = 0);
+
+std::vector<at::Tensor> fp8_cast_dbias_dsrelu_x2(at::Tensor grad_output, at::Tensor act_input,
+                                                 at::Tensor scale, at::Tensor amax,
+                                                 at::Tensor scale_inv,
+                                                 transformer_engine::DType otype,
+                                                 int scale_offset = 0, int amax_offset = 0,
+                                                 int scale_inv_offset = 0);
+
+/***************************************************************************************************
  * Softmax
  **************************************************************************************************/
 
@@ -506,5 +589,12 @@ void multi_tensor_sgd_cuda(int chunk_size, at::Tensor noop_flag,
 void fused_multi_row_padding(at::Tensor input, at::Tensor output,
                              std::vector<size_t> input_row_list,
                              std::vector<size_t> padded_input_row_list);
+
+/***************************************************************************************************
+ * swizzle
+ **************************************************************************************************/
+
+at::Tensor swizzle_scaling_factors(at::Tensor input, at::Tensor scale_inv,
+                                   NVTEScalingMode scaling_mode);
 
 #endif  // TRANSFORMER_ENGINE_PYTORCH_CSRC_EXTENSIONS_H_
