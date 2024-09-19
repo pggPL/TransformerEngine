@@ -74,15 +74,15 @@ at::Tensor cast_from_fp8(const at::Tensor& input, const at::Tensor& scale_inv,
 std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor& input, const at::Tensor& scale,
                                        at::Tensor amax, at::Tensor scale_inv,
                                        transformer_engine::DType otype,
-                                       transformer_engine::DType grad_bias_type,
-                                       NVTEScalingMode scaling_mode, const int scale_offset,
+                                       std::vector<int64_t> scaling_mode, const int scale_offset,
                                        const int amax_offset, const int scale_inv_offset) {
   using namespace transformer_engine;
   auto input_shape = input.sizes().vec();
   std::vector<size_t> shape{input_shape.begin(), input_shape.end()};
 
+  DType grad_output_type = GetTransformerEngineDType(input.scalar_type());
   auto output = at::empty_like(input, at::CUDA(GetATenDType(otype)));
-  auto grad_bias = allocateTorchTensor(input.size(-1), grad_bias_type);
+  auto grad_bias = allocateTorchTensor(input.size(-1), grad_output_type);
 
   if (input.numel() == 0) return {grad_bias, output};
 
@@ -90,12 +90,13 @@ std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor& input, const at::Tensor
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
+  NVTEScalingMode nvte_scaling_mode = {scaling_mode[0], scaling_mode[1], scaling_mode[2]};
 
   auto input_cu = makeTransformerEngineTensor(input);
   auto dbias_cu = makeTransformerEngineTensor(grad_bias);
   auto output_cu =
       makeTransformerEngineTensor(output.data_ptr(), shape, otype, amax_dptr, scale_dptr,
-                                  scale_inv_dptr, getTensorShape(scale_inv), scaling_mode);
+                                  scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
@@ -115,7 +116,7 @@ std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor& input, const at::Tensor
 std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor act_input,
                                              at::Tensor scale, at::Tensor amax,
                                              at::Tensor scale_inv, transformer_engine::DType otype,
-                                             NVTEScalingMode scaling_mode, int scale_offset,
+                                             std::vector<int64_t> scaling_mode, int scale_offset,
                                              int amax_offset, int scale_inv_offset) {
   using namespace transformer_engine;
 
@@ -127,6 +128,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor 
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
+  NVTEScalingMode nvte_scaling_mode = {scaling_mode[0], scaling_mode[1], scaling_mode[2]};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
@@ -136,7 +138,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor 
   auto input_cu = makeTransformerEngineTensor(grad_output);
   auto cast_output_cu =
       makeTransformerEngineTensor(dact.data_ptr(), {M, N}, otype, amax_dptr, scale_dptr,
-                                  scale_inv_dptr, getTensorShape(scale_inv), scaling_mode);
+                                  scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
   auto dbias_cu = makeTransformerEngineTensor(grad_bias);
 
   // Query workspace size and allocate workspace
@@ -159,7 +161,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor 
 std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor act_input,
                                              at::Tensor scale, at::Tensor amax,
                                              at::Tensor scale_inv, transformer_engine::DType otype,
-                                             NVTEScalingMode scaling_mode, int scale_offset,
+                                             std::vector<int64_t> scaling_mode, int scale_offset,
                                              int amax_offset, int scale_inv_offset) {
   using namespace transformer_engine;
 
@@ -171,6 +173,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor 
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
+  NVTEScalingMode nvte_scaling_mode = {scaling_mode[0], scaling_mode[1], scaling_mode[2]};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
@@ -180,7 +183,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor 
   auto input_cu = makeTransformerEngineTensor(grad_output);
   auto cast_output_cu =
       makeTransformerEngineTensor(dact.data_ptr(), {M, N}, otype, amax_dptr, scale_dptr,
-                                  scale_inv_dptr, getTensorShape(scale_inv), scaling_mode);
+                                  scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
   auto dbias_cu = makeTransformerEngineTensor(grad_bias);
 
   // Query workspace size and allocate workspace
@@ -203,7 +206,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor 
 std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor act_input,
                                              at::Tensor scale, at::Tensor amax,
                                              at::Tensor scale_inv, transformer_engine::DType otype,
-                                             NVTEScalingMode scaling_mode, int scale_offset,
+                                             std::vector<int64_t> scaling_mode, int scale_offset,
                                              int amax_offset, int scale_inv_offset) {
   using namespace transformer_engine;
 
@@ -215,6 +218,7 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor 
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
+  NVTEScalingMode nvte_scaling_mode = {scaling_mode[0], scaling_mode[1], scaling_mode[2]};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
@@ -224,7 +228,7 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor 
   auto input_cu = makeTransformerEngineTensor(grad_output);
   auto cast_output_cu =
       makeTransformerEngineTensor(dact.data_ptr(), {M, N}, otype, amax_dptr, scale_dptr,
-                                  scale_inv_dptr, getTensorShape(scale_inv), scaling_mode);
+                                  scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
   auto dbias_cu = makeTransformerEngineTensor(grad_bias);
 
   // Query workspace size and allocate workspace
@@ -247,7 +251,7 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor 
 std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor act_input,
                                               at::Tensor scale, at::Tensor amax,
                                               at::Tensor scale_inv, transformer_engine::DType otype,
-                                              NVTEScalingMode scaling_mode, int scale_offset,
+                                              std::vector<int64_t> scaling_mode, int scale_offset,
                                               int amax_offset, int scale_inv_offset) {
   using namespace transformer_engine;
 
@@ -259,6 +263,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
+  NVTEScalingMode nvte_scaling_mode = {scaling_mode[0], scaling_mode[1], scaling_mode[2]};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
@@ -268,7 +273,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor
   auto input_cu = makeTransformerEngineTensor(grad_output);
   auto cast_output_cu =
       makeTransformerEngineTensor(dact.data_ptr(), {M, N}, otype, amax_dptr, scale_dptr,
-                                  scale_inv_dptr, getTensorShape(scale_inv), scaling_mode);
+                                  scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
   auto dbias_cu = makeTransformerEngineTensor(grad_bias);
 
   // Query workspace size and allocate workspace
@@ -291,7 +296,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor
 std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor act_input,
                                               at::Tensor scale, at::Tensor amax,
                                               at::Tensor scale_inv, transformer_engine::DType otype,
-                                              NVTEScalingMode scaling_mode, int scale_offset,
+                                              std::vector<int64_t> scaling_mode, int scale_offset,
                                               int amax_offset, int scale_inv_offset) {
   using namespace transformer_engine;
 
@@ -303,6 +308,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
+  NVTEScalingMode nvte_scaling_mode = {scaling_mode[0], scaling_mode[1], scaling_mode[2]};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
@@ -312,7 +318,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
   auto input_cu = makeTransformerEngineTensor(grad_output);
   auto cast_output_cu =
       makeTransformerEngineTensor(dact.data_ptr(), {M, N}, otype, amax_dptr, scale_dptr,
-                                  scale_inv_dptr, getTensorShape(scale_inv), scaling_mode);
+                                  scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
   auto dbias_cu = makeTransformerEngineTensor(grad_bias);
 
   // Query workspace size and allocate workspace
@@ -335,16 +341,16 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
 std::vector<at::Tensor> fp8_cast_dbias_x2(const at::Tensor& input, const at::Tensor& scale,
                                           at::Tensor amax, at::Tensor scale_inv,
                                           transformer_engine::DType otype,
-                                          transformer_engine::DType grad_bias_type,
                                           const int scale_offset, const int amax_offset,
                                           const int scale_inv_offset) {
   using namespace transformer_engine;
   auto input_shape = input.sizes().vec();
   std::vector<size_t> shape{input_shape.begin(), input_shape.end()};
 
+  DType grad_output_type = GetTransformerEngineDType(input.scalar_type());
   auto output_rowwise = at::empty_like(input, at::CUDA(GetATenDType(otype)));
   auto output_columnwise = at::empty_like(input, at::CUDA(GetATenDType(otype)));
-  auto grad_bias = allocateTorchTensor(input.size(-1), grad_bias_type);
+  auto grad_bias = allocateTorchTensor(input.size(-1), grad_output_type);
 
   if (input.numel() == 0) return {grad_bias, output_rowwise, output_columnwise};
 
