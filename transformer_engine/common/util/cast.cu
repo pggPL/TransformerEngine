@@ -849,9 +849,6 @@ void cast_fp8(const Tensor &input, const Tensor &act_input, Tensor *output, Tens
   const size_t blocks_Y = DIVUP(chunks_Y, FP8_CHUNKS_PER_BLOCK_Y);
   const size_t blocks_X = DIVUP(chunks_X, FP8_CHUNKS_PER_BLOCK_X);
 
-  const bool isFullTile = (rows % FP8_CHUNK_DIM_Y == 0) && (cols % FP8_CHUNK_DIM_X == 0);
-  NVTE_CHECK(isFullTile, "Only full tiles are supported.");
-
   const size_t dbias_rows = blocks_Y;
   const size_t dbias_cols = cols;
 
