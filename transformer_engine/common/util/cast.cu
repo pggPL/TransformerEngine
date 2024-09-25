@@ -1066,43 +1066,38 @@ void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, 
   NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
   NVTE_CHECK(output->scale_inv.dptr != nullptr, "Scaling tensor must be allocated");
 
-  // Supported by the Arch < 10.0
-  if (!is_supported_by_CC_100()) {
-    if (is_delayed_tensor_scaling(output->scaling_mode) && !IS_DBIAS && !IS_DACT) {
-      const size_t N = product(input.data.shape);
-      TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
-          input.data.dtype, IType,
-          TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
-              output->data.dtype, OType, constexpr int nvec = 32 / sizeof(IType);
-              VectorizedUnaryKernelLauncher<nvec, detail::Empty, detail::identity>(
-                  reinterpret_cast<const IType *>(input.data.dptr),
-                  reinterpret_cast<OType *>(output->data.dptr),
-                  reinterpret_cast<const fp32 *>(output->scale.dptr),
-                  reinterpret_cast<fp32 *>(output->amax.dptr),
-                  reinterpret_cast<fp32 *>(output->scale_inv.dptr), N, {},
-                  stream););  // NOLINT(*)
-      );                      // NOLINT(*)
+  if (is_supported_by_CC_100() && is_supported_shape(output)) {
+    const bool is_colwise_scaling = (output->scaling_mode.x > 1);
+    if (is_colwise_scaling) {
+      cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::COLWISE, ParamOP, OP>(
+          input, act_input, nullptr, output, dbias, workspace, stream);
     } else {
-      NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
+      cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::ROWWISE, ParamOP, OP>(
+          input, act_input, output, nullptr, dbias, workspace, stream);
     }
-    return;
-  }
-  // Supported by the Arch >= 10.0
-  if (is_delayed_tensor_scaling(output->scaling_mode)) {
-    if (output->scaling_mode.x == -1 && output->scaling_mode.y == -1) {
-      cast_fp8<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
-    } else {
-      NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
-    }
-    return;
-  }
-  const bool is_colwise_scaling = (output->scaling_mode.x > 1);
-  if (is_colwise_scaling) {
-    cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::COLWISE, ParamOP, OP>(
-        input, act_input, nullptr, output, dbias, workspace, stream);
+  } else if (is_delayed_tensor_scaling(output->scaling_mode) && !IS_DBIAS && !IS_DACT) {
+    const size_t N = product(input.data.shape);
+    TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+        input.data.dtype, IType,
+        TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+            output->data.dtype, OType, constexpr int nvec = 32 / sizeof(IType);
+            VectorizedUnaryKernelLauncher<nvec, detail::Empty, detail::identity>(
+                reinterpret_cast<const IType *>(input.data.dptr),
+                reinterpret_cast<OType *>(output->data.dptr),
+                reinterpret_cast<const fp32 *>(output->scale.dptr),
+                reinterpret_cast<fp32 *>(output->amax.dptr),
+                reinterpret_cast<fp32 *>(output->scale_inv.dptr), N, {},
+                stream););  // NOLINT(*)
+    );                      // NOLINT(*)
+  }  else if (is_delayed_tensor_scaling(output->scaling_mode)) {
+      if (output->scaling_mode.x == -1 && output->scaling_mode.y == -1) {
+        cast_fp8<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
+      } else {
+        NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
+      }
+      return;
   } else {
-    cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::ROWWISE, ParamOP, OP>(
-        input, act_input, output, nullptr, dbias, workspace, stream);
+    NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
   }
 }
 
