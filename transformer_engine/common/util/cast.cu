@@ -786,7 +786,6 @@ static void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
 
       // Any element that is outside of bounds will be set to zero by the TMA transfer.
       CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
-  cudaDeviceSynchronize();
 }
 
 constexpr size_t DBIAS_THREADS_PER_BLOCK = 256;
