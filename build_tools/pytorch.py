@@ -79,17 +79,16 @@ def setup_pytorch_extension(
                 os.getenv("NVTE_BUILD_THREADS_PER_JOB", "1"),
             )
         )
-        if "80" in cuda_architectures:
-            nvcc_flags.extend(["-gencode", "arch=compute_80,code=sm_80"])
-        if "90" in cuda_architectures:
-            nvcc_flags.extend(["-gencode", "arch=compute_90,code=sm_90"])
-        if "100" in cuda_architectures:
-            nvcc_flags.extend(["-gencode", "arch=compute_100,code=sm_100"])
+
+        for arch in cuda_architectures.split(";"):
+            if arch == "70":
+                continue  # Already handled
+            nvcc_flags.extend(["-gencode", f"arch=compute_{arch},code=sm_{arch}"])
 
     # Libraries
     library_dirs = []
     libraries = []
-    if os.getenv("NVTE_UB_WITH_MPI"):
+    if bool(int(os.getenv("NVTE_UB_WITH_MPI", 0))):
         assert (
             os.getenv("MPI_HOME") is not None
         ), "MPI_HOME must be set when compiling with NVTE_UB_WITH_MPI=1"
