@@ -507,8 +507,8 @@ constexpr size_t FP8_BUFFER_DIM_X = FP8_CHUNK_DIM_X;  // 128
 constexpr size_t FP8_SHMEM_DIM_Y = FP8_BUFFER_DIM_Y;  // 16
 constexpr size_t FP8_SHMEM_DIM_X = FP8_BUFFER_DIM_X;  // 128
 
-constexpr size_t FP8_BUFF_STAGES_NUM = FP8_BUFFER_DIM_Y;                //  16
-constexpr size_t FP8_ITERATIONS = FP8_CHUNK_DIM_Y / FP8_BUFFER_DIM_Y;   //   8 = 128 / 16
+constexpr size_t FP8_BUFF_STAGES_NUM = FP8_BUFFER_DIM_Y;               //  16
+constexpr size_t FP8_ITERATIONS = FP8_CHUNK_DIM_Y / FP8_BUFFER_DIM_Y;  //   8 = 128 / 16
 static_assert(FP8_ITERATIONS >= FP8_PREFETCH_BUFFERS_NUM);
 
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &),
@@ -1088,13 +1088,13 @@ void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, 
                 reinterpret_cast<fp32 *>(output->scale_inv.dptr), N, {},
                 stream););  // NOLINT(*)
     );                      // NOLINT(*)
-  }  else if (is_delayed_tensor_scaling(output->scaling_mode)) {
-      if (output->scaling_mode.x == -1 && output->scaling_mode.y == -1) {
-        cast_fp8<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
-      } else {
-        NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
-      }
-      return;
+  } else if (is_delayed_tensor_scaling(output->scaling_mode)) {
+    if (output->scaling_mode.x == -1 && output->scaling_mode.y == -1) {
+      cast_fp8<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
+    } else {
+      NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
+    }
+    return;
   } else {
     NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
   }
