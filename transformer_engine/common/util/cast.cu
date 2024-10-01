@@ -717,12 +717,16 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-static PFN_cuTensorMapEncodeTiled get_cuTensorMapEncodeTiled() {
+static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = [](){
   void *driver_ptr = nullptr;
   cudaDriverEntryPointQueryResult driver_status;
   NVTE_CHECK_CUDA(cudaGetDriverEntryPoint("cuTensorMapEncodeTiled", &driver_ptr, cudaEnableDefault,
                                           &driver_status));
   return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
+}();
+
+static inline PFN_cuTensorMapEncodeTiled get_cuTensorMapEncodeTiled() {
+  return cuDriverTensorMapEncodeTiled;
 }
 
 static CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
@@ -734,6 +738,11 @@ static CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
       {DType::kFloat8E4M3, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8},
       {DType::kFloat8E5M2, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8}};
   return dtypeMapping.at(dtype);
+}
+
+static inline bool isPointerAligned(const void* const ptr, const int alignment) {
+  const uint64_t ptr_as_uint = reinterpret_cast<uint64_t>(ptr);
+  return ptr_as_uint % alignment == 0;
 }
 
 // Set up parameters to create TMA descriptor.
@@ -761,6 +770,7 @@ static void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
 
   const CUtensorMapDataType tensorDataType = get_CUtensorMapDataType(tensor.data.dtype);
   void *dataPtr = reinterpret_cast<void *>(tensor.data.dptr);
+  NVTE_CHECK(isPointerAligned(dataPtr, 16), "Tensor data must be 16B aligned");
 
   // Create the tensor descriptor.
   CUresult res = cuTensorMapEncodeTiled(
@@ -786,6 +796,8 @@ static void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
 
       // Any element that is outside of bounds will be set to zero by the TMA transfer.
       CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+
+  NVTE_CHECK(res == CUresult::CUDA_SUCCESS, "Couldn't create a tensor descriptor");
 }
 
 constexpr size_t DBIAS_THREADS_PER_BLOCK = 256;
@@ -875,8 +887,9 @@ void cast_fp8(const Tensor &input, const Tensor &act_input, Tensor *output, Tens
       TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
           output->data.dtype, OType,
 
-          CUtensorMap tensor_map_input{};
-          CUtensorMap tensor_map_act_input{}; CUtensorMap tensor_map_output{};
+          alignas(64) CUtensorMap tensor_map_input{};
+          alignas(64) CUtensorMap tensor_map_act_input{};
+          alignas(64) CUtensorMap tensor_map_output{};
 
           create_tensor_map<IType>(tensor_map_input, &input, rows, cols, FP8_SHMEM_DIM_Y,
                                    FP8_SHMEM_DIM_X);
@@ -978,9 +991,10 @@ void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_row
               TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
                   OutputType, OType,
 
-                  CUtensorMap tensor_map_input{};
-                  CUtensorMap tensor_map_act_input{}; CUtensorMap tensor_map_output_rowwise{};
-                  CUtensorMap tensor_map_output_colwise{};
+                  alignas(64) CUtensorMap tensor_map_input{};
+                  alignas(64) CUtensorMap tensor_map_act_input{};
+                  alignas(64) CUtensorMap tensor_map_output_rowwise{};
+                  alignas(64) CUtensorMap tensor_map_output_colwise{};
 
                   create_tensor_map<IType>(tensor_map_input, &input, rows, cols, MXFP8_SHMEM_DIM_Y,
                                            MXFP8_SHMEM_DIM_X);
