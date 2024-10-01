@@ -151,7 +151,7 @@ if __name__ == "__main__":
                 except PackageNotFoundError:
                     fa_version = "unknown"
 
-                if fa_version != PkgVersion("2.4.2.dev2"):
+                if fa_version != PkgVersion("2.4.2.dev3"):
                     import subprocess
 
                     fa_path = current_file_path / "3rdparty/flashattn_internal"
