@@ -717,7 +717,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = [](){
+static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = []() {
   void *driver_ptr = nullptr;
   cudaDriverEntryPointQueryResult driver_status;
   NVTE_CHECK_CUDA(cudaGetDriverEntryPoint("cuTensorMapEncodeTiled", &driver_ptr, cudaEnableDefault,
@@ -740,7 +740,7 @@ static CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
   return dtypeMapping.at(dtype);
 }
 
-static inline bool isPointerAligned(const void* const ptr, const int alignment) {
+static inline bool isPointerAligned(const void *const ptr, const int alignment) {
   const uint64_t ptr_as_uint = reinterpret_cast<uint64_t>(ptr);
   return ptr_as_uint % alignment == 0;
 }
