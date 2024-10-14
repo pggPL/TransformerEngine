@@ -4,12 +4,118 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#include <pybind11/detail/common.h>
 #include <pybind11/functional.h>
+#include <pybind11/pybind11.h>
+
+#include <stdexcept>
 
 #include "../comm_gemm_overlap.h"
 #include "../extensions.h"
+#include "object.h"
+#include "pybind11/cast.h"
+#include "pytorch/csrc/common.h"
+
+namespace transformer_engine::pytorch {
+
+PyTypeObject *Float8TensorPythonClass = nullptr;
+PyTypeObject *Float8QParamsClass = nullptr;
+
+void init_extension() {
+  if (Float8TensorPythonClass) return;
+  auto float8tensor_module = py::module_::import("transformer_engine.pytorch.tensor.float8_tensor");
+  auto qparams_module = py::module_::import("transformer_engine.pytorch.quantization_params");
+  Float8QParamsClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(qparams_module.ptr(),
+                                                                              "Float8Params"));
+  Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(), "Float8Tensor"));
+  NVTE_CHECK(Float8TensorPythonClass != nullptr,
+             "Internal error: could not initialize pyTorch extension.");
+}
+
+}  // namespace transformer_engine::pytorch
+
+namespace pybind11::detail {
+
+template <>
+struct type_caster<transformer_engine::Float8Tensor> {
+ public:
+  PYBIND11_TYPE_CASTER(transformer_engine::Float8Tensor,
+                       _("transformer_engine.pytorch.tensor.Float8Tensor"));
+
+  bool load(handle src, bool) {
+    std::cout << "Loading Float8Tensor!" << std::endl;
+    transformer_engine::pytorch::init_extension();
+    if (Py_TYPE(src.ptr()) != transformer_engine::pytorch::Float8TensorPythonClass) return false;
+    auto py_data = src.attr("_data");
+    value.data = py_data.cast<at::Tensor>();
+    auto py_transpose = src.attr("_transpose");
+    if (!py_transpose.is_none()) {
+      value.transpose = py_transpose.cast<at::Tensor>();
+    }
+    auto py_scale_inv = src.attr("_scale_inv");
+    value.scale_inv = py_scale_inv.cast<at::Tensor>();
+    auto py_dtype = src.attr("_fp8_dtype");
+    value.dtype = py_dtype.cast<transformer_engine::DType>();
+    return true;
+  }
+
+  static handle cast(const transformer_engine::Float8Tensor &src, return_value_policy, handle) {
+    throw std::runtime_error("Casting back from Float8Tensor not implemented yet!");
+    return none().release();
+  }
+};
+
+}  // namespace pybind11::detail
+
+void test(pybind11::handle handle) {
+  at::Tensor t = handle.cast<at::Tensor>();
+  std::cout << t.size(0) << std::endl;
+}
+
+std::string to_string(transformer_engine::DType t) {
+  switch (t) {
+    case transformer_engine::DType::kInt32:
+      return "int32";
+    case transformer_engine::DType::kInt64:
+      return "int64";
+    case transformer_engine::DType::kFloat32:
+      return "float32";
+    case transformer_engine::DType::kFloat16:
+      return "float16";
+    case transformer_engine::DType::kBFloat16:
+      return "bfloat16";
+    case transformer_engine::DType::kByte:
+      return "byte";
+    case transformer_engine::DType::kFloat8E4M3:
+      return "float8e4m3";
+    case transformer_engine::DType::kFloat8E5M2:
+      return "float8e5m2";
+    default:
+      NVTE_ERROR("Invalid type");
+  }
+}
+
+void test2(transformer_engine::Float8Tensor tensor) {
+  //at::Tensor t = handle.cast<at::Tensor>();
+  std::cout << tensor.data.size(0) << std::endl;
+  std::cout << tensor.scale_inv.size(0) << std::endl;
+  std::cout << to_string(tensor.dtype) << std::endl;
+}
+
+template <typename InputType>
+using GemmFunc = std::vector<at::Tensor> (*)(InputType, bool, InputType, bool, MaybeTensor,
+                                             MaybeTensor, transformer_engine::DType, MaybeTensor,
+                                             MaybeTensor, transformer_engine::DType, bool, bool,
+                                             at::Tensor, size_t, bool, bool);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("cast_test", test);
+  m.def("cast_test2", test2);
+  m.def("generic_cast", transformer_engine::pytorch::cast);
+  m.def("te_gemm2", static_cast<GemmFunc<transformer_engine::Float8Tensor>>(&te_gemm2),
+        "CublasLt GEMM");
+  m.def("te_gemm2", static_cast<GemmFunc<at::Tensor>>(&te_gemm2), "CublasLt GEMM");
+
   // Permutation functions
   m.def("moe_permute_fwd", moe_permute_fwd);
   m.def("moe_permute_bwd", moe_permute_bwd);
@@ -182,8 +288,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "Fused Attention FP8/BF16/FP16 BWD with separate Q, K and V",
         py::call_guard<py::gil_scoped_release>());
   m.def("fp8_transpose", &fp8_transpose, "Transpose with FP8 I/O",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("fp8_transpose_noalloc", &fp8_transpose_noalloc, "Transpose with FP8 I/O",
+        py::arg("input"), py::arg("dtype"),
+        py::kw_only(), py::arg("out"),
         py::call_guard<py::gil_scoped_release>());
   m.def("fp8_transpose_noalloc_noop", &fp8_transpose_noalloc_noop,
         "Transpose with FP8 I/O with noop option.", py::call_guard<py::gil_scoped_release>());

@@ -7,8 +7,8 @@
 #ifndef TRANSFORMER_ENGINE_PYTORCH_CSRC_EXTENSIONS_H_
 #define TRANSFORMER_ENGINE_PYTORCH_CSRC_EXTENSIONS_H_
 
+#include <optional>
 #include "common.h"
-#include "common/common.h"
 
 /***************************************************************************************************
  * Permutation
@@ -138,6 +138,21 @@ at::Tensor fa_prepare_bwd(at::Tensor q, at::Tensor k, at::Tensor v);
  * GEMM
  **************************************************************************************************/
 
+using MaybeTensor = std::optional<at::Tensor>;
+
+std::vector<at::Tensor> te_gemm2(transformer_engine::Float8Tensor A, bool transa,
+                                 transformer_engine::Float8Tensor B, bool transb, MaybeTensor D,
+                                 MaybeTensor D_scale, transformer_engine::DType D_type,
+                                 MaybeTensor D_amax, MaybeTensor bias,
+                                 transformer_engine::DType bias_type, bool gelu, bool grad,
+                                 at::Tensor workspace, size_t workspaceSize, bool accumulate,
+                                 bool use_split_accumulator);
+std::vector<at::Tensor> te_gemm2(at::Tensor A, bool transa, at::Tensor B, bool transb,
+                                 MaybeTensor D, MaybeTensor D_scale,
+                                 transformer_engine::DType D_type, MaybeTensor D_amax,
+                                 MaybeTensor bias, transformer_engine::DType bias_type, bool gelu,
+                                 bool grad, at::Tensor workspace, size_t workspaceSize,
+                                 bool accumulate, bool use_split_accumulator);
 void te_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType A_type,
              std::vector<int64_t> A_scaling_mode, bool transa, at::Tensor B,
              at::Tensor B_scale_inverse, transformer_engine::DType B_type,
@@ -224,9 +239,7 @@ std::tuple<std::vector<at::Tensor>, std::vector<at::Tensor>> fused_multi_cast_tr
     std::vector<int> scale_indices, std::vector<int> amax_indices,
     std::vector<int> scale_inv_indices, transformer_engine::DType otype);
 
-at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype);
-
-void fp8_transpose_noalloc(at::Tensor input, at::Tensor output, transformer_engine::DType otype);
+at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype, std::optional<at::Tensor> output = std::nullopt);
 
 void fp8_transpose_noalloc_noop(at::Tensor input, at::Tensor output, at::Tensor noop,
                                 transformer_engine::DType otype);
@@ -352,6 +365,16 @@ at::Tensor rmsnorm_fwd_inf(const at::Tensor &input, const at::Tensor &weight, fl
 /***************************************************************************************************
  * Cast
  **************************************************************************************************/
+
+namespace transformer_engine::pytorch {
+
+py::handle cast(const at::Tensor& tensor,
+                py::handle quantization_params,
+                bool rowwise_usage,
+                bool columnwise_usage,
+                py::handle proxy);
+
+}  // namespace transformer_engine::pytorch
 
 at::Tensor cast_to_fp8(const at::Tensor &input, const at::Tensor &scale, at::Tensor amax,
                        at::Tensor scale_inv, transformer_engine::DType otype,

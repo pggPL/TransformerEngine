@@ -22,7 +22,6 @@ from ..fp8 import get_fp8_te_dtype, FP8GlobalStateManager
 from ..utils import (
     divide,
     cast_if_needed,
-    assert_dim_for_fp8_exec,
     clear_tensor_data,
     init_method_constant,
     requires_grad,
@@ -38,12 +37,11 @@ from ..distributed import (
     _fsdp_gather_tensors,
 )
 from ..cpp_extensions import (
+    general_gemm,
     fp8_gemm,
     gemm,
-    fp8_cast_transpose_fused,
-    cast_to_fp8,
 )
-from ..constants import GemmParallelModes, dist_group_type
+from ..constants import GemmParallelModes, dist_group_type, TE_DType
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
 from ..float8_tensor import Float8Tensor
@@ -62,11 +60,9 @@ class _Linear(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx,
-        weight: Union[Float8Tensor, torch.Tensor],
-        weight_fp8: Optional[Float8Tensor],
+        weight: torch.Tensor,
         inp: torch.Tensor,
-        bias: torch.Tensor,
-        use_bias: bool,
+        bias: Optional[torch.Tensor],
         is_first_microbatch: Union[bool, None],
         fp8: bool,
         fp8_calibration: bool,
@@ -85,232 +81,127 @@ class _Linear(torch.autograd.Function):
         ub_name: str,
         fp8_output: bool,
         fsdp_group: Union[dist_group_type, None],
+        module: torch.nn.Module,
+        skip_fp8_weight_update: bool,
     ) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
         is_input_fp8 = isinstance(inp, Float8Tensor)
 
         # Make sure input dimensions are compatible
-        out_features, in_features = weight.shape
+        _, in_features = weight.shape
         inp_shape = inp.shape
         assert inp_shape[-1] == in_features, "GEMM not possible"
-        inputmat = inp.view(-1, in_features)
-        if fp8:
-            assert_dim_for_fp8_exec(inputmat)
-            assert_dim_for_fp8_exec(weight)
 
         tp_world_size = get_distributed_world_size(tp_group)
         ub_overlap_rs = False if tp_world_size == 1 else ub_overlap_rs
 
         # Cast input to expected dtype
-        inputmat = cast_if_needed(inputmat, activation_dtype)
-        inputmat_t = None
+        inputmat = cast_if_needed(inp, activation_dtype)
+
         inputmat_no_fp8 = inputmat
-        inputmat_scale_inv = None
+
+        backward_needs_input = (
+            is_grad_enabled
+            and weight.requires_grad
+        )
+        own_quantized_input = not isinstance(inputmat, QuantizedTensor)
 
         if fp8:
-            fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
-            if isinstance(inputmat, Float8Tensor):
-                inputmat_scale_inv = inputmat._scale_inv
-            else:
-                inputmat_scale_inv = torch.empty([1], dtype=torch.float32, device=inputmat.device)
-                if (
-                    not fp8_meta["recipe"].override_linear_precision.wgrad
-                    and is_grad_enabled
-                    and weight.requires_grad
-                    and not sequence_parallel
-                ):
-                    # FP8 input for forward, FP8 input transpose for backward wgrad
-                    inputmat, inputmat_t = fp8_cast_transpose_fused(
-                        inputmat,
-                        fp8_meta["scaling_fwd"],
-                        tex.FP8FwdTensors.GEMM1_INPUT,
-                        fp8_dtype_forward,
-                        scale_inv=inputmat_scale_inv,
-                    )
-                else:
-                    # FP8 input for forward
-                    inputmat = cast_to_fp8(
-                        inputmat,
-                        fp8_meta["scaling_fwd"],
-                        tex.FP8FwdTensors.GEMM1_INPUT,
-                        fp8_dtype_forward,
-                        scale_inv=inputmat_scale_inv,
-                    )
-
-            # Hack for ONNX export
-            # Note: ONNX models are represented as a graph of tensor
-            # operations, so the in-place scale-inv update doesn't fit
-            # very well. We work around this by making it look like
-            # the scale-inv tensor is initialized with a copy.
-            # Note: ONNX export expects FP8 scales can be represented
-            # with constant ops. However, copying into a buffer
-            # involves an expand op for array broadcasting. We work
-            # around this by filling the buffer instead.
-            if is_in_onnx_export_mode():
-                inputmat_scale_inv.fill_(inputmat_scale_inv.item())
+            if own_quantized_input:
+                meta = fp8_meta["scaling_fwd"]
+                backward_needs_fp8_input = (backward_needs_input and 
+                                            not fp8_meta["recipe"].override_linear_precision.wgrad)
+                inputmat = meta.quantize(inputmat, tex.FP8FwdTensors.GEMM1_INPUT,
+                                         columnwise = backward_needs_fp8_input)
 
         # Column Parallel Linear
         if parallel_mode == "column" and sequence_parallel:
-            inputmat_total, _ = gather_along_first_dim(inputmat, tp_group)
+            inputmat_total, _ = gather_along_first_dim(inputmat, tp_group, columnwise=False)
         else:
             inputmat_total = inputmat
+
+        # Initialize FP8 weights if needed
+        weight_fp8 = weight
         if fp8:
+            if not isinstance(weight, QuantizedTensor):
+                # FP8 cast to workspace buffer
+                update_workspace = is_first_microbatch is None or is_first_microbatch
+                weight_fp8 = module.get_fp8_workspace(
+                    tensor=weight,
+                    quantization_params=fp8_meta["scaling_fwd"].get_quantization_params(
+                        tex.FP8FwdTensors.GEMM1_WEIGHT
+                    ),
+                    cache_name=(None if is_first_microbatch is None else "weight"),
+                    update_workspace=update_workspace,
+                    skip_update_flag=skip_fp8_weight_update,
+                    fsdp_group=fsdp_group,
+                )
+
             bias_dtype = torch.bfloat16 if activation_dtype == torch.float32 else activation_dtype
-            bias = cast_if_needed(bias, bias_dtype) if use_bias else bias
-
-            # Use FP8 weights
-            if weight_fp8 is None:
-                weight_fp8 = weight
-
-            assert isinstance(weight_fp8, Float8Tensor)
-
-            if fp8_output:
-                proj_out_index, meta_tensor, proj_out_tetype, proj_out_pttype = (
-                    tex.FP8FwdTensors.GEMM1_OUTPUT,
-                    fp8_meta["scaling_fwd"],
-                    fp8_dtype_forward,
-                    torch.uint8,
-                )
-            else:
-                proj_out_index, meta_tensor, proj_out_tetype, proj_out_pttype = (
-                    None,
-                    None,
-                    None,
-                    activation_dtype,
-                )
-
-            ub_algo = None
-            rs_out = None
-            if ub_overlap_rs:
-                ub_obj_projout = get_ub(ub_name + "_fprop")
-                out = ub_obj_projout.get_ubuf_output(1)
-                dim_size = list(inputmat_total.size())
-                dim_size[0] = dim_size[0] // tp_world_size
-                dim_size[1] = out_features
-                rs_out = torch.empty(dim_size, dtype=activation_dtype, device=inputmat_total.device)
-                if ub_obj_projout.is_p2p_overlap():
-                    if ub_obj_projout.is_atomic_gemm():
-                        ub_algo = tex.UbufOverlapAlgo.ATOMIC_GEMM_RS_P2P
-                    else:
-                        ub_algo = tex.UbufOverlapAlgo.SPLIT_PIPELINED_RS_P2P
-                else:
-                    if ub_obj_projout.is_atomic_gemm():
-                        ub_algo = tex.UbufOverlapAlgo.ATOMIC_GEMM_RS
-                    else:
-                        ub_algo = tex.UbufOverlapAlgo.SPLIT_PIPELINED_RS
-                if ub_obj_projout.is_fp8_ubuf():
-                    proj_out_index = tex.FP8FwdTensors.GEMM1_OUTPUT
-                    meta_tensor = fp8_meta["scaling_fwd"]
-                    proj_out_tetype = fp8_dtype_forward
-                    proj_out_pttype = torch.uint8
-                    ub_obj_projout.set_ubuf_scale_inv(meta_tensor.scale_inv[proj_out_index])
-            else:
-                dim_size = list(inputmat_total.size())
-                dim_size[1] = out_features
-                out = torch.empty(dim_size, dtype=proj_out_pttype, device=inputmat_total.device)
-
-            _ = fp8_gemm(
-                weight_fp8._data,
-                weight_fp8._scale_inv,
-                0,
-                weight_fp8._fp8_dtype,
-                (
-                    inputmat_total._data
-                    if isinstance(inputmat_total, Float8Tensor)
-                    else inputmat_total
-                ),
-                inputmat_scale_inv,
-                0,
-                fp8_dtype_forward,
-                proj_out_pttype,
-                get_workspace(),
-                bias=bias,
-                use_bias=use_bias,
-                use_split_accumulator=_2X_ACC_FPROP,
-                out=out,
-                ub_algo=ub_algo if ub_overlap_rs else None,
-                ub=ub_obj_projout if ub_overlap_rs else None,
-                extra_output_tensor=rs_out if ub_overlap_rs else None,
-                out_index=proj_out_index,
-                fp8_meta_tensor=meta_tensor,
-                D_dtype=proj_out_tetype,
-            )
-            if fp8_output:
-                out = Float8Tensor(
-                    data=out,
-                    fp8_meta=fp8_meta,
-                    fp8_meta_forward=True,
-                    fp8_meta_index=tex.FP8FwdTensors.GEMM1_OUTPUT,
-                    fp8_dtype=fp8_dtype_forward,
-                    dtype=activation_dtype,
-                )
         else:
-            # Cast for native AMP
-            weight = cast_if_needed(weight, activation_dtype)
-            bias = cast_if_needed(bias, activation_dtype) if use_bias else bias
+            bias_dtype = activation_dtype
+            weight_fp8 = cast_if_needed(weight, activation_dtype)
 
-            if fp8_calibration:
-                # amax of input
-                amin, amax = inputmat_total.aminmax()
-                fp8_meta["scaling_fwd"].amax_history[0][tex.FP8FwdTensors.GEMM1_INPUT] = torch.max(
-                    -amin, amax
-                ).float()
-                # amax of weight
-                amin, amax = weight.aminmax()
-                fp8_meta["scaling_fwd"].amax_history[0][tex.FP8FwdTensors.GEMM1_WEIGHT] = torch.max(
-                    -amin, amax
-                ).float()
+        bias = cast_if_needed(bias, bias_dtype) if bias is not None else bias
 
-            if ub_overlap_rs:
-                ub_obj_projout = get_ub(ub_name + "_fprop")
-                out = ub_obj_projout.get_ubuf_output(1)
-                dim_size = list(inputmat_total.size())
-                dim_size[0] = dim_size[0] // get_distributed_world_size(tp_group)
-                dim_size[1] = out_features
-                rs_out = torch.empty(dim_size, dtype=activation_dtype, device=inputmat_total.device)
-                if ub_obj_projout.is_p2p_overlap():
+        if not fp8 and fp8_calibration:
+            fp8_meta["scaling_fwd"].calibrate(inputmat_total, tex.FP8FwdTensors.GEMM1_INPUT)
+            fp8_meta["scaling_fwd"].calibrate(weight, tex.FP8FwdTensors.GEMM1_WEIGHT)
+
+        if fp8_output:
+            meta_tensor = fp8_meta["scaling_fwd"]
+            out_index = tex.FP8FwdTensors.GEMM1_OUTPUT
+            qparams = meta_tensor.get_quantization_params(out_index)
+        else:
+            qparams = None
+
+        if ub_overlap_rs:
+            # I think this should be inside the gemm call rather than linear
+            ub_obj_projout = get_ub(ub_name + "_fprop")
+            ub_buffer = ub_obj_projout.get_ubuf_output(1)
+            if ub_obj_projout.is_p2p_overlap():
+                if ub_obj_projout.is_atomic_gemm():
+                    ub_algo = tex.UbufOverlapAlgo.ATOMIC_GEMM_RS_P2P
+                else:
                     ub_algo = tex.UbufOverlapAlgo.SPLIT_PIPELINED_RS_P2P
+            else:
+                if ub_obj_projout.is_atomic_gemm():
+                    ub_algo = tex.UbufOverlapAlgo.ATOMIC_GEMM_RS
                 else:
                     ub_algo = tex.UbufOverlapAlgo.SPLIT_PIPELINED_RS
-            else:
-                dim_size = list(inputmat_total.size())
-                dim_size[1] = out_features
-                out = torch.empty(dim_size, dtype=activation_dtype, device=inputmat_total.device)
+            if fp8 and ub_obj_projout.is_fp8_ubuf():
+                assert fp8_output
+                ub_obj_projout.set_ubuf_scale_inv(qparams.scale_inv)
 
-            _ = gemm(
-                weight,
-                inputmat_total,
-                activation_dtype,
-                get_workspace(),
-                bias=bias,
-                use_bias=use_bias,
-                out=out,
-                ub_algo=ub_algo if ub_overlap_rs else None,
-                ub=ub_obj_projout if ub_overlap_rs else None,
-                extra_output_tensor=rs_out if ub_overlap_rs else None,
-            )
+        out, _ = general_gemm(
+            weight_fp8,
+            inputmat_total,
+            get_workspace(),
+            quantization_params=qparams,
+            out_dtype=activation_dtype,
+            bias=bias,
+            use_split_accumulator=_2X_ACC_FPROP,
+            ub_algo=ub_algo if ub_overlap_rs else None,
+            ub=ub_obj_projout if ub_overlap_rs else None,
+            ub_buffer=ub_buffer if ub_overlap_rs else None,
+        )
 
         if is_grad_enabled:
             saved_inputmat = None
-            saved_inputmat_t = None
-            if weight.requires_grad:
+            if backward_needs_input:
+                if own_quantized_input and isinstance(inputmat, QuantizedTensor):
+                    inputmat.update_usage(rowwise=False)
                 if fp8 and not fp8_meta["recipe"].override_linear_precision.wgrad:
-                    if inputmat_t is None:
-                        saved_inputmat = inputmat
-                    else:
-                        saved_inputmat_t = inputmat_t
-                        if cpu_offloading:
-                            saved_inputmat_t.activation_offloading = True
+                    saved_inputmat = inputmat
                 else:
                     saved_inputmat = inputmat_no_fp8
 
-                if cpu_offloading:
-                    if fp8 and weight_fp8 is not None:
-                        weight_fp8.weight_offloading = True
-                    weight.weight_offloading = True
+            if cpu_offloading:
+                weight_fp8.weight_offloading = True
+                weight.weight_offloading = True
 
-                    if saved_inputmat is not None:
-                        saved_inputmat.activation_offloading = True
+                if saved_inputmat is not None:
+                    saved_inputmat.activation_offloading = True
 
             # Scatter intermediate/activation tensors saved for the backward pass
             # NOTE: FSDP sharding is not valid for models initialized with primary Fp8 weights
@@ -318,15 +209,11 @@ class _Linear(torch.autograd.Function):
             ctx.fsdp_shapes = _fsdp_scatter_tensors(
                 fsdp_group,
                 saved_inputmat,  # None if fp8 == False
-                saved_inputmat_t,  # None if fp8 == False AND not is_grad_enabled
                 weight_fp8 if fp8 and not isinstance(weight, Float8Tensor) else None,
             )
 
             ctx.save_for_backward(
                 saved_inputmat,
-                saved_inputmat_t,
-                inputmat_scale_inv,
-                weight,
                 weight_fp8,
                 weight.main_grad if cpu_offloading and fuse_wgrad_accumulation else None,
             )
@@ -337,7 +224,7 @@ class _Linear(torch.autograd.Function):
             ctx.fuse_wgrad_accumulation = fuse_wgrad_accumulation
             ctx.cpu_offloading = cpu_offloading
             ctx.is_first_microbatch = is_first_microbatch
-            ctx.use_bias = use_bias
+            ctx.use_bias = bias is not None
             ctx.sequence_parallel = sequence_parallel
             ctx.tensor_parallel = tensor_parallel
             ctx.inp_shape = inp_shape
@@ -356,15 +243,13 @@ class _Linear(torch.autograd.Function):
                     FP8GlobalStateManager.IS_FIRST_FP8_MODULE = _first_fp8_module
 
         # Row Parallel Linear
-        if ub_overlap_rs:
-            out = rs_out
-        elif parallel_mode == "row" and sequence_parallel:
-            out, _ = reduce_scatter_along_first_dim(out, tp_group)
-        elif parallel_mode == "row" and tensor_parallel:
-            out, _ = allreduce(out, tp_group)
+        if not ub_overlap_rs:
+            if parallel_mode == "row" and sequence_parallel:
+                out, _ = reduce_scatter_along_first_dim(out, tp_group)
+            elif parallel_mode == "row" and tensor_parallel:
+                out, _ = allreduce(out, tp_group)
 
-        # [*, in_features] -> [*, out_features] except first dimension changes for SP
-        return out.view(-1, *inp_shape[1:-1], out_features)
+        return out
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
@@ -617,10 +502,8 @@ class _Linear(torch.autograd.Function):
 
         return (
             wgrad,
-            None,  # weight_fp8
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
             grad_bias,
-            None,  # use_bias
             None,  # is_first_microbatch
             None,  # fp8
             None,  # fp8_calibration
@@ -639,6 +522,8 @@ class _Linear(torch.autograd.Function):
             None,  # ub_name
             None,  # fp8_output
             None,  # fsdp_group
+            None,  # module
+            None,  # skip_fp8_weight_update
         )
 
 
@@ -963,32 +848,7 @@ class Linear(TransformerEngineBaseModule):
             if self.use_bias:
                 bias_tensor = _noop_cat([self._fast_get_param(name) for name in self.bias_names])
             else:
-                bias_tensor = self._fast_get_param(self.bias_names[0])  # Unused
-
-            # Initialize FP8 weights if needed
-            weight_fp8 = None
-            if self.fp8:
-                if isinstance(weight_tensor, Float8Tensor):
-                    # Make sure transpose cache is valid, if present
-                    # Note: Transpose cache may have been invalidated
-                    # externally, e.g. by optimizer.
-                    if weight_tensor._transpose is not None:
-                        weight_tensor.transpose_2d(
-                            fill_cache=True,
-                            noop_flag=skip_fp8_weight_update,
-                        )
-                else:
-                    # FP8 cast to workspace buffer
-                    update_workspace = is_first_microbatch is None or is_first_microbatch
-                    weight_fp8 = self.get_fp8_workspace(
-                        tensor=weight_tensor,
-                        fp8_meta_forward=True,
-                        fp8_meta_index=tex.FP8FwdTensors.GEMM1_WEIGHT,
-                        cache_name=(None if is_first_microbatch is None else "weight"),
-                        update_workspace=update_workspace,
-                        skip_update_flag=skip_fp8_weight_update,
-                        fsdp_group=self.fsdp_group,
-                    )
+                bias_tensor = None
 
             if torch.is_grad_enabled():
                 linear_fn = _Linear.apply
@@ -998,10 +858,8 @@ class Linear(TransformerEngineBaseModule):
                 args = [None]
             args += (
                 weight_tensor,
-                weight_fp8,
                 inp,
-                bias_tensor,
-                self.apply_bias and not self.gemm_bias_unfused_add,
+                bias_tensor if (self.apply_bias and not self.gemm_bias_unfused_add) else None,
                 is_first_microbatch,
                 self.fp8,
                 self.fp8_calibration,
@@ -1020,6 +878,8 @@ class Linear(TransformerEngineBaseModule):
                 self.ub_name,
                 fp8_output,
                 self.fsdp_group,
+                self,
+                skip_fp8_weight_update,
             )
             out = linear_fn(*args)
 

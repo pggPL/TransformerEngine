@@ -8,6 +8,8 @@ from typing import Optional, Union
 import torch
 
 import transformer_engine_torch as tex
+
+from ..quantization_params import QuantizationParams
 from ._common import canonicalize_fp8_scales
 
 __all__ = ["gelu", "relu", "reglu", "geglu", "swiglu", "qgelu", "srelu"]
@@ -15,34 +17,14 @@ __all__ = ["gelu", "relu", "reglu", "geglu", "swiglu", "qgelu", "srelu"]
 
 def gelu(
     inp: torch.Tensor,
-    fp8_meta_tensor: Optional[tex.FP8TensorMeta],
-    fp8_tensor: Union[tex.FP8FwdTensors, tex.FP8BwdTensors, None],
-    otype: tex.DType,
-    scale: Optional[torch.Tensor] = None,
-    amax: Optional[torch.Tensor] = None,
-    scale_inv: Optional[torch.Tensor] = None,
+    qparams: QuantizationParams,
 ) -> torch.Tensor:
     """GeLU with FP8 output"""
 
-    # Get FP8 scaling factors
-    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
-        scale=scale,
-        amax=amax,
-        scale_inv=scale_inv,
-        fp8_meta=fp8_meta_tensor,
-        fp8_meta_index=fp8_tensor,
-        allow_multiple_offsets=False,
-    )
-
     # Launch kernel
-    return torch.ops.tex_ts.gelu_ts(
+    return tex.gelu(
         inp,
-        fp8_scales["scale"],
-        fp8_scales["amax"],
-        fp8_scales["scale_inv"],
-        fp8_scales_offsets["scale_offset"],
-        otype,
-    )
+        qparams)
 
 
 def relu(

@@ -47,6 +47,7 @@
 #include <vector>
 
 #include "common/util/cuda_runtime.h"
+#include "c10/util/ArrayRef.h"
 #include "common/util/logging.h"
 
 namespace transformer_engine {
@@ -83,6 +84,14 @@ enum FP8BwdTensors {
   GRAD_INPUT2 = 3,
   GRAD_OUTPUT3 = 4,
   GRAD_INPUT3 = 5
+};
+
+class Float8Tensor {
+ public:
+  at::Tensor data;
+  std::optional<at::Tensor> transpose = std::nullopt;
+  at::Tensor scale_inv;
+  DType dtype;
 };
 
 }  // namespace transformer_engine
@@ -130,6 +139,7 @@ inline transformer_engine::DType GetTransformerEngineDType(at::ScalarType t) {
     case torch::kInt64:
       return transformer_engine::DType::kInt64;
     default:
+      std::cout << "Type: " << static_cast<int>(t) << std::endl;
       NVTE_ERROR("Invalid type");
   }
 }
@@ -170,5 +180,36 @@ at::Tensor allocateTorchTensor(int M, int N, transformer_engine::DType dtype);
 at::Tensor allocateTorchTensor(int M, transformer_engine::DType dtype);
 
 void* getDataPtr(at::Tensor tensor, int offset = 0);
+
+namespace std {
+  template <typename T>
+  string to_string(const vector<T>& vec) {
+    string ret = "[";
+    for (const auto& val : vec) {
+      ret += to_string(val) + ",";
+    }
+    if (ret.size() > 1) {
+      ret[ret.size() - 1] = ']';
+    } else {
+      ret += "]";
+    }
+    return ret;
+  }
+
+  // Torch shape -> string
+  template <typename T>
+  string to_string(const c10::ArrayRef<T>& vec) {
+    string ret = "[";
+    for (const auto& val : vec) {
+      ret += to_string(val) + ",";
+    }
+    if (ret.size() > 1) {
+      ret[ret.size() - 1] = ']';
+    } else {
+      ret += "]";
+    }
+    return ret;
+  }
+}  // namespace std
 
 #endif  // TRANSFORMER_ENGINE_PYTORCH_CSRC_COMMON_H_
