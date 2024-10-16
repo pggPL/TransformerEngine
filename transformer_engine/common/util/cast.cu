@@ -19,6 +19,7 @@
 #include "../utils.cuh"
 #include "math.h"
 #include "ptx.cuh"
+#include "cuda_driver.h"
 
 namespace transformer_engine {
 
@@ -603,7 +604,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
       }
     }
 
-#pragma unroll 2
+#pragma unroll
     for (int it = 0; it < FP8_ITERATIONS; ++it) {
       const int buff = it % FP8_BUFFERS_NUM;
       const int next_it = it + FP8_PREFETCH_BUFFERS_NUM;
@@ -636,7 +637,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
       // Wait for the data to have arrived
       mbarrier_wait_parity(&mbar[it], parity);
 
-#pragma unroll 4
+#pragma unroll
       for (int stage = 0; stage < FP8_BUFF_STAGES_NUM; ++stage) {
         const int stage_offset_Y = stage;
         const int shmem_offset_y = thread_offset_Y + stage_offset_Y;
@@ -717,17 +718,32 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = []() {
-  void *driver_ptr = nullptr;
-  cudaDriverEntryPointQueryResult driver_status;
-  NVTE_CHECK_CUDA(cudaGetDriverEntryPoint("cuTensorMapEncodeTiled", &driver_ptr, cudaEnableDefault,
-                                          &driver_status));
+static void checkCuDriverContext(CUstream stream) {
+  CUcontext ctx;
+  const CUresult driver_status = cuda_driver::call("cuStreamGetCtx", stream, &ctx);
+  switch (driver_status) {
+    case CUDA_SUCCESS:
+      break;
+
+    case CUDA_ERROR_INVALID_CONTEXT:
+      int current_device;
+      NVTE_CHECK_CUDA(cudaGetDevice(&current_device));
+      NVTE_CALL_CHECK_CUDA_DRIVER(cuDevicePrimaryCtxRetain, &ctx, current_device);
+      NVTE_CALL_CHECK_CUDA_DRIVER(cuCtxSetCurrent, ctx);
+      break;
+
+    default:
+      const char *desc_NVTE_CHECK_CUDA_DRIVER;
+      cuda_driver::call("cuGetErrorString", driver_status, &desc_NVTE_CHECK_CUDA_DRIVER);
+      NVTE_ERROR("CUDA Error: ", desc_NVTE_CHECK_CUDA_DRIVER); 
+  }
+}
+
+// Get a function pointer to the cuTensorMapEncodeTiled driver API
+static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = [](){
+  const void *driver_ptr = cuda_driver::get_symbol("cuTensorMapEncodeTiled");
   return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
 }();
-
-static inline PFN_cuTensorMapEncodeTiled get_cuTensorMapEncodeTiled() {
-  return cuDriverTensorMapEncodeTiled;
-}
 
 static CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
   static const std::unordered_map<DType, CUtensorMapDataType> dtypeMapping = {
@@ -765,15 +781,12 @@ static void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
   // The distance between elements in units of sizeof(element)
   uint32_t elemStride[rank] = {1, 1};
 
-  // Get a function pointer to the cuTensorMapEncodeTiled driver API
-  auto cuTensorMapEncodeTiled = get_cuTensorMapEncodeTiled();
-
   const CUtensorMapDataType tensorDataType = get_CUtensorMapDataType(tensor.data.dtype);
   void *dataPtr = reinterpret_cast<void *>(tensor.data.dptr);
   NVTE_CHECK(isPointerAligned(dataPtr, 16), "Tensor data must be 16B aligned");
 
   // Create the tensor descriptor.
-  CUresult res = cuTensorMapEncodeTiled(
+  NVTE_CHECK_CUDA_DRIVER(cuDriverTensorMapEncodeTiled(
       &tensorMap,  // CUtensorMap *tensorMap,
       tensorDataType,
       rank,        // cuuint32_t tensorRank,
@@ -795,9 +808,8 @@ static void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
       // CUtensorMapL2promotion::CU_TENSOR_MAP_L2_PROMOTION_L2_256B,
 
       // Any element that is outside of bounds will be set to zero by the TMA transfer.
-      CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
-
-  NVTE_CHECK(res == CUresult::CUDA_SUCCESS, "Couldn't create a tensor descriptor");
+      CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE)
+  );
 }
 
 constexpr size_t DBIAS_THREADS_PER_BLOCK = 256;
@@ -853,6 +865,8 @@ void reduce_dbias(const float *workspace_ptr, Tensor *dbias, const size_t rows, 
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
 void cast_fp8(const Tensor &input, const Tensor &act_input, Tensor *output, Tensor *dbias,
               Tensor *workspace, cudaStream_t stream) {
+  checkCuDriverContext(stream);
+
   const size_t rows = input.data.shape[0];
   const size_t cols = input.data.shape[1];
   const size_t chunks_Y = DIVUP(rows, FP8_CHUNK_DIM_Y);
@@ -920,6 +934,8 @@ void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_row
       (SCALING == ScalingType::BIDIMENTIONAL || SCALING == ScalingType::ROWWISE);
   constexpr bool USE_COLWISE_SCALING =
       (SCALING == ScalingType::BIDIMENTIONAL || SCALING == ScalingType::COLWISE);
+
+  checkCuDriverContext(stream);
 
   const size_t scale_dim_X_rowwise = USE_ROWWISE_SCALING ? output_rowwise->scaling_mode.y : 1;
   const size_t scale_dim_Y_colwise = USE_COLWISE_SCALING ? output_colwise->scaling_mode.x : 1;
@@ -1051,12 +1067,19 @@ static const int32_t deviceComputeCapability = []() {
 
 static bool is_supported_by_CC_100() { return deviceComputeCapability >= 100; }
 
-static bool is_supported_shape(const Tensor *output) {
+static bool is_mxfp8_cast_supported_shape(const Tensor *output) {
   const NVTEScalingMode &scaling_mode = output->scaling_mode;
-  const bool is_shape_supported = (scaling_mode.delayed_scaling == 0) &&
-                                  (scaling_mode.x == 1 || scaling_mode.x == 32) &&
-                                  (scaling_mode.y == 1 || scaling_mode.y == 32);
-  return is_shape_supported;
+  const bool is_mxfp8_cast_supported = (scaling_mode.delayed_scaling == 0) &&
+                                       (scaling_mode.x == 1 || scaling_mode.x == 32) &&
+                                       (scaling_mode.y == 1 || scaling_mode.y == 32);
+  return is_mxfp8_cast_supported;
+}
+
+static bool is_fp8_cast_supported_shape(const Tensor *output) {
+  const NVTEScalingMode &scaling_mode = output->scaling_mode;
+  const bool is_fp8_cast_supported = is_delayed_tensor_scaling(scaling_mode) &&
+                                     (scaling_mode.x == -1) && (scaling_mode.y == -1);
+  return is_fp8_cast_supported;
 }
 
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
@@ -1079,16 +1102,29 @@ void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, 
   NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
   NVTE_CHECK(output->scale_inv.dptr != nullptr, "Scaling tensor must be allocated");
 
-  if (is_supported_by_CC_100() && is_supported_shape(output)) {
-    const bool is_colwise_scaling = (output->scaling_mode.x > 1);
-    if (is_colwise_scaling) {
-      cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::COLWISE, ParamOP, OP>(
-          input, act_input, nullptr, output, dbias, workspace, stream);
+  // Supported by the Arch >= 10.0
+  if (is_supported_by_CC_100()) {
+    // MXFP8 Scaling
+    if (is_mxfp8_cast_supported_shape(output)) {
+      const bool is_colwise_scaling = (output->scaling_mode.x > 1);
+      if (is_colwise_scaling) {
+        cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::COLWISE, ParamOP, OP>(
+            input, act_input, nullptr, output, dbias, workspace, stream);
+      } else {
+        cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::ROWWISE, ParamOP, OP>(
+            input, act_input, output, nullptr, dbias, workspace, stream);
+      }
+    // Regular FP8 Scaling
+    } else if (is_fp8_cast_supported_shape(output)) {
+      cast_fp8<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
     } else {
-      cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::ROWWISE, ParamOP, OP>(
-          input, act_input, output, nullptr, dbias, workspace, stream);
+      NVTE_ERROR("Not implemented on Arch >= 10.0: " + to_string(output->scaling_mode) + ".");
     }
-  } else if (is_delayed_tensor_scaling(output->scaling_mode) && !IS_DBIAS && !IS_DACT) {
+    return;
+  }
+
+  // Supported by the Arch < 10.0
+  if (is_delayed_tensor_scaling(output->scaling_mode) && !IS_DBIAS && !IS_DACT) {
     const size_t N = product(input.data.shape);
     TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
         input.data.dtype, IType,
@@ -1102,15 +1138,8 @@ void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, 
                 reinterpret_cast<fp32 *>(output->scale_inv.dptr), N, {},
                 stream););  // NOLINT(*)
     );                      // NOLINT(*)
-  } else if (is_delayed_tensor_scaling(output->scaling_mode)) {
-    if (output->scaling_mode.x == -1 && output->scaling_mode.y == -1) {
-      cast_fp8<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
-    } else {
-      NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
-    }
-    return;
   } else {
-    NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
+    NVTE_ERROR("Not implemented on Arch < 10.0: " + to_string(output->scaling_mode) + ".");
   }
 }
 
@@ -1119,8 +1148,7 @@ void fp8_quantize_x2(const Tensor &input, const Tensor &act_input, Tensor *outpu
                      Tensor *output_colwise, Tensor *dbias, Tensor *workspace,
                      cudaStream_t stream) {
   if (!is_supported_by_CC_100()) {
-    NVTE_ERROR("Not supported by CC <10.0");
-    return;
+    NVTE_ERROR("Not supported by Arch < 10.0");
   }
 
   CheckInputTensor(input, "cast_input");
@@ -1154,11 +1182,11 @@ void fp8_quantize_x2(const Tensor &input, const Tensor &act_input, Tensor *outpu
   NVTE_CHECK(output_rowwise->scale_inv.dptr != nullptr, "Rowwise scaling tensor must be allocated");
   NVTE_CHECK(output_colwise->scale_inv.dptr != nullptr, "Colwise scaling tensor must be allocated");
 
-  if (is_supported_shape(output_rowwise) && is_supported_shape(output_colwise)) {
+  if (is_mxfp8_cast_supported_shape(output_rowwise) && is_mxfp8_cast_supported_shape(output_colwise)) {
     cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::BIDIMENTIONAL, ParamOP, OP>(
         input, act_input, output_rowwise, output_colwise, dbias, workspace, stream);
   } else {
-    NVTE_ERROR("Not implemented scaling mode: " + to_string(output_rowwise->scaling_mode) +
+    NVTE_ERROR("Not implemented 2x scaling mode: " + to_string(output_rowwise->scaling_mode) +
                to_string(output_colwise->scaling_mode) + ".");
   }
 }
