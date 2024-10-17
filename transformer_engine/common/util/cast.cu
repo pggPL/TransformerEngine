@@ -17,9 +17,9 @@
 #include "../common.h"
 #include "../util/vectorized_pointwise.h"
 #include "../utils.cuh"
+#include "cuda_driver.h"
 #include "math.h"
 #include "ptx.cuh"
-#include "cuda_driver.h"
 
 namespace transformer_engine {
 
@@ -735,12 +735,12 @@ static void checkCuDriverContext(CUstream stream) {
     default:
       const char *desc_NVTE_CHECK_CUDA_DRIVER;
       cuda_driver::call("cuGetErrorString", driver_status, &desc_NVTE_CHECK_CUDA_DRIVER);
-      NVTE_ERROR("CUDA Error: ", desc_NVTE_CHECK_CUDA_DRIVER); 
+      NVTE_ERROR("CUDA Error: ", desc_NVTE_CHECK_CUDA_DRIVER);
   }
 }
 
 // Get a function pointer to the cuTensorMapEncodeTiled driver API
-static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = [](){
+static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = []() {
   const void *driver_ptr = cuda_driver::get_symbol("cuTensorMapEncodeTiled");
   return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
 }();
@@ -808,8 +808,7 @@ static void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
       // CUtensorMapL2promotion::CU_TENSOR_MAP_L2_PROMOTION_L2_256B,
 
       // Any element that is outside of bounds will be set to zero by the TMA transfer.
-      CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE)
-  );
+      CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE));
 }
 
 constexpr size_t DBIAS_THREADS_PER_BLOCK = 256;
@@ -1077,8 +1076,8 @@ static bool is_mxfp8_cast_supported_shape(const Tensor *output) {
 
 static bool is_fp8_cast_supported_shape(const Tensor *output) {
   const NVTEScalingMode &scaling_mode = output->scaling_mode;
-  const bool is_fp8_cast_supported = is_delayed_tensor_scaling(scaling_mode) &&
-                                     (scaling_mode.x == -1) && (scaling_mode.y == -1);
+  const bool is_fp8_cast_supported =
+      is_delayed_tensor_scaling(scaling_mode) && (scaling_mode.x == -1) && (scaling_mode.y == -1);
   return is_fp8_cast_supported;
 }
 
@@ -1114,7 +1113,7 @@ void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, 
         cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::ROWWISE, ParamOP, OP>(
             input, act_input, output, nullptr, dbias, workspace, stream);
       }
-    // Regular FP8 Scaling
+      // Regular FP8 Scaling
     } else if (is_fp8_cast_supported_shape(output)) {
       cast_fp8<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
     } else {
@@ -1182,7 +1181,8 @@ void fp8_quantize_x2(const Tensor &input, const Tensor &act_input, Tensor *outpu
   NVTE_CHECK(output_rowwise->scale_inv.dptr != nullptr, "Rowwise scaling tensor must be allocated");
   NVTE_CHECK(output_colwise->scale_inv.dptr != nullptr, "Colwise scaling tensor must be allocated");
 
-  if (is_mxfp8_cast_supported_shape(output_rowwise) && is_mxfp8_cast_supported_shape(output_colwise)) {
+  if (is_mxfp8_cast_supported_shape(output_rowwise) &&
+      is_mxfp8_cast_supported_shape(output_colwise)) {
     cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::BIDIMENTIONAL, ParamOP, OP>(
         input, act_input, output_rowwise, output_colwise, dbias, workspace, stream);
   } else {
