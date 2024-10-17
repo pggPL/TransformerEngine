@@ -17,9 +17,9 @@
 #include "../common.h"
 #include "../util/vectorized_pointwise.h"
 #include "../utils.cuh"
+#include "cuda_driver.h"
 #include "math.h"
 #include "ptx.cuh"
-#include "cuda_driver.h"
 
 namespace transformer_engine {
 
@@ -43,13 +43,11 @@ constexpr size_t FP8_BUFFER_DIM_X = FP8_CHUNK_DIM_X;  // 128
 constexpr size_t FP8_SHMEM_DIM_Y = FP8_BUFFER_DIM_Y;  // 32
 constexpr size_t FP8_SHMEM_DIM_X = FP8_BUFFER_DIM_X;  // 128
 
-constexpr size_t FP8_BUFF_STAGES_NUM = FP8_BUFFER_DIM_Y / FP8_THREADS_PER_CHUNK_Y;    //  16 =  32 / 2
-constexpr size_t FP8_ITERATIONS = FP8_CHUNK_DIM_Y / FP8_BUFFER_DIM_Y;                 //   8 = 128 / 16
+constexpr size_t FP8_BUFF_STAGES_NUM = FP8_BUFFER_DIM_Y / FP8_THREADS_PER_CHUNK_Y;  //  16 =  32 / 2
+constexpr size_t FP8_ITERATIONS = FP8_CHUNK_DIM_Y / FP8_BUFFER_DIM_Y;  //   8 = 128 / 16
 static_assert(FP8_ITERATIONS >= FP8_PREFETCH_BUFFERS_NUM);
 
-__device__ inline float sigmoidf(const float x) {
-  return __frcp_rn(1.0f + __expf(-x));
-}
+__device__ inline float sigmoidf(const float x) { return __frcp_rn(1.0f + __expf(-x)); }
 
 template <typename ParamOP, float (*ActOP)(float, const ParamOP &),
           float (*DActOP)(float, const ParamOP &), typename IType, typename OType>
@@ -75,14 +73,16 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
 
   extern __shared__ char dshmem_unaligned[];
   const uint64_t dshmem_unaligned_as_uint = reinterpret_cast<uint64_t>(dshmem_unaligned);
-  const uint64_t dshmem_aligned_as_uint = DIVUP(dshmem_unaligned_as_uint, static_cast<uint64_t>(ALIGNMENT_SIZE))
-                                          * ALIGNMENT_SIZE;
-  char* dshmem = reinterpret_cast<char*>(dshmem_aligned_as_uint);
+  const uint64_t dshmem_aligned_as_uint =
+      DIVUP(dshmem_unaligned_as_uint, static_cast<uint64_t>(ALIGNMENT_SIZE)) * ALIGNMENT_SIZE;
+  char *dshmem = reinterpret_cast<char *>(dshmem_aligned_as_uint);
 
   const size_t buff_elems = FP8_SHMEM_DIM_Y * FP8_SHMEM_DIM_X;
   const size_t buff_elems_total = FP8_BUFFERS_NUM * buff_elems;
-  const size_t buff_size_aligned_in = DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
-  const size_t buff_size_aligned_out = DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+  const size_t buff_size_aligned_in =
+      DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+  const size_t buff_size_aligned_out =
+      DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
 
   const size_t grad_mem = buff_size_aligned_in;
 
@@ -98,22 +98,22 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   const size_t in_transaction_size = 3 * buff_elems * sizeof(IType);
 
   // The destination shared memory buffer of a bulk tensor operation should be 16-byte aligned
-  IType * in_grad_sh  = reinterpret_cast<IType*>(dshmem);
-  IType * in_act_sh   = reinterpret_cast<IType*>(dshmem + grad_mem);
-  IType * in_gate_sh  = reinterpret_cast<IType*>(dshmem + grad_mem + in_act_mem);
-  OType * out_act_sh  = reinterpret_cast<OType*>(dshmem + grad_mem + in_mem);
-  OType * out_gate_sh = reinterpret_cast<OType*>(dshmem + grad_mem + in_mem + out_act_mem);
-  uint64_t * mbar  = reinterpret_cast<uint64_t*>(dshmem + grad_mem + in_mem + out_mem);
+  IType *in_grad_sh = reinterpret_cast<IType *>(dshmem);
+  IType *in_act_sh = reinterpret_cast<IType *>(dshmem + grad_mem);
+  IType *in_gate_sh = reinterpret_cast<IType *>(dshmem + grad_mem + in_act_mem);
+  OType *out_act_sh = reinterpret_cast<OType *>(dshmem + grad_mem + in_mem);
+  OType *out_gate_sh = reinterpret_cast<OType *>(dshmem + grad_mem + in_mem + out_act_mem);
+  uint64_t *mbar = reinterpret_cast<uint64_t *>(dshmem + grad_mem + in_mem + out_mem);
 
-  const uint64_t* TMAP_grad_in = reinterpret_cast<const uint64_t *>(&tensor_map_grad);
-  const uint64_t* TMAP_gate_in = reinterpret_cast<const uint64_t *>(&tensor_map_gated_input);
-  const uint64_t* TMAP_output = reinterpret_cast<const uint64_t *>(&tensor_map_output);
+  const uint64_t *TMAP_grad_in = reinterpret_cast<const uint64_t *>(&tensor_map_grad);
+  const uint64_t *TMAP_gate_in = reinterpret_cast<const uint64_t *>(&tensor_map_gated_input);
+  const uint64_t *TMAP_output = reinterpret_cast<const uint64_t *>(&tensor_map_output);
 
   const bool is_master_thread = (threadIdx.x == 0);
 
   if (is_master_thread) {
-    // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
-    #pragma unroll
+// Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
+#pragma unroll
     for (int it = 0; it < FP8_ITERATIONS; ++it) {
       mbarrier_init(&mbar[it], FP8_THREADS_PER_CHUNK);
     }
@@ -123,7 +123,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   __syncthreads();
 
   int parity = 0;
-  #pragma unroll
+#pragma unroll
   for (int chunk = 0; chunk < FP8_CHUNKS_PER_BLOCK; ++chunk) {
     const int chunk_Y = chunk / FP8_CHUNKS_PER_BLOCK_X;
     const int chunk_X = chunk % FP8_CHUNKS_PER_BLOCK_X;
@@ -132,7 +132,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
     const int chunk_offset_X = block_offset_X + chunk_X * FP8_CHUNK_DIM_X;
 
     if (is_master_thread) {
-      #pragma unroll
+#pragma unroll
       for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
         const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * FP8_BUFFER_DIM_Y;
         const int chunk_stage_offset_X = chunk_offset_X;
@@ -153,14 +153,14 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
         mbarrier_arrive_expect_tx(&mbar[prefetch_buff], in_transaction_size);
       }
     } else {
-      // Other threads just arrive
-      #pragma unroll
+// Other threads just arrive
+#pragma unroll
       for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
         mbarrier_arrive(&mbar[prefetch_buff]);
       }
     }
 
-    #pragma unroll
+#pragma unroll
     for (int it = 0; it < FP8_ITERATIONS; ++it) {
       const int buff = it % FP8_BUFFERS_NUM;
       const int next_it = it + FP8_PREFETCH_BUFFERS_NUM;
@@ -194,13 +194,13 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
       // Wait for the data to have arrived
       mbarrier_wait_parity(&mbar[it], parity);
 
-      IType * in_grad_sh_curr = in_grad_sh + buff * buff_elems;
-      IType * in_act_sh_curr = in_act_sh + buff * buff_elems;
-      IType * in_gate_sh_curr = in_gate_sh + buff * buff_elems;
-      OType * out_act_sh_curr = out_act_sh + buff * buff_elems;
-      OType * out_gate_sh_curr = out_gate_sh + buff * buff_elems;
+      IType *in_grad_sh_curr = in_grad_sh + buff * buff_elems;
+      IType *in_act_sh_curr = in_act_sh + buff * buff_elems;
+      IType *in_gate_sh_curr = in_gate_sh + buff * buff_elems;
+      OType *out_act_sh_curr = out_act_sh + buff * buff_elems;
+      OType *out_gate_sh_curr = out_gate_sh + buff * buff_elems;
 
-      #pragma unroll
+#pragma unroll
       for (int stage = 0; stage < FP8_BUFF_STAGES_NUM; ++stage) {
         const int stage_offset_Y = stage * FP8_THREADS_PER_CHUNK_Y;
         const int shmem_offset_y = thread_offset_Y + stage_offset_Y;
@@ -214,7 +214,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
         const float x = act_elt;
         const float s = sigmoidf(x);
         const float silu_x = x * s;
-        const float dsilu_x = x * s * (1 - s) + s; 
+        const float dsilu_x = x * s * (1 - s) + s;
 
         float after_dact = dsilu_x * grad_elt * gate_elt;
         float after_dgate = silu_x * grad_elt;
@@ -236,10 +236,9 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
         const int chunk_it_offset_y = chunk_offset_Y + it * FP8_BUFFER_DIM_Y;
         const int chunk_it_offset_x = chunk_offset_X;
         // dGeLU
-        cp_async_bulk_tensor_2d_shared_to_global(
-            TMAP_output, chunk_it_offset_x, chunk_it_offset_y,
-            // reinterpret_cast<uint64_t *>(out_act_sh[buff]));
-            reinterpret_cast<uint64_t *>(out_act_sh_curr));
+        cp_async_bulk_tensor_2d_shared_to_global(TMAP_output, chunk_it_offset_x, chunk_it_offset_y,
+                                                 // reinterpret_cast<uint64_t *>(out_act_sh[buff]));
+                                                 reinterpret_cast<uint64_t *>(out_act_sh_curr));
         // dGate
         cp_async_bulk_tensor_2d_shared_to_global(
             TMAP_output, chunk_it_offset_x + cols, chunk_it_offset_y,
@@ -278,7 +277,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   // If further computations were to take place in the kernel, this allows the
   // memory location of the shared memory barrier to be reused.
   if (is_master_thread) {
-  #pragma unroll
+#pragma unroll
     for (int it = 0; it < FP8_ITERATIONS; ++it) {
       mbarrier_invalid(&mbar[it]);
     }
@@ -287,7 +286,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
 }
 
 // Get a function pointer to the cuTensorMapEncodeTiled driver API
-static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = [](){
+static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = []() {
   const void *driver_ptr = cuda_driver::get_symbol("cuTensorMapEncodeTiled");
   return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
 }();
@@ -355,8 +354,7 @@ static void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
       // CUtensorMapL2promotion::CU_TENSOR_MAP_L2_PROMOTION_L2_256B,
 
       // Any element that is outside of bounds will be set to zero by the TMA transfer.
-      CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE)
-  );
+      CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE));
 }
 
 static const int32_t deviceComputeCapability = []() {
@@ -411,40 +409,44 @@ void fp8_quantize_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *
   const dim3 block_dim(FP8_THREADS_PER_CHUNK);
   const dim3 grid_dim(blocks_X, blocks_Y);
 
-  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(grad.data.dtype, IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->data.dtype, OType,
+  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+      grad.data.dtype, IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+          output->data.dtype, OType,
 
           alignas(64) CUtensorMap tensor_map_grad{};
           alignas(64) CUtensorMap tensor_map_gated_input{};
           alignas(64) CUtensorMap tensor_map_output{};
 
-          create_tensor_map<IType>(tensor_map_grad, &grad, rows, cols, FP8_SHMEM_DIM_Y, FP8_SHMEM_DIM_X);
-          create_tensor_map<IType>(tensor_map_gated_input, &gated_input, rows, cols * 2, FP8_SHMEM_DIM_Y, FP8_SHMEM_DIM_X);
-          create_tensor_map<OType>(tensor_map_output, output, rows, cols * 2, FP8_SHMEM_DIM_Y, FP8_SHMEM_DIM_X);
-
+          create_tensor_map<IType>(tensor_map_grad, &grad, rows, cols, FP8_SHMEM_DIM_Y,
+                                   FP8_SHMEM_DIM_X);
+          create_tensor_map<IType>(tensor_map_gated_input, &gated_input, rows, cols * 2,
+                                   FP8_SHMEM_DIM_Y, FP8_SHMEM_DIM_X);
+          create_tensor_map<OType>(tensor_map_output, output, rows, cols * 2, FP8_SHMEM_DIM_Y,
+                                   FP8_SHMEM_DIM_X);
 
           const size_t buff_elems_total = FP8_BUFFERS_NUM * FP8_SHMEM_DIM_Y * FP8_SHMEM_DIM_X;
-          const size_t buff_size_aligned_in = DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
-          const size_t buff_size_aligned_out = DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+          const size_t buff_size_aligned_in =
+              DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+          const size_t buff_size_aligned_out =
+              DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
           const size_t grad_mem = buff_size_aligned_in;
           const size_t in_act_mem = buff_size_aligned_in;
           const size_t in_gate_mem = buff_size_aligned_in;
           const size_t out_act_mem = buff_size_aligned_out;
           const size_t out_gate_mem = buff_size_aligned_out;
           const size_t mbar_mem = FP8_ITERATIONS * sizeof(uint64_t);
-          const size_t shmem_size = ALIGNMENT_SIZE + grad_mem +
-                                    (in_act_mem + in_gate_mem) +
+          const size_t shmem_size = ALIGNMENT_SIZE + grad_mem + (in_act_mem + in_gate_mem) +
                                     (out_act_mem + out_gate_mem) + mbar_mem;
 
           cudaFuncSetAttribute(cast_fp8_dgated_kernel<ParamOP, ActOP, DActOP, IType, OType>,
                                cudaFuncAttributeMaxDynamicSharedMemorySize, shmem_size);
 
           cast_fp8_dgated_kernel<ParamOP, ActOP, DActOP, IType, OType>
-              <<<grid_dim, block_dim, shmem_size, stream>>>(
-                  tensor_map_grad, tensor_map_gated_input, tensor_map_output, amax_ptr,
-                  scale_inv_ptr, scale_ptr, rows, cols);
-      );    // NOLINT(*)
-  );        // NOLINT(*)
+          <<<grid_dim, block_dim, shmem_size, stream>>>(tensor_map_grad, tensor_map_gated_input,
+                                                        tensor_map_output, amax_ptr, scale_inv_ptr,
+                                                        scale_ptr, rows, cols););  // NOLINT(*)
+  );                                                                               // NOLINT(*)
 }
 
 }  // namespace transformer_engine
