@@ -189,6 +189,19 @@ void nvte_fp8_quantize_dbias_dsrelu_x2(const NVTETensor input, const NVTETensor 
  */
 void nvte_fp8_dequantize(const NVTETensor input, NVTETensor output, cudaStream_t stream);
 
+/*! \brief Compute activation of the input, casting the output to FP8.
+ *
+ *  \param[in]     grad             Input tensor of shape [N, H].
+ *  \param[in]     gated_input      Tensor used as input to the forward of SwiGLU operation.
+ *                                  Shape [N, H * 2].
+ *  \param[in,out] cast_output      Result of the cast. Shape: [N, H * 2].
+ *  \param[in]     stream           CUDA stream used for the operation.
+
+  Supported activations: SiLU
+*/
+void nvte_fp8_quantize_swiglu(const NVTETensor grad, const NVTETensor gated_input,
+                              NVTETensor cast_output, cudaStream_t stream);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
