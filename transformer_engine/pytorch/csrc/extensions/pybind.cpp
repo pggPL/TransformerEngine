@@ -67,41 +67,6 @@ struct type_caster<transformer_engine::Float8Tensor> {
 
 }  // namespace pybind11::detail
 
-void test(pybind11::handle handle) {
-  at::Tensor t = handle.cast<at::Tensor>();
-  std::cout << t.size(0) << std::endl;
-}
-
-std::string to_string(transformer_engine::DType t) {
-  switch (t) {
-    case transformer_engine::DType::kInt32:
-      return "int32";
-    case transformer_engine::DType::kInt64:
-      return "int64";
-    case transformer_engine::DType::kFloat32:
-      return "float32";
-    case transformer_engine::DType::kFloat16:
-      return "float16";
-    case transformer_engine::DType::kBFloat16:
-      return "bfloat16";
-    case transformer_engine::DType::kByte:
-      return "byte";
-    case transformer_engine::DType::kFloat8E4M3:
-      return "float8e4m3";
-    case transformer_engine::DType::kFloat8E5M2:
-      return "float8e5m2";
-    default:
-      NVTE_ERROR("Invalid type");
-  }
-}
-
-void test2(transformer_engine::Float8Tensor tensor) {
-  //at::Tensor t = handle.cast<at::Tensor>();
-  std::cout << tensor.data.size(0) << std::endl;
-  std::cout << tensor.scale_inv.size(0) << std::endl;
-  std::cout << to_string(tensor.dtype) << std::endl;
-}
-
 template <typename InputType>
 using GemmFunc = std::vector<at::Tensor> (*)(InputType, bool, InputType, bool, MaybeTensor,
                                              MaybeTensor, transformer_engine::DType, MaybeTensor,
@@ -109,8 +74,6 @@ using GemmFunc = std::vector<at::Tensor> (*)(InputType, bool, InputType, bool, M
                                              at::Tensor, size_t, bool, bool);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("cast_test", test);
-  m.def("cast_test2", test2);
   m.def("generic_cast", transformer_engine::pytorch::cast);
   m.def("te_gemm2", static_cast<GemmFunc<transformer_engine::Float8Tensor>>(&te_gemm2),
         "CublasLt GEMM");
