@@ -595,57 +595,32 @@ class _LayerNormLinear(torch.autograd.Function):
                             dgrad = extra_output_tensor
                         else:
                             dgrad = ub_obj_dgrad.get_ubuf_output(0)
-                    if not ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-                        ln_out_total_t = tex.fp8_transpose(ln_out_total, fp8_dtype_forward)
-                        wgrad, _ = tex.fp8_gemm(
-                            ln_out_total_t,
-                            ln_out_scale_inv,
-                            0,
-                            fp8_dtype_forward,
-                            (
-                                grad_output_t._data
-                                if isinstance(grad_output_t, Float8Tensor)
-                                else grad_output_t
-                            ),
-                            ctx.fp8_meta["scaling_bwd"].scale_inv,
-                            tex.FP8BwdTensors.GRAD_OUTPUT1,
-                            fp8_dtype_backward,
-                            ctx.activation_dtype,
-                            get_workspace(),
-                            accumulate=accumulate_wgrad_into_param_main_grad,
-                            out=weight.main_grad if ctx.fuse_wgrad_accumulation else None,
-                            use_split_accumulator=_2X_ACC_WGRAD,
-                            ub_algo=(
-                                tex.UbufOverlapAlgo.BULK_OVERLAP_RS if ctx.ub_bulk_wgrad else None
-                            ),
-                            ub=ub_obj_dgrad if ctx.ub_bulk_wgrad else None,
-                            extra_output_tensor=extra_output_tensor,
-                        )
-                        clear_tensor_data(ln_out_total_t, grad_output_t)
-                    else:
-                        ln_out_total_c = torch.ops.tex_ts.cast_from_fp8_ts(
-                            ln_out_total,
-                            ln_out_scale_inv,
-                            0,
-                            fp8_dtype_forward,
-                            TE_DType[ctx.activation_dtype],
-                        )
-                        wgrad, _, _ = tex.gemm(
-                            ln_out_total_c,
-                            grad_output,
-                            ctx.activation_dtype,
-                            get_workspace(),
-                            layout="NT",
-                            grad=True,
-                            accumulate=accumulate_wgrad_into_param_main_grad,
-                            out=weight.main_grad if ctx.fuse_wgrad_accumulation else None,
-                            ub_algo=(
-                                tex.UbufOverlapAlgo.BULK_OVERLAP_RS if ctx.ub_bulk_wgrad else None
-                            ),
-                            ub=ub_obj_dgrad if ctx.ub_bulk_wgrad else None,
-                            extra_output_tensor=extra_output_tensor,
-                        )
-                        clear_tensor_data(ln_out_total_c)
+                    ln_out_total_t = tex.fp8_transpose(ln_out_total, fp8_dtype_forward)
+                    wgrad, _ = tex.fp8_gemm(
+                        ln_out_total_t,
+                        ln_out_scale_inv,
+                        0,
+                        fp8_dtype_forward,
+                        (
+                            grad_output_t._data
+                            if isinstance(grad_output_t, Float8Tensor)
+                            else grad_output_t
+                        ),
+                        ctx.fp8_meta["scaling_bwd"].scale_inv,
+                        tex.FP8BwdTensors.GRAD_OUTPUT1,
+                        fp8_dtype_backward,
+                        ctx.activation_dtype,
+                        get_workspace(),
+                        accumulate=accumulate_wgrad_into_param_main_grad,
+                        out=weight.main_grad if ctx.fuse_wgrad_accumulation else None,
+                        use_split_accumulator=_2X_ACC_WGRAD,
+                        ub_algo=(
+                            tex.UbufOverlapAlgo.BULK_OVERLAP_RS if ctx.ub_bulk_wgrad else None
+                        ),
+                        ub=ub_obj_dgrad if ctx.ub_bulk_wgrad else None,
+                        extra_output_tensor=extra_output_tensor,
+                    )
+                    clear_tensor_data(ln_out_total_t, grad_output_t)
                 else:
                     # WGRAD
                     wgrad, grad_bias, _ = tex.gemm(

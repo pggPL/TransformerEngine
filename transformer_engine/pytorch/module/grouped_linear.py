@@ -94,8 +94,7 @@ class _GroupedLinear(torch.autograd.Function):
             fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
             inputmat_scale_inv = torch.empty([num_gemms], dtype=torch.float32, device=inp.device)
             if (
-                not fp8_meta["recipe"].override_linear_precision.wgrad
-                and is_grad_enabled
+                is_grad_enabled
                 and weights[0].requires_grad
                 and not sequence_parallel
             ):
@@ -211,7 +210,7 @@ class _GroupedLinear(torch.autograd.Function):
             saved_inputmats = [None] * num_gemms
             saved_inputmats_t = [None] * num_gemms
             if weights[0].requires_grad:
-                if fp8 and not fp8_meta["recipe"].override_linear_precision.wgrad:
+                if fp8:
                     if not inputmats_t:
                         saved_inputmats = inputmats
                     else:
@@ -308,29 +307,20 @@ class _GroupedLinear(torch.autograd.Function):
                             )
                         )
                 else:
-                    if not ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-                        indices = list(
-                            range(
-                                ctx.fp8_meta_offsets["grad_output"],
-                                ctx.fp8_meta_offsets["grad_output"] + ctx.num_gemms,
-                            )
+                    indices = list(
+                        range(
+                            ctx.fp8_meta_offsets["grad_output"],
+                            ctx.fp8_meta_offsets["grad_output"] + ctx.num_gemms,
                         )
-                        grad_output_c, grad_output_t = fp8_multi_cast_transpose_fused(
-                            grad_output_mats,
-                            ctx.fp8_meta["scaling_bwd"],
-                            indices,  # scale_indices
-                            indices,  # amax_indices
-                            indices,  # scale_inv_indices
-                            fp8_dtype_backward,
-                        )
-                    else:
-                        for i in range(ctx.num_gemms):
-                            grad_output_c[i] = cast_to_fp8(
-                                grad_output_mats[i],
-                                ctx.fp8_meta["scaling_bwd"],
-                                ctx.fp8_meta_offsets["grad_output"] + i,
-                                fp8_dtype_backward,
-                            )
+                    )
+                    grad_output_c, grad_output_t = fp8_multi_cast_transpose_fused(
+                        grad_output_mats,
+                        ctx.fp8_meta["scaling_bwd"],
+                        indices,  # scale_indices
+                        indices,  # amax_indices
+                        indices,  # scale_inv_indices
+                        fp8_dtype_backward,
+                    )
 
             if ctx.is_first_microbatch is not None:
                 accumulate_wgrad_into_param_main_grad = (
@@ -387,44 +377,32 @@ class _GroupedLinear(torch.autograd.Function):
                     ]
                 if ctx.fp8:
                     # WGRAD
-                    if not ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-                        if inputmats_t[0] is None:
-                            for i in range(ctx.num_gemms):
-                                if isinstance(inputmats[i], Float8Tensor):
-                                    inputmats_t[i] = inputmats[i].transpose_2d()
-                                else:
-                                    inputmats_t[i] = tex.fp8_transpose(
-                                        inputmats[i], fp8_dtype_backward
-                                    )
-                        fp8_grouped_gemm(
-                            [
-                                inp._data if isinstance(inp, Float8Tensor) else inp
-                                for inp in inputmats_t
-                            ],
-                            [inputmat_scale_inv],
-                            0,
-                            fp8_dtype_forward,
-                            grad_output_t,
-                            ctx.fp8_meta["scaling_bwd"].scale_inv,
-                            ctx.fp8_meta_offsets["grad_output"],
-                            fp8_dtype_backward,
-                            wgrad_list,
-                            ctx.activation_dtype,
-                            get_multi_stream_cublas_workspace(),
-                            accumulate=accumulate_wgrad_into_param_main_grad,
-                            use_split_accumulator=_2X_ACC_WGRAD,
-                        )
-                    else:
-                        grouped_gemm(
-                            inputmats,
-                            grad_output_mats,
-                            wgrad_list,
-                            ctx.activation_dtype,
-                            get_multi_stream_cublas_workspace(),
-                            layout="NT",
-                            grad=True,
-                            accumulate=accumulate_wgrad_into_param_main_grad,
-                        )
+                    if inputmats_t[0] is None:
+                        for i in range(ctx.num_gemms):
+                            if isinstance(inputmats[i], Float8Tensor):
+                                inputmats_t[i] = inputmats[i].transpose_2d()
+                            else:
+                                inputmats_t[i] = tex.fp8_transpose(
+                                    inputmats[i], fp8_dtype_backward
+                                )
+                    fp8_grouped_gemm(
+                        [
+                            inp._data if isinstance(inp, Float8Tensor) else inp
+                            for inp in inputmats_t
+                        ],
+                        [inputmat_scale_inv],
+                        0,
+                        fp8_dtype_forward,
+                        grad_output_t,
+                        ctx.fp8_meta["scaling_bwd"].scale_inv,
+                        ctx.fp8_meta_offsets["grad_output"],
+                        fp8_dtype_backward,
+                        wgrad_list,
+                        ctx.activation_dtype,
+                        get_multi_stream_cublas_workspace(),
+                        accumulate=accumulate_wgrad_into_param_main_grad,
+                        use_split_accumulator=_2X_ACC_WGRAD,
+                    )
                 else:
                     # WGRAD
                     _, grad_biases, _ = grouped_gemm(

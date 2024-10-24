@@ -211,3 +211,11 @@ class QuantizedTensor(torch.Tensor):
             kwargs = {}
         # Do not force the QuantizedTensor type on the returned tensor
         return torch._C._disabled_torch_function_impl(func, types, args, kwargs)
+
+    def contiguous(
+        self,
+        memory_format: torch.memory_format = torch.contiguous_format,
+    ) -> QuantizedTensor:
+        raise NotImplementedError(
+            f"{self.__class__.__name__} class does not implement contiguous function"
+        )

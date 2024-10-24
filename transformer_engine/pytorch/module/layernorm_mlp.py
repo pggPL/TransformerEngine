@@ -677,85 +677,43 @@ class _LayerNormMLP(torch.autograd.Function):
                 clear_tensor_data(grad_output_c)
 
                 # FC2 WGRAD
-                if not ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-                    if fc2_weight.requires_grad:
-                        gelu_out_t = tex.fp8_transpose(gelu_out, fp8_dtype_forward)
-                        clear_tensor_data(gelu_out)
-                        fc2_wgrad, _ = tex.fp8_gemm(
-                            gelu_out_t,
-                            fwd_scale_inverses,
-                            tex.FP8FwdTensors.GEMM2_INPUT,
-                            fp8_dtype_forward,
-                            grad_output_t,
-                            ctx.fp8_meta["scaling_bwd"].scale_inv,
-                            tex.FP8BwdTensors.GRAD_OUTPUT1,
-                            fp8_dtype_backward,
-                            ctx.activation_dtype,
-                            get_workspace(),
-                            accumulate=accumulate_wgrad_into_param_main_grad,
-                            out=fc2_weight.main_grad if ctx.fuse_wgrad_accumulation else None,
-                            use_split_accumulator=_2X_ACC_WGRAD,
-                        )
-                        clear_tensor_data(gelu_out_t, grad_output_t)
+                if fc2_weight.requires_grad:
+                    gelu_out_t = tex.fp8_transpose(gelu_out, fp8_dtype_forward)
+                    clear_tensor_data(gelu_out)
+                    fc2_wgrad, _ = tex.fp8_gemm(
+                        gelu_out_t,
+                        fwd_scale_inverses,
+                        tex.FP8FwdTensors.GEMM2_INPUT,
+                        fp8_dtype_forward,
+                        grad_output_t,
+                        ctx.fp8_meta["scaling_bwd"].scale_inv,
+                        tex.FP8BwdTensors.GRAD_OUTPUT1,
+                        fp8_dtype_backward,
+                        ctx.activation_dtype,
+                        get_workspace(),
+                        accumulate=accumulate_wgrad_into_param_main_grad,
+                        out=fc2_weight.main_grad if ctx.fuse_wgrad_accumulation else None,
+                        use_split_accumulator=_2X_ACC_WGRAD,
+                    )
+                    clear_tensor_data(gelu_out_t, grad_output_t)
 
-                    if ctx.activation == "gelu":
-                        fc1_bias_grad, dgelu, dgelu_t = tex.fp8_cast_transpose_bgrad_dgelu_fused(
-                            fc2_dgrad,
-                            fc1_out,
-                            ctx.fp8_meta["scaling_bwd"],
-                            tex.FP8BwdTensors.GRAD_OUTPUT2,
-                            fp8_dtype_backward,
-                        )
-                    else:
-                        dgelu = activation_func(fc2_dgrad, fc1_out, TE_DType[fc2_dgrad.dtype])
-                        fc1_bias_grad, dgelu, dgelu_t = tex.fp8_cast_transpose_bgrad_fused(
-                            dgelu,
-                            ctx.fp8_meta["scaling_bwd"],
-                            tex.FP8BwdTensors.GRAD_OUTPUT2,
-                            fp8_dtype_backward,
-                        )
-                    clear_tensor_data(fc1_out)
-                else:
-                    if fc2_weight.requires_grad:
-                        gelu_out_c = torch.ops.tex_ts.cast_from_fp8_ts(
-                            gelu_out,
-                            fwd_scale_inverses,
-                            tex.FP8FwdTensors.GEMM2_INPUT,
-                            fp8_dtype_forward,
-                            TE_DType[ctx.activation_dtype],
-                        )
-                        clear_tensor_data(gelu_out)
-                        fc2_wgrad, _, _ = tex.gemm(
-                            gelu_out_c,
-                            grad_output,
-                            ctx.activation_dtype,
-                            get_workspace(),
-                            layout="NT",
-                            grad=True,
-                            use_bias=False,
-                            accumulate=accumulate_wgrad_into_param_main_grad,
-                            out=fc2_weight.main_grad if ctx.fuse_wgrad_accumulation else None,
-                        )
-                        clear_tensor_data(gelu_out_c)
-
-                    if ctx.activation == "gelu":
-                        fc1_bias_grad, dgelu_no_fp8 = bgrad_dgelu_fused(
-                            fc2_dgrad, fc1_out, fc1_bias
-                        )
-                    else:
-                        dgelu_no_fp8 = activation_func(
-                            fc2_dgrad, fc1_out, TE_DType[fc2_dgrad.dtype]
-                        )
-                        fc1_bias_grad = dgelu_no_fp8.sum(dim=0)
-                    clear_tensor_data(fc1_out)
-
-                    dgelu = tex.cast_to_fp8(
-                        dgelu_no_fp8,
+                if ctx.activation == "gelu":
+                    fc1_bias_grad, dgelu, dgelu_t = tex.fp8_cast_transpose_bgrad_dgelu_fused(
+                        fc2_dgrad,
+                        fc1_out,
                         ctx.fp8_meta["scaling_bwd"],
                         tex.FP8BwdTensors.GRAD_OUTPUT2,
                         fp8_dtype_backward,
                     )
-                    dgelu_t = None
+                else:
+                    dgelu = activation_func(fc2_dgrad, fc1_out, TE_DType[fc2_dgrad.dtype])
+                    fc1_bias_grad, dgelu, dgelu_t = tex.fp8_cast_transpose_bgrad_fused(
+                        dgelu,
+                        ctx.fp8_meta["scaling_bwd"],
+                        tex.FP8BwdTensors.GRAD_OUTPUT2,
+                        fp8_dtype_backward,
+                    )
+                clear_tensor_data(fc1_out)
 
                 out_index, meta_tensor, out_te_type, out_type = (
                     None,
@@ -950,53 +908,28 @@ class _LayerNormMLP(torch.autograd.Function):
                             fc1_dgrad = extra_output_tensor
                         else:
                             fc1_dgrad = ub_obj_dgrad.get_ubuf_output(0)
-                    if not ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-                        ln_out_total_t = tex.fp8_transpose(ln_out_total, fp8_dtype_forward)
-                        fc1_wgrad, _ = tex.fp8_gemm(
-                            ln_out_total_t,
-                            fwd_scale_inverses,
-                            tex.FP8FwdTensors.GEMM1_INPUT,
-                            fp8_dtype_forward,
-                            dgelu_t,
-                            ctx.fp8_meta["scaling_bwd"].scale_inv,
-                            tex.FP8BwdTensors.GRAD_OUTPUT2,
-                            fp8_dtype_backward,
-                            ctx.activation_dtype,
-                            get_workspace(),
-                            accumulate=accumulate_wgrad_into_param_main_grad,
-                            out=fc1_weight.main_grad if ctx.fuse_wgrad_accumulation else None,
-                            use_split_accumulator=_2X_ACC_WGRAD,
-                            ub_algo=(
-                                tex.UbufOverlapAlgo.BULK_OVERLAP_RS if ctx.ub_bulk_wgrad else None
-                            ),
-                            ub=ub_obj_dgrad if ctx.ub_bulk_wgrad else None,
-                            extra_output_tensor=extra_output_tensor,
-                        )
-                        clear_tensor_data(ln_out_total_t, dgelu_t)
-                    else:
-                        ln_out_total_c = torch.ops.tex_ts.cast_from_fp8_ts(
-                            ln_out_total,
-                            fwd_scale_inverses,
-                            tex.FP8FwdTensors.GEMM1_INPUT,
-                            fp8_dtype_forward,
-                            TE_DType[ctx.activation_dtype],
-                        )
-                        fc1_wgrad, _, _ = tex.gemm(
-                            ln_out_total_c,
-                            dgelu_no_fp8,
-                            ctx.activation_dtype,
-                            get_workspace(),
-                            layout="NT",
-                            grad=True,
-                            accumulate=accumulate_wgrad_into_param_main_grad,
-                            out=fc1_weight.main_grad if ctx.fuse_wgrad_accumulation else None,
-                            ub_algo=(
-                                tex.UbufOverlapAlgo.BULK_OVERLAP_RS if ctx.ub_bulk_wgrad else None
-                            ),
-                            ub=ub_obj_dgrad if ctx.ub_bulk_wgrad else None,
-                            extra_output_tensor=extra_output_tensor,
-                        )
-                        clear_tensor_data(ln_out_total_c, dgelu_no_fp8)
+                    ln_out_total_t = tex.fp8_transpose(ln_out_total, fp8_dtype_forward)
+                    fc1_wgrad, _ = tex.fp8_gemm(
+                        ln_out_total_t,
+                        fwd_scale_inverses,
+                        tex.FP8FwdTensors.GEMM1_INPUT,
+                        fp8_dtype_forward,
+                        dgelu_t,
+                        ctx.fp8_meta["scaling_bwd"].scale_inv,
+                        tex.FP8BwdTensors.GRAD_OUTPUT2,
+                        fp8_dtype_backward,
+                        ctx.activation_dtype,
+                        get_workspace(),
+                        accumulate=accumulate_wgrad_into_param_main_grad,
+                        out=fc1_weight.main_grad if ctx.fuse_wgrad_accumulation else None,
+                        use_split_accumulator=_2X_ACC_WGRAD,
+                        ub_algo=(
+                            tex.UbufOverlapAlgo.BULK_OVERLAP_RS if ctx.ub_bulk_wgrad else None
+                        ),
+                        ub=ub_obj_dgrad if ctx.ub_bulk_wgrad else None,
+                        extra_output_tensor=extra_output_tensor,
+                    )
+                    clear_tensor_data(ln_out_total_t, dgelu_t)
                 else:
                     # FC1 WGRAD
                     fc1_wgrad_outputs = tex.gemm(

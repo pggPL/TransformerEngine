@@ -18,6 +18,7 @@ import torch
 import torch.nn.functional as F
 
 import transformer_engine_torch as tex
+
 from ._common import _ParameterInitMeta
 from ..export import is_in_onnx_export_mode
 from ..fp8 import (
@@ -36,7 +37,7 @@ from ..cpp_extensions import (
     cast_to_fp8,
 )
 from ..constants import dist_group_type
-from ..float8_tensor import Float8Tensor
+from ..tensor import QuantizedTensor, Float8Tensor
 from ..quantization_meta import QMeta
 from transformer_engine.common.recipe import Recipe
 
@@ -414,7 +415,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.primary_weights_in_fp8 = FP8GlobalStateManager.with_fp8_parameters()
         self.fsdp_wrapped = False
         self.fsdp_group = None
-        self._fp8_workspaces: Dict[str, Float8Tensor] = {}
+        self._fp8_workspaces: Dict[str, QuantizedTensor] = {}
         self.activation_dtype: Optional[torch.dtype] = None
 
         # Fast getter for parameters
@@ -652,7 +653,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         """returns the FP8 weights."""
         fp8_params = []
         for param in self.parameters(recurse=False):
-            if isinstance(param, Float8Tensor) and param.requires_grad:
+            if isinstance(param, QuantizedTensor) and param.requires_grad:
                 fp8_params.append(param)
         if len(fp8_params) == 0:
             return None
@@ -776,10 +777,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             R4: bias gradient on R1.
 
         """
-        if isinstance(grad_output, Float8Tensor):
-            grad_output._data = grad_output._data.contiguous()
-        else:
-            grad_output = grad_output.contiguous()
+        grad_output = grad_output.contiguous()
         grad_output_mat = grad_output.view(-1, grad_output.shape[-1])
         gather_grad_output = row_parallel_mode and ctx.sequence_parallel
 
@@ -795,14 +793,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         fp8_dtype_backward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=False)
 
-        # FP8 case with non-FP8 wgrad
-        if gather_grad_output and ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-            assert (
-                not ctx.ub_overlap_ag
-            ), "override_linear_precision.wgrad not supported with UB AG overlap"
-            grad_output_mat, _ = gather_along_first_dim(grad_output_mat, ctx.tp_group)
         # FP8 case with gather: unfused bgrad, cast, transpose for efficient gather
-        elif gather_grad_output:
+        if gather_grad_output:
             if ctx.use_bias:
                 grad_bias = grad_output_mat.sum(dim=0)
             else:
@@ -845,28 +837,16 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 fp8_dtype_backward,
             )
         else:
-            if not ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-                if isinstance(grad_output_mat, Float8Tensor):
-                    grad_output_c = grad_output_mat
-                    grad_output_t = grad_output_c.transpose_2d()
-                else:
-                    grad_output_c, grad_output_t = fp8_cast_transpose_fused(
-                        grad_output_mat,
-                        ctx.fp8_meta["scaling_bwd"],
-                        tex.FP8BwdTensors.GRAD_OUTPUT1,
-                        fp8_dtype_backward,
-                    )
+            if isinstance(grad_output_mat, Float8Tensor):
+                grad_output_c = grad_output_mat
+                grad_output_t = grad_output_c.transpose_2d()
             else:
-                grad_output_t = None
-                if not isinstance(grad_output_mat, Float8Tensor):
-                    grad_output_c = cast_to_fp8(
-                        grad_output_mat,
-                        ctx.fp8_meta["scaling_bwd"],
-                        tex.FP8BwdTensors.GRAD_OUTPUT1,
-                        fp8_dtype_backward,
-                    )
-                else:
-                    grad_output_c = grad_output_mat
+                grad_output_c, grad_output_t = fp8_cast_transpose_fused(
+                    grad_output_mat,
+                    ctx.fp8_meta["scaling_bwd"],
+                    tex.FP8BwdTensors.GRAD_OUTPUT1,
+                    fp8_dtype_backward,
+                )
             grad_bias = None
 
         return grad_output_mat, grad_output_c, grad_output_t, grad_bias
@@ -932,12 +912,12 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
     def forward(self):
         """Needs override."""
 
-    def get_fp8_workspace(
+    def get_weight_workspace(
         self,
         *,
         tensor: Optional[torch.Tensor] = None,
-        fp8_meta_forward: Optional[bool] = None,
-        fp8_meta_index: Optional[int] = None,
+        quantizer: Optional[QMeta] = None,
+        tensor_index: Optional[int] = None,
         cache_name: Optional[str] = None,
         update_workspace: bool = True,
         skip_update_flag: Optional[torch.Tensor] = None,
@@ -952,13 +932,12 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         tensor : torch.Tensor, optional
             Values to copy into workspace. Required if the workspace
             is being constructed or updated.
-        fp8_meta_forward: bool, optional
-            Whether to access FP8 meta tensors for the forward pass or
-            backward pass. Required if the workspace is being
-            constructed.
-        fp8_meta_index: int, optional
-            Index to access in FP8 meta tensors. Required if the
-            workspace is being constructed.
+        quantizer: QMeta, optional
+            Quantizer used to cast the weights. Required if the
+            workspace is being constructed or updated.
+        tensor_index: int, optional
+            Index of the tensor in the quantizer. Required if the
+            workspace is being constructed or updated.
         cache_name: str, optional
             Key for caching.
         update_workspace: bool, default = `True`
@@ -988,47 +967,22 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         # Construct workspace if needed
         if out is None:
-
-            # FP8 data
-            if tensor is None or fp8_meta_forward is None or fp8_meta_index is None:
+            if tensor is None or quantizer is None or tensor_index is None:
                 raise ValueError(
-                    "tensor, fp8_meta_forward, and fp8_meta_index kwargs "
+                    "tensor, quantizer and tensor_index kwargs "
                     "must be provided to construct FP8 workspace"
                 )
-            fp8_dtype = get_fp8_te_dtype(
-                self.fp8_meta["recipe"],
-                fprop_tensor=fp8_meta_forward,
-            )
-            data = torch.empty_like(tensor, dtype=torch.uint8)
-            scale_inv = torch.empty([1], dtype=torch.float32, device=tensor.device)
 
-            # Transpose cache
-            with_transpose_cache = torch.is_grad_enabled()
+            need_columnwise = torch.is_grad_enabled()
             if (
-                not with_transpose_cache
+                not need_columnwise
                 and is_fp8_activation_recompute_enabled()
                 and not in_fp8_activation_recompute_phase()
             ):
-                with_transpose_cache = True
-            data_transpose = None
-            if with_transpose_cache:
-                data_transpose = torch.empty(
-                    (tensor.size(-1), tensor.numel() // tensor.size(-1)),
-                    dtype=torch.uint8,
-                    device=tensor.device,
-                )
-
-            # Construct FP8 tensor
-            out = Float8Tensor(
-                data=data,
-                fp8_meta=self.fp8_meta,
-                fp8_meta_forward=fp8_meta_forward,
-                fp8_meta_index=fp8_meta_index,
-                fp8_dtype=fp8_dtype,
-                fp8_scale_inv=scale_inv,
-                dtype=tensor.dtype,
-                data_transpose=data_transpose,
-            )
+                need_columnwise = True
+            out = quantizer.quantize(tensor, tensor_index,
+                                     rowwise=True,
+                                     columnwise=need_columnwise)
 
             # Update cache
             if cache_name is not None:

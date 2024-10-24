@@ -673,7 +673,6 @@ class Float8Tensor(QuantizedTensor):
 
     def contiguous(
         self,
-        *,
         memory_format: torch.memory_format = torch.contiguous_format,
     ) -> Float8Tensor:
         """Returns tensor with data in provided memory format

@@ -4,6 +4,7 @@
 
 """Quantization metadata class"""
 
+from tensor.float8_tensor import Float8ParamsProxy
 from transformer_engine.common.recipe import (
         Recipe, DelayedScaling
 )
@@ -40,18 +41,13 @@ class QMeta:
                  rowwise: bool = True,
                  columnwise: bool = True) -> QuantizedTensor:
         if self.recipe_type == DelayedScaling:
+            proxy = Float8ParamsProxy(self, index, self.fp8_type)
             return Float8Tensor.quantize(tensor,
                                          self.get_quantization_params(index),
                                          rowwise_usage=rowwise,
-                                         columnwise_usage=columnwise)
+                                         columnwise_usage=columnwise,
+                                         proxy=proxy)
         raise NotImplementedError("Not implemented yet!")
-
-    def quantize_param(self,
-                 tensor: torch.Tensor,
-                 index: int):
-        if self.recipe_type == DelayedScaling:
-            pass
-        raise NotImplementedError("Not implemented yet! Same as quantize but also sets proxy")
 
     def get_quantization_params(self,
                                 index: int):

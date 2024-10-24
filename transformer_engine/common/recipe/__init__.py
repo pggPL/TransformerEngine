@@ -39,16 +39,6 @@ class Format(Enum):
     HYBRID = _FormatHelper(max_fwd=E4M3.max_fwd, max_bwd=E5M2.max_bwd)
 
 
-class _OverrideLinearPrecision(NamedTuple):
-    """
-    Whether or not the execute the `fprop`, `dgrad`, and `wgrad`
-    GEMMs in higher precision when using FP8.
-    """
-
-    fprop: bool = False
-    dgrad: bool = False
-    wgrad: bool = False
-
 @dataclass
 class Recipe:
     """
@@ -98,9 +88,6 @@ class DelayedScaling(Recipe):
                                                               recipe: DelayedScaling) -> Tensor
 
                                  where `Tensor` is a framework tensor type.
-    override_linear_precision: Tuple(bool, bool, bool), default=(False, False, False)
-                              Whether or not to execute the `fprop`, `dgrad`, and `wgrad`
-                              GEMMs (respectively) in higher precision when using FP8.
     reduce_amax: bool, default = `True`
                 By default, if `torch.distributed` is initialized, the `amax` value for FP8
                 tensors is reduced across the `fp8_group` (specified in the `fp8_autocast`
@@ -143,7 +130,6 @@ class DelayedScaling(Recipe):
     fp8_format: Format = Format.HYBRID
     amax_history_len: int = 1024
     amax_compute_algo: Union[Literal["max", "most_recent"], Callable] = "max"
-    override_linear_precision: _OverrideLinearPrecision = _OverrideLinearPrecision()
     scaling_factor_compute_algo: Optional[Callable] = None
     reduce_amax: bool = True
     fp8_dpa: bool = False
@@ -151,10 +137,6 @@ class DelayedScaling(Recipe):
 
     def __post_init__(self) -> None:
         assert self.fp8_format != Format.E5M2, "Pure E5M2 training is not supported."
-        assert self.override_linear_precision in (
-            (False, False, False),
-            (False, False, True),
-        ), "Only wgrad GEMM override is currently supported."
         if self.interval >= 0:
             warnings.warn(
                 "`interval` argument is deprecated and unused. "
@@ -167,7 +149,6 @@ class DelayedScaling(Recipe):
             f"margin={self.margin}, "
             f"format={str(self.fp8_format).split('.')[1]}, "
             f"amax_history_len={self.amax_history_len}, "
-            f"wgrad_override={self.override_linear_precision.wgrad}, "
             f"fp8_dpa={self.fp8_dpa}, "
             f"fp8_mha={self.fp8_mha}"
         )
