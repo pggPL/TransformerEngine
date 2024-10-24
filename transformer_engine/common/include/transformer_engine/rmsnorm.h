@@ -145,6 +145,69 @@ void nvte_rmsnorm1p_bwd(const NVTETensor dz, const NVTETensor x, const NVTETenso
                         NVTETensor dgamma_part, cudaStream_t stream, const int multiprocessorCount,
                         NVTETensor workspace, NVTETensor barrier);
 
+/*! \brief Compute RMSNorm on the input.
+ *
+ * The formula used:
+ * @f[
+ * y = \frac{x}{RMS_\varepsilon(x)}\gamma
+ * @f]
+ * where
+ * @f[
+ * RMS_\varepsilon(x) = \sqrt{\frac{1}{n}\sum_{i=0}^{n-1} x_i^2 + \varepsilon}
+ * @f]
+ *
+ * Calling this function with workspace and barrier set to empty tensor will not
+ * perform the operation, but instead set the shape and type of the workspace
+ * and barrier tensors to the required values.
+ *
+ *  \param[in]     x                   Input tensor of shape [N, H].
+ *  \param[in]     gamma               Gamma tensor of shape [H].
+ *  \param[in]     epsilon             Value added to denominator for numerical stability.
+ *  \param[in,out] z_rowwise           Output tensor of shape [N, H], in row-wise quantize
+ *  \param[in,out] z_colwise           Output tensor of shape [N, H], in col-wise quantize
+ *  \param[out]    rsigma              Reciprocal of the root mean square of the input
+ *                                     calculated over the last dimension. Shape: [N].
+ *  \param[in]     stream              CUDA stream used for the operation.
+ *  \param[in]     multiprocessorCount Number of SMs in the device.
+ *  \param[out]    workspace           Workspace tensor.
+ *  \param[out]    barrier             Barrier tensor.
+ */
+void nvte_rmsnorm_fwd_2x(const NVTETensor x, const NVTETensor gamma, const float epsilon,
+                         NVTETensor z_rowwise, NVTETensor z_colwise, NVTETensor rsigma,
+                         cudaStream_t stream, const int multiprocessorCount, NVTETensor workspace);
+
+/*! \brief Compute RMSNorm with zero-centered gamma on the input.
+ *
+ * The formula used:
+ * @f[
+ * y = \frac{x}{RMS_\varepsilon(x)}(1 + \gamma)
+ * @f]
+ * where
+ * @f[
+ * RMS_\varepsilon(x) = \sqrt{\frac{1}{n}\sum_{i=0}^{n-1} x_i^2 + \varepsilon}
+ * @f]
+ *
+ * Calling this function with workspace and barrier set to empty tensor will not
+ * perform the operation, but instead set the shape and type of the workspace
+ * and barrier tensors to the required values.
+ *
+ *  \param[in]     x                   Input tensor of shape [N, H].
+ *  \param[in]     gamma               Gamma tensor of shape [H].
+ *  \param[in]     epsilon             Value added to denominator for numerical stability.
+ *  \param[in,out] z_rowwise           Output tensor of shape [N, H], in row-wise quantize
+ *  \param[in,out] z_colwise           Output tensor of shape [N, H], in col-wise quantize
+ *  \param[out]    rsigma              Reciprocal of the root mean square of the input
+ *                                     calculated over the last dimension. Shape: [N].
+ *  \param[in]     stream              CUDA stream used for the operation.
+ *  \param[in]     multiprocessorCount Number of SMs in the device.
+ *  \param[out]    workspace           Workspace tensor.
+ *  \param[out]    barrier             Barrier tensor.
+ */
+void nvte_rmsnorm1p_fwd_2x(const NVTETensor x, const NVTETensor gamma, const float epsilon,
+                           NVTETensor z_rowwise, NVTETensor z_colwise, NVTETensor rsigma,
+                           cudaStream_t stream, const int multiprocessorCount,
+                           NVTETensor workspace);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

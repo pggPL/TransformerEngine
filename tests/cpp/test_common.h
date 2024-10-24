@@ -120,6 +120,14 @@ class Tensor {
     return tensor_.shape();
   }
 
+  const NVTEShape scale_inv_shape() const noexcept {
+    return tensor_.scale_inv_shape();
+  }
+
+  const NVTEScalingMode scaling_mode() const noexcept {
+    return tensor_.scaling_mode();
+  }
+
   DType dtype() const noexcept {
     return tensor_.dtype();
   }
@@ -160,12 +168,12 @@ class Tensor {
     } else {
       NVTE_CHECK(TypeInfo<T>::dtype == DType::kByte, "Invalid type!");
     }
+    to_cpu();
     return reinterpret_cast<T*>(scale_inv_cpu_data_.get());
   }
 
   float scale_inv(){
     if(scale_inv_cpu_data_) {
-      to_cpu();
       float scale_inv = cpu_scale_inv_ptr<float>()[0];
       return scale_inv;
     } else {
@@ -264,11 +272,11 @@ size_t product(const NVTEShape &shape);
 bool areShapesEqual(const NVTEShape &s1, const NVTEShape &s2);
 
 void compareResults(const std::string &name, const Tensor &test, const void *ref,
-                    double atol = 1e-5, double rtol = 1e-8);
+                    double atol = 1e-5, double rtol = 1e-8, bool if_on_gpus = true);
 void compareResults(const std::string &name, const float test, const float ref,
                     double atol = 1e-5, double rtol = 1e-8);
 void compareResults(const std::string &name, const uint8_t *test, const uint8_t *ref,
-                    size_t N);
+                    size_t N, float mismatch_rate_tol = 0.);
 void compare_e8m0_scaling_factors(const std::string &name, const uint8_t *test, const uint8_t *ref,
                     size_t N);
 

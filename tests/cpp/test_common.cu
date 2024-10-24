@@ -73,15 +73,41 @@ size_t product(const NVTEShape &shape) {
     }
     return ret;
 }
+size_t product(const std::vector<size_t> shape) {
+    size_t ret = 1;
+    for (size_t i = 0; i < shape.size(); ++i) {
+      ret *= shape[i];
+    }
+    return ret;
+}
+
+size_t DIVUP(const size_t &x, const size_t &y){
+  return (((x) + ((y)-1)) / (y));
+}
 
 inline bool is_tensor_scaling(const NVTEScalingMode &mode) { return (mode.x == -1) && (mode.y == -1); }
+
+inline std::vector<size_t> get_scale_shape(const NVTEShape &shape, const NVTEScalingMode& scaling_mode){
+    NVTE_CHECK(shape.ndim == 2,
+               "Invalid shape of the tensor. Expected 2 dimensions for fine granularity scaling.");
+  // Need (4, 128) alignment even for e8 scaling factor
+  auto block_alignment = std::vector<size_t>{4ul, 128ul};
+    auto alignment = block_alignment[scaling_mode.x < scaling_mode.y];
+    auto scale_dim_0 = DIVUP(DIVUP(shape.data[0],
+                                   static_cast<size_t>(scaling_mode.x)),
+                             alignment) * alignment;
+    alignment = block_alignment[scaling_mode.x > scaling_mode.y];
+    auto scale_dim_1 = DIVUP(DIVUP(shape.data[1],
+                                   static_cast<size_t>(scaling_mode.y)),
+                             alignment) * alignment;
+  return {scale_dim_0, scale_dim_1};
+}
 
 std::tuple<size_t, size_t> get_num_scales_and_scale_size(const NVTEShape &shape, const NVTEScalingMode & scaling_mode) {
   if (is_tensor_scaling(scaling_mode)) {
     return {1, sizeof(float)};
   } else {
-    assert(shape.ndim == 2);
-    auto n_scales = std::ceil(shape.data[0] / scaling_mode.x) * std::ceil(shape.data[1] / scaling_mode.y);
+    auto n_scales = product(get_scale_shape(shape, scaling_mode));
     return {n_scales, n_scales * sizeof(uint8_t)};
   }
 }
@@ -95,12 +121,14 @@ Tensor::Tensor(const NVTEShape &shape, const DType type, const NVTEScalingMode &
     scale_cpu_data_ = nullptr;
     scale_inv_cpu_data_ = nullptr;
     float *amax = nullptr, *scale = nullptr, *scale_inv = nullptr;
+
     if (total_size != 0) {
         cudaMalloc((void**)&dptr, total_size);  // NOLINT(*)
         cudaMemset(dptr, 0, total_size);
         cpu_data_ = std::make_unique<unsigned char[]>(total_size);
         std::fill_n(cpu_data_.get(), total_size, 0);
     }
+
   if (isFp8Type(type)) {
     if (is_tensor_scaling(scaling_mode)) {
       cudaMalloc((void**)&amax, sizeof(float));  // NOLINT(*)
@@ -110,22 +138,23 @@ Tensor::Tensor(const NVTEShape &shape, const DType type, const NVTEScalingMode &
       amax_cpu_data_ = std::make_shared<float>(0);
       scale_cpu_data_ = std::make_shared<float>(0);
     }
+
     auto scale_size = std::get<1>(get_num_scales_and_scale_size(shape, scaling_mode));
     cudaMalloc((void**)&scale_inv, scale_size);  // NOLINT(*)
     cudaMemset(scale_inv, 0, scale_size);
     scale_inv_cpu_data_ = std::make_unique<unsigned char[]>(scale_size);
     std::fill_n(scale_inv_cpu_data_.get(), scale_size, 0);
   }
+
   if (is_tensor_scaling(scaling_mode)) {
     tensor_ = TensorWrapper(dptr, shape, type, amax, scale, scale_inv);
   } else {
-    std::vector<size_t> scale_inv_shape = {
-      (shape.data[0] + scaling_mode.x - 1) / scaling_mode.x,
-      (shape.data[1] + scaling_mode.y - 1) / scaling_mode.y};
+    auto scale_shape = get_scale_shape(shape, scaling_mode);
     tensor_ = TensorWrapper(dptr, shape, type, amax, scale, scale_inv,
-                            NVTEShape{scale_inv_shape.data(), scale_inv_shape.size()},
+                            NVTEShape{scale_shape.data(), scale_shape.size()},
                             scaling_mode);
   }
+
 }
 
 void Tensor::to_cpu() const {
@@ -229,8 +258,8 @@ std::vector<size_t> unravel(const size_t i, const NVTEShape &shape) {
 }
 
 void compareResults(const std::string &name, const Tensor &test, const void *ref,
-                    double atol, double rtol) {
-  test.to_cpu();
+                    double atol, double rtol, bool if_on_gpus) {
+  if (if_on_gpus) test.to_cpu();
   const size_t N = product(test.shape());
   TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(test.dtype(), T,
     const T *test_data = test.cpu_dptr<T>();
@@ -269,11 +298,25 @@ void compareResults(const std::string &name, const float test, const float ref,
 
 }
 
+
 void compareResults(const std::string &name, const uint8_t *test, const uint8_t *ref,
-                    size_t N) {
+                    size_t N, float mismatch_rate_tol) {
+  size_t max_mismatches = std::ceil(N * mismatch_rate_tol);
+  size_t n_mismatches = 0;
+  std::vector<size_t> mismatch_indices;
   for (int i = 0; i < N; i++){
-    ASSERT_EQ(int(test[i]), int(ref[i])) << "Error in " << name
-      << ". Mismatch at index " << i << std::endl;
+    bool mismatch = test[i] != ref[i];
+    if (mismatch){
+      n_mismatches++;
+      mismatch_indices.push_back(i);
+    }
+    if (n_mismatches > max_mismatches){
+      std::cout << "Error in " << name << std::endl;
+      for (auto &index : mismatch_indices)
+        std::cout << "Mismatch at (" << index << "):" << static_cast<int>(test[i]) << " vs "
+        << static_cast<int>(ref[i]) << std::endl;
+      GTEST_FAIL() << n_mismatches << " mismatche(s) which is more than mismatch tol.";
+    }
   }
 }
 

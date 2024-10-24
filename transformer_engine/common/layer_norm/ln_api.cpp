@@ -20,10 +20,11 @@ namespace transformer_engine {
 void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
                    const Tensor& gamma,  // hidden_size
                    const Tensor& beta,   // hidden_size
-                   const float epsilon, Tensor* z, Tensor* mu, Tensor* rsigma, cudaStream_t stream,
-                   const int multiprocessorCount, Tensor* workspace, Tensor* barrier,
-                   const bool zero_centered_gamma) {
-  if (is_fp8_dtype(z->data.dtype) && !is_delayed_tensor_scaling(z->scaling_mode)) {
+                   const float epsilon, Tensor* z, Tensor* z_colwise, Tensor* mu, Tensor* rsigma,
+                   cudaStream_t stream, const int multiprocessorCount, Tensor* workspace,
+                   Tensor* barrier, const bool zero_centered_gamma, const bool is_2x_output) {
+  if (is_fp8_dtype(z->data.dtype) && !is_delayed_tensor_scaling(z->scaling_mode) &&
+      !is_rowwise_block_scaling(z->scaling_mode)) {
     NVTE_ERROR("Not implemented scaling mode: " + to_string(z->scaling_mode) + ".");
   }
 
@@ -34,6 +35,7 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
   NVTE_CHECK(epsilon >= 0.f);
 
   NVTE_CHECK(z->data.shape == x.data.shape);
+  if (is_2x_output) NVTE_CHECK(z_colwise->data.shape == x.data.shape);
 
   NVTE_CHECK(mu->data.shape == std::vector<size_t>{x.data.shape[0]});
   NVTE_CHECK(mu->data.dtype == DType::kFloat32);
@@ -49,11 +51,11 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
     CheckOutputTensor(*z, "z");
     CheckOutputTensor(*mu, "mu");
     CheckOutputTensor(*rsigma, "rsigma");
+    if (is_2x_output) CheckOutputTensor(*z_colwise, "z_colwise");
   }
 
-  // TODO: add check for GPU ARCH
-
-  if (std::getenv("NVTE_FWD_LAYERNORM_USE_CUDNN")) {
+  // TODO: Add GPU_ARCH check for block scaling
+  if (std::getenv("NVTE_FWD_LAYERNORM_USE_CUDNN") || is_block_scaling(z->scaling_mode)) {
     auto plan = NormalizationPlanRegistry::getInstance().getNormalizationPlan(
         NVTE_Norm_Type::LayerNorm, NVTE_Norm_Stage::Forward,
         gamma.data.dtype,  // wtype
@@ -61,7 +63,7 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
         z->data.dtype,     // otype
         x.data.shape[0],   // batch_size
         x.data.shape[1],   // hidden_size
-        zero_centered_gamma, multiprocessorCount);
+        zero_centered_gamma, multiprocessorCount, z->scaling_mode);
 
     if (workspace->data.dptr == nullptr) {
       workspace->data.shape = plan->getWorkspaceShape();
@@ -69,7 +71,7 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
       return;
     } else {
       NVTE_CHECK(workspace->data.shape == plan->getWorkspaceShape());
-      plan->execute(z, x.data.dptr, gamma.data.dptr, beta.data.dptr, mu->data.dptr,
+      plan->execute(z, z_colwise, x.data.dptr, gamma.data.dptr, beta.data.dptr, mu->data.dptr,
                     reinterpret_cast<void*>(const_cast<float*>(&epsilon)), rsigma->data.dptr,
                     workspace->data.dptr, stream);
     }
@@ -157,11 +159,12 @@ void nvte_layernorm_fwd(const NVTETensor x,      // BxSxhidden_size
                         NVTETensor barrier) {
   NVTE_API_CALL(nvte_layernorm_fwd);
   using namespace transformer_engine;
+  Tensor* empty;
   layernorm_fwd(*reinterpret_cast<const Tensor*>(x), *reinterpret_cast<const Tensor*>(gamma),
                 *reinterpret_cast<const Tensor*>(beta), epsilon, reinterpret_cast<Tensor*>(z),
-                reinterpret_cast<Tensor*>(mu), reinterpret_cast<Tensor*>(rsigma), stream,
+                empty, reinterpret_cast<Tensor*>(mu), reinterpret_cast<Tensor*>(rsigma), stream,
                 multiprocessorCount, reinterpret_cast<Tensor*>(workspace),
-                reinterpret_cast<Tensor*>(barrier), false);
+                reinterpret_cast<Tensor*>(barrier), false, false);
 }
 
 void nvte_layernorm_bwd(const NVTETensor dz,      // BxSxhidden_size
@@ -191,11 +194,12 @@ void nvte_layernorm1p_fwd(const NVTETensor x,      // BxSxhidden_size
                           NVTETensor barrier) {
   NVTE_API_CALL(nvte_layernorm1p_fwd);
   using namespace transformer_engine;
+  Tensor* empty;
   layernorm_fwd(*reinterpret_cast<const Tensor*>(x), *reinterpret_cast<const Tensor*>(gamma),
                 *reinterpret_cast<const Tensor*>(beta), epsilon, reinterpret_cast<Tensor*>(z),
-                reinterpret_cast<Tensor*>(mu), reinterpret_cast<Tensor*>(rsigma), stream,
+                empty, reinterpret_cast<Tensor*>(mu), reinterpret_cast<Tensor*>(rsigma), stream,
                 multiprocessorCount, reinterpret_cast<Tensor*>(workspace),
-                reinterpret_cast<Tensor*>(barrier), true);
+                reinterpret_cast<Tensor*>(barrier), true, false);
 }
 
 void nvte_layernorm1p_bwd(const NVTETensor dz,      // BxSxhidden_size
@@ -215,4 +219,36 @@ void nvte_layernorm1p_bwd(const NVTETensor dz,      // BxSxhidden_size
                 reinterpret_cast<Tensor*>(dgamma_part), reinterpret_cast<Tensor*>(dbeta_part),
                 stream, multiprocessorCount, reinterpret_cast<Tensor*>(workspace),
                 reinterpret_cast<Tensor*>(barrier), true);
+}
+
+void nvte_layernorm1p_fwd_2x(const NVTETensor x,      // BxSxhidden_size
+                             const NVTETensor gamma,  // hidden_size
+                             const NVTETensor beta,   // hidden_size
+                             const float epsilon, NVTETensor z_rowwise, NVTETensor z_colwise,
+                             NVTETensor mu, NVTETensor rsigma, cudaStream_t stream,
+                             const int multiprocessorCount, NVTETensor workspace) {
+  NVTE_API_CALL(nvte_layernorm1p_fwd_2x);
+  using namespace transformer_engine;
+  Tensor* empty;
+  layernorm_fwd(*reinterpret_cast<const Tensor*>(x), *reinterpret_cast<const Tensor*>(gamma),
+                *reinterpret_cast<const Tensor*>(beta), epsilon,
+                reinterpret_cast<Tensor*>(z_rowwise), reinterpret_cast<Tensor*>(z_colwise),
+                reinterpret_cast<Tensor*>(mu), reinterpret_cast<Tensor*>(rsigma), stream,
+                multiprocessorCount, reinterpret_cast<Tensor*>(workspace), empty, true, true);
+}
+
+void nvte_layernorm_fwd_2x(const NVTETensor x,      // BxSxhidden_size
+                           const NVTETensor gamma,  // hidden_size
+                           const NVTETensor beta,   // hidden_size
+                           const float epsilon, NVTETensor z_rowwise, NVTETensor z_colwise,
+                           NVTETensor mu, NVTETensor rsigma, cudaStream_t stream,
+                           const int multiprocessorCount, NVTETensor workspace) {
+  NVTE_API_CALL(nvte_layernorm_fwd_2x);
+  using namespace transformer_engine;
+  Tensor* empty;
+  layernorm_fwd(*reinterpret_cast<const Tensor*>(x), *reinterpret_cast<const Tensor*>(gamma),
+                *reinterpret_cast<const Tensor*>(beta), epsilon,
+                reinterpret_cast<Tensor*>(z_rowwise), reinterpret_cast<Tensor*>(z_colwise),
+                reinterpret_cast<Tensor*>(mu), reinterpret_cast<Tensor*>(rsigma), stream,
+                multiprocessorCount, reinterpret_cast<Tensor*>(workspace), empty, false, true);
 }
