@@ -152,6 +152,68 @@ void nvte_layernorm1p_bwd(const NVTETensor dz,      // BxSxhidden_size
                           NVTETensor dx, NVTETensor dgamma, NVTETensor dbeta,
                           NVTETensor dgamma_part, NVTETensor dbeta_part, cudaStream_t stream,
                           const int multiprocessorCount, NVTETensor workspace, NVTETensor barrier);
+
+/*! \brief Compute LayerNorm on the input.
+ *
+ * The formula used:
+ * @f[
+ * y = \frac{x - E[x]}{\sqrt{Var[x] + \varepsilon}}\gamma + \beta
+ * @f]
+ *
+ * Calling this function with workspace and barrier set to empty tensor will not
+ * perform the operation, but instead set the shape and type of the workspace
+ * and barrier tensors to the required values.
+ *
+ *  \param[in]     x                   Input tensor of shape [N, H].
+ *  \param[in]     gamma               Gamma tensor of shape [H].
+ *  \param[in]     beta                Beta tensor of shape [H].
+ *  \param[in]     epsilon             Value added to denominator for numerical stability.
+ *  \param[in,out] z_rowwise           Output tensor of shape [N, H], in row-wise quantize
+ *  \param[in,out] z_colwise           Output tensor of shape [N, H], in col-wise quantize
+ *  \param[out]    mu                  Mean of the input calculated over the last dimension.
+ *                                     Shape: [N].
+ *  \param[out]    rsigma              Inverse of the variance of the input calculated over
+ *                                     the last dimension. Shape: [N].
+ *  \param[in]     stream              CUDA stream used for the operation.
+ *  \param[in]     multiprocessorCount Number of SMs in the device.
+ *  \param[out]    workspace           Workspace tensor.
+ *  \param[out]    barrier             Barrier tensor.
+ */
+void nvte_layernorm_fwd_2x(const NVTETensor x, const NVTETensor gamma, const NVTETensor beta,
+                           const float epsilon, NVTETensor z_rowwise, NVTETensor z_colwise,
+                           NVTETensor mu, NVTETensor rsigma, cudaStream_t stream,
+                           const int multiprocessorCount, NVTETensor workspace);
+
+/*! \brief Compute LayerNorm with zero-centered gamma on the input.
+ *
+ * The formula used:
+ * @f[
+ * y = \frac{x - E[x]}{\sqrt{Var[x] + \varepsilon}}(1 + \gamma) + \beta
+ * @f]
+ *
+ * Calling this function with workspace and barrier set to empty tensor will not
+ * perform the operation, but instead set the shape and type of the workspace
+ * and barrier tensors to the required values.
+ *
+ *  \param[in]     x                   Input tensor of shape [N, H].
+ *  \param[in]     gamma               Gamma tensor of shape [H].
+ *  \param[in]     beta                Beta tensor of shape [H].
+ *  \param[in]     epsilon             Value added to denominator for numerical stability.
+ *  \param[in,out] z_rowwise           Output tensor of shape [N, H], in row-wise quantize
+ *  \param[in,out] z_colwise           Output tensor of shape [N, H], in col-wise quantize
+ *  \param[out]    mu                  Mean of the input calculated over the last dimension.
+ *                                     Shape: [N].
+ *  \param[out]    rsigma              Inverse of the variance of the input calculated over
+ *                                     the last dimension. Shape: [N].
+ *  \param[in]     stream              CUDA stream used for the operation.
+ *  \param[in]     multiprocessorCount Number of SMs in the device.
+ *  \param[out]    workspace           Workspace tensor.
+ *  \param[out]    barrier             Barrier tensor.
+ */
+void nvte_layernorm1p_fwd_2x(const NVTETensor x, const NVTETensor gamma, const NVTETensor beta,
+                             const float epsilon, NVTETensor z_rowwise, NVTETensor z_colwise,
+                             NVTETensor mu, NVTETensor rsigma, cudaStream_t stream,
+                             const int multiprocessorCount, NVTETensor workspace);
 #ifdef __cplusplus
 }  // extern "C"
 #endif
