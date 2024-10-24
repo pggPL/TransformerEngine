@@ -315,6 +315,14 @@ std::string to_string(const ScalingMode &type);
 
 inline bool is_tensor_scaling(const ScalingMode &mode) { return (mode.x == -1) && (mode.y == -1); }
 
+inline bool is_block_scaling(const ScalingMode &mode) {
+  return (mode.x > 0) && (mode.y > 0) && (mode.delayed_scaling == 0);
+}
+
+inline bool is_rowwise_block_scaling(const ScalingMode &mode) {
+  return (mode.x < mode.y) && (mode.delayed_scaling == 0);
+}
+
 inline bool is_delayed_tensor_scaling(const ScalingMode &mode) {
   return is_tensor_scaling(mode) && mode.delayed_scaling;
 }

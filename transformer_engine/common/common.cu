@@ -6,6 +6,8 @@
 
 #include <transformer_engine/transformer_engine.h>
 
+#include <bit>
+
 #include "./common.h"
 #include "./utils.cuh"
 
@@ -23,7 +25,8 @@ __global__ void __launch_bounds__(1)
 }  // namespace
 
 void update_tensor_scale_inv(Tensor* t, cudaStream_t stream) {
-  if (t->scale_inv.dptr != nullptr) {
+  if (is_fp8_dtype(t->data.dtype) && is_tensor_scaling(t->scaling_mode)) {
+    NVTE_CHECK(t->scale_inv.dptr != nullptr, "Tensor should have allocated scale_inv.");
     update_tensor_scale_inv_kernel<<<1, 1, 0, stream>>>(
         reinterpret_cast<const float*>(t->scale.dptr), reinterpret_cast<float*>(t->scale_inv.dptr));
   }
