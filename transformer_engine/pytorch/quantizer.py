@@ -17,7 +17,7 @@ from .tensor import QuantizedTensor, Float8Tensor
 
 from .quantization_params import Float8Params
 
-class QMeta:
+class Quantizer:
     def __init__(self,
                  recipe: Recipe,
                  num_tensors: int,

@@ -38,7 +38,7 @@ from ..cpp_extensions import (
 )
 from ..constants import dist_group_type
 from ..tensor import QuantizedTensor, Float8Tensor
-from ..quantization_meta import QMeta
+from ..quantizer import Quantizer
 from transformer_engine.common.recipe import Recipe
 
 __all__ = ["initialize_ub", "destroy_ub"]
@@ -507,7 +507,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         # 2 (grad_output and grad_input) for bwd
         num_fp8_tensors = self.fp8_meta["num_gemms"] * 3 if fwd else self.fp8_meta["num_gemms"] * 2
 
-        self.fp8_meta[fp8_meta_tensor_key] = QMeta(recipe, num_fp8_tensors)
+        self.fp8_meta[fp8_meta_tensor_key] = Quantizer(recipe, num_fp8_tensors)
 
     def init_fp8_meta_tensors(self,
                               recipe: Recipe) -> None:
@@ -789,67 +789,77 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 else:
                     ctx.ub_obj_gradout.copy_input_to_ubuf(grad_output, True)
                     grad_output_mat = ctx.ub_obj_gradout.get_ubuf_output(1)
-            return grad_output_mat, None, None, None
-
-        fp8_dtype_backward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=False)
+            return grad_output_mat, None
 
         # FP8 case with gather: unfused bgrad, cast, transpose for efficient gather
+        # TODO: What should we do in this case?
+        # Possibly will need to do Float8Tensor vs everything else
         if gather_grad_output:
             if ctx.use_bias:
+                # TODO: We know it creates spike in memory usage, we should WAR that
                 grad_bias = grad_output_mat.sum(dim=0)
             else:
                 grad_bias = None
-            if ctx.ub_overlap_ag:
-                grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(0)
-            else:
-                grad_output_c = torch.empty_like(grad_output_mat, dtype=torch.uint8)
-            if not isinstance(grad_output_mat, Float8Tensor):
-                cast_to_fp8(
-                    grad_output_mat,
-                    ctx.fp8_meta["scaling_bwd"],
-                    tex.FP8BwdTensors.GRAD_OUTPUT1,
-                    fp8_dtype_backward,
-                    out=grad_output_c,
-                )
-            else:
-                grad_output_c = grad_output_mat
-            if not ctx.ub_overlap_ag:
-                grad_output_c, _ = gather_along_first_dim(grad_output_c, ctx.tp_group)
-                if not isinstance(grad_output_c, Float8Tensor):
-                    grad_output_t = tex.fp8_transpose(grad_output_c, fp8_dtype_backward)
+            if ctx.fp8_meta["scaling_bwd"].recipe_type == DelayedScaling:
+                if ctx.ub_overlap_ag:
+                    grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(0)
                 else:
-                    grad_output_t = grad_output_c.transpose_2d()
-            else:
-                grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(1)
-                grad_output_t = None
+                    grad_output_c = torch.empty_like(grad_output_mat, dtype=torch.uint8)
+                if not isinstance(grad_output_mat, Float8Tensor):
+                    cast_to_fp8(
+                        grad_output_mat,
+                        ctx.fp8_meta["scaling_bwd"],
+                        tex.FP8BwdTensors.GRAD_OUTPUT1,
+                        fp8_dtype_backward,
+                        out=grad_output_c,
+                    )
+                else:
+                    grad_output_c = grad_output_mat
+                if not ctx.ub_overlap_ag:
+                    grad_output_c, _ = gather_along_first_dim(grad_output_c, ctx.tp_group)
+                    if not isinstance(grad_output_c, Float8Tensor):
+                        grad_output_t = tex.fp8_transpose(grad_output_c, fp8_dtype_backward)
+                    else:
+                        grad_output_t = grad_output_c.transpose_2d()
+                else:
+                    grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(1)
+                    grad_output_t = None
 
-            return grad_output_mat, grad_output_c, grad_output_t, grad_bias
+
+                return grad_output_mat, grad_output_c, grad_output_t, grad_bias
+            else:
+                # TODO: Figure out UB and write BF16 AG + cast/transpose
+                pass
 
         # FP8 case without gather: cast, transpose, bgrad fused
         if ctx.use_bias:
             grad_output_mat_no_fp8 = grad_output_mat
-            if isinstance(grad_output_mat, Float8Tensor):
-                grad_output_mat_no_fp8 = grad_output_mat.from_float8(grad_output_mat.dtype)
-            grad_bias, grad_output_c, grad_output_t = fp8_cast_transpose_bgrad_fused(
+            if isinstance(grad_output_mat, QuantizedTensor):
+                grad_output_mat_no_fp8 = grad_output_mat.dequantize()
+            qparams = ctx.fp8_meta["scaling_bwd"].get_quantization_params(tex.FP8BwdTensors.GRAD_OUTPUT1)
+            # TODO: Should check whether we do wgrad/dgrad or both to properly set
+            # rowwise/columnwise
+            grad_bias, grad_output = tex.bgrad_cast(
                 grad_output_mat_no_fp8,
-                ctx.fp8_meta["scaling_bwd"],
-                tex.FP8BwdTensors.GRAD_OUTPUT1,
-                fp8_dtype_backward,
+                qparams,
+                rowwise_usage=True,
+                columnwise_usage=True,
             )
+            return grad_output, grad_bias
         else:
-            if isinstance(grad_output_mat, Float8Tensor):
-                grad_output_c = grad_output_mat
-                grad_output_t = grad_output_c.transpose_2d()
+            if isinstance(grad_output_mat, QuantizedTensor):
+                return grad_output_mat, None
             else:
-                grad_output_c, grad_output_t = fp8_cast_transpose_fused(
+                qparams = ctx.fp8_meta["scaling_bwd"].get_quantization_params(tex.FP8BwdTensors.GRAD_OUTPUT1)
+                # TODO: Should check whether we do wgrad/dgrad or both to properly set
+                # rowwise/columnwise
+                grad_output = tex.generic_cast(
                     grad_output_mat,
-                    ctx.fp8_meta["scaling_bwd"],
-                    tex.FP8BwdTensors.GRAD_OUTPUT1,
-                    fp8_dtype_backward,
+                    qparams,
+                    rowwise_usage=True,
+                    columnwise_usage=True,
                 )
-            grad_bias = None
-
-        return grad_output_mat, grad_output_c, grad_output_t, grad_bias
+            return grad_output, None
 
     def register_parameter(self, name, param, **kwargs):
         """
@@ -916,13 +926,13 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self,
         *,
         tensor: Optional[torch.Tensor] = None,
-        quantizer: Optional[QMeta] = None,
+        quantizer: Optional[Quantizer] = None,
         tensor_index: Optional[int] = None,
         cache_name: Optional[str] = None,
         update_workspace: bool = True,
         skip_update_flag: Optional[torch.Tensor] = None,
-        fsdp_group: dist_group_type = None,
-    ) -> Float8Tensor:
+        fsdp_group: Optional[dist_group_type] = None,
+    ) -> QuantizedTensor:
         """Get FP8 workspace buffer and maybe update its values
 
         The workspace buffer may be cached for future function calls.
@@ -932,7 +942,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         tensor : torch.Tensor, optional
             Values to copy into workspace. Required if the workspace
             is being constructed or updated.
-        quantizer: QMeta, optional
+        quantizer: Quantizer, optional
             Quantizer used to cast the weights. Required if the
             workspace is being constructed or updated.
         tensor_index: int, optional
@@ -959,9 +969,9 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         #       for models initialized with Fp8 primary weights.
         if (
             out is not None
-            and not isinstance(out, Float8Tensor)
+            and tensor is not None
             and fsdp_group is not None
-            and out._data.shape != tensor.data.shape
+            and out.data.shape != tensor.data.shape
         ):
             _fsdp_gather_tensors(fsdp_group, [tensor.data.shape], out)
 
@@ -987,8 +997,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             # Update cache
             if cache_name is not None:
                 self._fp8_workspaces[cache_name] = out
-            update_workspace = True
-            skip_update_flag = None
+            return out
 
         # Update workspace if needed
         if skip_update_flag is not None:

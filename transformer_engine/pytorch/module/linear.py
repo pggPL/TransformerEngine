@@ -207,7 +207,7 @@ class _Linear(torch.autograd.Function):
             ctx.fsdp_shapes = _fsdp_scatter_tensors(
                 fsdp_group,
                 saved_inputmat,  # None if fp8 == False
-                weight_fp8 if fp8 and not isinstance(weight, Float8Tensor) else None,
+                weight_fp8 if fp8 and not isinstance(weight, QuantizedTensor) else None,
             )
 
             ctx.save_for_backward(
@@ -252,17 +252,10 @@ class _Linear(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
         # pylint: disable=missing-function-docstring
-        if isinstance(grad_output, Float8Tensor):
-            ctx.fp8_meta["scaling_bwd"].scale_inv[
-                tex.FP8BwdTensors.GRAD_OUTPUT1
-            ] = grad_output._scale_inv
 
         with torch.cuda.nvtx.range("_Linear_backward"):
             (
                 inputmat,
-                inputmat_t,
-                inputmat_scale_inv,
-                weight,
                 weight_fp8,
                 main_grad,
             ) = ctx.saved_tensors
@@ -274,10 +267,10 @@ class _Linear(torch.autograd.Function):
                 ctx.fsdp_group,
                 ctx.fsdp_shapes,
                 inputmat,
-                inputmat_t,
-                weight_fp8 if ctx.fp8 and not isinstance(weight, Float8Tensor) else None,
+                weight_fp8,
             )
 
+            #TODO: understand and fix
             if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
                 weight = torch.nn.Parameter(weight, weight.requires_grad)
                 weight.main_grad = main_grad
@@ -296,8 +289,6 @@ class _Linear(torch.autograd.Function):
 
             (
                 grad_output,
-                grad_output_c,
-                grad_output_t,
                 grad_bias,
             ) = TransformerEngineBaseModule.grad_output_preprocess(
                 ctx, grad_output, ctx.parallel_mode == "row"
