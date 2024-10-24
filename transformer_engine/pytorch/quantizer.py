@@ -4,7 +4,6 @@
 
 """Quantization metadata class"""
 
-from tensor.float8_tensor import Float8ParamsProxy
 from transformer_engine.common.recipe import (
         Recipe, DelayedScaling
 )
@@ -14,6 +13,7 @@ import transformer_engine_torch as tex
 
 from .fp8 import get_fp8_te_dtype
 from .tensor import QuantizedTensor, Float8Tensor
+from .tensor.float8_tensor import Float8ParamsProxy
 
 from .quantization_params import Float8Params
 
