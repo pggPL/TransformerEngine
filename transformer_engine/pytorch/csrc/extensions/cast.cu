@@ -7,7 +7,7 @@
 #include "extensions.h"
 
 at::Tensor cast_to_fp8(const at::Tensor& input, const at::Tensor& scale, at::Tensor amax,
-                       at::Tensor scale_inv, transformer_engine::DType otype,
+                       at::Tensor scale_inv, transformer_engine::DType otype, std::vector<int64_t> scaling_mode,
                        const int scale_offset, const int amax_offset, const int scale_inv_offset) {
   using namespace transformer_engine;
   auto input_shape = input.sizes().vec();
@@ -21,10 +21,12 @@ at::Tensor cast_to_fp8(const at::Tensor& input, const at::Tensor& scale, at::Ten
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
+  NVTEScalingMode nvte_scaling_mode = {scaling_mode[0], scaling_mode[1], scaling_mode[2]};
 
   auto input_cu = makeTransformerEngineTensor(input);
-  auto output_cu = makeTransformerEngineTensor(output.data_ptr(), shape, otype, amax_dptr,
-                                               scale_dptr, scale_inv_dptr);
+  auto output_cu =
+      makeTransformerEngineTensor(output.data_ptr(), shape, otype, amax_dptr, scale_dptr,
+                                  scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
 
   nvte_fp8_quantize(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
 
@@ -33,20 +35,22 @@ at::Tensor cast_to_fp8(const at::Tensor& input, const at::Tensor& scale, at::Ten
 
 void cast_to_fp8_noalloc(const at::Tensor& input, const at::Tensor& scale, at::Tensor output,
                          at::Tensor amax, at::Tensor scale_inv, transformer_engine::DType otype,
-                         const int scale_offset, const int amax_offset,
-                         const int scale_inv_offset) {
+                         std::vector<int64_t> scaling_mode, const int scale_offset,
+                         const int amax_offset, const int scale_inv_offset) {
   using namespace transformer_engine;
-  size_t N = static_cast<size_t>(input.size(0));
-  size_t H = static_cast<size_t>(input.size(1));
+  auto input_shape = input.sizes().vec();
+  std::vector<size_t> shape{input_shape.begin(), input_shape.end()};
 
   // Get pointers for FP8 scale, amax, scale-inverse
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
+  NVTEScalingMode nvte_scaling_mode = {scaling_mode[0], scaling_mode[1], scaling_mode[2]};
 
   auto input_cu = makeTransformerEngineTensor(input);
-  auto output_cu = makeTransformerEngineTensor(output.data_ptr(), {N, H}, otype, amax_dptr,
-                                               scale_dptr, scale_inv_dptr);
+  auto output_cu =
+      makeTransformerEngineTensor(output.data_ptr(), shape, otype, amax_dptr, scale_dptr,
+                                  scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
 
   nvte_fp8_quantize(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
 

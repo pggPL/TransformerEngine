@@ -40,23 +40,29 @@ def cast_to_fp8(
         if out is None:
             out = torch.empty_like(inp, dtype=torch.uint8)
     elif out is None:
-        out = torch.ops.tex_ts.cast_to_fp8_ts(
+        out = tex.cast_to_fp8(
             inp,
             fp8_scales["scale"],
             fp8_scales["amax"],
             fp8_scales["scale_inv"],
-            fp8_scales_offsets["scale_offset"],
             otype,
+            [-1, -1, 1],  #TODO(ksivaman): fix
+            fp8_scales_offsets["scale_offset"],
+            fp8_scales_offsets["amax_offset"],
+            fp8_scales_offsets["scale_inv_offset"],
         )
     else:
-        torch.ops.tex_ts.cast_to_fp8_noalloc_ts(
+        tex.cast_to_fp8_noalloc(
             inp,
             fp8_scales["scale"],
             out,
             fp8_scales["amax"],
             fp8_scales["scale_inv"],
-            fp8_scales_offsets["scale_offset"],
             otype,
+            [-1, -1, 1],  #TODO(ksivaman): fix
+            fp8_scales_offsets["scale_offset"],
+            fp8_scales_offsets["amax_offset"],
+            fp8_scales_offsets["scale_inv_offset"],
         )
     return out
 
@@ -84,10 +90,10 @@ def cast_from_fp8(
         raise ValueError("Did not provide either `scale_inv` or `fp8_meta_tensor`")
 
     # Launch FP8 cast kernel
-    return torch.ops.tex_ts.cast_from_fp8_ts(
+    return tex.cast_from_fp8(
         inp,
         scale_inv,
-        scale_inv_offset,
         itype,
         otype,
+        scale_inv_offset,
     )
