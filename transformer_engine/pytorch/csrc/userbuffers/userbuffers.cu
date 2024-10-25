@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include "userbuffers.h"
+#include "common/util/system.h"
 
 #define MAX_THREADS 1024
 

@@ -235,6 +235,11 @@ struct TypeId<fp8e4m3> {
   constexpr static uint32_t Value = 3;
 };
 
+template <>
+struct TypeId<fp8e5m2> {
+  constexpr static uint32_t Value = 4;
+};
+
 template <typename T, int S>
 struct Type2Key {
   constexpr static uint32_t Value = TypeId<T>::Value << S;
@@ -348,15 +353,17 @@ class NormalizationPlan {
  public:
   NormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype, DType itype,
                     DType otype, DType ctype, const size_t batch_size, const size_t hidden_size,
-                    const bool zero_centered_gamma, const size_t sm_count);
+                    const bool zero_centered_gamma, const size_t sm_count,
+                    const NVTEScalingMode& mode = {-1, -1, 1});
 
   void build();
 
   std::vector<size_t> getWorkspaceShape() const;
 
   // FWD
-  void execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr, void* mean_dptr,
-               void* eps_dptr, void* rsigma_dptr, void* workspace_dptr, cudaStream_t stream);
+  void execute(Tensor* z_rowwise, Tensor* z_colwise, void* x_dptr, void* gamma_dptr,
+               void* beta_dptr, void* mean_dptr, void* eps_dptr, void* rsigma_dptr,
+               void* workspace_dptr, cudaStream_t stream);
   // BWD
   void execute(void* x_dptr, void* gamma_dptr, void* mean_dptr, void* rsigma_dptr, void* dx_dptr,
                void* dz_dptr, void* dbeta_dptr, void* dgamma_dptr, void* workspace_dptr,
@@ -364,10 +371,13 @@ class NormalizationPlan {
 
  private:
   const bool _zero_centered, _fp8_out;
+  int _ndim_scale_block;
   std::unique_ptr<char[]> _scalar_dptr;
   // FWD
   std::shared_ptr<fe::graph::Tensor_attributes> _x, _gamma_zero, _scalar_offset, _gamma, _beta,
       _eps, _mean, _rsigma, _z, _z_scale, _amax, _z_fp8;
+  // MX FWD
+  std::shared_ptr<fe::graph::Tensor_attributes> _z_mx_row, _z_mx_col, _sf_row, _sf_col;
   // BWD
   std::shared_ptr<fe::graph::Tensor_attributes> _dz, _dx, _dgamma, _dbeta;
 
@@ -387,7 +397,8 @@ class NormalizationPlanRegistry {
   NormalizationPlan* getNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
                                           DType wtype, DType itype, DType otype,
                                           const size_t batch_size, const size_t hidden_size,
-                                          const bool zero_centered_gamma, const size_t sm_count);
+                                          const bool zero_centered_gamma, const size_t sm_count,
+                                          const NVTEScalingMode& mode = {-1, -1, 1});
 
  private:
   NormalizationPlanRegistry() {}
