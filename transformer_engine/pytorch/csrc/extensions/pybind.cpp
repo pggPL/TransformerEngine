@@ -284,6 +284,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       .def_readwrite("scale_inv", &transformer_engine::FP8TensorMeta::scale_inv)
       .def_readwrite("amax_history", &transformer_engine::FP8TensorMeta::amax_history);
 
+  py::class_<transformer_engine::MXFP8TensorMeta>(m, "MXFP8TensorMeta")
+      .def(py::init<>())
+      .def_readwrite("scale", &transformer_engine::MXFP8TensorMeta::scale)
+      .def_readwrite("scale_inv", &transformer_engine::MXFP8TensorMeta::scale_inv)
+      .def_readwrite("amax_history", &transformer_engine::MXFP8TensorMeta::amax_history);
+
   m.def("device_supports_multicast", &ubuf::device_supports_multicast,
         py::call_guard<py::gil_scoped_release>());
 

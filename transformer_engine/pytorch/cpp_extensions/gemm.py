@@ -22,7 +22,8 @@ __all__ = [
 # TODO(ksivamani): only for debug; to remove.
 import os
 
-_DUMMY_BLOCK_SCALING = bool(int(os.getenv("_NVTE_MXFP8_GEMM_DEBUG", "0")))
+def _dummy_block_scaling():
+    return bool(int(os.getenv("_NVTE_MXFP8_GEMM_DEBUG", "0")))
 _DUMMY_BLOCK_SCALING_SIZE = 32
 
 
@@ -149,7 +150,7 @@ def fp8_gemm(
 
     out_dtype = TE_DType[out.dtype] if D_dtype is None else D_dtype
 
-    if _DUMMY_BLOCK_SCALING:
+    if _dummy_block_scaling():
         assert A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [
             -1,
             -1,

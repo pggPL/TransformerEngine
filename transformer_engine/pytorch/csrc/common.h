@@ -59,6 +59,19 @@ class FP8TensorMeta {
   at::Tensor amax_history;
 };
 
+// FP8TensorMeta for block scaling, this structure allows
+// indexing into it the same way (i.e. using FP8FwdTensors
+// and FP8BwdTensors) for both hopper and blackwell recipes.
+// TODO(ksivaman): check perf with this design; should be ok
+// since there are no amax reductions, or bulk amax/scale
+// updates for block scaling.
+class MXFP8TensorMeta {
+ public:
+  std::vector<at::Tensor> scale;
+  std::vector<at::Tensor> scale_inv;
+  std::vector<at::Tensor> amax_history;
+};
+
 // Used as named indices on the `scale`, `scale_inv`,
 // and `amax` tensors in the `FP8TensorMeta` class.
 enum FP8FwdTensors {

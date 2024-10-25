@@ -50,8 +50,18 @@ class _OverrideLinearPrecision(NamedTuple):
     wgrad: bool = False
 
 
+class FP8Recipe:
+    def current(self):
+        """Whether the given recipe is current scaling."""
+        return isinstance(self, CurrentScaling)
+
+    def delayed(self):
+        """Whether the given recipe is delayed scaling."""
+        return isinstance(self, DelayedScaling)
+
+
 @dataclass()
-class DelayedScaling:
+class DelayedScaling(FP8Recipe):
     """
     Use the delayed scaling factor strategy. Use scale factor from previous
     iteration and record amax history of `amax_history_len` steps.
@@ -168,7 +178,7 @@ class DelayedScaling:
 
 
 @dataclass()
-class CurrentScaling:
+class CurrentScaling(FP8Recipe):
     """
     Use the current scaling factor strategy.
 
