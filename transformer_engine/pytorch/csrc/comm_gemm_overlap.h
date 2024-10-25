@@ -206,8 +206,8 @@ struct UbufCommOverlap : torch::CustomClassHolder, UbufBase {
           at::cuda::getStreamFromExternal(stream_gemm_tmp, stream_main.device_index()));
     }
     if (transformer_engine::getenv<bool>("NVTE_UBDEBUG") && _ub_comm->myrank) {
-      printf("!!! [UB] Comm priority: %d | GEMM priority: %d\n",
-             _get_stream_priority(_stream_comm), _get_stream_priority(_stream_compute[0]));
+      printf("!!! [UB] Comm priority: %d | GEMM priority: %d\n", _get_stream_priority(_stream_comm),
+             _get_stream_priority(_stream_compute[0]));
     }
 
     _num_splits = num_splits;
