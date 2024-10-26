@@ -12,20 +12,6 @@
 
 namespace transformer_engine::pytorch {
 
-namespace detail {
-
-bool IsFloat8QParamsType(PyObject *obj) {
-  return Py_TYPE(obj) == Float8QParamsClass;
-}
-
-bool IsFloatingPointType(at::ScalarType type) {
-  return type == at::kFloat ||
-         type == at::kHalf  ||
-         type == at::kBFloat16;
-}
-
-}  // namespace detail
-
 py::handle cast(const at::Tensor& tensor,
                 py::handle quantization_params,
                 bool rowwise_usage,

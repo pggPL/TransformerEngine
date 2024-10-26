@@ -4,8 +4,12 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#include "c10/util/ArrayRef.h"
 #include "common.h"
 #include "transformer_engine/transformer_engine.h"
+#include "pybind.h"
+
+namespace transformer_engine::pytorch {
 
 std::vector<size_t> getTensorShape(at::Tensor t) {
   std::vector<size_t> shape;
@@ -22,6 +26,27 @@ transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
     return transformer_engine::DType::kFloat8E4M3;
   }
   return transformer_engine::DType::kFloat8E5M2;
+}
+
+TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantization_params) {
+  NVTE_CHECK(!tensor.is_none(), "Tensor is not allocated!");
+  for (auto [check_type, create_tensor]: detail::custom_types_converters) {
+    if (check_type(tensor.ptr())) {
+      return create_tensor(tensor, quantization_params);
+    }
+  }
+
+  // Regular pyTorch tensor
+  // TODO: Use quantization params
+  NVTE_CHECK(quantization_params.is_none(), "Not implemented yet!");
+  at::Tensor torch_tensor = tensor.cast<at::Tensor>();
+
+  if (!torch_tensor.is_contiguous()) {
+    torch_tensor = torch_tensor.contiguous();
+  }
+  return TensorWrapper(torch_tensor.data_ptr(),
+                       getTensorShape(torch_tensor),
+                       GetTransformerEngineDType(torch_tensor.scalar_type()));
 }
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
@@ -80,6 +105,17 @@ size_t product(const std::vector<size_t>& shape) {
   return ret;
 }
 
+size_t product(const NVTEShape& shape, size_t begin, size_t end) {
+  NVTE_CHECK(begin < shape.ndim &&
+             end < shape.ndim);
+  if (begin >= end) return 0;
+  size_t ret = 1;
+  for (size_t i = begin; i < end; ++i) {
+    ret *= shape.data[i];
+  }
+  return ret;
+}
+
 at::Tensor allocateSpace(const std::vector<size_t>& shape, const transformer_engine::DType type,
                          bool init_to_zeros) {
   std::vector<int64_t> shape_int64(shape.begin(), shape.end());
@@ -129,3 +165,5 @@ void* getDataPtr(at::Tensor tensor, int offset) {
   }
   return dptr;
 }
+
+}  // namespace transformer_engine::pytorch

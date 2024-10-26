@@ -374,6 +374,13 @@ py::handle cast(const at::Tensor& tensor,
                 bool columnwise_usage,
                 py::handle proxy);
 
+std::vector<py::handle> gemm(py::handle A, bool transa, py::handle B, bool transb,
+                             py::handle D, py::handle quantization_params,
+                             std::optional<DType> out_dtype,
+                             MaybeTensor bias, DType bias_type, bool gelu,
+                             bool grad, at::Tensor workspace, size_t workspaceSize,
+                             bool accumulate, bool use_split_accumulator);
+
 }  // namespace transformer_engine::pytorch
 
 at::Tensor cast_to_fp8(const at::Tensor &input, const at::Tensor &scale, at::Tensor amax,

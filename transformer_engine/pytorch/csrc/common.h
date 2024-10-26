@@ -50,7 +50,7 @@
 #include "c10/util/ArrayRef.h"
 #include "common/util/logging.h"
 
-namespace transformer_engine {
+namespace transformer_engine::pytorch {
 
 // Each tensor here is shape (N, ) holding all scaling
 // data for a single FP8 block, e.g. LayerNormLinear
@@ -94,7 +94,6 @@ class Float8Tensor {
   DType dtype;
 };
 
-}  // namespace transformer_engine
 
 std::vector<size_t> getTensorShape(at::Tensor t);
 
@@ -163,11 +162,15 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(void* data_ptr,
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor);
 
+TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantization_params);
+
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
     at::Tensor tensor, at::Tensor amax, const at::Tensor scale, at::Tensor scale_inv,
     NVTEScalingMode scaling_mode = {-1, -1, 1});
 
 size_t product(const std::vector<size_t>& shape);
+
+size_t product(const NVTEShape& shape, size_t begin, size_t end);
 
 at::Tensor allocateSpace(const std::vector<size_t>& shape, const transformer_engine::DType type,
                          bool init_to_zeros);
@@ -180,6 +183,8 @@ at::Tensor allocateTorchTensor(int M, int N, transformer_engine::DType dtype);
 at::Tensor allocateTorchTensor(int M, transformer_engine::DType dtype);
 
 void* getDataPtr(at::Tensor tensor, int offset = 0);
+
+}  // namespace transformer_engine::pytorch
 
 namespace std {
   template <typename T>

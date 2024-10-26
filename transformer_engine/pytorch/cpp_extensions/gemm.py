@@ -98,7 +98,7 @@ def general_gemm(
     A: torch.Tensor,
     B: torch.Tensor,
     workspace: torch.Tensor,
-    out_dtype: torch.dtype,
+    out_dtype: Optional[torch.dtype] = None,
     quantization_params: Optional[QuantizationParams] = None,
     gelu: bool = False,
     accumulate: bool = False,
@@ -128,7 +128,7 @@ def general_gemm(
         False,  # transb
         out,
         quantization_params,
-        out_dtype,
+        TE_DType[out_dtype] is out_dtype is not None else None,
         bias,
         bias_dtype,
         gelu,
@@ -214,7 +214,7 @@ def general_gemm(
             args = tuple(args + (extra_output_tensor,))
     if ub_algo is not None and ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_AG_P2P:
         out = fn(*args)
-        gelu_input = empty_tensor
+        gelu_input = None
     else:
         out, gelu_input = fn(*args)
 
