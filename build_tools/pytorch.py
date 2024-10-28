@@ -28,7 +28,6 @@ def setup_pytorch_extension(
     extensions_dir = csrc_source_files / "extensions"
     sources = [
         csrc_source_files / "common.cu",
-        csrc_source_files / "ts_fp8_op.cpp",
         csrc_source_files / "userbuffers" / "ipcsocket.cc",
         csrc_source_files / "userbuffers" / "userbuffers.cu",
         csrc_source_files / "userbuffers" / "userbuffers-host.cpp",

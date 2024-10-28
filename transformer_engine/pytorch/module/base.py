@@ -19,7 +19,6 @@ import torch.nn.functional as F
 
 import transformer_engine_torch as tex
 from ._common import _ParameterInitMeta
-from ..export import is_in_onnx_export_mode
 from ..fp8 import (
     get_default_fp8_recipe,
     get_fp8_te_dtype,
@@ -600,11 +599,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     extra[k] = v
             state["extra_fp8_variables"] = extra
 
-        if is_in_onnx_export_mode():
-            state_serialized = torch.frombuffer(pickle.dumps(state), dtype=torch.uint8)
-        else:
-            state_serialized = io.BytesIO()
-            torch.save(state, state_serialized)
+        state_serialized = io.BytesIO()
+        torch.save(state, state_serialized)
 
         return state_serialized
 
@@ -1064,17 +1060,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         if update_workspace:
             if tensor is None:
                 raise ValueError("tensor kwarg must be provided to update FP8 workspace")
-            if is_in_onnx_export_mode():
-                # ONNX export does not support fused cast-transpose
-                # kernel and requires that FP8 scales can be
-                # represented with constant ops.
-                transpose_cache = out._transpose
-                out._transpose = None
-                out.quantize_(tensor)
-                out._scale_inv.fill_(out._scale_inv.item())
-                out._transpose = transpose_cache
-            else:
-                out.quantize_(tensor, noop_flag=skip_update_flag)
+            out.quantize_(tensor, noop_flag=skip_update_flag)
 
         return out
 

@@ -45,7 +45,6 @@ from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
 from ._common import _apply_normalization, _noop_cat
 from ..float8_tensor import Float8Tensor
-from ..export import is_in_onnx_export_mode
 from ..tensor import QuantizedTensor
 from ..cpu_offload import is_cpu_offload_enabled
 
@@ -212,18 +211,6 @@ class _LayerNormLinear(torch.autograd.Function):
                 weight_fp8 = weight
 
             assert isinstance(weight_fp8, Float8Tensor)
-
-            # Hack for ONNX export
-            # Note: ONNX models are represented as a graph of tensor
-            # operations, so the in-place scale-inv update doesn't fit
-            # very well. We work around this by making it look like
-            # the scale-inv tensor is initialized with a copy.
-            # Note: ONNX export expects FP8 scales can be represented
-            # with constant ops. However, copying into a buffer
-            # involves an expand op for array broadcasting. We work
-            # around this by filling the buffer instead.
-            if is_in_onnx_export_mode():
-                ln_out_scale_inv.fill_(ln_out_scale_inv.item())
 
             if fp8_output:
                 out_index, meta_tensor, output_te_dtype, output_dtype = (

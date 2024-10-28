@@ -82,7 +82,6 @@ from transformer_engine.pytorch.distributed import (
     gather_along_first_dim,
     reduce_scatter_along_first_dim,
 )
-from transformer_engine.pytorch.export import is_in_onnx_export_mode
 from transformer_engine.pytorch.jit import jit_fuser, no_torch_dynamo
 from transformer_engine.pytorch.graph import is_graph_capturing
 
@@ -407,15 +406,6 @@ def get_attention_backend(
         logger.debug("Disabling FusedAttention due to NVTE_FUSED_ATTN=0")
     if not use_unfused_attention:
         logger.debug("Disabling UnfusedDotProductAttention due to NVTE_UNFUSED_ATTN=0")
-
-    # Filter: ONNX mode
-    if is_in_onnx_export_mode():
-        if use_flash_attention and _flash_attn_is_installed:
-            logger.debug("Disabling FlashAttention due to ONNX mode")
-        use_flash_attention = False
-        if use_fused_attention:
-            logger.debug("Disabling FusedAttention due to ONNX mode")
-        use_fused_attention = False
 
     # Filter: Compute capability
     if device_compute_capability < (8, 0):
@@ -4832,12 +4822,9 @@ class UnfusedDotProductAttention(torch.nn.Module):
             output_size[0] * output_size[1],
             output_size[2],
             output_size[3],
-            dtype=torch.float32 if is_in_onnx_export_mode() and is_bf16 else query_layer.dtype,
+            dtype=query_layer.dtype,
             device=torch.cuda.current_device(),
         )
-
-        if is_in_onnx_export_mode() and is_bf16:
-            matmul_result = matmul_result.bfloat16()
 
         scale = self.softmax_scale
         if apply_qk_layer_scaling:
@@ -8858,16 +8845,9 @@ class MultiheadAttention(torch.nn.Module):
             # not qkv_weight_interleaved:
             #  [sq, b, (np/ng + 2), ng, hn]
             #  --> [sq, b, np/ng, np, hn], [sq, b, 1, ng, hn], [sq, b, 1, ng, hn]
-            if not is_in_onnx_export_mode():
-                query_layer, key_layer, value_layer = _SplitAlongDim.apply(
-                    mixed_x_layer, split_dim, (num_queries_per_key_value, 1, 1)
-                )
-            else:
-                query_layer, key_layer, value_layer = torch.split(
-                    mixed_x_layer,
-                    (num_queries_per_key_value, 1, 1),
-                    dim=split_dim,
-                )
+            query_layer, key_layer, value_layer = _SplitAlongDim.apply(
+                mixed_x_layer, split_dim, (num_queries_per_key_value, 1, 1)
+            )
 
             if self.qkv_format == "thd":
                 query_layer, key_layer, value_layer = (
@@ -8909,18 +8889,11 @@ class MultiheadAttention(torch.nn.Module):
             mixed_kv_layer = mixed_kv_layer.view(*new_tensor_shape)
 
             # mixed_kv_layer --> 2 [sk, b, ng, hn]
-            if not is_in_onnx_export_mode():
-                key_layer, value_layer = _SplitAlongDim.apply(
-                    mixed_kv_layer,
-                    split_dim,
-                    mixed_kv_layer.shape[split_dim] // 2,
-                )
-            else:
-                key_layer, value_layer = torch.split(
-                    mixed_kv_layer,
-                    mixed_kv_layer.shape[split_dim] // 2,
-                    dim=split_dim,
-                )
+            key_layer, value_layer = _SplitAlongDim.apply(
+                mixed_kv_layer,
+                split_dim,
+                mixed_kv_layer.shape[split_dim] // 2,
+            )
             key_layer, value_layer = (
                 x.reshape(
                     x.size(0),

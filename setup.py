@@ -95,7 +95,7 @@ def setup_requirements() -> Tuple[List[str], List[str], List[str]]:
     if not bool(int(os.getenv("NVTE_RELEASE_BUILD", "0"))):
         if "pytorch" in frameworks:
             install_reqs.extend(["torch"])
-            test_reqs.extend(["numpy", "onnxruntime", "torchvision", "prettytable"])
+            test_reqs.extend(["numpy", "torchvision", "prettytable"])
         if "jax" in frameworks:
             install_reqs.extend(["jax", "flax>=0.7.1"])
             test_reqs.extend(["numpy", "praxis"])
