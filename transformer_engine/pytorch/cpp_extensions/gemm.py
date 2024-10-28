@@ -8,7 +8,7 @@ from typing import Optional, Tuple, Union, List
 import torch
 import transformer_engine_torch as tex
 from ..constants import TE_DType
-from ..utils import assert_dim_for_fp8_exec
+from ..utils import assert_dim_for_fp8_exec, get_sm_count
 
 
 __all__ = [
@@ -161,34 +161,61 @@ def fp8_gemm(
         A_scale_inv = _get_blocking_scaling_scale_inv(A, A_scale_inv)
         B_scale_inv = _get_blocking_scaling_scale_inv(B, B_scale_inv)
 
-    args = (
-        A,
-        A_scale_inv,
-        A_fp8_tensor,
-        A_dtype,
-        A_scaling_mode,
-        True,  # transa
-        B,
-        B_scale_inv,
-        B_fp8_tensor,
-        B_dtype,
-        B_scaling_mode,
-        False,  # transb
-        out,
-        empty_tensor if out_index is None else fp8_meta_tensor.scale[out_index],
-        out_dtype,
-        empty_tensor if out_index is None else fp8_meta_tensor.amax_history[0][out_index],
-        bias if use_bias else empty_tensor,
-        bias_dtype,
-        gelu_input,  # this is pre_gelu_out
-        False,  # grad
-        workspace,
-        workspace.shape[0],
-        accumulate,
-        use_split_accumulator,
-    )
-    fn = torch.ops.tex_ts.te_gemm_ts
-    if ub_algo is not None:
+    if ub_algo is None:
+        fn = tex.te_gemm
+        sm_count = get_sm_count()
+        args = (
+            A,
+            A_scale_inv[A_fp8_tensor],
+            A_dtype,
+            A_scaling_mode,
+            True,  # transa
+            B,
+            B_scale_inv[B_fp8_tensor],
+            B_dtype,
+            B_scaling_mode,
+            False,  # transb
+            out,
+            empty_tensor if out_index is None else fp8_meta_tensor.scale[out_index],
+            out_dtype,
+            empty_tensor if out_index is None else fp8_meta_tensor.amax_history[0][out_index],
+            bias if use_bias else empty_tensor,
+            bias_dtype,
+            gelu_input,  # this is pre_gelu_out
+            False,  # grad
+            workspace,
+            workspace.shape[0],
+            accumulate,
+            use_split_accumulator,
+            sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),
+        )
+    else:
+        args = (
+            A,
+            A_scale_inv,
+            A_fp8_tensor,
+            A_dtype,
+            A_scaling_mode,
+            True,  # transa
+            B,
+            B_scale_inv,
+            B_fp8_tensor,
+            B_dtype,
+            B_scaling_mode,
+            False,  # transb
+            out,
+            empty_tensor if out_index is None else fp8_meta_tensor.scale[out_index],
+            out_dtype,
+            empty_tensor if out_index is None else fp8_meta_tensor.amax_history[0][out_index],
+            bias if use_bias else empty_tensor,
+            bias_dtype,
+            gelu_input,  # this is pre_gelu_out
+            False,  # grad
+            workspace,
+            workspace.shape[0],
+            accumulate,
+            use_split_accumulator,
+        )
         assert ub is not None, "ub object is None!"
         if ub_algo == tex.UbufOverlapAlgo.BULK_OVERLAP_AG:
             fn = ub.bulk_overlap
@@ -341,34 +368,61 @@ def gemm(
     else:
         bias_dtype = output_dtype
 
-    args = (
-        A,
-        empty_tensor,
-        fp8_index,
-        input_dtype,
-        [-1, -1, 1],  # A_scaling_mode
-        transa,
-        B,
-        empty_tensor,
-        fp8_index,
-        input_dtype,
-        [-1, -1, 1],  # B_scaling_mode
-        transb,
-        out,
-        empty_tensor,  # out_scale
-        output_dtype,
-        empty_tensor,  # out_amax
-        grad_bias if grad else bias,
-        bias_dtype,
-        gelu_input,
-        grad,
-        workspace,
-        workspace.shape[0],
-        accumulate,
-        False,  # use_split_accumulator
-    )
-    fn = torch.ops.tex_ts.te_gemm_ts
-    if ub_algo is not None:
+    if ub_algo is None:
+        fn = tex.te_gemm
+        sm_count = get_sm_count()
+        args = (
+            A,
+            empty_tensor,
+            input_dtype,
+            [-1, -1, 1],  # A_scaling_mode
+            transa,
+            B,
+            empty_tensor,
+            input_dtype,
+            [-1, -1, 1],  # B_scaling_mode
+            transb,
+            out,
+            empty_tensor,  # out_scale
+            output_dtype,
+            empty_tensor,  # out_amax
+            grad_bias if grad else bias,
+            bias_dtype,
+            gelu_input,
+            grad,
+            workspace,
+            workspace.shape[0],
+            accumulate,
+            False,  # use_split_accumulator
+            sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),
+        )
+    else:
+        args = (
+            A,
+            empty_tensor,
+            fp8_index,
+            input_dtype,
+            [-1, -1, 1],  # A_scaling_mode
+            transa,
+            B,
+            empty_tensor,
+            fp8_index,
+            input_dtype,
+            [-1, -1, 1],  # B_scaling_mode
+            transb,
+            out,
+            empty_tensor,  # out_scale
+            output_dtype,
+            empty_tensor,  # out_amax
+            grad_bias if grad else bias,
+            bias_dtype,
+            gelu_input,
+            grad,
+            workspace,
+            workspace.shape[0],
+            accumulate,
+            False,  # use_split_accumulator
+        )
         assert ub is not None, "ub object is None!"
         if ub_algo == tex.UbufOverlapAlgo.BULK_OVERLAP_AG:
             fn = ub.bulk_overlap
@@ -454,7 +508,9 @@ def grouped_gemm(
     else:
         bias_dtype = output_dtype
 
-    torch.ops.tex_ts.te_grouped_gemm_ts(
+    sm_count = get_sm_count()
+
+    tex.te_grouped_gemm(
         A,
         empty_tensor,
         0,  # A_offset
@@ -480,6 +536,7 @@ def grouped_gemm(
         workspaces[0].shape[0],
         accumulate,
         False,  # use_split_accumulator
+        sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),
     )
 
     return out, grad_bias, gelu_input
@@ -543,6 +600,8 @@ def fp8_grouped_gemm(
     gelu_input = empty_tensors
     out_dtype = TE_DType[out[0].dtype] if D_dtype is None else D_dtype
 
+    sm_count = get_sm_count()
+
     if len(A_scale_inv) == 1:
         if gelu:
             gelu_input = [
@@ -550,7 +609,7 @@ def fp8_grouped_gemm(
                 for o in out
             ]
 
-        torch.ops.tex_ts.te_grouped_gemm_ts(
+        tex.te_grouped_gemm(
             A,
             A_scale_inv[0],
             A_fp8_tensor_offset,
@@ -576,12 +635,13 @@ def fp8_grouped_gemm(
             workspaces[0].shape[0],
             accumulate,
             use_split_accumulator,
+            sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),
         )
     else:
         if gelu:
             gelu_input = [torch.empty((m, A[0].size(0)), dtype=bias_dtype) for m in m_splits]
 
-        torch.ops.tex_ts.te_grouped_gemm_single_output_ts(
+        tex.te_grouped_gemm_single_output(
             A,
             A_scale_inv,
             A_fp8_tensor_offset,
@@ -606,6 +666,7 @@ def fp8_grouped_gemm(
             workspaces[0].shape[0],
             accumulate,
             use_split_accumulator,
+            sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count)))
         )
 
     return out, gelu_input

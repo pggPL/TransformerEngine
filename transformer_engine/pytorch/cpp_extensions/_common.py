@@ -25,6 +25,7 @@ def canonicalize_fp8_scales(
     fp8_meta: Optional[tex.FP8TensorMeta] = None,
     fp8_meta_index: Union[tex.FP8FwdTensors, tex.FP8BwdTensors, None] = None,
     allow_multiple_offsets: bool = True,
+    no_offsets: bool = False,
 ) -> Tuple[Dict[str, torch.Tensor], Dict[str, int]]:
     """Canonicalize FP8 scaling factors (scale, amax, scale-inverse)
 
@@ -32,6 +33,8 @@ def canonicalize_fp8_scales(
     FP8 meta tensors. Returns dict with tensors and dict with tensor
     offsets.
 
+    If the `no_offsets` option is set, the precise single
+    element tensor is returned (only for FP8).
     """
 
     # Default: use provided scales with no offsets
@@ -76,6 +79,16 @@ def canonicalize_fp8_scales(
         if scale_inv_offset != 0:
             scale_inv = scale_inv[scale_inv_offset:]
             scale_inv_offset = 0
+
+    # Return exact location for FP8 tensors.
+    if no_offsets:
+        assert (
+            fp8_meta is not None and fp8_meta_index is not None
+        ), "`fp8_meta` and `fp8_meta_index` not provided."
+        tensors = {"scale": scale[scale_offset],
+                   "amax": amax[0][amax_offset],
+                   "scale_inv": scale_inv[scale_inv_offset]}
+        return tensors, {}
 
     # Pack tensors and offsets into dicts
     tensors = {"scale": scale, "amax": amax, "scale_inv": scale_inv}

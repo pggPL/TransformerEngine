@@ -2129,24 +2129,26 @@ def test_fp8_grouped_gemm(shape, fp8_dtype, accumulate):
     amax = torch.zeros(1024, z * 3, dtype=torch.float32, device="cuda")
 
     A_fp8 = [
-        torch.ops.tex_ts.cast_to_fp8_ts(
+        tex.cast_to_fp8(
             A[i],
             scale,
             amax,
             scale_inv,
-            i,  # fp8 meta tensor index
             tex.DType.kFloat8E4M3,
+            [-1, -1, 1],
+            i, i, i,  # fp8 meta tensor index
         )
         for i in range(z)
     ]
     B_fp8 = [
-        torch.ops.tex_ts.cast_to_fp8_ts(
+        tex.cast_to_fp8(
             B[i],
             scale,
             amax,
             scale_inv,
-            z + i,  # fp8 meta tensor index
             fp8_dtype,
+            [-1, -1, 1],
+            z + i, z + i, z + i,  # fp8 meta tensor index
         )
         for i in range(z)
     ]

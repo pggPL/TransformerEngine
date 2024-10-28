@@ -610,12 +610,12 @@ class _LayerNormLinear(torch.autograd.Function):
                         )
                         clear_tensor_data(ln_out_total_t, grad_output_t)
                     else:
-                        ln_out_total_c = torch.ops.tex_ts.cast_from_fp8_ts(
+                        ln_out_total_c = tex.cast_from_fp8(
                             ln_out_total,
                             ln_out_scale_inv,
-                            0,
                             fp8_dtype_forward,
                             TE_DType[ctx.activation_dtype],
+                            0,
                         )
                         wgrad, _, _ = tex.gemm(
                             ln_out_total_c,
