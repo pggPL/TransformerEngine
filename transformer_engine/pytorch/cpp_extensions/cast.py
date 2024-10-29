@@ -46,7 +46,7 @@ def cast_to_fp8(
             fp8_scales["amax"],
             fp8_scales["scale_inv"],
             otype,
-            [-1, -1, 1],  #TODO(ksivaman): fix
+            [-1, -1, 1],  # TODO(ksivaman): fix
             fp8_scales_offsets["scale_offset"],
             fp8_scales_offsets["amax_offset"],
             fp8_scales_offsets["scale_inv_offset"],
@@ -59,7 +59,7 @@ def cast_to_fp8(
             fp8_scales["amax"],
             fp8_scales["scale_inv"],
             otype,
-            [-1, -1, 1],  #TODO(ksivaman): fix
+            [-1, -1, 1],  # TODO(ksivaman): fix
             fp8_scales_offsets["scale_offset"],
             fp8_scales_offsets["amax_offset"],
             fp8_scales_offsets["scale_inv_offset"],

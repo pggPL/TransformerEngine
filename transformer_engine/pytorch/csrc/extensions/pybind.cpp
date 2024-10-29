@@ -44,6 +44,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("bias"), py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
         py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"),
         py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+  m.def("layernorm_fwd_fp8_inf", &layernorm_fwd_fp8_inf, "LN FWD FP8 for inference",
+        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
+        py::arg("bias"), py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
+        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"),
+        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("layernorm_fwd_fp8_noalloc", &layernorm_fwd_fp8_noalloc, "LN FWD FP8",
         py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
         py::arg("bias"), py::arg("eps"), py::arg("scale"), py::arg("ln_out"), py::arg("amax"),
@@ -52,9 +57,16 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("scale_inv_offset") = 0);
   m.def("layernorm_bwd", &layernorm_bwd, "LN BWD", py::call_guard<py::gil_scoped_release>());
   m.def("layernorm_fwd", &layernorm_fwd, "LN FWD", py::call_guard<py::gil_scoped_release>());
+  m.def("layernorm_fwd_inf", &layernorm_fwd_inf, "LN FWD for inference",
+        py::call_guard<py::gil_scoped_release>());
   m.def("layernorm_fwd_noalloc", &layernorm_fwd_noalloc, "LN FWD",
         py::call_guard<py::gil_scoped_release>());
   m.def("rmsnorm_fwd_fp8", &rmsnorm_fwd_fp8, "RMSNorm FWD FP8",
+        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
+        py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
+        py::arg("sm_margin"), py::arg("zero_centered_gamma"), py::arg("scale_offset") = 0,
+        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+  m.def("rmsnorm_fwd_fp8_inf", &rmsnorm_fwd_fp8_inf, "RMSNorm FWD FP8 for inference",
         py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
         py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
         py::arg("sm_margin"), py::arg("zero_centered_gamma"), py::arg("scale_offset") = 0,
@@ -66,6 +78,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("rmsnorm_bwd", &rmsnorm_bwd, "RMSNorm BWD", py::call_guard<py::gil_scoped_release>());
   m.def("rmsnorm_fwd", &rmsnorm_fwd, "RMSNorm FWD", py::call_guard<py::gil_scoped_release>());
+  m.def("rmsnorm_fwd_inf", &rmsnorm_fwd_inf, "RMSNorm FWD for inference",
+        py::call_guard<py::gil_scoped_release>());
   m.def("rmsnorm_fwd_noalloc", &rmsnorm_fwd_noalloc, "RMSNorm FWD",
         py::call_guard<py::gil_scoped_release>());
   m.def("fused_cast_transpose", &fused_cast_transpose, "Fused Cast + Transpose",
@@ -165,6 +179,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("te_gemm", &te_gemm, "CublasLt GEMM");  /// TODO Think
   m.def("te_grouped_gemm", &te_grouped_gemm, "Grouped GEMM");
+  m.def("te_grouped_gemm_single_output", &te_grouped_gemm_single_output,
+        "Grouped GEMM with single output");
   m.def("fused_attn_fwd_qkvpacked", &fused_attn_fwd_qkvpacked,
         "Fused Attention FP8/BF16/FP16 FWD with packed QKV",
         py::call_guard<py::gil_scoped_release>());
