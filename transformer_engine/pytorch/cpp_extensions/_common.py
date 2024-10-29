@@ -85,9 +85,11 @@ def canonicalize_fp8_scales(
         assert (
             fp8_meta is not None and fp8_meta_index is not None
         ), "`fp8_meta` and `fp8_meta_index` not provided."
-        tensors = {"scale": scale[scale_offset],
-                   "amax": amax[0][amax_offset],
-                   "scale_inv": scale_inv[scale_inv_offset]}
+        tensors = {
+            "scale": scale[scale_offset],
+            "amax": amax[0][amax_offset],
+            "scale_inv": scale_inv[scale_inv_offset],
+        }
         return tensors, {}
 
     # Pack tensors and offsets into dicts

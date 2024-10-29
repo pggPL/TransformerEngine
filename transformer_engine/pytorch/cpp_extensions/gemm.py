@@ -22,8 +22,11 @@ __all__ = [
 # TODO(ksivamani): only for debug; to remove.
 import os
 
+
 def _dummy_block_scaling():
     return bool(int(os.getenv("_NVTE_MXFP8_GEMM_DEBUG", "0")))
+
+
 _DUMMY_BLOCK_SCALING_SIZE = 32
 
 
@@ -666,7 +669,7 @@ def fp8_grouped_gemm(
             workspaces[0].shape[0],
             accumulate,
             use_split_accumulator,
-            sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count)))
+            sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),
         )
 
     return out, gelu_input

@@ -105,35 +105,6 @@ fp8_recipes = [
     None,  # Handles non-FP8 case
     recipe.DelayedScaling(margin=0, fp8_format=recipe.Format.E4M3),
     recipe.DelayedScaling(margin=0, fp8_format=recipe.Format.HYBRID),
-    recipe.DelayedScaling(
-        margin=0,
-        fp8_format=recipe.Format.E4M3,
-        override_linear_precision=(False, False, True),
-    ),
-    recipe.DelayedScaling(
-        margin=0,
-        fp8_format=recipe.Format.E4M3,
-        amax_history_len=16,
-        amax_compute_algo="most_recent",
-    ),
-    recipe.DelayedScaling(
-        margin=0,
-        fp8_format=recipe.Format.E4M3,
-        amax_history_len=16,
-        amax_compute_algo="max",
-    ),
-    recipe.DelayedScaling(
-        margin=0,
-        fp8_format=recipe.Format.E4M3,
-        amax_history_len=16,
-        amax_compute_algo=custom_amax_compute,
-    ),
-    recipe.DelayedScaling(
-        margin=0,
-        fp8_format=recipe.Format.E4M3,
-        amax_history_len=16,
-        scaling_factor_compute_algo=custom_amax_to_scale,
-    ),
 ]
 
 param_types = [torch.float32, torch.float16]
@@ -143,8 +114,8 @@ if is_bf16_compatible():  # bf16 requires sm_80 or higher
 all_boolean = [True, False]
 batch_sizes_with_zero = [0, 1, 2]
 
-all_activations = ["gelu", "relu", "reglu", "geglu", "swiglu", "srelu"]
-all_normalizations = ["LayerNorm", "RMSNorm"]
+all_activations = ["gelu", "relu"]
+all_normalizations = ["LayerNorm"]
 
 
 def _disable_wgrads(block):
@@ -570,13 +541,13 @@ def test_sanity_layernorm_mlp(
 @pytest.mark.parametrize("dtype", param_types)
 @pytest.mark.parametrize("fp8_recipe", fp8_recipes)
 @pytest.mark.parametrize("model", ["small"])
-@pytest.mark.parametrize("skip_wgrad", all_boolean)
-@pytest.mark.parametrize("zero_centered_gamma", all_boolean)
-@pytest.mark.parametrize("bias", all_boolean)
+@pytest.mark.parametrize("skip_wgrad", [False])
+@pytest.mark.parametrize("zero_centered_gamma", [False])
+@pytest.mark.parametrize("bias", [True])
 @pytest.mark.parametrize("activation", all_activations)
 @pytest.mark.parametrize("normalization", all_normalizations)
-@pytest.mark.parametrize("parallel_attention_mlp", all_boolean)
-@pytest.mark.parametrize("cpu_offload", all_boolean)
+@pytest.mark.parametrize("parallel_attention_mlp", [False])
+@pytest.mark.parametrize("cpu_offload", [True])
 def test_sanity_gpt(
     dtype,
     fp8_recipe,

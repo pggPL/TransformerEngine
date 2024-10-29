@@ -502,7 +502,9 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
             # Max. number of fp8 tensors per GEMM = 3 (input, weight, output) for fwd and
             # 2 (grad_output and grad_input) for bwd
-            num_fp8_tensors = self.fp8_meta["num_gemms"] * 3 if fwd else self.fp8_meta["num_gemms"] * 2
+            num_fp8_tensors = (
+                self.fp8_meta["num_gemms"] * 3 if fwd else self.fp8_meta["num_gemms"] * 2
+            )
             self.fp8_meta[fp8_meta_tensor_key] = tex.FP8TensorMeta()
 
             self.fp8_meta[fp8_meta_tensor_key].scale = torch.ones(
@@ -519,18 +521,20 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             )
         elif self.fp8_meta["recipe"].current():
             self.fp8_meta[fp8_meta_tensor_key] = tex.MXFP8TensorMeta()
-            self.fp8_meta[fp8_meta_tensor_key].scale = [torch.ones(
-                num_fp8_tensors, dtype=torch.float32, device="cuda"
-            )]
-            self.fp8_meta[fp8_meta_tensor_key].scale_inv = [torch.ones(
-                num_fp8_tensors, dtype=torch.float32, device="cuda"
-            )]
-            self.fp8_meta[fp8_meta_tensor_key].amax_history = [torch.zeros(
-                self.fp8_meta["recipe"].amax_history_len,
-                num_fp8_tensors,
-                dtype=torch.float32,
-                device="cuda",
-            )]
+            self.fp8_meta[fp8_meta_tensor_key].scale = [
+                torch.ones(num_fp8_tensors, dtype=torch.float32, device="cuda")
+            ]
+            self.fp8_meta[fp8_meta_tensor_key].scale_inv = [
+                torch.ones(num_fp8_tensors, dtype=torch.float32, device="cuda")
+            ]
+            self.fp8_meta[fp8_meta_tensor_key].amax_history = [
+                torch.zeros(
+                    self.fp8_meta["recipe"].amax_history_len,
+                    num_fp8_tensors,
+                    dtype=torch.float32,
+                    device="cuda",
+                )
+            ]
 
     def init_fp8_meta_tensors(self, inp_shape: Optional[torch.Size] = None) -> None:
         """Init scales and amaxes."""

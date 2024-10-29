@@ -7,8 +7,9 @@
 #include "extensions.h"
 
 at::Tensor cast_to_fp8(const at::Tensor& input, const at::Tensor& scale, at::Tensor amax,
-                       at::Tensor scale_inv, transformer_engine::DType otype, std::vector<int64_t> scaling_mode,
-                       const int scale_offset, const int amax_offset, const int scale_inv_offset) {
+                       at::Tensor scale_inv, transformer_engine::DType otype,
+                       std::vector<int64_t> scaling_mode, const int scale_offset,
+                       const int amax_offset, const int scale_inv_offset) {
   using namespace transformer_engine;
   auto input_shape = input.sizes().vec();
   std::vector<size_t> shape{input_shape.begin(), input_shape.end()};

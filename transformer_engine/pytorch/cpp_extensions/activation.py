@@ -32,11 +32,11 @@ def gelu(
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=True,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.gelu_ts(
+    return tex.gelu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
@@ -64,11 +64,11 @@ def relu(
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=True,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.relu_ts(
+    return tex.relu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
@@ -96,11 +96,11 @@ def geglu(
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=True,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.geglu_ts(
+    return tex.geglu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
@@ -128,11 +128,11 @@ def reglu(
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=True,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.reglu_ts(
+    return tex.reglu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
@@ -160,11 +160,11 @@ def swiglu(
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=True,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.swiglu_ts(
+    return tex.swiglu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
@@ -192,11 +192,11 @@ def qgelu(
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=True,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.qgelu_ts(
+    return tex.qgelu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
@@ -224,11 +224,11 @@ def srelu(
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=True,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.srelu_ts(
+    return tex.srelu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
