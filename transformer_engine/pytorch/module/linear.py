@@ -126,9 +126,8 @@ class _Linear(torch.autograd.Function):
                 update_workspace = is_first_microbatch is None or is_first_microbatch
                 weight_fp8 = module.get_weight_workspace(
                     tensor=weight,
-                    quantization_params=fp8_meta["scaling_fwd"].get_quantization_params(
-                        tex.FP8FwdTensors.GEMM1_WEIGHT
-                    ),
+                    quantizer=fp8_meta["scaling_fwd"],
+                    tensor_index=tex.FP8FwdTensors.GEMM1_WEIGHT,
                     cache_name=(None if is_first_microbatch is None else "weight"),
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
@@ -188,7 +187,7 @@ class _Linear(torch.autograd.Function):
             saved_inputmat = None
             if backward_needs_input:
                 if own_quantized_input and isinstance(inputmat, QuantizedTensor):
-                    inputmat.update_usage(rowwise=False)
+                    inputmat.update_usage(rowwise_usage=False)
                 if fp8:
                     saved_inputmat = inputmat
                 else:

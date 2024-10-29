@@ -107,7 +107,7 @@ class QuantizedTensor(torch.Tensor):
             f"{self.__class__.__name__} class does not implement detach function"
         )
 
-    def update_usage(self, rowwise=True, columnwise=True):
+    def update_usage(self, rowwise_usage=True, columnwise_usage=True):
         """Indicate to the tensor how it is going to be used.
         This enables optimizations to memory usage in some cases
         where forward and backward passes use the tensor in
