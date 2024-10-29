@@ -69,17 +69,9 @@ struct type_caster<transformer_engine::pytorch::Float8Tensor> {
 
 }  // namespace pybind11::detail
 
-template <typename InputType>
-using GemmFunc = std::vector<at::Tensor> (*)(InputType, bool, InputType, bool, MaybeTensor,
-                                             MaybeTensor, transformer_engine::DType, MaybeTensor,
-                                             MaybeTensor, transformer_engine::DType, bool, bool,
-                                             at::Tensor, size_t, bool, bool);
-
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("generic_cast", transformer_engine::pytorch::cast);
-  m.def("te_gemm2", static_cast<GemmFunc<transformer_engine::Float8Tensor>>(&te_gemm2),
-        "CublasLt GEMM");
-  m.def("te_gemm2", static_cast<GemmFunc<at::Tensor>>(&te_gemm2), "CublasLt GEMM");
+  m.def("generic_gemm", transformer_engine::pytorch::gemm);
 
   // Permutation functions
   m.def("moe_permute_fwd", moe_permute_fwd);
@@ -349,11 +341,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
 
   // Data structures
-  py::class_<transformer_engine::FP8TensorMeta>(m, "FP8TensorMeta")
+  py::class_<transformer_engine::pytorch::FP8TensorMeta>(m, "FP8TensorMeta")
       .def(py::init<>())
-      .def_readwrite("scale", &transformer_engine::FP8TensorMeta::scale)
-      .def_readwrite("scale_inv", &transformer_engine::FP8TensorMeta::scale_inv)
-      .def_readwrite("amax_history", &transformer_engine::FP8TensorMeta::amax_history);
+      .def_readwrite("scale", &transformer_engine::pytorch::FP8TensorMeta::scale)
+      .def_readwrite("scale_inv", &transformer_engine::pytorch::FP8TensorMeta::scale_inv)
+      .def_readwrite("amax_history", &transformer_engine::pytorch::FP8TensorMeta::amax_history);
 
   m.def("get_stream_priority_range", &transformer_engine::cuda::get_stream_priority_range,
         py::call_guard<py::gil_scoped_release>(), py::arg("device_id") = -1);
@@ -452,24 +444,24 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       .value("kFloat8E4M3", transformer_engine::DType::kFloat8E4M3)
       .value("kFloat8E5M2", transformer_engine::DType::kFloat8E5M2);
 
-  py::enum_<transformer_engine::FP8FwdTensors>(m, "FP8FwdTensors")
-      .value("GEMM1_INPUT", transformer_engine::FP8FwdTensors::GEMM1_INPUT)
-      .value("GEMM1_WEIGHT", transformer_engine::FP8FwdTensors::GEMM1_WEIGHT)
-      .value("GEMM1_OUTPUT", transformer_engine::FP8FwdTensors::GEMM1_OUTPUT)
-      .value("GEMM2_INPUT", transformer_engine::FP8FwdTensors::GEMM2_INPUT)
-      .value("GEMM2_WEIGHT", transformer_engine::FP8FwdTensors::GEMM2_WEIGHT)
-      .value("GEMM2_OUTPUT", transformer_engine::FP8FwdTensors::GEMM2_OUTPUT)
-      .value("GEMM3_INPUT", transformer_engine::FP8FwdTensors::GEMM3_INPUT)
-      .value("GEMM3_WEIGHT", transformer_engine::FP8FwdTensors::GEMM3_WEIGHT)
-      .value("GEMM3_OUTPUT", transformer_engine::FP8FwdTensors::GEMM3_OUTPUT);
+  py::enum_<transformer_engine::pytorch::FP8FwdTensors>(m, "FP8FwdTensors")
+      .value("GEMM1_INPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM1_INPUT)
+      .value("GEMM1_WEIGHT", transformer_engine::pytorch::FP8FwdTensors::GEMM1_WEIGHT)
+      .value("GEMM1_OUTPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM1_OUTPUT)
+      .value("GEMM2_INPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM2_INPUT)
+      .value("GEMM2_WEIGHT", transformer_engine::pytorch::FP8FwdTensors::GEMM2_WEIGHT)
+      .value("GEMM2_OUTPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM2_OUTPUT)
+      .value("GEMM3_INPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM3_INPUT)
+      .value("GEMM3_WEIGHT", transformer_engine::pytorch::FP8FwdTensors::GEMM3_WEIGHT)
+      .value("GEMM3_OUTPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM3_OUTPUT);
 
-  py::enum_<transformer_engine::FP8BwdTensors>(m, "FP8BwdTensors")
-      .value("GRAD_OUTPUT1", transformer_engine::FP8BwdTensors::GRAD_OUTPUT1)
-      .value("GRAD_INPUT1", transformer_engine::FP8BwdTensors::GRAD_INPUT1)
-      .value("GRAD_OUTPUT2", transformer_engine::FP8BwdTensors::GRAD_OUTPUT2)
-      .value("GRAD_INPUT2", transformer_engine::FP8BwdTensors::GRAD_INPUT2)
-      .value("GRAD_OUTPUT3", transformer_engine::FP8BwdTensors::GRAD_OUTPUT3)
-      .value("GRAD_INPUT3", transformer_engine::FP8BwdTensors::GRAD_INPUT3);
+  py::enum_<transformer_engine::pytorch::FP8BwdTensors>(m, "FP8BwdTensors")
+      .value("GRAD_OUTPUT1", transformer_engine::pytorch::FP8BwdTensors::GRAD_OUTPUT1)
+      .value("GRAD_INPUT1", transformer_engine::pytorch::FP8BwdTensors::GRAD_INPUT1)
+      .value("GRAD_OUTPUT2", transformer_engine::pytorch::FP8BwdTensors::GRAD_OUTPUT2)
+      .value("GRAD_INPUT2", transformer_engine::pytorch::FP8BwdTensors::GRAD_INPUT2)
+      .value("GRAD_OUTPUT3", transformer_engine::pytorch::FP8BwdTensors::GRAD_OUTPUT3)
+      .value("GRAD_INPUT3", transformer_engine::pytorch::FP8BwdTensors::GRAD_INPUT3);
 
   py::enum_<NVTE_Bias_Type>(m, "NVTE_Bias_Type")
       .value("NVTE_NO_BIAS", NVTE_Bias_Type::NVTE_NO_BIAS)

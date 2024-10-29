@@ -10,6 +10,7 @@ std::vector<at::Tensor> layernorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                       const at::Tensor &mu, const at::Tensor &rsigma,
                                       const at::Tensor &gamma, const int sm_margin,
                                       const bool zero_centered_gamma) {
+  using namespace transformer_engine::pytorch;
   const auto &dz_ = dz.contiguous();
   const auto &x_ = x.contiguous();
   const auto &mu_ = mu.contiguous();
@@ -70,7 +71,7 @@ std::vector<at::Tensor> layernorm_fwd_fp8(const at::Tensor &input, const at::Ten
                                           transformer_engine::DType otype, const int sm_margin,
                                           const bool zero_centered_gamma, const int scale_offset,
                                           const int amax_offset, const int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   const auto &input_ = input.contiguous();
 
@@ -85,7 +86,7 @@ std::vector<at::Tensor> layernorm_fwd_fp8_noalloc(
     at::Tensor scale, at::Tensor ln_out, at::Tensor amax, at::Tensor scale_inv,
     transformer_engine::DType otype, const int sm_margin, const bool zero_centered_gamma,
     const int scale_offset, const int amax_offset, const int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   const auto &input_ = input.contiguous();
   const auto &weight_ = weight.contiguous();
@@ -161,7 +162,7 @@ at::Tensor layernorm_fwd_fp8_inf(const at::Tensor &input, const at::Tensor &weig
 std::vector<at::Tensor> layernorm_fwd(const at::Tensor &input, const at::Tensor &weight,
                                       const at::Tensor &bias, float eps, const int sm_margin,
                                       const bool zero_centered_gamma) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   DType itype = GetTransformerEngineDType(input.scalar_type());
   const auto &input_ = input.contiguous();
@@ -173,7 +174,7 @@ std::vector<at::Tensor> layernorm_fwd(const at::Tensor &input, const at::Tensor 
 std::vector<at::Tensor> layernorm_fwd_noalloc(const at::Tensor &input, const at::Tensor &weight,
                                               const at::Tensor &bias, at::Tensor ln_out, float eps,
                                               const int sm_margin, const bool zero_centered_gamma) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   DType itype = GetTransformerEngineDType(input.scalar_type());
 
@@ -194,6 +195,7 @@ at::Tensor layernorm_fwd_inf(const at::Tensor &input, const at::Tensor &weight,
 std::vector<at::Tensor> rmsnorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                     const at::Tensor &rsigma, const at::Tensor &gamma,
                                     const int sm_margin, const bool zero_centered_gamma) {
+  using namespace transformer_engine::pytorch;
   const auto &dz_ = dz.contiguous();
   const auto &x_ = x.contiguous();
   const auto &rsigma_ = rsigma.contiguous();
@@ -245,7 +247,7 @@ std::vector<at::Tensor> rmsnorm_fwd_fp8(const at::Tensor &input, const at::Tenso
                                         const int sm_margin, const bool zero_centered_gamma,
                                         const int scale_offset, const int amax_offset,
                                         const int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   const auto &input_ = input.contiguous();
   const auto &weight_ = weight.contiguous();
@@ -263,7 +265,7 @@ std::vector<at::Tensor> rmsnorm_fwd_fp8_noalloc(const at::Tensor &input, const a
                                                 const int sm_margin, const bool zero_centered_gamma,
                                                 const int scale_offset, const int amax_offset,
                                                 const int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Choose kernel implementation
   const auto func = zero_centered_gamma ? nvte_rmsnorm1p_fwd : nvte_rmsnorm_fwd;
@@ -327,7 +329,7 @@ at::Tensor rmsnorm_fwd_fp8_inf(const at::Tensor &input, const at::Tensor &weight
 
 std::vector<at::Tensor> rmsnorm_fwd(const at::Tensor &input, const at::Tensor &weight, float eps,
                                     const int sm_margin, const bool zero_centered_gamma) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   const auto &input_ = input.contiguous();
   const auto &weight_ = weight.contiguous();
@@ -341,7 +343,7 @@ std::vector<at::Tensor> rmsnorm_fwd(const at::Tensor &input, const at::Tensor &w
 std::vector<at::Tensor> rmsnorm_fwd_noalloc(const at::Tensor &input, const at::Tensor &weight,
                                             at::Tensor ln_out, float eps, const int sm_margin,
                                             const bool zero_centered_gamma) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   DType itype = GetTransformerEngineDType(input.scalar_type());
 

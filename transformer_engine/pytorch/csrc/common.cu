@@ -63,7 +63,7 @@ TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantiza
   auto ret = TensorWrapper(qparams->get_scaling_mode());
   ret.set_rowwise_data(torch_tensor.data_ptr(),
                        GetTransformerEngineDType(torch_tensor.scalar_type()),
-                       getShape(getTensorShape(torch_tensor)));
+                       getTensorShape(torch_tensor));
   qparams->set_quantization_params(&ret);
   return ret;
 }

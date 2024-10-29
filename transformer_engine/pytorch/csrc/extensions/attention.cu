@@ -91,6 +91,7 @@ std::vector<at::Tensor> fused_attn_fwd_qkvpacked(
     c10::optional<at::Tensor> amax_S, const int amax_S_offset, c10::optional<at::Tensor> amax_O,
     const int amax_O_offset, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread) {
+  using namespace transformer_engine::pytorch;
   using namespace transformer_engine;
 
   auto qkv_sizes = QKV.sizes().vec();
@@ -261,6 +262,7 @@ std::vector<at::Tensor> fused_attn_bwd_qkvpacked(
     const c10::optional<at::Tensor> scale_dQKV, c10::optional<at::Tensor> amax_dP,
     c10::optional<at::Tensor> amax_dQKV) {
   using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   auto qkv_sizes = QKV.sizes().vec();
   std::vector<size_t> qkv_shape{qkv_sizes.begin(), qkv_sizes.end()};
@@ -431,6 +433,7 @@ std::vector<at::Tensor> fused_attn_fwd_kvpacked(
     const int amax_O_offset, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread) {
   using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   auto q_sizes = Q.sizes().vec();
   std::vector<size_t> q_shape{q_sizes.begin(), q_sizes.end()};
@@ -602,6 +605,7 @@ std::vector<at::Tensor> fused_attn_bwd_kvpacked(
     const c10::optional<at::Tensor> scale_dP, const c10::optional<at::Tensor> scale_dQKV,
     c10::optional<at::Tensor> amax_dP, c10::optional<at::Tensor> amax_dQKV) {
   using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   auto q_sizes = Q.sizes().vec();
   std::vector<size_t> q_shape{q_sizes.begin(), q_sizes.end()};
@@ -790,6 +794,7 @@ std::vector<at::Tensor> fused_attn_fwd(
     const int amax_O_offset, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread) {
   using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   auto q_sizes = Q.sizes().vec();
   std::vector<size_t> q_shape{q_sizes.begin(), q_sizes.end()};
@@ -970,6 +975,7 @@ std::vector<at::Tensor> fused_attn_bwd(
     const c10::optional<at::Tensor> scale_dP, const c10::optional<at::Tensor> scale_dQKV,
     c10::optional<at::Tensor> amax_dP, c10::optional<at::Tensor> amax_dQKV) {
   using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   auto q_sizes = Q.sizes().vec();
   std::vector<size_t> q_shape{q_sizes.begin(), q_sizes.end()};

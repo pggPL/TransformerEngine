@@ -336,34 +336,42 @@ class TensorWrapper {
   }
 
   // Parameter setters
+  template <typename ShapeType>
   TensorWrapper& set_parameter(const NVTETensorParam param, void* dptr,
-                               DType type, const NVTEShape& shape) noexcept {
-    NVTEBasicTensor data = {dptr, static_cast<NVTEDType>(type), shape};
+                               DType type, const ShapeType& shape) noexcept {
+    NVTEShape nvte_shape = this->convertShape(shape);
+    NVTEBasicTensor data = {dptr, static_cast<NVTEDType>(type), nvte_shape};
     nvte_set_tensor_param(&tensor_, param, &data);
     return *this;
   }
 
-  TensorWrapper& set_rowwise_data(void* dptr, DType type, const NVTEShape& shape) noexcept {
+  template <typename ShapeType>
+  TensorWrapper& set_rowwise_data(void* dptr, DType type, const ShapeType& shape) noexcept {
     return set_parameter(kNVTERowwiseData, dptr, type, shape);
   }
 
-  TensorWrapper& set_columnwise_data(void* dptr, DType type, const NVTEShape& shape) noexcept {
+  template <typename ShapeType>
+  TensorWrapper& set_columnwise_data(void* dptr, DType type, const ShapeType& shape) noexcept {
     return set_parameter(kNVTEColumnwiseData, dptr, type, shape);
   }
 
-  TensorWrapper& set_scale(void* dptr, DType type, const NVTEShape& shape) noexcept {
+  template <typename ShapeType>
+  TensorWrapper& set_scale(void* dptr, DType type, const ShapeType& shape) noexcept {
     return set_parameter(kNVTEScale, dptr, type, shape);
   }
 
-  TensorWrapper& set_amax(void* dptr, DType type, const NVTEShape& shape) noexcept {
+  template <typename ShapeType>
+  TensorWrapper& set_amax(void* dptr, DType type, const ShapeType& shape) noexcept {
     return set_parameter(kNVTEAmax, dptr, type, shape);
   }
 
-  TensorWrapper& set_rowwise_scale_inv(void* dptr, DType type, const NVTEShape& shape) noexcept {
+  template <typename ShapeType>
+  TensorWrapper& set_rowwise_scale_inv(void* dptr, DType type, const ShapeType& shape) noexcept {
     return set_parameter(kNVTERowwiseScaleInv, dptr, type, shape);
   }
 
-  TensorWrapper& set_columnwise_scale_inv(void* dptr, DType type, const NVTEShape& shape) noexcept {
+  template <typename ShapeType>
+  TensorWrapper& set_columnwise_scale_inv(void* dptr, DType type, const ShapeType& shape) noexcept {
     return set_parameter(kNVTEColumnwiseScaleInv, dptr, type, shape);
   }
 
@@ -479,13 +487,17 @@ class TensorWrapper {
   static constexpr NVTEShape defaultShape = {&defaultData, 1};
 
  private:
+  NVTEShape convertShape(const NVTEShape& s) {
+    return s;
+  }
+
+  NVTEShape convertShape(const std::vector<size_t>& s) {
+    return {s.data(), s.size()};
+  }
+
   /*! \brief Wrapped NVTETensor. */
   NVTETensor tensor_ = nullptr;
 };
-
-inline NVTEShape getShape(const std::vector<size_t>& v) {
-  return {v.data(), v.size()};
-}
 
 }  // namespace transformer_engine
 

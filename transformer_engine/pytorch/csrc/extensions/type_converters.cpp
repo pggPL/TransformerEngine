@@ -16,7 +16,7 @@ TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, QuantizationParams* 
   float *scale_inv_dptr = reinterpret_cast<float*>(scale_inv.data_ptr());
   const DType dtype = tensor.attr("_fp8_dtype").cast<DType>();
 
-  const auto& shape = getShape(getTensorShape(data));
+  const auto& shape = getTensorShape(data);
 
   bool transpose_valid = !tensor.attr("_transpose_invalid").cast<bool>();
   std::optional<at::Tensor> transpose = std::nullopt;
@@ -27,12 +27,12 @@ TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, QuantizationParams* 
   auto ret = TensorWrapper(quantization_params->get_scaling_mode());
   ret.set_rowwise_data(data.data_ptr(), dtype, shape);
   if (transpose_valid && transpose != std::nullopt) {
-    const auto& transpose_shape = getShape(getTensorShape(*transpose));
+    const auto& transpose_shape = getTensorShape(*transpose);
     ret.set_columnwise_data(transpose->data_ptr(), dtype, transpose_shape);
   }
 
   const auto scale_inv_dtype = GetTransformerEngineDType(scale_inv.scalar_type());
-  const auto scale_inv_shape = getShape(getTensorShape(scale_inv));
+  const auto scale_inv_shape = getTensorShape(scale_inv);
   ret.set_rowwise_scale_inv(scale_inv_dptr,
                             scale_inv_dtype,
                             scale_inv_shape);

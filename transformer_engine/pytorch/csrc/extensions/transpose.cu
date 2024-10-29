@@ -11,7 +11,7 @@
 void fused_cast_transpose(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
                           at::Tensor input_cast, at::Tensor input_transpose,
                           transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t M = static_cast<size_t>(input.size(0));
   size_t N = static_cast<size_t>(input.size(1));
@@ -32,7 +32,7 @@ void fused_cast_transpose_noop(at::Tensor input, at::Tensor noop, at::Tensor sca
                                at::Tensor scale_inv, at::Tensor input_cast,
                                at::Tensor input_transpose, transformer_engine::DType otype,
                                int scale_offset, int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(input.size(0));
@@ -61,7 +61,7 @@ std::vector<at::Tensor> fused_cast_transpose_bgrad(at::Tensor grad_output, at::T
                                                    transformer_engine::DType otype,
                                                    int scale_offset, int amax_offset,
                                                    int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -114,7 +114,7 @@ std::vector<at::Tensor> fused_fp8_transpose_bgrad(at::Tensor grad_output, at::Te
                                                   transformer_engine::DType grad_bias_type,
                                                   int scale_offset, int amax_offset,
                                                   int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -156,7 +156,7 @@ std::vector<at::Tensor> fused_cast_transpose_bgrad_dgelu(at::Tensor grad_output,
                                                          transformer_engine::DType otype,
                                                          int scale_offset, int amax_offset,
                                                          int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -205,7 +205,7 @@ void fused_multi_cast_transpose_base(std::vector<at::Tensor> input_list,
                                      std::vector<void*> amax_dptr_list,
                                      std::vector<void*> scale_inv_dptr_list,
                                      transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Extract properties from PyTorch tensors
   std::vector<void*> input_dptr_list, cast_output_dptr_list, transposed_output_dptr_list;
@@ -299,7 +299,7 @@ std::tuple<std::vector<at::Tensor>, std::vector<at::Tensor>> fused_multi_cast_tr
     std::vector<at::Tensor> input_list, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
     std::vector<int> scale_indices, std::vector<int> amax_indices,
     std::vector<int> scale_inv_indices, transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   std::vector<at::Tensor> cast_output_list;
   std::vector<at::Tensor> transposed_output_list;
@@ -326,7 +326,7 @@ std::tuple<std::vector<at::Tensor>, std::vector<at::Tensor>> fused_multi_cast_tr
 }
 
 at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype, std::optional<at::Tensor> output) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   const auto dim = input.dim();
   NVTE_CHECK(dim >= 2, "Need at least 2D tensor to transpose.");
@@ -356,7 +356,7 @@ at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype, std:
 
 void fp8_transpose_noalloc_noop(at::Tensor input, at::Tensor output, at::Tensor noop,
                                 transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t M = static_cast<size_t>(input.size(0));
   size_t N = static_cast<size_t>(input.size(1));

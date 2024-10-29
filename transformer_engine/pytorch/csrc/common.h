@@ -101,8 +101,8 @@ class QuantizationParams {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const = 0;
 
-  virtual py::handle create_tensor(const std::vector<size_t>& shape,
-                                   DType dtype) const = 0;
+  virtual std::pair<TensorWrapper, py::handle> create_tensor(const std::vector<size_t>& shape,
+                                                             DType dtype) const = 0;
 };
 
 class NoneQuantizationParams : public QuantizationParams {
@@ -113,8 +113,8 @@ class NoneQuantizationParams : public QuantizationParams {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override {}
 
-  virtual py::handle create_tensor(const std::vector<size_t>& shape,
-                                   DType dtype) const override;
+  virtual std::pair<TensorWrapper, py::handle> create_tensor(const std::vector<size_t>& shape,
+                                                             DType dtype) const override;
 };
 
 class Float8Params : public QuantizationParams {
@@ -129,8 +129,8 @@ class Float8Params : public QuantizationParams {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;
 
-  virtual py::handle create_tensor(const std::vector<size_t>& shape,
-                                   DType dtype) const override;
+  virtual std::pair<TensorWrapper, py::handle> create_tensor(const std::vector<size_t>& shape,
+                                                             DType dtype) const override;
 };
 
 std::unique_ptr<QuantizationParams> convert_quantization_params(py::handle params);
@@ -247,6 +247,19 @@ namespace std {
     string ret = "[";
     for (const auto& val : vec) {
       ret += to_string(val) + ",";
+    }
+    if (ret.size() > 1) {
+      ret[ret.size() - 1] = ']';
+    } else {
+      ret += "]";
+    }
+    return ret;
+  }
+
+  inline string to_string(const NVTEShape& s) {
+    string ret = "[";
+    for (size_t i = 0; i < s.ndim; ++i) {
+      ret += to_string(s.data[i]) + ",";
     }
     if (ret.size() > 1) {
       ret[ret.size() - 1] = ']';

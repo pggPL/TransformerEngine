@@ -9,7 +9,7 @@
 at::Tensor gelu(at::Tensor input,
                 at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
                 transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -27,7 +27,7 @@ at::Tensor gelu(at::Tensor input,
 }
 
 at::Tensor dgelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -47,7 +47,7 @@ at::Tensor dgelu(at::Tensor grad, at::Tensor input, transformer_engine::DType ot
 
 at::Tensor relu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
                 transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = static_cast<size_t>(input.numel()) / N;
@@ -65,7 +65,7 @@ at::Tensor relu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor 
 }
 
 at::Tensor drelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -85,7 +85,7 @@ at::Tensor drelu(at::Tensor grad, at::Tensor input, transformer_engine::DType ot
 
 at::Tensor geglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
                  transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -104,7 +104,7 @@ at::Tensor geglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor
 }
 
 at::Tensor dgeglu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -124,7 +124,7 @@ at::Tensor dgeglu(at::Tensor grad, at::Tensor input, transformer_engine::DType o
 
 at::Tensor reglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
                  transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -143,7 +143,7 @@ at::Tensor reglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor
 }
 
 at::Tensor dreglu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -163,7 +163,7 @@ at::Tensor dreglu(at::Tensor grad, at::Tensor input, transformer_engine::DType o
 
 at::Tensor swiglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
                   transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -182,7 +182,7 @@ at::Tensor swiglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tenso
 }
 
 at::Tensor dswiglu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -202,7 +202,7 @@ at::Tensor dswiglu(at::Tensor grad, at::Tensor input, transformer_engine::DType 
 
 at::Tensor qgelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
                  transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -220,7 +220,7 @@ at::Tensor qgelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor
 }
 
 at::Tensor dqgelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;
@@ -240,7 +240,7 @@ at::Tensor dqgelu(at::Tensor grad, at::Tensor input, transformer_engine::DType o
 
 at::Tensor srelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
                  transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = static_cast<size_t>(input.numel()) / N;
@@ -258,7 +258,7 @@ at::Tensor srelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor
 }
 
 at::Tensor dsrelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   size_t N = static_cast<size_t>(input.size(-1));
   size_t M = input.numel() / N;

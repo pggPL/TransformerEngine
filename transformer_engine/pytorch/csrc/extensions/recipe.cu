@@ -17,6 +17,7 @@ void fused_amax_and_scale_update_after_reduction(
     std::vector<at::Tensor> scales, std::vector<at::Tensor> scale_invs,
     const std::string &amax_compute_algo, transformer_engine::DType fp8_dtype, float margin) {
   using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
   size_t num_tensors = amax_histories.size();
   std::vector<Tensor> t_amax_histories(num_tensors);
   std::vector<Tensor> t_scales(num_tensors);

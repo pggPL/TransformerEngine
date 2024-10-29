@@ -23,7 +23,7 @@ py::handle cast(const at::Tensor& tensor,
   auto input_tensor = tensor.contiguous();
   NVTE_CHECK(rowwise_usage || columnwise_usage,
              "Could not create a QuantizedTensor with no usage.");
-  if (detail::IsFloat8QParamsType(quantization_params.ptr())) {
+  if (detail::IsFloat8QParams(quantization_params.ptr())) {
     auto py_scale = quantization_params.attr("scale");
     auto py_amax = quantization_params.attr("amax");
     DType type = quantization_params.attr("dtype").cast<DType>();
@@ -84,7 +84,7 @@ py::handle cast(const at::Tensor& tensor,
 at::Tensor cast_to_fp8(const at::Tensor& input, const at::Tensor& scale, at::Tensor amax,
                        at::Tensor scale_inv, transformer_engine::DType otype,
                        const int scale_offset, const int amax_offset, const int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
   auto input_shape = input.sizes().vec();
   std::vector<size_t> shape{input_shape.begin(), input_shape.end()};
 
@@ -110,7 +110,7 @@ void cast_to_fp8_noalloc(const at::Tensor& input, const at::Tensor& scale, at::T
                          at::Tensor amax, at::Tensor scale_inv, transformer_engine::DType otype,
                          const int scale_offset, const int amax_offset,
                          const int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
   size_t N = static_cast<size_t>(input.size(0));
   size_t H = static_cast<size_t>(input.size(1));
 
@@ -131,7 +131,7 @@ void cast_to_fp8_noalloc(const at::Tensor& input, const at::Tensor& scale, at::T
 at::Tensor cast_from_fp8(const at::Tensor& input, const at::Tensor& scale_inv,
                          transformer_engine::DType itype, transformer_engine::DType otype,
                          const int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
   auto input_shape = input.sizes().vec();
   std::vector<size_t> shape{input_shape.begin(), input_shape.end()};
 
@@ -151,7 +151,7 @@ std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor& input, const at::Tensor
                                        transformer_engine::DType otype,
                                        std::vector<int64_t> scaling_mode, const int scale_offset,
                                        const int amax_offset, const int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
   auto input_shape = input.sizes().vec();
   std::vector<size_t> shape{input_shape.begin(), input_shape.end()};
 
@@ -193,7 +193,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor 
                                              at::Tensor scale_inv, transformer_engine::DType otype,
                                              std::vector<int64_t> scaling_mode, int scale_offset,
                                              int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -238,7 +238,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor 
                                              at::Tensor scale_inv, transformer_engine::DType otype,
                                              std::vector<int64_t> scaling_mode, int scale_offset,
                                              int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -283,7 +283,7 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor 
                                              at::Tensor scale_inv, transformer_engine::DType otype,
                                              std::vector<int64_t> scaling_mode, int scale_offset,
                                              int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -328,7 +328,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor
                                               at::Tensor scale_inv, transformer_engine::DType otype,
                                               std::vector<int64_t> scaling_mode, int scale_offset,
                                               int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -373,7 +373,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
                                               at::Tensor scale_inv, transformer_engine::DType otype,
                                               std::vector<int64_t> scaling_mode, int scale_offset,
                                               int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -417,7 +417,7 @@ std::vector<at::Tensor> fp8_cast_dbias_x2(const at::Tensor& input, const at::Ten
                                           at::Tensor amax, at::Tensor scale_inv,
                                           transformer_engine::DType otype, const int scale_offset,
                                           const int amax_offset, const int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
   auto input_shape = input.sizes().vec();
   std::vector<size_t> shape{input_shape.begin(), input_shape.end()};
 
@@ -468,7 +468,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dgelu_x2(at::Tensor grad_output, at::Tens
                                                 at::Tensor scale_inv,
                                                 transformer_engine::DType otype, int scale_offset,
                                                 int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -523,7 +523,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu_x2(at::Tensor grad_output, at::Tens
                                                 at::Tensor scale_inv,
                                                 transformer_engine::DType otype, int scale_offset,
                                                 int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -578,7 +578,7 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu_x2(at::Tensor grad_output, at::Tens
                                                 at::Tensor scale_inv,
                                                 transformer_engine::DType otype, int scale_offset,
                                                 int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -633,7 +633,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu_x2(at::Tensor grad_output, at::Ten
                                                  at::Tensor scale_inv,
                                                  transformer_engine::DType otype, int scale_offset,
                                                  int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
@@ -688,7 +688,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu_x2(at::Tensor grad_output, at::Ten
                                                  at::Tensor scale_inv,
                                                  transformer_engine::DType otype, int scale_offset,
                                                  int amax_offset, int scale_inv_offset) {
-  using namespace transformer_engine;
+  using namespace transformer_engine::pytorch;
 
   // Tensor dimensions
   size_t M = static_cast<size_t>(grad_output.size(0));
