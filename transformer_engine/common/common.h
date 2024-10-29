@@ -289,6 +289,17 @@ struct TypeInfo {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+inline size_t product(const std::vector<size_t> &shape,
+                      const size_t begin,
+                      const size_t end) {
+  NVTE_CHECK(end <= shape.size());
+  size_t ret = begin < end ? 1 : 0;
+  for (size_t i = begin; i < end; ++i) {
+    ret *= shape[i];
+  }
+  return ret;
+}
+
 inline size_t product(const std::vector<size_t> &shape) {
   size_t ret = 1;
   for (const auto &elem : shape) {

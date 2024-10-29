@@ -128,7 +128,7 @@ def general_gemm(
         False,  # transb
         out,
         quantization_params,
-        TE_DType[out_dtype] is out_dtype is not None else None,
+        TE_DType[out_dtype] if out_dtype is not None else None,
         bias,
         bias_dtype,
         gelu,
@@ -138,7 +138,7 @@ def general_gemm(
         accumulate,
         use_split_accumulator,
     )
-    fn = tex.te_gemm2
+    fn = tex.generic_gemm
     if ub_algo is not None:
         raise ValueError("Not implemented yet!")
         assert ub is not None, "ub object is None!"

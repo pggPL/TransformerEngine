@@ -142,23 +142,9 @@ bool is_columnwise_block_scaling(const Tensor *t) {
 
 }  // namespace transformer_engine
 
-NVTETensor nvte_create_tensor(void *dptr, const NVTEShape shape, const NVTEDType dtype, float *amax,
-                              float *scale, float *scale_inv, const NVTEShape scale_inv_shape,
-                              NVTEScalingMode scaling_mode) {
+NVTETensor nvte_create_tensor(NVTEScalingMode scaling_mode) {
   transformer_engine::Tensor *ret = new transformer_engine::Tensor;
-  ret->data.dptr = dptr;
-  ret->data.shape = std::vector<size_t>(shape.data, shape.data + shape.ndim);
-  ret->data.dtype = static_cast<transformer_engine::DType>(dtype);
-  ret->amax.dptr = amax;
-  ret->scale.dptr = scale;
   ret->scaling_mode = scaling_mode;
-  ret->scale_inv.dptr = scale_inv;
-  if (!transformer_engine::is_tensor_scaling(scaling_mode)) {
-    ret->scale_inv.shape =
-        std::vector<size_t>(scale_inv_shape.data, scale_inv_shape.data + scale_inv_shape.ndim);
-    ret->scale_inv.dtype = transformer_engine::DType::kByte;
-  }
-  CheckScaleTensor(ret);
   return ret;
 }
 

@@ -86,8 +86,6 @@ std::vector<py::handle> gemm(py::handle A, bool transa, py::handle B, bool trans
                              bool grad, at::Tensor workspace, size_t workspaceSize,
                              bool accumulate, bool use_split_accumulator) {
   NVTE_CHECK(!A.is_none() && !B.is_none(), "A and B matrices cannot be None!");
-  NVTE_CHECK(Py_TYPE(A.ptr()) == Py_TYPE(B.ptr()),
-             "A and B need to have the same type!");
   auto none = py::none();
   const TensorWrapper& A_tensor = makeTransformerEngineTensor(A, none);
   const TensorWrapper& B_tensor = makeTransformerEngineTensor(B, none);
