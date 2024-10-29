@@ -36,8 +36,16 @@ void te_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType
   auto dimB = B_scaling_mode.size();
   NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
 
-  NVTEScalingMode nvte_scaling_modeA = {A_scaling_mode[0], A_scaling_mode[1], A_scaling_mode[2]};
-  NVTEScalingMode nvte_scaling_modeB = {B_scaling_mode[0], B_scaling_mode[1], B_scaling_mode[2]};
+  NVTEScalingMode nvte_scaling_modeA = {
+      static_cast<int>(A_scaling_mode[0]),
+      static_cast<int>(A_scaling_mode[1]),
+      static_cast<int>(A_scaling_mode[2])
+  };
+  NVTEScalingMode nvte_scaling_modeB = {
+      static_cast<int>(B_scaling_mode[0]),
+      static_cast<int>(B_scaling_mode[1]),
+      static_cast<int>(B_scaling_mode[2])
+  };
 
   auto te_A = makeTransformerEngineTensor(
       A.data_ptr(), {static_cast<size_t>(A.size(0)), static_cast<size_t>(A.size(1))}, A_type,
@@ -47,6 +55,7 @@ void te_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType
       B.data_ptr(), {static_cast<size_t>(B.size(0)), static_cast<size_t>(B.size(1))}, B_type,
       nullptr, nullptr, B_scale_inverse.data_ptr(), getTensorShape(B_scale_inverse),
       nvte_scaling_modeB);
+  // TODO: D_scale_inv cannot be nullptr when D_type is FP8.
   auto te_D = makeTransformerEngineTensor(
       D.data_ptr(), {static_cast<size_t>(D.size(0)), static_cast<size_t>(D.size(1))}, D_type,
       D_amax.data_ptr(), D_scale.data_ptr(), nullptr);
@@ -83,8 +92,16 @@ void te_atomic_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine
   auto dimB = B_scaling_mode.size();
   NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
 
-  NVTEScalingMode nvte_scaling_modeA = {A_scaling_mode[0], A_scaling_mode[1], A_scaling_mode[2]};
-  NVTEScalingMode nvte_scaling_modeB = {B_scaling_mode[0], B_scaling_mode[1], B_scaling_mode[2]};
+  NVTEScalingMode nvte_scaling_modeA = {
+      static_cast<int>(A_scaling_mode[0]),
+      static_cast<int>(A_scaling_mode[1]),
+      static_cast<int>(A_scaling_mode[2])
+  };
+  NVTEScalingMode nvte_scaling_modeB = {
+      static_cast<int>(B_scaling_mode[0]),
+      static_cast<int>(B_scaling_mode[1]),
+      static_cast<int>(B_scaling_mode[2])
+  };
 
   auto te_A = makeTransformerEngineTensor(
       A.data_ptr(), {static_cast<size_t>(A.size(0)), static_cast<size_t>(A.size(1))}, A_type,
@@ -94,6 +111,7 @@ void te_atomic_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine
       B.data_ptr(), {static_cast<size_t>(B.size(0)), static_cast<size_t>(B.size(1))}, B_type,
       nullptr, nullptr, B_scale_inverse.data_ptr(), getTensorShape(B_scale_inverse),
       nvte_scaling_modeB);
+  // TODO: D_scale_inv cannot be nullptr when D_type is FP8.
   auto te_D = makeTransformerEngineTensor(
       D.data_ptr(), {static_cast<size_t>(D.size(0)), static_cast<size_t>(D.size(1))}, D_type,
       D_amax.data_ptr(), D_scale.data_ptr(), nullptr);
@@ -136,8 +154,16 @@ void te_grouped_gemm(std::vector<at::Tensor> A, at::Tensor A_scale_inverse, int 
   auto dimB = B_scaling_mode.size();
   NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
 
-  NVTEScalingMode nvte_scaling_modeA = {A_scaling_mode[0], A_scaling_mode[1], A_scaling_mode[2]};
-  NVTEScalingMode nvte_scaling_modeB = {B_scaling_mode[0], B_scaling_mode[1], B_scaling_mode[2]};
+  NVTEScalingMode nvte_scaling_modeA = {
+      static_cast<int>(A_scaling_mode[0]),
+      static_cast<int>(A_scaling_mode[1]),
+      static_cast<int>(A_scaling_mode[2])
+  };
+  NVTEScalingMode nvte_scaling_modeB = {
+      static_cast<int>(B_scaling_mode[0]),
+      static_cast<int>(B_scaling_mode[1]),
+      static_cast<int>(B_scaling_mode[2])
+  };
 
   auto make_tensor = [&tensor_wrappers](void* dptr, const std::vector<size_t>& shape,
                                         transformer_engine::DType dtype, void* amax_dptr,
@@ -172,6 +198,7 @@ void te_grouped_gemm(std::vector<at::Tensor> A, at::Tensor A_scale_inverse, int 
     te_B.emplace_back(make_tensor(
         B[i].data_ptr(), {static_cast<size_t>(B[i].size(0)), static_cast<size_t>(B[i].size(1))},
         B_type, nullptr, nullptr, getDataPtr(B_scale_inverse, B_offset + i), nvte_scaling_modeB));
+    // TODO: D_scale_inv cannot be nullptr when D_type is FP8.
     te_D.emplace_back(make_tensor(
         D[i].data_ptr(), {static_cast<size_t>(D[i].size(0)), static_cast<size_t>(D[i].size(1))},
         D_type, getDataPtr(D_amax, D_offset + i), getDataPtr(D_scale, D_offset + i), nullptr));
@@ -231,6 +258,7 @@ void te_grouped_gemm_single_output(
     te_B.emplace_back(make_tensor(
         B[i].data_ptr(), {static_cast<size_t>(B[i].size(0)), static_cast<size_t>(B[i].size(1))},
         B_type, nullptr, nullptr, getDataPtr(B_scale_inverse, B_offset + i)));
+    // TODO: D_scale_inv cannot be nullptr when D_type is FP8.
     te_D.emplace_back(make_tensor(
         d_i_ptr, {static_cast<size_t>(m_splits[i]), static_cast<size_t>(A[i].size(0))}, D_type,
         getDataPtr(D_amax, D_offset + i), getDataPtr(D_scale, D_offset + i), nullptr));
