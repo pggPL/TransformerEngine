@@ -32,7 +32,8 @@ class Quantizer:
                 device="cuda",
             )
             self.fp8_type = get_fp8_te_dtype(recipe, forward)
-        raise ValueError("Unknown recipe type.")
+        else:
+            raise ValueError(f"Unknown recipe type {type(recipe)}.")
 
     def quantize(self,
                  tensor: torch.Tensor,

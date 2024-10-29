@@ -507,7 +507,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         # 2 (grad_output and grad_input) for bwd
         num_fp8_tensors = self.fp8_meta["num_gemms"] * 3 if fwd else self.fp8_meta["num_gemms"] * 2
 
-        self.fp8_meta[fp8_meta_tensor_key] = Quantizer(recipe, num_fp8_tensors)
+        self.fp8_meta[fp8_meta_tensor_key] = Quantizer(recipe, num_fp8_tensors, forward=fwd)
 
     def init_fp8_meta_tensors(self,
                               recipe: Recipe) -> None:

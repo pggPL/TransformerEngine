@@ -81,7 +81,6 @@ class FP8GlobalStateManager:
     global_amax_buffer = {}
     global_amax_history_buffer = {}
     global_scale_buffer = {}
-    global_scale_inv_buffer = {}
     fp8_tensors_recompute_buffer = []
     fp8_available = None
     reason_for_no_fp8 = ""
@@ -104,7 +103,6 @@ class FP8GlobalStateManager:
         cls.global_amax_buffer = {}
         cls.global_amax_history_buffer = {}
         cls.global_scale_buffer = {}
-        cls.global_scale_inv_buffer = {}
         cls.fp8_tensors_recompute_buffer = []
         cls.fp8_available = None
         cls.reason_for_no_fp8 = ""
@@ -234,14 +232,12 @@ class FP8GlobalStateManager:
                 cls.global_amax_buffer[key] = [fp8_meta[fp8_meta_tensor_key].amax_history[0]]
                 cls.global_amax_history_buffer[key] = [fp8_meta[fp8_meta_tensor_key].amax_history]
                 cls.global_scale_buffer[key] = [fp8_meta[fp8_meta_tensor_key].scale]
-                cls.global_scale_inv_buffer[key] = [fp8_meta[fp8_meta_tensor_key].scale_inv]
             else:
                 cls.global_amax_buffer[key].append(fp8_meta[fp8_meta_tensor_key].amax_history[0])
                 cls.global_amax_history_buffer[key].append(
                     fp8_meta[fp8_meta_tensor_key].amax_history
                 )
                 cls.global_scale_buffer[key].append(fp8_meta[fp8_meta_tensor_key].scale)
-                cls.global_scale_inv_buffer[key].append(fp8_meta[fp8_meta_tensor_key].scale_inv)
             fp8_meta[index_in_buffer].append(len(cls.global_amax_buffer[key]) - 1)
             fp8_meta[index_in_buffer].append(key)
 
@@ -366,7 +362,6 @@ class FP8GlobalStateManager:
                     contiguous_amax,
                     cls.global_amax_history_buffer[buffer_key],
                     cls.global_scale_buffer[buffer_key],
-                    cls.global_scale_inv_buffer[buffer_key],
                     recipe.amax_compute_algo,
                     get_fp8_te_dtype(recipe, forward),
                     recipe.margin,
@@ -374,13 +369,12 @@ class FP8GlobalStateManager:
             else:
                 split_and_copy(contiguous_amax, amax_buffer, [x.numel() for x in amax_buffer])
 
-                for amax_history, scale, scale_inv in zip(
+                for amax_history, scale in zip(
                     cls.global_amax_history_buffer[buffer_key],
                     cls.global_scale_buffer[buffer_key],
-                    cls.global_scale_inv_buffer[buffer_key],
                 ):
                     _amax_and_scale_update(
-                        amax_history, scale, scale_inv, get_fp8_max(recipe, forward), recipe
+                        amax_history, scale, get_fp8_max(recipe, forward), recipe
                     )
 
     @classmethod
@@ -444,7 +438,6 @@ class FP8GlobalStateManager:
         to_copy = [
             fp8_meta["scaling_fwd"].amax_history.clone(),
             fp8_meta["scaling_fwd"].scale.clone(),
-            fp8_meta["scaling_fwd"].scale_inv.clone(),
         ]
 
         if buffer_position_key in fp8_meta:
@@ -466,7 +459,6 @@ class FP8GlobalStateManager:
         # Store updated amaxes and scales from phase 1 post forward.
         fp8_meta["updated_amax_history_fwd"] = fp8_meta["scaling_fwd"].amax_history
         fp8_meta["updated_scale_fwd"] = fp8_meta["scaling_fwd"].scale
-        fp8_meta["updated_scale_inv_fwd"] = fp8_meta["scaling_fwd"].scale_inv
 
         # Retrieve stashed amaxes and scales from phase 1 pre forward.
         buffer_position_key = "global_fp8_buffer_pos_fwd_recompute"
@@ -475,14 +467,12 @@ class FP8GlobalStateManager:
         # Replace amaxes and scales with stashed values for phase 2 forward
         fp8_meta["scaling_fwd"].amax_history = stashed_fp8_meta[0]
         fp8_meta["scaling_fwd"].scale = stashed_fp8_meta[1]
-        fp8_meta["scaling_fwd"].scale_inv = stashed_fp8_meta[2]
 
     @staticmethod
     def restore_fp8_meta_tensors(fp8_meta: Dict[str, Any]) -> None:
         """Restore latest scaling factors and amaxes after recompute forward run."""
         fp8_meta["scaling_fwd"].amax_history = fp8_meta["updated_amax_history_fwd"]
         fp8_meta["scaling_fwd"].scale = fp8_meta["updated_scale_fwd"]
-        fp8_meta["scaling_fwd"].scale_inv = fp8_meta["updated_scale_inv_fwd"]
 
 
 @contextmanager
@@ -676,7 +666,6 @@ def _compute_scaling_factor(
 def _amax_and_scale_update(
     amax_history: torch.Tensor,
     scale: torch.Tensor,
-    scale_inv: torch.Tensor,
     fp8_max: float,
     recipe: DelayedScaling,
 ) -> None:
@@ -687,7 +676,6 @@ def _amax_and_scale_update(
     )
     new_scale = _compute_scaling_factor(amax, scale, fp8_max, recipe)
     scale.copy_(new_scale)
-    scale_inv.copy_(1.0 / new_scale)
     amax_history.copy_(new_amax_history)
 
 
