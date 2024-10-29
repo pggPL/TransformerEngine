@@ -30,6 +30,7 @@ enum NVTEDType {
   kNVTEBFloat16 = 5,   /*!< 16-bit bfloat (E8M7) */
   kNVTEFloat8E4M3 = 6, /*!< 8-bit float (E4M3) */
   kNVTEFloat8E5M2 = 7, /*!< 8-bit float (E5M2) */
+  kNVTEFloat8E8M0 = 8, /*!< 8-bit float (E8M0) */
   kNVTENumTypes        /*!< Number of supported types */
 };
 
@@ -41,6 +42,29 @@ struct NVTEShape {
   const size_t *data;
   /*! \brief Number of dimensions. */
   size_t ndim;
+};
+
+/*! \struct NVTEBasicTensor
+ *  \brief A basic tensor type used to populate parameters of NVTETensor.
+ *  It does not own the memory it points to.
+ */
+struct NVTEBasicTensor {
+  void* data_ptr;
+  NVTEDType dtype;
+  NVTEShape shape;
+};
+
+/*! \enum NVTETensorParam
+ *  \brief Indicates the kind of the tensor parameter to set/get.
+ */
+enum NVTETensorParam {
+  kNVTERowwiseData             = 0,  /*!< Data usable in rowwise manner */
+  kNVTEColumnwiseData          = 1,  /*!< Data usable in columnwise manner */
+  kNVTEScale                   = 2,  /*!< Scale tensor */
+  kNVTEAmax                    = 3,  /*!< Amax tensor */
+  kNVTERowwiseScaleInv         = 4,  /*!< Scale inverse tensor for decoding Rowwise Data */
+  kNVTEColumnwiseScaleInv      = 5,  /*!< Scale inverse tensor for decoding Columnwise Data */
+  kNVTENumTensorParams
 };
 
 /*! \struct NVTEScalingMode
@@ -70,23 +94,15 @@ typedef void *NVTETensor;
 
 /*! \brief Create a new TE tensor.
  *
- * Create a new TE tensor with a given shape, datatype and data.
+ * Create a new TE tensor. Before use its parameters need to be set.
  * TE tensors are just wrappers on top of raw data and do not
  * own memory.
  *
- *  \param[in] dptr            Pointer to the tensor data.
- *  \param[in] shape           Shape of the tensor.
- *  \param[in] dtype           Data type of the tensor.
- *  \param[in] amax_dptr       Pointer to the AMAX value.
- *  \param[in] scale_dptr      Pointer to the scale value.
- *  \param[in] scale_inv_dptr  Pointer to the inverse of scale value.
  *  \param[in] scaling_mode    Scaling mode of the tensor.
  *
  *  \return A new TE tensor.
  */
-NVTETensor nvte_create_tensor(void *dptr, const NVTEShape shape, const NVTEDType dtype,
-                              float *amax_dptr, float *scale_dptr, float *scale_inv_dptr,
-                              NVTEShape scale_inv_shape, NVTEScalingMode scaling_mode);
+NVTETensor nvte_create_tensor(NVTEScalingMode scaling_mode);
 
 /*! \brief Destroy a TE tensor.
  *
@@ -153,6 +169,24 @@ float *nvte_tensor_scale_inv(const NVTETensor tensor);
  */
 NVTEShape nvte_tensor_scale_inv_shape(const NVTETensor tensor);
 
+/*! \brief Set a parameter of the tensor.
+ *
+ *  \param[in/out] tensor Tensor.
+ *  \param[in] param_name The parameter to be set.
+ *  \param[in] param The value to be set.
+ */
+void nvte_set_tensor_param(NVTETensor* tensor,
+                           NVTETensorParam param_name,
+                           const NVTEBasicTensor* param);
+
+/*! \brief Get a value of the parameter of the tensor.
+ *
+ *  \param[in] tensor Tensor.
+ *  \param[in] param_name The parameter to be set.
+ */
+NVTEBasicTensor nvte_get_tensor_param(const NVTETensor tensor,
+                                      NVTETensorParam param_name);
+
 /*! \brief Get the granularity of scaling of this tensor.
  *
  *  \param[in] tensor Tensor.
@@ -203,6 +237,7 @@ enum class DType {
   kBFloat16 = 5,
   kFloat8E4M3 = 6,
   kFloat8E5M2 = 7,
+  kFloat8E8M0 = 8,
   kNumTypes
 };
 
@@ -228,9 +263,17 @@ class TensorWrapper {
   TensorWrapper(void *dptr, const NVTEShape &shape, const DType dtype, float *amax_dptr = nullptr,
                 float *scale_dptr = nullptr, float *scale_inv_dptr = nullptr,
                 const NVTEShape scale_inv_shape = defaultShape,
-                const NVTEScalingMode scaling_mode = {-1, -1, 1})
-      : tensor_(nvte_create_tensor(dptr, shape, static_cast<NVTEDType>(dtype), amax_dptr,
-                                   scale_dptr, scale_inv_dptr, scale_inv_shape, scaling_mode)) {}
+                const NVTEScalingMode scaling_mode = {-1, -1, 1}) {
+    tensor_ = nvte_create_tensor(scaling_mode);
+    NVTEBasicTensor data = {dptr, static_cast<NVTEDType>(dtype), shape};
+    nvte_set_tensor_param(&tensor_, kNVTERowwiseData, &data);
+    NVTEBasicTensor amax = {amax_dptr, kNVTEFloat32, defaultShape};
+    nvte_set_tensor_param(&tensor_, kNVTEAmax, &amax);
+    NVTEBasicTensor scale = {scale_dptr, kNVTEFloat32, defaultShape};
+    nvte_set_tensor_param(&tensor_, kNVTEScale, &scale);
+    NVTEBasicTensor scale_inv = {scale_inv_dptr, kNVTEFloat32, scale_inv_shape};
+    nvte_set_tensor_param(&tensor_, kNVTERowwiseScaleInv, &scale_inv);
+  }
 
   /*! \brief Constructs new TensorWrapper.
    *
@@ -258,7 +301,8 @@ class TensorWrapper {
    *
    * Create a new empty TE tensor which holds nothing.
    */
-  TensorWrapper() : TensorWrapper(nullptr, std::vector<size_t>(), DType::kFloat32) {}
+  TensorWrapper(const NVTEScalingMode scaling_mode = {-1, -1, 1})
+    : tensor_(nvte_create_tensor(scaling_mode)) {}
 
   /*! \brief TensorWrapper destructor. */
   ~TensorWrapper() { nvte_destroy_tensor(tensor_); }
@@ -289,6 +333,68 @@ class TensorWrapper {
     tensor_ = other.tensor_;
     other.tensor_ = nullptr;
     return *this;
+  }
+
+  // Parameter setters
+  TensorWrapper& set_parameter(const NVTETensorParam param, void* dptr,
+                               DType type, const NVTEShape& shape) noexcept {
+    NVTEBasicTensor data = {dptr, static_cast<NVTEDType>(type), shape};
+    nvte_set_tensor_param(&tensor_, param, &data);
+    return *this;
+  }
+
+  TensorWrapper& set_rowwise_data(void* dptr, DType type, const NVTEShape& shape) noexcept {
+    return set_parameter(kNVTERowwiseData, dptr, type, shape);
+  }
+
+  TensorWrapper& set_columnwise_data(void* dptr, DType type, const NVTEShape& shape) noexcept {
+    return set_parameter(kNVTEColumnwiseData, dptr, type, shape);
+  }
+
+  TensorWrapper& set_scale(void* dptr, DType type, const NVTEShape& shape) noexcept {
+    return set_parameter(kNVTEScale, dptr, type, shape);
+  }
+
+  TensorWrapper& set_amax(void* dptr, DType type, const NVTEShape& shape) noexcept {
+    return set_parameter(kNVTEAmax, dptr, type, shape);
+  }
+
+  TensorWrapper& set_rowwise_scale_inv(void* dptr, DType type, const NVTEShape& shape) noexcept {
+    return set_parameter(kNVTERowwiseScaleInv, dptr, type, shape);
+  }
+
+  TensorWrapper& set_columnwise_scale_inv(void* dptr, DType type, const NVTEShape& shape) noexcept {
+    return set_parameter(kNVTEColumnwiseScaleInv, dptr, type, shape);
+  }
+
+  // Parameter getters
+
+  NVTEBasicTensor get_parameter(const NVTETensorParam param) const noexcept {
+    return nvte_get_tensor_param(tensor_, param);
+  }
+
+  NVTEBasicTensor get_rowwise_data() const noexcept {
+    return get_parameter(kNVTERowwiseData);
+  }
+
+  NVTEBasicTensor get_columnwise_data() const noexcept {
+    return get_parameter(kNVTEColumnwiseData);
+  }
+
+  NVTEBasicTensor get_scale() const noexcept {
+    return get_parameter(kNVTEScale);
+  }
+
+  NVTEBasicTensor get_amax() const noexcept {
+    return get_parameter(kNVTEAmax);
+  }
+
+  NVTEBasicTensor get_rowwise_scale_inv() const noexcept {
+    return get_parameter(kNVTERowwiseScaleInv);
+  }
+
+  NVTEBasicTensor get_columnwise_scale_inv() const noexcept {
+    return get_parameter(kNVTEColumnwiseScaleInv);
   }
 
   /*! \brief Get an underlying NVTETensor.
@@ -376,6 +482,10 @@ class TensorWrapper {
   /*! \brief Wrapped NVTETensor. */
   NVTETensor tensor_ = nullptr;
 };
+
+inline NVTEShape getShape(const std::vector<size_t>& v) {
+  return {v.data(), v.size()};
+}
 
 }  // namespace transformer_engine
 

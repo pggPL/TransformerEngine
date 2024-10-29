@@ -15,6 +15,8 @@
 #include "object.h"
 #include "pybind11/cast.h"
 #include "pytorch/csrc/common.h"
+#include "pybind.h"
+#include "common.h"
 
 namespace transformer_engine::pytorch {
 
@@ -37,9 +39,9 @@ void init_extension() {
 namespace pybind11::detail {
 
 template <>
-struct type_caster<transformer_engine::Float8Tensor> {
+struct type_caster<transformer_engine::pytorch::Float8Tensor> {
  public:
-  PYBIND11_TYPE_CASTER(transformer_engine::Float8Tensor,
+  PYBIND11_TYPE_CASTER(transformer_engine::pytorch::Float8Tensor,
                        _("transformer_engine.pytorch.tensor.Float8Tensor"));
 
   bool load(handle src, bool) {
@@ -59,7 +61,7 @@ struct type_caster<transformer_engine::Float8Tensor> {
     return true;
   }
 
-  static handle cast(const transformer_engine::Float8Tensor &src, return_value_policy, handle) {
+  static handle cast(const transformer_engine::pytorch::Float8Tensor &src, return_value_policy, handle) {
     throw std::runtime_error("Casting back from Float8Tensor not implemented yet!");
     return none().release();
   }

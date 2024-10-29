@@ -46,6 +46,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "c10/core/DeviceType.h"
 #include "common/util/cuda_runtime.h"
 #include "c10/util/ArrayRef.h"
 #include "common/util/logging.h"
@@ -94,6 +95,45 @@ class Float8Tensor {
   DType dtype;
 };
 
+class QuantizationParams {
+ public:
+  virtual NVTEScalingMode get_scaling_mode() const = 0;
+
+  virtual void set_quantization_params(TensorWrapper* tensor) const = 0;
+
+  virtual py::handle create_tensor(const std::vector<size_t>& shape,
+                                   DType dtype) const = 0;
+};
+
+class NoneQuantizationParams : public QuantizationParams {
+ public:
+  virtual NVTEScalingMode get_scaling_mode() const override {
+    return {-1, -1, 1};
+  }
+
+  virtual void set_quantization_params(TensorWrapper* tensor) const override {}
+
+  virtual py::handle create_tensor(const std::vector<size_t>& shape,
+                                   DType dtype) const override;
+};
+
+class Float8Params : public QuantizationParams {
+ public:
+  at::Tensor scale;
+  at::Tensor amax;
+  DType dtype;
+
+  virtual NVTEScalingMode get_scaling_mode() const override {
+    return {-1, -1, 1};
+  }
+
+  virtual void set_quantization_params(TensorWrapper* tensor) const override;
+
+  virtual py::handle create_tensor(const std::vector<size_t>& shape,
+                                   DType dtype) const override;
+};
+
+std::unique_ptr<QuantizationParams> convert_quantization_params(py::handle params);
 
 std::vector<size_t> getTensorShape(at::Tensor t);
 

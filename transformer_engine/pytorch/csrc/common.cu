@@ -19,6 +19,20 @@ std::vector<size_t> getTensorShape(at::Tensor t) {
   return shape;
 }
 
+std::unique_ptr<QuantizationParams> convert_quantization_params(py::handle params) {
+  if (params.is_none()) {
+    return std::make_unique<NoneQuantizationParams>();
+  }
+  for (auto [_check_type, check_params_type, _create_tensor, create_params]:
+      detail::custom_types_converters) {
+    if (check_params_type(params.ptr())) {
+      return create_params(params);
+    }
+  }
+
+  NVTE_ERROR("Unexpected type of quantization params");
+}
+
 transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
                                                       const std::string& fp8_recipe) {
   // if e4m3 or hybrid + forward
@@ -30,23 +44,28 @@ transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
 
 TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantization_params) {
   NVTE_CHECK(!tensor.is_none(), "Tensor is not allocated!");
-  for (auto [check_type, create_tensor]: detail::custom_types_converters) {
+  std::unique_ptr<QuantizationParams> qparams = convert_quantization_params(quantization_params);
+  for (auto [check_type, check_param_type, create_tensor, _]: detail::custom_types_converters) {
     if (check_type(tensor.ptr())) {
-      return create_tensor(tensor, quantization_params);
+      NVTE_CHECK(quantization_params.is_none() ||
+                 check_param_type(quantization_params.ptr()),
+                 "Unexpected quantization params type.");
+      return create_tensor(tensor, qparams.get());
     }
   }
 
   // Regular pyTorch tensor
-  // TODO: Use quantization params
-  NVTE_CHECK(quantization_params.is_none(), "Not implemented yet!");
   at::Tensor torch_tensor = tensor.cast<at::Tensor>();
 
   if (!torch_tensor.is_contiguous()) {
     torch_tensor = torch_tensor.contiguous();
   }
-  return TensorWrapper(torch_tensor.data_ptr(),
-                       getTensorShape(torch_tensor),
-                       GetTransformerEngineDType(torch_tensor.scalar_type()));
+  auto ret = TensorWrapper(qparams->get_scaling_mode());
+  ret.set_rowwise_data(torch_tensor.data_ptr(),
+                       GetTransformerEngineDType(torch_tensor.scalar_type()),
+                       getShape(getTensorShape(torch_tensor)));
+  qparams->set_quantization_params(&ret);
+  return ret;
 }
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(

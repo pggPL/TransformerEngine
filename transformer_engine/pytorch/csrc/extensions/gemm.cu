@@ -119,32 +119,6 @@ std::vector<at::Tensor> te_gemm2_helper(
   return {*D, pre_gelu_out.value_or(at::Tensor())};
 }
 
-std::vector<at::Tensor> te_gemm2(transformer_engine::Float8Tensor A, bool transa,
-                                 transformer_engine::Float8Tensor B, bool transb, MaybeTensor D,
-                                 py::handle quantization_params,
-                                 MaybeTensor bias,
-                                 transformer_engine::DType bias_type, bool gelu, bool grad,
-                                 at::Tensor workspace, size_t workspaceSize, bool accumulate,
-                                 bool use_split_accumulator) {
-  return te_gemm2_helper(A.data, A.dtype, A.scale_inv, transa, B.data, B.dtype, B.scale_inv, transb,
-                         D, D_scale, D_type, D_amax, bias, bias_type, gelu, grad, workspace,
-                         workspaceSize, accumulate, use_split_accumulator);
-}
-
-std::vector<at::Tensor> te_gemm2(at::Tensor A, bool transa, at::Tensor B, bool transb,
-                                 MaybeTensor D,
-                                 py::handle quantization_params,
-                                 std::optional<transformer_engine::DType> out_dtype,
-                                 MaybeTensor bias, transformer_engine::DType bias_type, bool gelu,
-                                 bool grad, at::Tensor workspace, size_t workspaceSize,
-                                 bool accumulate, bool use_split_accumulator) {
-  transformer_engine::DType A_dtype = GetTransformerEngineDType(A.scalar_type());
-  transformer_engine::DType B_dtype = GetTransformerEngineDType(B.scalar_type());
-  return te_gemm2_helper(A, A_dtype, std::nullopt, transa, B, B_dtype, std::nullopt, transb, D,
-                         D_scale, D_type, D_amax, bias, bias_type, gelu, grad, workspace,
-                         workspaceSize, accumulate, use_split_accumulator);
-}
-
 namespace transformer_engine::pytorch {
 
 namespace detail {
@@ -191,8 +165,8 @@ bool checkGemmShape(const std::vector<size_t>& expected,
 std::pair<TensorWrapper, py::handle> createOutputTensor(const std::vector<size_t>& shape,
                                                         DType dtype,
                                                         py::handle quantization_params) {
-  // TODO: Implement
-  NVTE_ERROR("Not implemented yet!");
+  std::unique_ptr<QuantizationParams> qparams = convert_quantization_params(quantization_params);
+
 }
 
 std::vector<py::handle> gemm(py::handle A, bool transa, py::handle B, bool transb,

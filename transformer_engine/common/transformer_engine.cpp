@@ -219,6 +219,55 @@ NVTEShape nvte_tensor_scale_inv_shape(const NVTETensor tensor) {
   return ret;
 }
 
+void nvte_set_tensor_param(NVTETensor* tensor,
+                           NVTETensorParam param_name,
+                           const NVTEBasicTensor* param) {
+  auto &t = *reinterpret_cast<transformer_engine::Tensor *>(*tensor);
+  switch (param_name) {
+    case kNVTERowwiseData:
+      t.data = *param;
+      break;
+    case kNVTEColumnwiseData:
+      t.columnwise_data = *param;
+      break;
+    case kNVTEScale:
+      t.scale = *param;
+      break;
+    case kNVTEAmax:
+      t.amax = *param;
+      break;
+    case kNVTERowwiseScaleInv:
+      t.scale_inv = *param;
+      break;
+    case kNVTEColumnwiseScaleInv:
+      t.columnwise_scale_inv = *param;
+      break;
+    default:
+      NVTE_ERROR("Unknown tensor parameter!");
+  }
+}
+
+NVTEBasicTensor nvte_get_tensor_param(const NVTETensor tensor,
+                                      NVTETensorParam param_name) {
+  const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
+  switch (param_name) {
+    case kNVTERowwiseData:
+      return t.data;
+    case kNVTEColumnwiseData:
+      return t.columnwise_data;
+    case kNVTEScale:
+      return t.scale;
+    case kNVTEAmax:
+      return t.amax;
+    case kNVTERowwiseScaleInv:
+      return t.scale_inv;
+    case kNVTEColumnwiseScaleInv:
+      return t.columnwise_scale_inv;
+    default:
+      NVTE_ERROR("Unknown tensor parameter!");
+  }
+}
+
 NVTEScalingMode nvte_tensor_scaling_mode(const NVTETensor tensor) {
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   return t.scaling_mode;

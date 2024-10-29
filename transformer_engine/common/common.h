@@ -33,7 +33,18 @@ struct SimpleTensor {
 
   SimpleTensor(void *dptr, const std::vector<size_t> &shape, DType dtype)
       : dptr(dptr), shape(shape), dtype(dtype) {}
+
+  SimpleTensor(const NVTEBasicTensor& tensor)
+      : dptr(tensor.data_ptr),
+        shape(tensor.shape.data, tensor.shape.data + tensor.shape.ndim),
+        dtype(static_cast<DType>(tensor.dtype)) {}
+
   SimpleTensor() : SimpleTensor(nullptr, {}, DType::kFloat32) {}
+
+  operator NVTEBasicTensor() const {
+    const NVTEShape shape = {this->shape.data(), this->shape.size()};
+    return {dptr, static_cast<NVTEDType>(dtype), shape};
+  }
 
   int numel() const {
     size_t acc = 1;
@@ -61,17 +72,21 @@ class ScalingMode : public NVTEScalingMode {
 
 struct Tensor {
   SimpleTensor data;
+  SimpleTensor columnwise_data;
   SimpleTensor amax;
   SimpleTensor scale;
   SimpleTensor scale_inv;
+  SimpleTensor columnwise_scale_inv;
 
   ScalingMode scaling_mode;
 
   Tensor()
       : data(),
+        columnwise_data(),
         amax(nullptr, {1}, DType::kFloat32),
         scale(nullptr, {1}, DType::kFloat32),
         scale_inv(nullptr, {1}, DType::kFloat32),
+        columnwise_scale_inv(nullptr, {1}, DType::kFloat32),
         scaling_mode() {}
 
   int numel() const {
@@ -115,6 +130,7 @@ TRANSFORMER_ENGINE_TYPE_NAME(half)
 TRANSFORMER_ENGINE_TYPE_NAME(nv_bfloat16)
 TRANSFORMER_ENGINE_TYPE_NAME(__nv_fp8_e4m3)
 TRANSFORMER_ENGINE_TYPE_NAME(__nv_fp8_e5m2)
+TRANSFORMER_ENGINE_TYPE_NAME(__nv_fp8_e8m0)
 #undef TRANSFORMER_ENGINE_TYPE_NAME
 
 }  // namespace detail
