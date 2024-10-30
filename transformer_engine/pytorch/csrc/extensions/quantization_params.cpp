@@ -11,7 +11,7 @@
 
 namespace transformer_engine::pytorch {
 
-std::pair<TensorWrapper, py::handle> NoneQuantizationParams::create_tensor(
+std::pair<TensorWrapper, py::object> NoneQuantizationParams::create_tensor(
     const std::vector<size_t>& shape,
     DType dtype) const {
   at::TensorOptions opts;
@@ -25,7 +25,7 @@ std::pair<TensorWrapper, py::handle> NoneQuantizationParams::create_tensor(
   tensor.set_rowwise_data(ret.data_ptr(),
                           dtype,
                           shape);
-  return {std::move(tensor), py::cast(ret).release()};
+  return {std::move(tensor), py::cast(ret)};
 }
 
 void Float8Params::set_quantization_params(TensorWrapper* tensor) const {
@@ -49,7 +49,7 @@ void Float8Params::set_quantization_params(TensorWrapper* tensor) const {
                               columnwise_data.shape);
 }
 
-std::pair<TensorWrapper, py::handle> Float8Params::create_tensor(const std::vector<size_t>& shape,
+std::pair<TensorWrapper, py::object> Float8Params::create_tensor(const std::vector<size_t>& shape,
                                                                  DType dtype) const {
   using namespace pybind11::literals;
   std::vector<int64_t> torch_shape;
@@ -74,7 +74,7 @@ std::pair<TensorWrapper, py::handle> Float8Params::create_tensor(const std::vect
                                DType::kFloat32,
                                std::vector<size_t>{1});
   this->set_quantization_params(&tensor);
-  return {std::move(tensor), ret.release()};
+  return {std::move(tensor), std::move(ret)};
 }
 
 }  // namespace transformer_engine::pytorch
