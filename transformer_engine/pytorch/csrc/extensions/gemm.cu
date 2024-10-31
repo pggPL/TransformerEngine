@@ -111,13 +111,19 @@ std::vector<py::handle> gemm(py::handle A, bool transa, py::handle B, bool trans
   }
 
   TensorWrapper bias_tensor;
+  MaybeTensor bias_grad = std::nullopt;
   if (bias.has_value()) {
-    bias_tensor = makeTransformerEngineTensor(*bias);
+    if (!grad) {
+      bias_tensor = makeTransformerEngineTensor(*bias);
+    } else {
+      *bias_grad = at::empty_like(*bias);
+      bias_tensor = makeTransformerEngineTensor(*bias_grad);
+    }
   }
 
   MaybeTensor pre_gelu_out = std::nullopt;
   DType gelu_type = bias_type;
-  if (gelu) {
+  if (gelu && !grad) {
     auto dtype = GetATenDType(bias_type);
     auto opts = torch::TensorOptions().dtype(dtype).device(torch::kCUDA);
     std::vector<int64_t> torch_shape;
@@ -142,7 +148,9 @@ std::vector<py::handle> gemm(py::handle A, bool transa, py::handle B, bool trans
                    te_pre_gelu_out.data(), transa, transb, grad, te_workspace.data(), accumulate,
                    use_split_accumulator, num_math_sms, at::cuda::getCurrentCUDAStream());
 
-  return {D, py::cast(pre_gelu_out.value_or(at::Tensor())).release()};
+  return {D,
+          py::cast(bias_grad),
+          py::cast(pre_gelu_out.value_or(at::Tensor())).release()};
 }
 
 }  // namespace transformer_engine::pytorch

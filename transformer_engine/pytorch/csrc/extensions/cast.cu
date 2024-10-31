@@ -9,6 +9,7 @@
 #include "pybind.h"
 #include "object.h"
 #include "torch/types.h"
+#include "util.h"
 
 namespace transformer_engine::pytorch {
 
@@ -28,10 +29,11 @@ py::handle cast(const at::Tensor& tensor,
     auto py_amax = quantization_params.attr("amax");
     DType type = quantization_params.attr("dtype").cast<DType>();
     const at::Tensor& scale = py_scale.cast<at::Tensor>();
+    at::Tensor amax = py_amax.cast<at::Tensor>();
     auto opts = input_tensor.options().dtype(torch::kFloat32);
     at::Tensor scale_inv = at::empty({1}, opts);
     at::Tensor data, data_transpose;
-    if (columnwise_usage) {
+    if (columnwise_usage && !supports_fp8_transposes()) {
       const auto dim = tensor.dim();
       NVTE_CHECK(dim >= 2, "Tensor needs to be at least 2D for columnwise usage");
       auto reshaped_input = input_tensor.view({-1, tensor.size(dim - 1)});
@@ -41,16 +43,16 @@ py::handle cast(const at::Tensor& tensor,
                                   reshaped_input.size(0)},
                                  data_opts);
       fused_cast_transpose(reshaped_input,
-                           py_scale.cast<at::Tensor>(),
-                           py_amax.cast<at::Tensor>(),
+                           scale,
+                           amax,
                            scale_inv,
                            data,
                            data_transpose,
                            type);
     } else {
       data = cast_to_fp8(input_tensor,
-                         py_scale.cast<at::Tensor>(),
-                         py_amax.cast<at::Tensor>(),
+                         scale,
+                         amax,
                          scale_inv,
                          type);
     }
@@ -59,7 +61,7 @@ py::handle cast(const at::Tensor& tensor,
       fake_tensor_type = at::kFloat;
     }
     py::handle Float8TensorClass(reinterpret_cast<PyObject*>(Float8TensorPythonClass));
-    if (columnwise_usage) {
+    if (columnwise_usage && !supports_fp8_transposes()) {
       auto ret = Float8TensorClass("data"_a=data,
                                    "data_transpose"_a=data_transpose,
                                    "fp8_scale_inv"_a=scale_inv,

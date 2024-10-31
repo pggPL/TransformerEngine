@@ -68,6 +68,12 @@ class ScalingMode : public NVTEScalingMode {
     y = other.y;
     delayed_scaling = other.delayed_scaling;
   }
+
+  bool operator==(const ScalingMode& other) const noexcept {
+    return x == other.x &&
+           y == other.y &&
+           delayed_scaling == other.delayed_scaling;
+  }
 };
 
 struct Tensor {
@@ -90,11 +96,28 @@ struct Tensor {
         scaling_mode() {}
 
   int numel() const {
+    NVTE_CHECK(data.dptr != nullptr || columnwise_data.dptr != nullptr,
+               "Tensor does not hold any data!");
     size_t acc = 1;
-    for (const auto &dim : data.shape) {
+    if (data.dptr != nullptr) {
+      for (const auto &dim : data.shape) {
+        acc *= dim;
+      }
+      return acc;
+    }
+    // data is empty, use columnwise_data
+    for (const auto &dim : columnwise_data.shape) {
       acc *= dim;
     }
     return acc;
+  }
+
+  bool has_data() const noexcept {
+    return data.dptr != nullptr;
+  }
+
+  bool has_columnwise_data() const noexcept {
+    return columnwise_data.dptr != nullptr;
   }
 };
 

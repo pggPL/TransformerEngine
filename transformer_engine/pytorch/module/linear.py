@@ -170,7 +170,7 @@ class _Linear(torch.autograd.Function):
                 assert fp8_output
                 ub_obj_projout.set_ubuf_scale_inv(qparams.scale_inv)
 
-        out, _ = general_gemm(
+        out, _, _ = general_gemm(
             weight_fp8,
             inputmat_total,
             get_workspace(),

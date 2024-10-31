@@ -4,7 +4,7 @@
 
 """Python interface for GEMM extensions"""
 import functools
-from typing import Optional, Tuple, Union, List
+from typing import Iterable, Optional, Tuple, Union, List
 import torch
 from ..quantization_params import QuantizationParams
 import transformer_engine_torch as tex
@@ -102,16 +102,20 @@ def general_gemm(
     quantization_params: Optional[QuantizationParams] = None,
     gelu: bool = False,
     accumulate: bool = False,
+    layout: str = "TN",
     out: Optional[torch.Tensor] = None,
     bias: Optional[torch.Tensor] = None,
     use_split_accumulator: bool = False,
+    grad: bool = False,
     ub_algo: tex.UbufOverlapAlgo = None,
     ub: Union[tex.UbufCommOverlap, tex.UbufP2PCommOverlap] = None,
     ub_buffer: Optional[torch.Tensor] = None,
-) -> torch.Tensor:
+) -> Iterable[Optional[torch.Tensor]]:
     """GEMM supporting fp8 inputs."""
 
-    empty_tensor = _empty_tensor()
+    assert layout in ("TN", "NN", "NT"), f"GEMM layout {layout} not supported."
+    transa = layout[0] == "T"
+    transb = layout[1] == "T"
     assert quantization_params is None, "FP8 output not supported yet"
     if out is not None:
         if not out.is_contiguous():
@@ -123,16 +127,16 @@ def general_gemm(
 
     args = (
         A,
-        True,  # transa
+        transa,  # transa
         B,
-        False,  # transb
+        transb,  # transb
         out,
         quantization_params,
         TE_DType[out_dtype] if out_dtype is not None else None,
         bias,
         bias_dtype,
         gelu,
-        False,  # grad
+        grad,  # grad
         workspace,
         workspace.shape[0],
         accumulate,
@@ -215,10 +219,11 @@ def general_gemm(
     if ub_algo is not None and ub_algo == tex.UbufOverlapAlgo.ATOMIC_GEMM_AG_P2P:
         out = fn(*args)
         gelu_input = None
+        bias_grad = None
     else:
-        out, gelu_input = fn(*args)
+        out, bias_grad, gelu_input = fn(*args)
 
-    return out, gelu_input
+    return out, bias_grad, gelu_input
 
 
 def fp8_gemm(
