@@ -85,7 +85,6 @@ class _Linear(torch.autograd.Function):
         skip_fp8_weight_update: bool,
     ) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        is_input_fp8 = isinstance(inp, Float8Tensor)
 
         # Make sure input dimensions are compatible
         _, in_features = weight.shape
@@ -231,7 +230,6 @@ class _Linear(torch.autograd.Function):
             ctx.ub_name = ub_name
             ctx.tp_size = tp_size
             ctx.requires_dgrad = inp.requires_grad
-            ctx.is_input_fp8 = is_input_fp8
             ctx.reduce_and_update_bwd_fp8_tensors = False
             if ctx.fp8 and requires_grad(inp, weight, bias):
                 _first_fp8_module = FP8GlobalStateManager.IS_FIRST_FP8_MODULE

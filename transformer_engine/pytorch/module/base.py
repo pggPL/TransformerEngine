@@ -666,24 +666,28 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fp8_parameters = FP8GlobalStateManager.with_fp8_parameters()
         self.fp8 = FP8GlobalStateManager.is_fp8_enabled()
         self.fp8_calibration = FP8GlobalStateManager.is_fp8_calibration()
+        fp8_enabled = self.fp8 or self.fp8_calibration
         self.fp8_meta["fp8_checkpoint"] = self.fp8 or self.fp8_calibration
 
-        if (self.fp8_parameters or self.fp8):
+        if (self.fp8_parameters or fp8_enabled):
+            if (
+                self.fp8_initialized
+                and FP8GlobalStateManager.get_fp8_recipe() == self.fp8_meta["recipe"]
+            ):
+                # FP8 init has already been run and recipe is the same, don't do anything.
+                return
             self.fp8_meta["recipe"] = FP8GlobalStateManager.get_fp8_recipe()
+        else:
+            # If fp8 isn't enabled, turn off and return.
+            self.fp8_initialized = False
+            return
 
 
         if self.fp8_parameters and not self.fp8_initialized:
             self.fp8_meta["num_gemms"] = num_gemms
             self.init_fp8_meta_tensors(self.fp8_meta["recipe"])
 
-        if self.fp8 or self.fp8_calibration:
-            # FP8 init has already been run and recipe is the same, don't do anything.
-            if (
-                self.fp8_initialized
-                and FP8GlobalStateManager.get_fp8_recipe() == self.fp8_meta["recipe"]
-            ):
-                return
-
+        if fp8_enabled:
             # Set FP8 and other FP8 metadata
             self.fp8_meta["num_gemms"] = num_gemms
             self.fp8_meta["fp8_group"] = FP8GlobalStateManager.get_fp8_group()
@@ -695,9 +699,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             # Allocate scales and amaxes
             self.init_fp8_meta_tensors(self.fp8_meta["recipe"])
             self.fp8_initialized = True
-        else:
-            # If fp8 isn't enabled, turn off and return.
-            self.fp8_initialized = False
 
     @contextmanager
     def prepare_forward(
