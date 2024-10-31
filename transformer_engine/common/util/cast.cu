@@ -12,7 +12,6 @@
 #include <cfloat>
 #include <iostream>
 #include <limits>
-#include <unordered_map>
 
 #include "../common.h"
 #include "../util/vectorized_pointwise.h"
@@ -22,37 +21,6 @@
 #include "ptx.cuh"
 
 namespace transformer_engine {
-
-using namespace ptx;
-
-constexpr uint32_t FP32_EXPONENT_BIAS = 127;
-constexpr uint32_t FP32_EXPONENT_BITS = 8;
-constexpr uint32_t FP32_MANTISSA_BITS = 23;  // FP32 = [S1] [E8] [M23]
-constexpr uint32_t SIGN_MASK =
-    1U << (FP32_MANTISSA_BITS + FP32_EXPONENT_BITS);  // most significant bit mask
-constexpr uint32_t NUMBER_MASK = ~SIGN_MASK;
-constexpr uint32_t MANTISSA_MASK = (1U << FP32_MANTISSA_BITS) - 1;
-constexpr uint32_t EXPONENT_MASK = NUMBER_MASK & (~MANTISSA_MASK);
-
-template <typename T>
-struct Numeric_Traits;
-
-template <>
-struct Numeric_Traits<fp8e4m3> {
-  static constexpr int maxUnbiasedExponent = 8;
-};
-
-template <>
-struct Numeric_Traits<fp8e5m2> {
-  static constexpr int maxUnbiasedExponent = 15;
-};
-
-template <typename T>
-struct Quantized_Limits {
-  static constexpr inline int max_norm_unbiased_exponent() {
-    return Numeric_Traits<T>::maxUnbiasedExponent;
-  }
-};
 
 constexpr size_t MXFP8_CHUNK_DIM_Y = 64;
 constexpr size_t MXFP8_CHUNK_DIM_X = 64;
@@ -79,54 +47,6 @@ constexpr size_t MXFP8_BUFF_STAGES_NUM =
     MXFP8_BUFFER_DIM_Y / THREADS_PER_CHUNK_Y_ROWWISE;                        //   2 = 32 / 16
 constexpr size_t MXFP8_ITERATIONS = MXFP8_CHUNK_DIM_Y / MXFP8_BUFFER_DIM_Y;  //   2 = 64 / 32
 static_assert(MXFP8_ITERATIONS >= MXFP8_PREFETCH_BUFFERS_NUM);
-
-using e8m0_t = uint8_t;
-
-__device__ __forceinline__ int32_t extract_biased_exponent(const float val) {
-  return (__float_as_int(val) & EXPONENT_MASK) >> FP32_MANTISSA_BITS;
-}
-
-__device__ __forceinline__ int lower_biased_exp_limit_fp32(const int biased_exponent) {
-  return (biased_exponent < 0) ? 0 : biased_exponent;
-}
-
-template <typename OType>
-__device__ __forceinline__ e8m0_t compute_shared_biased_exponent(float amax) {
-  __builtin_assume(amax >= 0);
-  if (amax == 0) {
-    constexpr int exponent_ = 0 + FP32_EXPONENT_BIAS;
-    return static_cast<e8m0_t>(exponent_);
-  }
-  int exponent =
-      extract_biased_exponent(amax) - Quantized_Limits<OType>::max_norm_unbiased_exponent();
-
-  // Clamp the shared unbiased exponent between the representable numbers of uint8_t
-  // i.e., between [0, 255]
-  return static_cast<e8m0_t>(lower_biased_exp_limit_fp32(exponent));
-}
-
-/**
- * Max reduction in subwarps
- * E.g., if nvec=4, each warp processes 128 elements (32 x 4), that covers four MXFP8 scaling factors.
- * To compute an actual scaling factor for 32 consequentive elements, only 8 threads need to participate,
- * thus splitting the warp into 4x smaller subwarps 8-thread width. 'Butterfly' reduction is implemented
- * inside those subwarps.
- */
-template <int subwarp_width>
-__forceinline__ __device__ float subwarp_max_reduction(const float val) {
-  float val_tmp = val;
-#pragma unroll
-  for (int offset = subwarp_width / 2; offset > 0; offset /= 2) {
-    const float val_other = __shfl_down_sync(0xFFFFFFFF, val_tmp, offset, subwarp_width);
-    __builtin_assume(val_tmp >= 0);
-    __builtin_assume(val_other >= 0);
-    val_tmp = fmaxf(val_tmp, val_other);
-  }
-  // Broadcast the amax to other threads of the subwarp from the zero subwarp lane_id
-  constexpr int subwarp_lane_zero = 0;
-  val_tmp = __shfl_sync(0xFFFFFFFF, val_tmp, subwarp_lane_zero, subwarp_width);
-  return val_tmp;
-}
 
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &),
           typename IType, typename OType, size_t SCALE_DIM_Y, size_t SCALE_DIM_X>
@@ -226,9 +146,9 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
     // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
 #pragma unroll
     for (int it = 0; it < MXFP8_ITERATIONS; ++it) {
-      mbarrier_init(&mbar[it], MXFP8_THREADS_PER_CHUNK);
+      ptx::mbarrier_init(&mbar[it], MXFP8_THREADS_PER_CHUNK);
     }
-    fence_proxy_async_shared_cta();
+    ptx::fence_proxy_async_shared_cta();
   }
   // Syncthreads so initialized barrier is visible to all threads.
   __syncthreads();
@@ -257,26 +177,26 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
         const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * MXFP8_BUFFER_DIM_Y;
         const int chunk_stage_offset_X = chunk_offset_X;
         // Initiate bulk tensor copy
-        cp_async_bulk_tensor_2d_global_to_shared(
+        ptx::cp_async_bulk_tensor_2d_global_to_shared(
             reinterpret_cast<uint64_t *>(&in_sh[prefetch_buff]),
             reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_stage_offset_X,
             chunk_stage_offset_Y, &mbar[prefetch_buff]);
 
         if constexpr (IS_DACT) {
-          cp_async_bulk_tensor_2d_global_to_shared(
+          ptx::cp_async_bulk_tensor_2d_global_to_shared(
               reinterpret_cast<uint64_t *>(&act_in_sh[prefetch_buff]),
               reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_stage_offset_X,
               chunk_stage_offset_Y, &mbar[prefetch_buff]);
         }
 
         // Arrive on the barrier and tell how many bytes are expected to come in.
-        mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
+        ptx::mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
       }
     } else {
 // Other threads just arrive
 #pragma unroll
       for (int prefetch_buff = 0; prefetch_buff < MXFP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
-        mbarrier_arrive(&mbar[prefetch_buff]);
+        ptx::mbarrier_arrive(&mbar[prefetch_buff]);
       }
     }
 
@@ -290,28 +210,30 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
           const int chunk_it_offset_y = chunk_offset_Y + next_it * MXFP8_BUFFER_DIM_Y;
           const int chunk_it_offset_x = chunk_offset_X;
           // Initiate bulk tensor copy
-          cp_async_bulk_tensor_2d_global_to_shared(
+          ptx::cp_async_bulk_tensor_2d_global_to_shared(
               reinterpret_cast<uint64_t *>(&in_sh[next_buff]),
               reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_it_offset_x,
               chunk_it_offset_y, &mbar[next_it]);
 
           if constexpr (IS_DACT) {
-            cp_async_bulk_tensor_2d_global_to_shared(
+            ptx::cp_async_bulk_tensor_2d_global_to_shared(
                 reinterpret_cast<uint64_t *>(&act_in_sh[next_buff]),
                 reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_it_offset_x,
                 chunk_it_offset_y, &mbar[next_it]);
           }
 
           // Arrive on the barrier and tell how many bytes are expected to come in.
-          mbarrier_arrive_expect_tx(&mbar[next_it], transaction_size);
+          ptx::mbarrier_arrive_expect_tx(&mbar[next_it], transaction_size);
         } else {
           // Other threads just arrive
-          mbarrier_arrive(&mbar[next_it]);
+          ptx::mbarrier_arrive(&mbar[next_it]);
         }
       }
 
+      ptx::fence_proxy_async_shared_cta();
+
       // Wait for the data to have arrived
-      mbarrier_wait_parity(&mbar[it], parity);
+      ptx::mbarrier_wait_parity(&mbar[it], parity);
 
       if constexpr (USE_ROWWISE_SCALING) {
         Vec<IType, ELEMS_PER_THREAD> in;
@@ -353,8 +275,8 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
           __builtin_assume(thread_amax >= 0);
           block_amax = fmaxf(block_amax, thread_amax);
 
-          const float subwarp_amax = subwarp_max_reduction<SUBWARP_WIDTH>(thread_amax);
-          const e8m0_t biased_exponent = compute_shared_biased_exponent<OType>(subwarp_amax);
+          const float subwarp_amax = subwarp_reduce_max_broadcast<SUBWARP_WIDTH>(thread_amax);
+          const e8m0_t biased_exponent = float_to_e8m0(subwarp_amax * Quantized_Limits<OType>::max_norm_rcp);
 
           // Only single thread writes the computed scaling factor
           if (tid_rowwise_X % THREADS_PER_SCALE_X_ROWWISE == 0) {
@@ -367,8 +289,8 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
             scales_rowwise[scale_idx] = biased_exponent;
           }
 
-          const float block_scale_inverse =
-              exp2f(FP32_EXPONENT_BIAS - static_cast<float>(biased_exponent));
+          const float block_scale_inverse = exp2f_rcp(biased_exponent);
+
 #pragma unroll
           for (int j = 0; j < ELEMS_PER_THREAD; ++j) {
             out_c.data.elt[j] = static_cast<OType>(in_compute[j] * block_scale_inverse);
@@ -400,7 +322,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
         __builtin_assume(amax >= 0);
         block_amax = fmaxf(block_amax, amax);
 
-        const e8m0_t biased_exponent = compute_shared_biased_exponent<OType>(amax);
+        const e8m0_t biased_exponent = float_to_e8m0(amax * Quantized_Limits<OType>::max_norm_rcp);
 
         const int global_scales_offset_Y = scales_colwise_chunk_offset_Y + it;
         const int global_scales_offset_X = scales_colwise_chunk_offset_X + tid_colwise_X;
@@ -408,8 +330,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
             global_scales_offset_Y * scale_stride_colwise + global_scales_offset_X;
         scales_colwise[scale_idx] = biased_exponent;
 
-        const float block_scale_inverse =
-            exp2f(FP32_EXPONENT_BIAS - static_cast<float>(biased_exponent));
+        const float block_scale_inverse = exp2f_rcp(biased_exponent);
 #pragma unroll
         for (int i = 0; i < SCALE_DIM_Y; ++i) {
           out_colwise_sh[buff][i][tid_colwise_X] =
@@ -418,7 +339,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
       }
 
       // Wait for shared memory writes to be visible to TMA engine.
-      fence_proxy_async_shared_cta();
+      ptx::fence_proxy_async_shared_cta();
       __syncthreads();
       // After syncthreads, writes by all threads are visible to TMA engine.
 
@@ -427,23 +348,23 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
         const int chunk_it_offset_y = chunk_offset_Y + it * MXFP8_BUFFER_DIM_Y;
         const int chunk_it_offset_x = chunk_offset_X;
         if constexpr (USE_ROWWISE_SCALING) {
-          cp_async_bulk_tensor_2d_shared_to_global(
+          ptx::cp_async_bulk_tensor_2d_shared_to_global(
               reinterpret_cast<const uint64_t *>(&tensor_map_output_rowwise), chunk_it_offset_x,
               chunk_it_offset_y, reinterpret_cast<uint64_t *>(&out_rowwise_sh[buff]));
         }
         if constexpr (USE_COLWISE_SCALING) {
-          cp_async_bulk_tensor_2d_shared_to_global(
+          ptx::cp_async_bulk_tensor_2d_shared_to_global(
               reinterpret_cast<const uint64_t *>(&tensor_map_output_colwise), chunk_it_offset_x,
               chunk_it_offset_y, reinterpret_cast<uint64_t *>(&out_colwise_sh[buff]));
         }
         // Create a "bulk async-group" out of the previous bulk copy operation.
-        cp_async_bulk_commit_group();
+        ptx::cp_async_bulk_commit_group();
 
         // Wait for TMA transfer to have finished reading shared memory.
-        cp_async_bulk_wait_group_read<MXFP8_PREFETCH_BUFFERS_NUM>();
+        ptx::cp_async_bulk_wait_group_read<MXFP8_PREFETCH_BUFFERS_NUM>();
       }
     }
-    cp_async_bulk_wait_group_read<0>();
+    ptx::cp_async_bulk_wait_group_read<0>();
     __syncthreads();
 
     parity ^= 1;
@@ -487,7 +408,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
   if (is_master_thread) {
 #pragma unroll
     for (int it = 0; it < MXFP8_ITERATIONS; ++it) {
-      mbarrier_invalid(&mbar[it]);
+      ptx::mbarrier_invalid(&mbar[it]);
     }
   }
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
@@ -559,9 +480,9 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
 // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
 #pragma unroll
     for (int it = 0; it < FP8_ITERATIONS; ++it) {
-      mbarrier_init(&mbar[it], FP8_THREADS_PER_CHUNK);
+      ptx::mbarrier_init(&mbar[it], FP8_THREADS_PER_CHUNK);
     }
-    fence_proxy_async_shared_cta();
+    ptx::fence_proxy_async_shared_cta();
   }
   // Syncthreads so initialized barrier is visible to all threads.
   __syncthreads();
@@ -581,26 +502,26 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
         const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * FP8_BUFFER_DIM_Y;
         const int chunk_stage_offset_X = chunk_offset_X;
         // Initiate bulk tensor copy
-        cp_async_bulk_tensor_2d_global_to_shared(
+        ptx::cp_async_bulk_tensor_2d_global_to_shared(
             reinterpret_cast<uint64_t *>(&in_sh[prefetch_buff]),
             reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_stage_offset_X,
             chunk_stage_offset_Y, &mbar[prefetch_buff]);
 
         if constexpr (IS_DACT) {
-          cp_async_bulk_tensor_2d_global_to_shared(
+          ptx::cp_async_bulk_tensor_2d_global_to_shared(
               reinterpret_cast<uint64_t *>(&act_in_sh[prefetch_buff]),
               reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_stage_offset_X,
               chunk_stage_offset_Y, &mbar[prefetch_buff]);
         }
 
         // Arrive on the barrier and tell how many bytes are expected to come in.
-        mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
+        ptx::mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
       }
     } else {
 // Other threads just arrive
 #pragma unroll
       for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
-        mbarrier_arrive(&mbar[prefetch_buff]);
+        ptx::mbarrier_arrive(&mbar[prefetch_buff]);
       }
     }
 
@@ -614,28 +535,30 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
           const int chunk_it_offset_y = chunk_offset_Y + next_it * FP8_BUFFER_DIM_Y;
           const int chunk_it_offset_x = chunk_offset_X;
           // Initiate bulk tensor copy
-          cp_async_bulk_tensor_2d_global_to_shared(
+          ptx::cp_async_bulk_tensor_2d_global_to_shared(
               reinterpret_cast<uint64_t *>(&in_sh[next_buff]),
               reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_it_offset_x,
               chunk_it_offset_y, &mbar[next_it]);
 
           if constexpr (IS_DACT) {
-            cp_async_bulk_tensor_2d_global_to_shared(
+            ptx::cp_async_bulk_tensor_2d_global_to_shared(
                 reinterpret_cast<uint64_t *>(&act_in_sh[next_buff]),
                 reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_it_offset_x,
                 chunk_it_offset_y, &mbar[next_it]);
           }
 
           // Arrive on the barrier and tell how many bytes are expected to come in.
-          mbarrier_arrive_expect_tx(&mbar[next_it], transaction_size);
+          ptx::mbarrier_arrive_expect_tx(&mbar[next_it], transaction_size);
         } else {
           // Other threads just arrive
-          mbarrier_arrive(&mbar[next_it]);
+          ptx::mbarrier_arrive(&mbar[next_it]);
         }
       }
 
+      ptx::fence_proxy_async_shared_cta();
+
       // Wait for the data to have arrived
-      mbarrier_wait_parity(&mbar[it], parity);
+      ptx::mbarrier_wait_parity(&mbar[it], parity);
 
 #pragma unroll
       for (int stage = 0; stage < FP8_BUFF_STAGES_NUM; ++stage) {
@@ -657,7 +580,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
       }
 
       // Wait for shared memory writes to be visible to TMA engine.
-      fence_proxy_async_shared_cta();
+      ptx::fence_proxy_async_shared_cta();
       __syncthreads();
       // After syncthreads, writes by all threads are visible to TMA engine.
 
@@ -665,18 +588,18 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
       if (is_master_thread) {
         const int chunk_it_offset_y = chunk_offset_Y + it * FP8_BUFFER_DIM_Y;
         const int chunk_it_offset_x = chunk_offset_X;
-        cp_async_bulk_tensor_2d_shared_to_global(
+        ptx::cp_async_bulk_tensor_2d_shared_to_global(
             reinterpret_cast<const uint64_t *>(&tensor_map_output), chunk_it_offset_x,
             chunk_it_offset_y, reinterpret_cast<uint64_t *>(&out_sh[buff]));
 
         // Create a "bulk async-group" out of the previous bulk copy operation.
-        cp_async_bulk_commit_group();
+        ptx::cp_async_bulk_commit_group();
 
         // Wait for TMA transfer to have finished reading shared memory.
-        cp_async_bulk_wait_group_read<FP8_PREFETCH_BUFFERS_NUM>();
+        ptx::cp_async_bulk_wait_group_read<FP8_PREFETCH_BUFFERS_NUM>();
       }
     }
-    cp_async_bulk_wait_group_read<0>();
+    ptx::cp_async_bulk_wait_group_read<0>();
     __syncthreads();
 
     parity ^= 1;
@@ -712,103 +635,10 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   if (is_master_thread) {
 #pragma unroll
     for (int it = 0; it < FP8_ITERATIONS; ++it) {
-      mbarrier_invalid(&mbar[it]);
+      ptx::mbarrier_invalid(&mbar[it]);
     }
   }
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
-}
-
-static void checkCuDriverContext(CUstream stream) {
-  CUcontext ctx;
-  const CUresult driver_status = cuda_driver::call("cuStreamGetCtx", stream, &ctx);
-  switch (driver_status) {
-    case CUDA_SUCCESS:
-      break;
-
-    case CUDA_ERROR_INVALID_CONTEXT:
-      int current_device;
-      NVTE_CHECK_CUDA(cudaGetDevice(&current_device));
-      NVTE_CALL_CHECK_CUDA_DRIVER(cuDevicePrimaryCtxRetain, &ctx, current_device);
-      NVTE_CALL_CHECK_CUDA_DRIVER(cuCtxSetCurrent, ctx);
-      break;
-
-    default:
-      const char *desc_NVTE_CHECK_CUDA_DRIVER;
-      cuda_driver::call("cuGetErrorString", driver_status, &desc_NVTE_CHECK_CUDA_DRIVER);
-      NVTE_ERROR("CUDA Error: ", desc_NVTE_CHECK_CUDA_DRIVER);
-  }
-}
-
-// Get a function pointer to the cuTensorMapEncodeTiled driver API
-static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = []() {
-  const void *driver_ptr = cuda_driver::get_symbol("cuTensorMapEncodeTiled");
-  return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
-}();
-
-static CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
-  static const std::unordered_map<DType, CUtensorMapDataType> dtypeMapping = {
-      {DType::kByte, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8},
-      {DType::kFloat32, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_FLOAT32},
-      {DType::kFloat16, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_FLOAT16},
-      {DType::kBFloat16, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_BFLOAT16},
-      {DType::kFloat8E4M3, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8},
-      {DType::kFloat8E5M2, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8}};
-  return dtypeMapping.at(dtype);
-}
-
-static inline bool isPointerAligned(const void *const ptr, const int alignment) {
-  const uint64_t ptr_as_uint = reinterpret_cast<uint64_t>(ptr);
-  return ptr_as_uint % alignment == 0;
-}
-
-// Set up parameters to create TMA descriptor.
-template <typename T>
-static void create_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
-                              const uint64_t globalY, const uint64_t globalX, const uint32_t shmemY,
-                              const uint32_t shmemX) {
-  const Tensor &tensor = *tensor_ptr;
-  // rank is the number of dimensions of the array
-  constexpr uint32_t rank = 2;
-  uint64_t size[rank] = {globalX, globalY};
-
-  // The stride is the number of bytes to traverse from the first element of one row to the next
-  uint64_t stride[rank - 1] = {globalX * sizeof(T)};
-
-  // The boxSize is the size of the shared memory buffer that is used as the
-  // source/destination of a TMA transfer
-  uint32_t boxSize[rank] = {shmemX, shmemY};
-
-  // The distance between elements in units of sizeof(element)
-  uint32_t elemStride[rank] = {1, 1};
-
-  const CUtensorMapDataType tensorDataType = get_CUtensorMapDataType(tensor.data.dtype);
-  void *dataPtr = reinterpret_cast<void *>(tensor.data.dptr);
-  NVTE_CHECK(isPointerAligned(dataPtr, 16), "Tensor data must be 16B aligned");
-
-  // Create the tensor descriptor.
-  NVTE_CHECK_CUDA_DRIVER(cuDriverTensorMapEncodeTiled(
-      &tensorMap,  // CUtensorMap *tensorMap,
-      tensorDataType,
-      rank,        // cuuint32_t tensorRank,
-      dataPtr,     // void *globalAddress,
-      size,        // const cuuint64_t *globalDim,
-      stride,      // const cuuint64_t *globalStrides,
-      boxSize,     // const cuuint32_t *boxDim,
-      elemStride,  // const cuuint32_t *elementStrides,
-      // Interleave patterns can be used to accelerate loading of values that
-      // are less than 4 bytes long.
-      CUtensorMapInterleave::CU_TENSOR_MAP_INTERLEAVE_NONE,
-
-      // Swizzling can be used to avoid shared memory bank conflicts.
-      CUtensorMapSwizzle::CU_TENSOR_MAP_SWIZZLE_NONE,
-
-      // L2 Promotion can be used to widen the effect of a cache-policy to a wider
-      // set of L2 cache lines.
-      CUtensorMapL2promotion::CU_TENSOR_MAP_L2_PROMOTION_NONE,
-      // CUtensorMapL2promotion::CU_TENSOR_MAP_L2_PROMOTION_L2_256B,
-
-      // Any element that is outside of bounds will be set to zero by the TMA transfer.
-      CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE));
 }
 
 constexpr size_t DBIAS_THREADS_PER_BLOCK = 256;
@@ -904,13 +734,13 @@ void cast_fp8(const Tensor &input, const Tensor &act_input, Tensor *output, Tens
           alignas(64) CUtensorMap tensor_map_act_input{};
           alignas(64) CUtensorMap tensor_map_output{};
 
-          create_tensor_map<IType>(tensor_map_input, &input, rows, cols, FP8_SHMEM_DIM_Y,
+          create_2D_tensor_map<IType>(tensor_map_input, &input, rows, cols, FP8_SHMEM_DIM_Y,
                                    FP8_SHMEM_DIM_X);
 
           if constexpr (IS_DACT) {
-            create_tensor_map<IType>(tensor_map_act_input, &act_input, rows, cols, FP8_SHMEM_DIM_Y,
+            create_2D_tensor_map<IType>(tensor_map_act_input, &act_input, rows, cols, FP8_SHMEM_DIM_Y,
                                      FP8_SHMEM_DIM_X);
-          } create_tensor_map<OType>(tensor_map_output, output, rows, cols, FP8_SHMEM_DIM_Y,
+          } create_2D_tensor_map<OType>(tensor_map_output, output, rows, cols, FP8_SHMEM_DIM_Y,
                                      FP8_SHMEM_DIM_X);
 
           cast_fp8_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType><<<grid, block, 0, stream>>>(
@@ -922,8 +752,6 @@ void cast_fp8(const Tensor &input, const Tensor &act_input, Tensor *output, Tens
           });  // NOLINT(*)
   );           // NOLINT(*)
 }
-
-enum ScalingType { ROWWISE = 0, COLWISE = 1, BIDIMENTIONAL = 2 };
 
 template <bool IS_DBIAS, bool IS_DACT, ScalingType SCALING, typename ParamOP,
           float (*OP)(float, const ParamOP &)>
@@ -982,64 +810,44 @@ void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_row
 
   DType OutputType = USE_ROWWISE_SCALING ? output_rowwise->data.dtype : output_colwise->data.dtype;
 
-#define SCALE_DIM_SWITCH(SCALE_DIM, DIM, ...)               \
-  switch (SCALE_DIM) {                                      \
-    case 1: {                                               \
-      constexpr size_t DIM = 1;                             \
-      { __VA_ARGS__ }                                       \
-    } break;                                                \
-    case 32: {                                              \
-      constexpr size_t DIM = 32;                            \
-      { __VA_ARGS__ }                                       \
-    } break;                                                \
-    default: {                                              \
-      NVTE_ERROR("Invalid size of the MX scaling factor."); \
-    }                                                       \
-  }
-
-  SCALE_DIM_SWITCH(
-      scale_dim_Y_colwise, SCALE_DIM_Y,
-      SCALE_DIM_SWITCH(
-          scale_dim_X_rowwise, SCALE_DIM_X,
-          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
-              input.data.dtype, IType,
-              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
-                  OutputType, OType,
+  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_Y_colwise, SCALE_DIM_Y,
+      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_X_rowwise, SCALE_DIM_X,
+          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
+              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(OutputType, OType,
 
                   alignas(64) CUtensorMap tensor_map_input{};
                   alignas(64) CUtensorMap tensor_map_act_input{};
                   alignas(64) CUtensorMap tensor_map_output_rowwise{};
                   alignas(64) CUtensorMap tensor_map_output_colwise{};
 
-                  create_tensor_map<IType>(tensor_map_input, &input, rows, cols, MXFP8_SHMEM_DIM_Y,
+                  create_2D_tensor_map<IType>(tensor_map_input, &input, rows, cols, MXFP8_SHMEM_DIM_Y,
                                            MXFP8_SHMEM_DIM_X);
 
                   if constexpr (IS_DACT) {
-                    create_tensor_map<IType>(tensor_map_act_input, &act_input, rows, cols,
+                    create_2D_tensor_map<IType>(tensor_map_act_input, &act_input, rows, cols,
                                              MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
                   } if constexpr (USE_ROWWISE_SCALING) {
-                    create_tensor_map<OType>(tensor_map_output_rowwise, output_rowwise, rows, cols,
+                    create_2D_tensor_map<OType>(tensor_map_output_rowwise, output_rowwise, rows, cols,
                                              MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
                   } if constexpr (USE_COLWISE_SCALING) {
-                    create_tensor_map<OType>(tensor_map_output_colwise, output_colwise, rows, cols,
+                    create_2D_tensor_map<OType>(tensor_map_output_colwise, output_colwise, rows, cols,
                                              MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
                   }
 
-                  cast_mxfp8_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType, SCALE_DIM_Y,
-                                    SCALE_DIM_X><<<grid, block, 0, stream>>>(
-                      tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
+                  cast_mxfp8_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType, SCALE_DIM_Y, SCALE_DIM_X>
+                      <<<grid, block, 0, stream>>>
+                      (tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
                       tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr,
                       workspace_ptr, amax_ptr_rowwise, amax_ptr_colwise, rows, cols,
                       scale_stride_rowwise, scale_stride_colwise);
 
                   if constexpr (IS_DBIAS) {
                     reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
-                  });  // NOLINT(*)
-          );           // NOLINT(*)
-      );               // NOLINT(*)
-  );                   // NOLINT(*)
-
-#undef SCALE_DIM_SWITCH
+                  }
+              );  // NOLINT(*)
+          );      // NOLINT(*)
+      );          // NOLINT(*)
+  );              // NOLINT(*)
 }
 
 namespace detail {
@@ -1057,29 +865,6 @@ __device__ inline float dequantize_func(float value, const DequantizeParam &para
 }
 
 }  // namespace detail
-
-static const int32_t deviceComputeCapability = []() {
-  cudaDeviceProp deviceProp;
-  cudaGetDeviceProperties(&deviceProp, 0);
-  return 10 * deviceProp.major + deviceProp.minor;
-}();
-
-static bool is_supported_by_CC_100() { return deviceComputeCapability >= 100; }
-
-static bool is_mxfp8_cast_supported_shape(const Tensor *output) {
-  const NVTEScalingMode &scaling_mode = output->scaling_mode;
-  const bool is_mxfp8_cast_supported = (scaling_mode.delayed_scaling == 0) &&
-                                       (scaling_mode.x == 1 || scaling_mode.x == 32) &&
-                                       (scaling_mode.y == 1 || scaling_mode.y == 32);
-  return is_mxfp8_cast_supported;
-}
-
-static bool is_fp8_cast_supported_shape(const Tensor *output) {
-  const NVTEScalingMode &scaling_mode = output->scaling_mode;
-  const bool is_fp8_cast_supported =
-      is_delayed_tensor_scaling(scaling_mode) && (scaling_mode.x == -1) && (scaling_mode.y == -1);
-  return is_fp8_cast_supported;
-}
 
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
 void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, Tensor *dbias,

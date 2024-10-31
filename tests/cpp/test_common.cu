@@ -14,6 +14,7 @@
 #include <cmath>
 
 #include <gtest/gtest.h>
+#include <omp.h>
 
 #include <transformer_engine/transformer_engine.h>
 #include "util/logging.h"
@@ -346,16 +347,31 @@ std::pair<double, double> getTolerances(const DType type) {
   return {0, 0};
 }
 
+template <typename T>
+void generate_data_uniformly(T* data, const size_t size) {
+  const int seed = 12345;
+  #pragma omp parallel proc_bind(spread)
+  {
+    std::mt19937 gen(seed);
+    gen.discard(omp_get_thread_num() * 599);
+    std::uniform_real_distribution<> dis(-2.0, 1.0);
+    #pragma omp for schedule(static)
+    for (size_t i = 0; i < size; ++i) {
+      data[i] = static_cast<T>(dis(gen));
+    }
+  }
+}
+
 void fillUniform(Tensor *t) {
   const size_t size = product(t->shape());
+  TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(t->dtype(), T,
+    {
+      T *data = t->cpu_dptr<T>();
+      generate_data_uniformly(data, size);
+    }
+  );
   static std::mt19937 gen(12345);
   std::uniform_real_distribution<> dis(-2.0, 1.0);
-  TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(t->dtype(), T, {
-      T *data = t->cpu_dptr<T>();
-      for (size_t i = 0; i < size; ++i) {
-          data[i] = T(dis(gen));
-      }
-  });
   t->set_scale_inv(dis(gen));
   t->from_cpu();
 }

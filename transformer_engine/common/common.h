@@ -11,6 +11,7 @@
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
 #include <cuda_runtime_api.h>
+#include <cudaTypedefs.h>
 #include <transformer_engine/transformer_engine.h>
 
 #include <functional>
@@ -23,6 +24,7 @@
 
 #include "./nvtx.h"
 #include "./util/logging.h"
+#include "./util/cuda_driver.h"
 
 namespace transformer_engine {
 
@@ -97,6 +99,7 @@ using bf16 = nv_bfloat16;
 using fp8e4m3 = __nv_fp8_e4m3;
 using fp8e5m2 = __nv_fp8_e5m2;
 using fp8e8m0 = __nv_fp8_e8m0;
+using e8m0_t = uint8_t;
 
 namespace detail {
 
@@ -271,6 +274,21 @@ struct TypeInfo {
       NVTE_ERROR("Invalid type for 16 bit.");                  \
   }
 
+#define TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(SCALE_DIM, DIM, ...) \
+  switch (SCALE_DIM) {                                              \
+    case 1: {                                                       \
+      constexpr size_t DIM = 1;                                     \
+      { __VA_ARGS__ }                                               \
+    } break;                                                        \
+    case 32: {                                                      \
+      constexpr size_t DIM = 32;                                    \
+      { __VA_ARGS__ }                                               \
+    } break;                                                        \
+    default: {                                                      \
+      NVTE_ERROR("Invalid size of the MX scaling factor.");         \
+    }                                                               \
+  }
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 inline size_t product(const std::vector<size_t> &shape) {
@@ -352,6 +370,22 @@ void update_tensor_scale_inv(Tensor *t, cudaStream_t stream);
 
 #define NVTE_API_CALL(api_name) \
   transformer_engine::nvtx::NVTXWrapper _##api_name##_nvtx_wrapper(#api_name);
+
+void checkCuDriverContext(CUstream stream);
+
+CUtensorMapDataType get_CUtensorMapDataType(DType dtype);
+
+inline bool isPointerAligned(const void *const ptr, const int alignment);
+
+// Set up parameters to create TMA descriptor.
+template <typename T>
+void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
+                          const uint64_t globalY, const uint64_t globalX,
+                          const uint32_t shmemY, const uint32_t shmemX);
+
+bool is_supported_by_CC_100();
+bool is_mxfp8_cast_supported_shape(const Tensor *output);
+bool is_fp8_cast_supported_shape(const Tensor *output);
 
 }  // namespace transformer_engine
 
