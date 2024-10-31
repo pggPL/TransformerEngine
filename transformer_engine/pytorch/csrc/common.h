@@ -101,7 +101,7 @@ class QuantizationParams {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const = 0;
 
-  virtual std::pair<TensorWrapper, py::handle> create_tensor(const std::vector<size_t>& shape,
+  virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
                                                              DType dtype) const = 0;
 };
 
@@ -113,7 +113,7 @@ class NoneQuantizationParams : public QuantizationParams {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override {}
 
-  virtual std::pair<TensorWrapper, py::handle> create_tensor(const std::vector<size_t>& shape,
+  virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
                                                              DType dtype) const override;
 };
 
@@ -129,7 +129,7 @@ class Float8Params : public QuantizationParams {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;
 
-  virtual std::pair<TensorWrapper, py::handle> create_tensor(const std::vector<size_t>& shape,
+  virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
                                                              DType dtype) const override;
 };
 

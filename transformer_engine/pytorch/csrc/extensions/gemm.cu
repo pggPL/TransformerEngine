@@ -72,15 +72,15 @@ bool checkGemmShape(const std::vector<size_t>& expected,
 
 }  // namespace detail
 
-std::pair<TensorWrapper, py::handle> createOutputTensor(const std::vector<size_t>& shape,
+std::pair<TensorWrapper, py::object> createOutputTensor(const std::vector<size_t>& shape,
                                                         DType dtype,
                                                         py::handle quantization_params) {
   std::unique_ptr<QuantizationParams> qparams = convert_quantization_params(quantization_params);
   return qparams->create_tensor(shape, dtype);
 }
 
-std::vector<py::handle> gemm(py::handle A, bool transa, py::handle B, bool transb,
-                             py::handle D, py::handle quantization_params,
+std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb,
+                             py::object D, py::handle quantization_params,
                              std::optional<DType> out_dtype,
                              MaybeTensor bias, DType bias_type, bool gelu,
                              bool grad, at::Tensor workspace, size_t workspaceSize,
@@ -148,9 +148,12 @@ std::vector<py::handle> gemm(py::handle A, bool transa, py::handle B, bool trans
                    te_pre_gelu_out.data(), transa, transb, grad, te_workspace.data(), accumulate,
                    use_split_accumulator, num_math_sms, at::cuda::getCurrentCUDAStream());
 
-  return {D,
-          py::cast(bias_grad),
-          py::cast(pre_gelu_out.value_or(at::Tensor())).release()};
+  // Pack outputs
+  std::vector<py::object> out;
+  out.emplace_back(std::move(D));
+  out.emplace_back(py::cast(bias_grad));
+  out.emplace_back(py::cast(pre_gelu_out));
+  return out;
 }
 
 }  // namespace transformer_engine::pytorch

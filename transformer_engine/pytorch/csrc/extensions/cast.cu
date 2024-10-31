@@ -13,7 +13,7 @@
 
 namespace transformer_engine::pytorch {
 
-py::handle cast(const at::Tensor& tensor,
+py::object cast(const at::Tensor& tensor,
                 py::handle quantization_params,
                 bool rowwise_usage,
                 bool columnwise_usage,
@@ -68,14 +68,14 @@ py::handle cast(const at::Tensor& tensor,
                                    "fp8_dtype"_a=type,
                                    "dtype"_a=fake_tensor_type,
                                    "proxy"_a=proxy);
-      return ret.release();
+      return ret;
     } else {
       auto ret = Float8TensorClass("data"_a=data,
                                    "fp8_scale_inv"_a=scale_inv,
                                    "fp8_dtype"_a=type,
                                    "dtype"_a=fake_tensor_type,
                                    "proxy"_a=proxy);
-      return ret.release();
+      return ret;
     }
   }
   NVTE_ERROR("Invalid type of the quantization params");
