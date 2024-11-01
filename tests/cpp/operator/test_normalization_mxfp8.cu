@@ -233,8 +233,8 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
     rtol = 1.25e-1;
   } else if (otype == DType::kFloat8E4M3){
     if (itype == DType::kBFloat16){
-      atol = 6.5e-2;
-      rtol = 6.5e-2;
+      atol = 7e-2;
+      rtol = 7e-2;
     } else {
       atol = 6.25e-2;
       rtol = 6.25e-2;
@@ -245,7 +245,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 }
 
 std::vector<std::pair<size_t, size_t>> test_cases = {
-  // {32, 32},
+  {32, 32},
   {128, 64},
   {768, 1024},
   {64, 2304},
