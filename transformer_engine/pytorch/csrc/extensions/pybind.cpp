@@ -20,15 +20,14 @@
 
 namespace transformer_engine::pytorch {
 
-PyTypeObject *Float8TensorPythonClass = nullptr;
-PyTypeObject *Float8QParamsClass = nullptr;
+PyTypeObject *Float8TensorPythonClass = nullptr;  /// TODO Remove
+PyTypeObject *Float8QParamsClass = nullptr;  /// TODO Rename to Float8QuantizerClass
 
 void init_extension() {
   if (Float8TensorPythonClass) return;
   auto float8tensor_module = py::module_::import("transformer_engine.pytorch.tensor.float8_tensor");
-  auto qparams_module = py::module_::import("transformer_engine.pytorch.quantization_params");
-  Float8QParamsClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(qparams_module.ptr(),
-                                                                              "Float8Params"));
+  Float8QParamsClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(),
+                                                                              "Float8Quantizer"));
   Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(), "Float8Tensor"));
   NVTE_CHECK(Float8TensorPythonClass != nullptr,
              "Internal error: could not initialize pyTorch extension.");

@@ -20,6 +20,7 @@ import torch.nn.functional as F
 import transformer_engine_torch as tex
 
 from ._common import _ParameterInitMeta
+from ...common.recipe import DelayedScaling
 from ..export import is_in_onnx_export_mode
 from ..fp8 import (
     get_fp8_te_dtype,
@@ -37,8 +38,8 @@ from ..cpp_extensions import (
     cast_to_fp8,
 )
 from ..constants import dist_group_type
-from ..tensor import QuantizedTensor, Float8Tensor
-from ..quantizer import Quantizer
+from ..tensor import Float8Tensor, QuantizedTensor, Quantizer
+from ..tensor.float8_tensor import FP8TensorMetaProxyQuantizer
 from transformer_engine.common.recipe import Recipe
 
 __all__ = ["initialize_ub", "destroy_ub"]
@@ -408,6 +409,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fp8_meta["fp8_checkpoint"] = False
         self.fp8_meta["fp8_group"] = None
         self.fp8_meta_tensors_initialized = False
+        self.quantizers = {"scaling_fwd": {}, "scaling_bwd": {}}
         self.tp_group = None
         self.tp_size = 1
         self.sequence_parallel = False
@@ -507,7 +509,35 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         # 2 (grad_output and grad_input) for bwd
         num_fp8_tensors = self.fp8_meta["num_gemms"] * 3 if fwd else self.fp8_meta["num_gemms"] * 2
 
-        self.fp8_meta[fp8_meta_tensor_key] = Quantizer(recipe, num_fp8_tensors, forward=fwd)
+        # Allocate buffers for FP8 scaling factors
+        self.fp8_meta[fp8_meta_tensor_key] = tex.FP8TensorMeta()
+        self.fp8_meta[fp8_meta_tensor_key].scale = torch.ones(
+            num_fp8_tensors, dtype=torch.float32, device="cuda"
+        )
+        self.fp8_meta[fp8_meta_tensor_key].scale_inv = torch.ones(
+            num_fp8_tensors, dtype=torch.float32, device="cuda"
+        )
+        self.fp8_meta[fp8_meta_tensor_key].amax_history = torch.zeros(
+            self.fp8_meta["recipe"].amax_history_len,
+            num_fp8_tensors,
+            dtype=torch.float32,
+            device="cuda",
+        )
+
+        # Construct builders for FP8 tensors
+        if not isinstance(recipe, DelayedScaling):
+            raise NotImplementedError
+        self.quantizers[fp8_meta_tensor_key] = [
+            FP8TensorMetaProxyQuantizer(
+                self.fp8_meta[fp8_meta_tensor_key],
+                index,
+                get_fp8_te_dtype(recipe, fprop_tensor=fwd),
+                rowwise=True,
+                columnwise=torch.is_grad_enabled(),
+            )
+            for index in range(num_fp8_tensors)
+        ]
+
 
     def init_fp8_meta_tensors(self,
                               recipe: Recipe) -> None:
@@ -927,7 +957,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         *,
         tensor: Optional[torch.Tensor] = None,
         quantizer: Optional[Quantizer] = None,
-        tensor_index: Optional[int] = None,
         cache_name: Optional[str] = None,
         update_workspace: bool = True,
         skip_update_flag: Optional[torch.Tensor] = None,
@@ -944,9 +973,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             is being constructed or updated.
         quantizer: Quantizer, optional
             Quantizer used to cast the weights. Required if the
-            workspace is being constructed or updated.
-        tensor_index: int, optional
-            Index of the tensor in the quantizer. Required if the
             workspace is being constructed or updated.
         cache_name: str, optional
             Key for caching.
@@ -977,22 +1003,12 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         # Construct workspace if needed
         if out is None:
-            if tensor is None or quantizer is None or tensor_index is None:
+            if tensor is None or quantizer is None:
                 raise ValueError(
-                    "tensor, quantizer and tensor_index kwargs "
+                    "tensor and quantizer kwargs "
                     "must be provided to construct FP8 workspace"
                 )
-
-            need_columnwise = torch.is_grad_enabled()
-            if (
-                not need_columnwise
-                and is_fp8_activation_recompute_enabled()
-                and not in_fp8_activation_recompute_phase()
-            ):
-                need_columnwise = True
-            out = quantizer.quantize(tensor, tensor_index,
-                                     rowwise=True,
-                                     columnwise=need_columnwise)
+            out = quantizer.quantize(tensor)
 
             # Update cache
             if cache_name is not None:

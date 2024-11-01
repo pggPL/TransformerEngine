@@ -5,21 +5,53 @@
 """Tensor with quantized data"""
 
 from __future__ import annotations
+import abc
 from typing import Optional, Tuple
 
 import torch
 from torch.utils._pytree import tree_map
 
-from ..quantization_params import QuantizationParams
+from ...common.recipe import Recipe
 
-class QuantizationParamsProxy:
-    def __init__(self):
-        pass
+class Quantizer(abc.ABC):
 
-    def get_quantization_params(self) -> QuantizationParams:
-        raise NotImplementedError(
-            f"{self.__class__.__name__} class does not implement get_quantization_params function"
-        )
+    @abc.abstractmethod
+    def update_quantized(
+        self,
+        src: torch.Tensor,
+        dst: QuantizedTensor,
+    ) -> QuantizedTensor:
+        ...
+
+    def quantize(
+        self,
+        tensor: torch.Tensor,
+        *,
+        out: Optional[QuantizedTensor] = None,
+    ) -> QuantizedTensor:
+        if out is None:
+            out = self.make_empty(
+                tensor.size(),
+                dtype=tensor.dtype,
+                device=tensor.device,
+            )
+        self._quantize_impl(tensor, out)
+        return out
+
+    @abc.abstractmethod
+    def make_empty(
+        self,
+        shape: Iterable[int],
+        *,
+        dtype: Optional[torch.dtype] = None,
+        device: Optional[torch.device] = None,
+    ) -> QuantizedTensor:
+        ...
+
+    @abc.abstractmethod
+    def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
+        ...
+
 
 class _DequantizeFunc(torch.autograd.Function):
     """Autograd function to convert quantized tensor to standard tensor"""
@@ -82,18 +114,6 @@ class QuantizedTensor(torch.Tensor):
         """Update quantized data in-place"""
         raise NotImplementedError(
             f"{self.__class__.__name__} class does not implement quantize_ function"
-        )
-
-    @classmethod
-    def quantize(cls,
-                 tensor: torch.Tensor,
-                 params: QuantizationParams,
-                 *,
-                 proxy: Optional[QuantizationParamsProxy] = None,
-                 rowwise_usage: bool = True,
-                 columnwise_usage: bool = True) -> QuantizedTensor:
-        raise NotImplementedError(
-            f"{cls.__name__} class does not implement quantize function"
         )
 
     def detach(self) -> QuantizedTensor:

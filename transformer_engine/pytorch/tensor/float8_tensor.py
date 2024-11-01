@@ -12,6 +12,7 @@ from torch._prims_common import is_contiguous
 import transformer_engine_torch as tex
 
 from transformer_engine_torch import DType as TE_DType
+from ...common.recipe import DelayedScaling, Recipe
 from ..constants import TE_DType as torch_to_transformer_engine_dtype
 from ..cpp_extensions.transpose import fp8_cast_transpose_fused
 from ..cpp_extensions.cast import (
@@ -19,27 +20,261 @@ from ..cpp_extensions.cast import (
 )
 from ..fp8 import FP8GlobalStateManager
 from ..utils import devices_match
-from ..quantization_params import Float8Params, QuantizationParams
-from .quantized_tensor import QuantizationParamsProxy, QuantizedTensor
+from .quantized_tensor import QuantizedTensor, Quantizer
 
 aten = torch.ops.aten
 updated_fp8_params = {}
 
-class Float8ParamsProxy(QuantizationParamsProxy):
-    def __init__(self,
-                 meta,
-                 index,
-                 dtype):
+
+class _QuantizeFunc(torch.autograd.Function):
+    """Cast to FP8 from other dtype"""
+
+    @staticmethod
+    def forward(
+        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        tensor: torch.Tensor,
+        quantizer: Float8Quantizer,
+    ) -> Float8Tensor:
+        # pylint: disable=missing-function-docstring
+        return tex.generic_cast(tensor, quantizer)
+
+    @staticmethod
+    def backward(
+        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        grad: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        # pylint: disable=missing-function-docstring
+        # Assume that we want gradients in full precision
+        return grad, None
+
+
+class _DequantizeFunc(torch.autograd.Function):
+    """Cast from FP8 to other dtype"""
+
+    @staticmethod
+    def forward(
+        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        tensor: Float8Tensor,
+        dtype: Optional[torch.dtype] = None,
+    ) -> torch.Tensor:
+        # pylint: disable=missing-function-docstring
+
+        # Convert PyTorch dtype to TE dtype
+        if dtype is None:
+            dtype = tensor.dtype
+        dtype = torch_to_transformer_engine_dtype[dtype]
+
+        # Make sure FP8 data is in expected format
+        data = tensor._data
+        assert data is not None
+
+        # Cast from FP8
+        return tex.cast_from_fp8(data, tensor._scale_inv, tensor._fp8_dtype, dtype, 0)
+
+    @staticmethod
+    def backward(
+        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        grad: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        # pylint: disable=missing-function-docstring
+        # Assume that we want gradients in full precision
+        return grad, None
+
+
+class Float8Quantizer(Quantizer):
+
+    scale: torch.Tensor
+    amax: torch.Tensor
+    dtype: TE_Dtype
+
+    def __init__(
+        self,
+        scale: torch.Tensor,
+        amax: torch.Tensor,
+        fp8_dtype: TE_Dtype,
+        *,
+        rowwise: bool = True,
+        columnwise: bool = True,
+    ) -> None:
+        super().__init__()
+        self.scale = scale
+        self.amax = amax
+        self.dtype = fp8_dtype
+        self.rowwise_usage = rowwise
+        self.columnwise_usage = columnwise
+
+    def update_quantized(
+        self,
+        src: torch.Tensor,
+        dst: Float8Tensor,
+    ) -> Float8Tensor:
+
+        # Launch cast kernel
+        if dst._transpose is None:
+            dst_data = dst._data
+            if src.dim() != 2:
+                src = src.view(1, -1)
+                dst_data = dst_data.view(1, -1)
+            cast_to_fp8(
+                src,
+                None,
+                None,
+                self.dtype,
+                out=dst_data,
+                scale=self.scale,
+                amax=self.amax,
+                scale_inv=dst._scale_inv,
+            )
+        else:
+            fp8_cast_transpose_fused(
+                src.view(-1, src.size(-1)),
+                None,
+                None,
+                self.dtype,
+                cast_out=dst._data,
+                transpose_out=dst._transpose,
+                scale=self.scale,
+                amax=self.amax,
+                scale_inv=dst._scale_inv,
+                noop_flag=noop_flag,  ### TODO How to handle?
+            )
+            dst._transpose_invalid = False
+
+        # Update FP8 dtype
+        dst._fp8_dtype = self.dtype
+
+        return dst
+
+    def quantize(
+        self,
+        tensor: torch.Tensor,
+        *,
+        out: Optional[Float8Tensor] = None,
+    ) -> Float8Tensor:
+        if out is not None:
+            return self.update_quantized(tensor, out)
+        if torch.is_grad_enabled():
+            return _QuantizeFunc.apply(tensor, self)
+        return _QuantizeFunc.forward(None, tensor, self)
+
+    def make_empty(
+        self,
+        shape: Iterable[int],
+        *,
+        dtype: Optional[torch.dtype] = None,
+        device: Optional[torch.device] = None,
+        requires_grad: bool = False,
+    ) -> Float8Tensor:
+
+        # Canonicalize tensor attributes
+        if device is None:
+            device = torch.device("cuda")
+        if dtype is None:
+            dtype = torch.float32
+
+        # Allocate FP8 data
+        data = torch.empty(shape, dtype=torch.uint8, device=device)
+
+        # Allocate FP8 data transpose if needed
+        data_transpose = None
+        if self.columnwise_usage:
+            inner_dim = data.size(-1)
+            data_transpose = torch.empty(
+                inner_dim,
+                data.numel() // inner_dim,
+                dtype=torch.uint8,
+                device=device,
+            )
+
+        # Construct FP8 tensor
+        return Float8Tensor(
+            data=data,
+            fp8_dtype=self.fp8_dtype,
+            dtype=dtype,
+            requires_grad=requires_grad,
+            data_transpose=data_transpose,
+            quantizer=self,
+        )
+
+    def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
+        if isinstance(recipe, DelayedScaling):
+            amin, amax = tensor.aminmax()
+            self.amax.copy_(torch.max(-amin, amax))
+            return
+        raise NotImplementedError("Not implemented yet!")
+
+
+class FP8TensorMetaProxyQuantizer(Quantizer):
+
+    meta: tex.FP8TensorMeta
+    index: int
+
+    def __init__(
+        self,
+        meta: dict,
+        index: int,
+        fp8_dtype: TE_Dtype,
+        *,
+        rowwise: bool = True,
+        columnwise: bool = True,
+    ):
         super().__init__()
         self.meta = meta
         self.index = index
-        self.dtype = dtype
+        self.dtype = fp8_dtype
+        self.rowwise_usage = rowwise
+        self.columnwise_usage = columnwise
 
-    def get_quantization_params(self) -> QuantizationParams:
-        return Float8Params(
-                    self.meta.scale[self.index],
-                    self.meta.amax[0][self.index],
-                    self.dtype)
+    @property
+    def scale(self) -> torch.Tensor:
+        return self.meta.scale[self.index]
+
+    @property
+    def amax(self) -> torch.Tensor:
+        return self.meta.amax_history[0][self.index]
+
+    def resolve(self) -> Float8Quantizer:
+        return Float8Quantizer(
+            scale=self.scale,
+            amax=self.amax,
+            fp8_dtype=self.dtype,
+            rowwise=self.rowwise_usage,
+            columnwise=self.columnwise_usage,
+        )
+
+    def update_quantized(
+        self,
+        src: torch.Tensor,
+        dst: Float8Tensor,
+    ) -> Float8Tensor:
+        self.resolve().update_quantized(src, dst)
+
+    def quantize(
+        self,
+        tensor: torch.Tensor,
+        *,
+        out: Optional[Float8Tensor] = None,
+    ) -> Float8Tensor:
+        return self.resolve().quantize(tensor, out=out)
+
+    def make_empty(
+        self,
+        shape: Iterable[int],
+        *,
+        dtype: Optional[torch.dtype] = None,
+        device: Optional[torch.device] = None,
+        requires_grad: bool = False,
+    ) -> Float8Tensor:
+        return self.resolve().make_empty(
+            shape,
+            dtype=dtype,
+            device=device,
+            requires_grad=requires_grad,
+        )
+
+    def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
+        self.resolve().calibrate(recipe, tensor)
+
 
 def _make_fp8_attr_property_funcs(name: str) -> Any:
     """Make accessors for an FP8 attribute
@@ -68,28 +303,6 @@ def _make_fp8_attr_property_funcs(name: str) -> Any:
     return {"fget": get_func, "fset": set_func, "fdel": del_func}
 
 
-class _FromFloat8Func(torch.autograd.Function):
-    """Cast from FP8 to other dtype"""
-
-    @staticmethod
-    def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        tensor: Float8Tensor,
-        dtype: Optional[torch.dtype] = None,
-    ) -> torch.Tensor:
-        # pylint: disable=missing-function-docstring
-        return tensor.dequantize(dtype=dtype)
-
-    @staticmethod
-    def backward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        grad: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        # pylint: disable=missing-function-docstring
-        # Assume that we want gradients in full precision
-        return grad, None
-
-
 def post_optimizer_step_fwd_amax_reduction(param: Float8Tensor) -> None:
     """Amax scale and update when there is at least 1 trainable FP8 parameter."""
     param_id = id(param._data)
@@ -112,45 +325,6 @@ def post_optimizer_step_fwd_amax_reduction(param: Float8Tensor) -> None:
     if updated_fp8_params[autocast_key] == current_fp8_params_set:
         FP8GlobalStateManager.reduce_and_update_fp8_tensors(forward=True, fp8_weights=True)
         del updated_fp8_params[autocast_key]
-
-
-class _ToFloat8Func(torch.autograd.Function):
-    """Cast to FP8 from other dtype"""
-
-    @staticmethod
-    def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        tensor: torch.Tensor,
-        qparams: Float8Params,
-        rowwise_usage: bool = True,
-        columnwise_usage: bool = True,
-        proxy: Optional[Float8ParamsProxy] = None,
-    ) -> Float8Tensor:
-        # pylint: disable=missing-function-docstring
-
-        # Tensor attributes
-        if not tensor.is_cuda:
-            tensor = tensor.cuda()
-
-        if isinstance(tensor, QuantizedTensor):
-            tensor = tensor.dequantize()
-
-        out = tex.generic_cast(tensor,
-                               qparams,
-                               rowwise_usage,
-                               columnwise_usage,
-                               proxy)
-
-        return out
-
-    @staticmethod
-    def backward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        grad: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        # pylint: disable=missing-function-docstring
-        # Assume that we want gradients in full precision
-        return grad, None, None, None, None, None, None, None
 
 
 class _IdentityFunc(torch.autograd.Function):
@@ -177,7 +351,7 @@ class _IdentityFunc(torch.autograd.Function):
         # Construct new tensor if constructor kwargs are provided
         default_kwargs = {
             "data": tensor._data,
-            "proxy": tensor._proxy,
+            "quantizer": tensor._quantizer,
             "fp8_dtype": tensor._fp8_dtype,
             "fp8_scale_inv": tensor._scale_inv,
             "dtype": tensor.dtype,
@@ -304,8 +478,6 @@ class Float8Tensor(QuantizedTensor):
     fp8_attrs: dict, optional
                FP8 metadata, primarily managed by Float8Tensor. If
                provided, all other FP8 configuration is ignored.
-    proxy: FP8ParamsProxy, optional
-              FP8 metadata object, primarily managed by TE modules.
     fp8_dtype: transformer_engine_torch.DType, default = kFloat8E4M3
                FP8 format.
     fp8_scale_inv: torch.Tensor
@@ -321,7 +493,7 @@ class Float8Tensor(QuantizedTensor):
 
     _data: Optional[torch.Tensor]
     _fp8_attrs: Dict[str, Any]
-    _proxy: Optional[Float8ParamsProxy]
+    _quantizer: Optional[Float8Quantizer]
     _fp8_dtype: TE_DType
     _scale_inv: torch.Tensor
 
@@ -338,7 +510,7 @@ class Float8Tensor(QuantizedTensor):
         dtype: torch.dtype = torch.float32,
         requires_grad: bool = False,
         data_transpose: Optional[torch.Tensor] = None,
-        proxy: Optional[Float8ParamsProxy] = None,
+        quantizer: Optional[Float8Quantizer] = None,
         fp8_attrs: Optional[Dict[str, Any]] = None,
     ):
         # Initialize tensor object
@@ -364,7 +536,8 @@ class Float8Tensor(QuantizedTensor):
             self._fp8_attrs = fp8_attrs
             return self
 
-        self._proxy = proxy
+        # Builder class for Float8Tensor
+        self._quantizer = quantizer
 
         # FP8 dtype
         self._fp8_dtype = fp8_dtype
@@ -393,7 +566,7 @@ class Float8Tensor(QuantizedTensor):
 
         """
         default_kwargs = {
-            "proxy": tensor._proxy,
+            "quantizer": tensor._quantizer,
             "fp8_dtype": tensor._fp8_dtype,
             "fp8_scale_inv": tensor._scale_inv,
             "dtype": tensor.dtype,
@@ -413,23 +586,9 @@ class Float8Tensor(QuantizedTensor):
         )
 
     def dequantize(self, *, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
-
-        # Convert PyTorch dtype to TE dtype
-        if dtype is None:
-            dtype = self.dtype
-        dtype = torch_to_transformer_engine_dtype[dtype]
-
-        # Make sure FP8 data is in expected format
-        data = self._data
-        assert data is not None
-
-        # Cast from FP8
-        return tex.cast_from_fp8(data,
-                                 self._scale_inv,
-                                 self._fp8_dtype,
-                                 dtype,
-                                 0
-        )
+        if torch.is_grad_enabled():
+            return _DequantizeFunc.apply(self, dtype)
+        return _DequantizeFunc.forward(None, self, dtype)
 
     def from_float8(self, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """
@@ -438,7 +597,7 @@ class Float8Tensor(QuantizedTensor):
         By default the resulting tensor's dtype is the
         Float8Tensor's nominal dtype.
         """
-        return _FromFloat8Func.apply(self, dtype)
+        return _DequantizeFunc.apply(self, dtype)
 
     def quantize_(
         self,
@@ -598,21 +757,10 @@ class Float8Tensor(QuantizedTensor):
     def quantize(
         cls,
         tensor: torch.Tensor,
-        params: QuantizationParams,
-        *,
-        proxy: Optional[QuantizationParamsProxy] = None,
-        rowwise_usage: bool = True,
-        columnwise_usage: bool = True) -> QuantizedTensor:
+        quantizer: Float8Quantizer,
+    ) -> Float8Tensor:
         """Construct Float8Tensor from plain PyTorch tensor"""
-        assert isinstance(params, Float8Params), \
-            f"Invalid quantization params type: {type(params)}"
-        return _ToFloat8Func.apply(
-            tensor,
-            params,
-            rowwise_usage,
-            columnwise_usage,
-            proxy,
-        )
+        return quantizer.quantize(tensor)
 
     def detach(self) -> Float8Tensor:
         # pylint: disable=missing-function-docstring
@@ -809,14 +957,9 @@ class Float8Tensor(QuantizedTensor):
                 self.requires_grad_(requires_grad=tensor.requires_grad)
             return
 
-        assert self._proxy is not None, "Can't quantize without a proxy"
-
-        self.data = Float8Tensor.quantize(tensor,
-                                          self._proxy.get_quantization_params(),
-                                          rowwise_usage=self._data is not None,
-                                          columnwise_usage=self._transpose is not None,
-                                          proxy=self._proxy)
-
+        # Quantize to FP8
+        assert self._quantizer is not None, "Can't quantize without a quantizer"
+        self.data = self._quantizer.quantize(tensor)
         if self.requires_grad != tensor.requires_grad:
             self.requires_grad_(requires_grad=tensor.requires_grad)
 
@@ -827,7 +970,7 @@ class Float8Tensor(QuantizedTensor):
     # Note: We store FP8 attributes in a dictionary so we can share
     # them between tensors with the same data, e.g. detached tensors.
     # For convenience, we also expose them as property attributes.
-    _proxy = property(**_make_fp8_attr_property_funcs("proxy"))
+    _quantizer = property(**_make_fp8_attr_property_funcs("quantizer"))
     _fp8_dtype = property(**_make_fp8_attr_property_funcs("dtype"))
     _transpose = property(**_make_fp8_attr_property_funcs("transpose"))
     _transpose_invalid = property(**_make_fp8_attr_property_funcs("transpose_invalid"))

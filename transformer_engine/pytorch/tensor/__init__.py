@@ -6,8 +6,8 @@
 
 import torch
 
-from .float8_tensor import Float8Tensor
-from .quantized_tensor import QuantizedTensor
+from .float8_tensor import Float8Tensor, Float8Quantizer
+from .quantized_tensor import QuantizedTensor, Quantizer
 
 __all__ = ["Float8Tensor", "QuantizedTensor"]
 
