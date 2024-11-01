@@ -784,14 +784,16 @@ class Float8Tensor(QuantizedTensor):
             assert self._data is not None, \
                    "Rowwise usage of the tensor was already disabled"
         else:
-            if self._transpose is None or self._transpose_invalid:
-                self._create_transpose()
-            self._data = None
+            if not supports_fp8_transposes():
+                if self._transpose is None or self._transpose_invalid:
+                    self._create_transpose()
+                self._data = None
         if columnwise_usage:
             if self._transpose is None or self._transpose_invalid:
                 assert self._data is not None, \
                        "The tensor does not hold any data anymore"
-                self._create_transpose()
+                if not supports_fp8_transposes():
+                    self._create_transpose()
         else:
             self._transpose = None
             self._transpose_invalid = True

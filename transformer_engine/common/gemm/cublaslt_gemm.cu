@@ -15,6 +15,7 @@
 
 #include "../common.h"
 #include "../util/logging.h"
+#include "common/util/cuda_runtime.h"
 
 namespace {
 
@@ -46,6 +47,88 @@ uint32_t _getAlignment(uintptr_t address) {
   }
 }
 
+struct GemmParam {
+  void* A;
+  void* B;
+  cublasOperation_t transA;
+  cublasOperation_t transB;
+  transformer_engine::DType Atype;
+  transformer_engine::DType Btype;
+  void* A_scale_inv;
+  void* B_scale_inv;
+
+  GemmParam(cublasOperation_t transA, cublasOperation_t transB) :
+  A(nullptr), B(nullptr), transA(transA), transB(transB),
+  Atype(transformer_engine::DType::kNumTypes),
+  Btype(transformer_engine::DType::kNumTypes),
+  A_scale_inv(nullptr), B_scale_inv(nullptr) {}
+};
+
+GemmParam CanonicalizeGemmInput(
+    const transformer_engine::Tensor& A,
+    const cublasOperation_t transA,
+    const transformer_engine::Tensor& B,
+    const cublasOperation_t transB) {
+  using namespace transformer_engine;
+  NVTE_CHECK(A.scaling_mode == B.scaling_mode,
+             "Inputs A and B to GEMM need to have the same scaling mode!");
+  NVTE_CHECK(A.has_data() || A.has_columnwise_data(),
+             "Input A does not hold any data!");
+  NVTE_CHECK(B.has_data() || B.has_columnwise_data(),
+             "Input B does not hold any data!");
+  GemmParam ret(transA, transB);
+
+  if (is_tensor_scaling(A.scaling_mode)) {
+    ret.A = A.data.dptr;
+    ret.A_scale_inv = A.scale_inv.dptr;
+    if (transA == CUBLAS_OP_T) {
+      ret.Atype = A.data.dtype;
+    } else {
+      ret.Atype = A.has_columnwise_data() ? A.columnwise_data.dtype : A.data.dtype;
+      if (is_fp8_dtype(ret.Atype)) {
+        int arch = cuda::sm_arch(cuda::current_device());
+        if (arch < 100) {
+          // Hopper and Ada - we need to use columnwise_data and change transA
+          NVTE_CHECK(A.has_columnwise_data(),
+                     "Input A is not suitable for columnwise usage!");
+          ret.A = A.columnwise_data.dptr;
+          ret.transA = CUBLAS_OP_T;
+          ret.A_scale_inv = A.columnwise_scale_inv.dptr;
+        }
+      }
+    }
+    ret.B = B.data.dptr;
+    ret.B_scale_inv = B.scale_inv.dptr;
+    if (transB == CUBLAS_OP_T) {
+      ret.Btype = B.has_columnwise_data() ? B.columnwise_data.dtype : B.data.dtype;
+      if (is_fp8_dtype(ret.Btype)) {
+        int arch = cuda::sm_arch(cuda::current_device());
+        if (arch < 100) {
+          // Hopper and Ada - we need to use columnwise_data and change transA
+          NVTE_CHECK(B.has_columnwise_data(),
+                     "Input B is not suitable for columnwise usage!");
+          ret.B = B.columnwise_data.dptr;
+          ret.transB = CUBLAS_OP_N;
+          ret.B = B.columnwise_scale_inv.dptr;
+        }
+      }
+    } else {
+      ret.Btype = B.data.dtype;
+    }
+  } else {
+    // If not tensor scaling (which includes also high precision types), we need to
+    // use the proper version of data
+    // We leave the transA/B values as is, since Blackwell supports transposes
+    ret.A = transA ? A.data.dptr : A.columnwise_data.dptr;
+    ret.Atype = transA ? A.data.dtype : A.columnwise_data.dtype;
+    ret.A_scale_inv = transA ? A.scale_inv.dptr : A.columnwise_scale_inv.dptr;
+    ret.B = transB ? B.columnwise_data.dptr : B.data.dptr;
+    ret.Btype = transB ? B.columnwise_data.dtype : B.data.dtype;
+    ret.B_scale_inv = transA ? B.columnwise_scale_inv.dptr : B.scale_inv.dptr;
+  }
+  return ret;
+}
+
 }  // namespace
 
 namespace transformer_engine {
@@ -56,8 +139,7 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
                  void *workspace, size_t workspaceSize, bool accumulate, bool use_split_accumulator,
                  int math_sm_count, int m_split, int n_split, bool gemm_producer,
                  const Tensor *inputCounter, cudaStream_t stream) {
-  void *A = inputA->data.dptr;
-  void *B = inputB->data.dptr;
+  const GemmParam& param = CanonicalizeGemmInput(*inputA, transa, *inputB, transb);
   void *C = outputD->data.dptr;
   void *D = outputD->data.dptr;
   void *D_scale = outputD->scale.dptr;
@@ -70,16 +152,16 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
     counter = inputCounter->data.dptr;
   }
   const bool gelu = pre_gelu_out != nullptr;
-  const bool use_fp8 = is_fp8_dtype(inputA->data.dtype) || is_fp8_dtype(inputB->data.dtype);
+  const bool use_fp8 = is_fp8_dtype(param.Atype) || is_fp8_dtype(param.Btype);
 
-  const cudaDataType_t A_type = get_cuda_dtype(inputA->data.dtype);
-  const cudaDataType_t B_type = get_cuda_dtype(inputB->data.dtype);
+  const cudaDataType_t A_type = get_cuda_dtype(param.Atype);
+  const cudaDataType_t B_type = get_cuda_dtype(param.Btype);
   const cudaDataType_t D_type = get_cuda_dtype(outputD->data.dtype);
   const cudaDataType_t bias_type = get_cuda_dtype(inputBias->data.dtype);
 
-  NVTE_CHECK(!is_fp8_dtype(inputA->data.dtype) || inputA->scale_inv.dptr != nullptr,
+  NVTE_CHECK(!is_fp8_dtype(param.Atype) || param.A_scale_inv != nullptr,
              "FP8 input to GEMM requires inverse of scale!");
-  NVTE_CHECK(!is_fp8_dtype(inputB->data.dtype) || inputB->scale_inv.dptr != nullptr,
+  NVTE_CHECK(!is_fp8_dtype(param.Btype) || param.B_scale_inv != nullptr,
              "FP8 input to GEMM requires inverse of scale!");
 
   // check consistency of arguments:
@@ -116,17 +198,17 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   }
 
   // Create matrix descriptors. Not setting any extra attributes.
-  NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Adesc, A_type, transa == CUBLAS_OP_N ? m : k,
-                                               transa == CUBLAS_OP_N ? k : m, lda));
-  NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Bdesc, B_type, transb == CUBLAS_OP_N ? k : n,
-                                               transb == CUBLAS_OP_N ? n : k, ldb));
+  NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Adesc, A_type, param.transA == CUBLAS_OP_N ? m : k,
+                                               param.transA == CUBLAS_OP_N ? k : m, lda));
+  NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Bdesc, B_type, param.transB == CUBLAS_OP_N ? k : n,
+                                               param.transB == CUBLAS_OP_N ? n : k, ldb));
   NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Ddesc, D_type, m, n, ldd));
 
   NVTE_CHECK_CUBLAS(cublasLtMatmulDescCreate(&operationDesc, gemm_compute_type, CUDA_R_32F));
   NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSA,
-                                                   &transa, sizeof(transa)));
+                                                   &param.transA, sizeof(param.transA)));
   NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB,
-                                                   &transb, sizeof(transb)));
+                                                   &param.transB, sizeof(param.transB)));
   // Set math SM count
   if (math_sm_count != 0) {
     NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
@@ -147,8 +229,8 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
     cublasLtMatmulMatrixScale_t scaling_mode;
     if ((is_delayed_tensor_scaling(inputA->scaling_mode) &&
          is_delayed_tensor_scaling(inputB->scaling_mode))) {
-      void *A_scale_inverse = inputA->scale_inv.dptr;
-      void *B_scale_inverse = inputB->scale_inv.dptr;
+      void *A_scale_inverse = param.A_scale_inv;
+      void *B_scale_inverse = param.B_scale_inv;
       NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
                                                        CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
                                                        &A_scale_inverse, sizeof(A_scale_inverse)));
@@ -157,8 +239,8 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
                                                        &B_scale_inverse, sizeof(B_scale_inverse)));
       scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR_32F;
     } else if ((is_columnwise_block_scaling(inputA) && is_columnwise_block_scaling(inputB))) {
-      fp8e8m0 *A_scale_inverse = reinterpret_cast<fp8e8m0 *>(inputA->scale_inv.dptr);
-      fp8e8m0 *B_scale_inverse = reinterpret_cast<fp8e8m0 *>(inputB->scale_inv.dptr);
+      fp8e8m0 *A_scale_inverse = reinterpret_cast<fp8e8m0 *>(param.A_scale_inv);
+      fp8e8m0 *B_scale_inverse = reinterpret_cast<fp8e8m0 *>(param.B_scale_inv);
       NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(operationDesc,
                                                        CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
                                                        &A_scale_inverse, sizeof(A_scale_inverse)));
@@ -261,8 +343,8 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   NVTE_CHECK_CUBLAS(cublasLtMatmulPreferenceCreate(&preference));
   NVTE_CHECK_CUBLAS(cublasLtMatmulPreferenceSetAttribute(
       preference, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize, sizeof(workspaceSize)));
-  const auto A_alignment = _getAlignment(reinterpret_cast<uintptr_t>(A));
-  const auto B_alignment = _getAlignment(reinterpret_cast<uintptr_t>(B));
+  const auto A_alignment = _getAlignment(reinterpret_cast<uintptr_t>(param.A));
+  const auto B_alignment = _getAlignment(reinterpret_cast<uintptr_t>(param.B));
   const auto C_alignment = _getAlignment(reinterpret_cast<uintptr_t>(C));
   const auto D_alignment = _getAlignment(reinterpret_cast<uintptr_t>(D));
   NVTE_CHECK_CUBLAS(cublasLtMatmulPreferenceSetAttribute(
@@ -286,8 +368,8 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   // D = alpha * (A * B) + beta * C
   NVTE_CHECK_CUBLAS(cublasLtMatmul(handle, operationDesc,
                                    static_cast<const void *>(&one),         /* alpha */
-                                   A,                                       /* A */
-                                   Adesc, B,                                /* B */
+                                   param.A,                                       /* A */
+                                   Adesc, param.B,                                /* B */
                                    Bdesc, static_cast<const void *>(&beta), /* beta */
                                    C,                                       /* C */
                                    Cdesc, D,                                /* D */

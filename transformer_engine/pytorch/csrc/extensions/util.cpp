@@ -4,15 +4,10 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#pragma once
-#include "onnxruntime/core/session/onnxruntime_c_api.h"
+#include "util.h"
+#include "ATen/cuda/CUDAContextLight.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-ORT_EXPORT OrtStatus* ORT_API_CALL RegisterCustomOps(OrtSessionOptions* options, const OrtApiBase* api);
-
-#ifdef __cplusplus
+bool supports_fp8_transposes() {
+  int major = at::cuda::getCurrentDeviceProperties()->major;
+  return major >= 10;
 }
-#endif

@@ -42,11 +42,18 @@ from transformer_engine.pytorch.cpp_extensions import (
     cast_from_fp8,
 )
 from transformer_engine.pytorch.module.base import get_workspace
-from test_onnx_export import create_meta
 from test_numerics import reset_rng_states, dtype_tols
 
 # Only run FP8 tests on H100.
 fp8_available, reason_for_no_fp8 = FP8GlobalStateManager.is_fp8_available()
+
+
+def create_meta(scale_factor: float, size: int = 1):
+    meta = tex.FP8TensorMeta()
+    meta.amax_history = torch.zeros(1, size, dtype=torch.float32, device="cuda")
+    meta.scale_inv = torch.ones(size, dtype=torch.float32, device="cuda") / scale_factor
+    meta.scale = torch.ones(size, dtype=torch.float32, device="cuda") * scale_factor
+    return meta
 
 
 def custom_amax_to_scale(

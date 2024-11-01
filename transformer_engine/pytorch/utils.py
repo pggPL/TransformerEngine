@@ -247,6 +247,11 @@ def is_bf16_compatible() -> None:
     """
     return torch.cuda.get_device_capability()[0] >= 8
 
+def supports_fp8_transposes() -> bool:
+    """Checks whether the device supports non-TN layouts
+    for FP8 GEMMs.
+    """
+    return torch.cuda.get_device_capability() >= (10, 0)
 
 @functools.lru_cache(maxsize=None)
 def get_cudnn_version() -> Tuple[int, int, int]:
@@ -305,3 +310,9 @@ def devices_match(device1: torch.device, device2: torch.device) -> bool:
             index2 = torch.cuda.current_device()
         return index1 == index2
     return device1 == device2
+
+
+@functools.lru_cache
+def get_sm_count() -> int:
+    """Returns the number of streaming multiprocessors in the current device."""
+    return torch.cuda.get_device_properties(torch.cuda.current_device()).multi_processor_count

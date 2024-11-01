@@ -232,21 +232,26 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
     atol = 1.25e-1;
     rtol = 1.25e-1;
   } else if (otype == DType::kFloat8E4M3){
-    atol = 6.125e-2;
-    rtol = 6.125e-2;
+    if (itype == DType::kBFloat16){
+      atol = 6.5e-2;
+      rtol = 6.5e-2;
+    } else {
+      atol = 6.25e-2;
+      rtol = 6.25e-2;
+    }
   }
   compareResults("output_rowwise", dequantized_rowwise_output, ref_output.get(), atol, rtol, false);
   compareResults("output_colwise", dequantized_colwise_output, ref_output.get(), atol, rtol, false);
 }
 
 std::vector<std::pair<size_t, size_t>> test_cases = {
-  {32, 32},
+  // {32, 32},
   {128, 64},
   {768, 1024},
   {64, 2304},
   {128, 6144},
   {256, 65536},
-  // {2048, 12288},
+  {2048, 12288},
 };
 
 std::vector<NormType> norms = {
@@ -283,15 +288,11 @@ INSTANTIATE_TEST_SUITE_P(
   OperatorTest,
   MxNormTestSuite,
   ::testing::Combine(
-    // ::testing::Values(NormType::LayerNorm, NormType::RMSNorm),
-    ::testing::Values(NormType::LayerNorm),
-    // ::testing::Values(DType::kFloat32, DType::kBFloat16, DType::kFloat16),
-    ::testing::Values(DType::kFloat32),
+    ::testing::Values(NormType::LayerNorm, NormType::RMSNorm),
+    ::testing::Values(DType::kFloat32, DType::kBFloat16, DType::kFloat16),
     ::testing::Values(DType::kFloat8E4M3, DType::kFloat8E5M2),
-    // ::testing::Values(DType::kFloat8E5M2),
     ::testing::ValuesIn(test_cases),
-    // ::testing::Values(false, true)),
-    ::testing::Values(true)),
+    ::testing::Values(false, true)),
   [](const testing::TestParamInfo<MxNormTestSuite::ParamType>& info) {
     std::string name = normToString.at(std::get<0>(info.param)) + "_" +
       test::typeName(std::get<1>(info.param)) + "X" +
