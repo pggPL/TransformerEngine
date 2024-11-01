@@ -10,6 +10,8 @@ from typing import Optional, Tuple
 import torch
 from torch.utils._pytree import tree_map
 
+import transformer_engine_torch as tex
+
 from ..quantization_params import QuantizationParams
 
 class QuantizationParamsProxy:
@@ -61,6 +63,38 @@ class _IdentityFunc(torch.autograd.Function):
         # pylint: disable=missing-function-docstring
         return grad
 
+class _QuantizeFunc(torch.autograd.Function):
+    """Autograd function to convert standard tensor to quantized tensor"""
+
+    @staticmethod
+    def forward(
+        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        tensor: torch.Tensor,
+        qparams: QuantizationParams,
+        rowwise_usage: bool = True,
+        columnwise_usage: bool = True,
+        proxy: Optional[QuantizationParamsProxy] = None,
+    ) -> QuantizedTensor:
+        # pylint: disable=missing-function-docstring
+        if isinstance(tensor, QuantizedTensor):
+            tensor = tensor.dequantize()
+
+        out = tex.generic_cast(tensor,
+                               qparams,
+                               rowwise_usage,
+                               columnwise_usage,
+                               proxy)
+
+        return out
+
+    @staticmethod
+    def backward(
+        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        grad: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        # pylint: disable=missing-function-docstring
+        # Assume that we want gradients in full precision
+        return grad, None, None, None, None, None, None, None
 
 class QuantizedTensor(torch.Tensor):
     """Abstract base class for tensor with quantized data
@@ -84,17 +118,32 @@ class QuantizedTensor(torch.Tensor):
             f"{self.__class__.__name__} class does not implement quantize_ function"
         )
 
-    @classmethod
-    def quantize(cls,
-                 tensor: torch.Tensor,
+    @staticmethod
+    def quantize(tensor: torch.Tensor,
                  params: QuantizationParams,
                  *,
                  proxy: Optional[QuantizationParamsProxy] = None,
                  rowwise_usage: bool = True,
-                 columnwise_usage: bool = True) -> QuantizedTensor:
-        raise NotImplementedError(
-            f"{cls.__name__} class does not implement quantize function"
-        )
+                 columnwise_usage: bool = True,
+    ) -> QuantizedTensor:
+        if torch.is_grad_enabled():
+            return _QuantizeFunc.apply(
+                tensor,
+                params,
+                rowwise_usage,
+                columnwise_usage,
+                proxy,
+            )
+        else:
+            return _QuantizeFunc.forward(
+                None,
+                tensor,
+                params,
+                rowwise_usage,
+                columnwise_usage,
+                proxy,
+            )
+
 
     def detach(self) -> QuantizedTensor:
         """Create new quantized tensor with same data

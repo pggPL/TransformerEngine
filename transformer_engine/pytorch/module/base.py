@@ -21,7 +21,6 @@ import transformer_engine_torch as tex
 
 from ._common import _ParameterInitMeta
 from ..fp8 import (
-    get_fp8_te_dtype,
     FP8GlobalStateManager,
 )
 from ..distributed import (
@@ -31,14 +30,12 @@ from ..distributed import (
     _fsdp_gather_tensors,
 )
 from ..cpp_extensions import (
-    fp8_cast_transpose_fused,
-    fp8_cast_transpose_bgrad_fused,
     cast_to_fp8,
 )
 from ..constants import dist_group_type
 from ..tensor import QuantizedTensor, Float8Tensor
 from ..quantizer import Quantizer
-from transformer_engine.common.recipe import Recipe
+from transformer_engine.common.recipe import Recipe, DelayedScaling
 
 __all__ = ["initialize_ub", "destroy_ub"]
 

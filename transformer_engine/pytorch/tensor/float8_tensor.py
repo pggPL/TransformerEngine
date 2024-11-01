@@ -114,45 +114,6 @@ def post_optimizer_step_fwd_amax_reduction(param: Float8Tensor) -> None:
         del updated_fp8_params[autocast_key]
 
 
-class _ToFloat8Func(torch.autograd.Function):
-    """Cast to FP8 from other dtype"""
-
-    @staticmethod
-    def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        tensor: torch.Tensor,
-        qparams: Float8Params,
-        rowwise_usage: bool = True,
-        columnwise_usage: bool = True,
-        proxy: Optional[Float8ParamsProxy] = None,
-    ) -> Float8Tensor:
-        # pylint: disable=missing-function-docstring
-
-        # Tensor attributes
-        if not tensor.is_cuda:
-            tensor = tensor.cuda()
-
-        if isinstance(tensor, QuantizedTensor):
-            tensor = tensor.dequantize()
-
-        out = tex.generic_cast(tensor,
-                               qparams,
-                               rowwise_usage,
-                               columnwise_usage,
-                               proxy)
-
-        return out
-
-    @staticmethod
-    def backward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        grad: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        # pylint: disable=missing-function-docstring
-        # Assume that we want gradients in full precision
-        return grad, None, None, None, None, None, None, None
-
-
 class _IdentityFunc(torch.autograd.Function):
     """Identity function
 
@@ -593,26 +554,6 @@ class Float8Tensor(QuantizedTensor):
         post_optimizer_step_fwd_amax_reduction(self)
 
         return self
-
-    @classmethod
-    def quantize(
-        cls,
-        tensor: torch.Tensor,
-        params: QuantizationParams,
-        *,
-        proxy: Optional[QuantizationParamsProxy] = None,
-        rowwise_usage: bool = True,
-        columnwise_usage: bool = True) -> QuantizedTensor:
-        """Construct Float8Tensor from plain PyTorch tensor"""
-        assert isinstance(params, Float8Params), \
-            f"Invalid quantization params type: {type(params)}"
-        return _ToFloat8Func.apply(
-            tensor,
-            params,
-            rowwise_usage,
-            columnwise_usage,
-            proxy,
-        )
 
     def detach(self) -> Float8Tensor:
         # pylint: disable=missing-function-docstring
