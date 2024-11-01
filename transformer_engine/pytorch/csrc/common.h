@@ -11,6 +11,7 @@
 #include <ATen/Dispatch.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAGeneratorImpl.h>
+#include <ATen/cuda/CUDAGraphsUtils.cuh>
 #include <ATen/cudnn/Handle.h>
 #include <ATen/native/DispatchStub.h>
 #include <c10/macros/Macros.h>
@@ -21,9 +22,11 @@
 #include <cudnn.h>
 #include <torch/extension.h>
 #include <torch/torch.h>
+#include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
 #include <transformer_engine/activation.h>
 #include <transformer_engine/cast.h>
 #include <transformer_engine/cast_transpose_noop.h>
+#include <transformer_engine/comm_gemm_overlap.h>
 #include <transformer_engine/fused_attn.h>
 #include <transformer_engine/fused_rope.h>
 #include <transformer_engine/gemm.h>
@@ -37,7 +40,7 @@
 #include <transformer_engine/transformer_engine.h>
 #include <transformer_engine/transpose.h>
 
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
+#include <cassert>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -60,6 +63,19 @@ class FP8TensorMeta {
   at::Tensor scale;
   at::Tensor scale_inv;
   at::Tensor amax_history;
+};
+
+// FP8TensorMeta for block scaling, this structure allows
+// indexing into it the same way (i.e. using FP8FwdTensors
+// and FP8BwdTensors) for both hopper and blackwell recipes.
+// TODO(ksivaman): check perf with this design; should be ok
+// since there are no amax reductions, or bulk amax/scale
+// updates for block scaling.
+class MXFP8TensorMeta {
+ public:
+  std::vector<at::Tensor> scale;
+  std::vector<at::Tensor> scale_inv;
+  std::vector<at::Tensor> amax_history;
 };
 
 // Used as named indices on the `scale`, `scale_inv`,

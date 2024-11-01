@@ -5,7 +5,7 @@
 """Quantization metadata class"""
 
 from transformer_engine.common.recipe import (
-        Recipe, DelayedScaling
+        Recipe, DelayedScaling, BlockScaling
 )
 import torch
 
@@ -31,6 +31,9 @@ class Quantizer:
                 dtype=torch.float32,
                 device="cuda",
             )
+            self.fp8_type = get_fp8_te_dtype(recipe, forward)
+        elif isinstance(recipe, BlockScaling):
+            self.recipe_type = BlockScaling
             self.fp8_type = get_fp8_te_dtype(recipe, forward)
         else:
             raise ValueError(f"Unknown recipe type {type(recipe)}.")

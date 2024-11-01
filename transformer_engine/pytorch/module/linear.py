@@ -45,7 +45,6 @@ from ..constants import GemmParallelModes, dist_group_type
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
 from ..float8_tensor import Float8Tensor
-from ..export import is_in_onnx_export_mode
 from ..tensor import QuantizedTensor
 from ..cpu_offload import is_cpu_offload_enabled
 
@@ -280,9 +279,9 @@ class _Linear(torch.autograd.Function):
                 dim_size[0] = dim_size[0] * tp_world_size
                 ctx.ub_obj_gradout = get_ub(ctx.ub_name + "_dgrad")
                 if ctx.ub_obj_gradout.is_atomic_gemm():
-                    ub_algo = tex.UbufOverlapAlgo.ATOMIC_GEMM_AG_P2P
+                    ub_algo = tex.CommOverlapAlgo.ATOMIC_GEMM_AG_P2P
                 else:
-                    ub_algo = tex.UbufOverlapAlgo.SPLIT_PIPELINED_AG_P2P
+                    ub_algo = tex.CommOverlapAlgo.SPLIT_PIPELINED_AG_P2P
 
             (
                 grad_output,
@@ -367,7 +366,7 @@ class _Linear(torch.autograd.Function):
                         layout="NN",
                         grad=True,
                         ub_algo=(
-                            tex.UbufOverlapAlgo.SPLIT_PIPELINED_AG_P2P
+                            tex.CommOverlapAlgo.SPLIT_PIPELINED_AG_P2P
                             if ctx.ub_overlap_ag
                             else None
                         ),
@@ -804,7 +803,6 @@ class Linear(TransformerEngineBaseModule):
 
         with self.prepare_forward(
             inp,
-            is_first_microbatch,
             allow_non_contiguous=isinstance(inp, QuantizedTensor),
         ) as inp:
 

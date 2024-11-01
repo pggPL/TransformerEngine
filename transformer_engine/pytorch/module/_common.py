@@ -10,7 +10,6 @@ from dataclasses import dataclass
 import torch
 
 from .. import cpp_extensions as tex
-from ..export import is_in_onnx_export_mode
 from ..fp8 import get_fp8_te_dtype
 from ..utils import get_default_init_method
 
@@ -217,8 +216,6 @@ def _noop_cat(
         raise ValueError("Attempted to concatenate 0 tensors")
     if len(tensors) == 1:
         return tensors[0]
-    if is_in_onnx_export_mode():
-        return torch.cat(tensors, dim=dim)
     return _NoopCatFunc.apply(dim, *tensors)
 
 

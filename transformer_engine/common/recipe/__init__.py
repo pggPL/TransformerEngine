@@ -154,20 +154,8 @@ class DelayedScaling(Recipe):
         )
 
 
-class _CurrentScalingMode(NamedTuple):
-    """
-    Scaling mode for current scaling.
-      {-1, -1, 1} - per tensor delayed scaling
-      {32, 1, 0} - 1D blockwise scaling (columnwise)
-    """
-
-    x: int = -1
-    y: int = -1
-    delayed_scaling: bool = True
-
-
 @dataclass()
-class CurrentScaling:
+class BlockScaling(Recipe):
     """
     Use the current scaling factor strategy.
 
@@ -182,14 +170,9 @@ class CurrentScaling:
 
     margin: int = 0
     fp8_format: Format = Format.HYBRID
-    scaling_mode = _CurrentScalingMode = _CurrentScalingMode()
 
     def __post_init__(self) -> None:
         assert self.fp8_format != Format.E5M2, "Pure E5M2 training is not supported."
-        assert self.scaling_mode in (
-            (-1, -1, False),
-            (32, 1, True),
-        ), f"Unsupported scaling mode {self.scaling_mode}."
 
     def __repr__(self) -> str:
         return f"margin={self.margin}, format={str(self.fp8_format).split('.')[1]},"

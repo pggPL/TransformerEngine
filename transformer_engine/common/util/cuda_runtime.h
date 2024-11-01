@@ -42,17 +42,19 @@ int sm_count(int device_id = -1);
  *
  * \param[in] device_id CUDA device (default is current device)
  *
- * \return Minimum and maximum stream priorities (zero if device does not support priorities)
+ * \param[out] low_priority Lowest priority value on device.
+ *
+ * \param[out] high_priority Highest priority value on device.
  */
-std::pair<int, int> get_stream_priority_range(int device_id = -1);
+void stream_priority_range(int *low_priority, int *high_priority, int device_id = -1);
 
-/* \brief Check if device supports CUDA Multicast features
+/* \brief CUDA Multicast support status for device
  *
  * \param[in] device_id CUDA device (default is current device)
  *
- * \return Support status for CUDA Multicast for given device ID
+ * \return CUDA multicast support flag
  */
-bool device_supports_multicast(int device_id = -1);
+bool supports_multicast(int device_id = -1);
 
 /* \brief Path to CUDA Toolkit headers
  *

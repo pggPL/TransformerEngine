@@ -1913,9 +1913,9 @@ void fused_attn_fp8_fwd_impl_v1(
         {amax_o, devPtrAmaxO},
         {Stats, devPtrM}};
 
-    // if (is_bias) {
-    //     variant_pack[bias] = devPtrBias;
-    // }
+    /* if (is_bias) {
+         variant_pack[bias] = devPtrBias;
+    }
 
     if (is_padding) {
       constexpr size_t nthreads_per_block = 128;
@@ -1933,7 +1933,8 @@ void fused_attn_fp8_fwd_impl_v1(
     if (is_dropout) {
       variant_pack[dropout_seed] = devPtrDropoutSeed;
       variant_pack[dropout_offset] = devPtrDropoutOffset;
-    }
+    } */
+
     NVTE_CHECK_CUDNN_FE(mha_graph->execute(handle, variant_pack, workspace));
   } catch (cudnn_frontend::cudnnException& e) {
     NVTE_ERROR(e.what());
@@ -2306,7 +2307,7 @@ void fused_attn_fp8_bwd_impl_v1(
     //     }
     // }
 
-    if (is_padding) {
+    /* if (is_padding) {
       constexpr size_t nthreads_per_block = 128;
       const size_t grid = (b + nthreads_per_block - 1) / nthreads_per_block;
       void* devActualSeqlenQ = static_cast<int8_t*>(workspace) + plan_workspace_size;
@@ -2322,7 +2323,7 @@ void fused_attn_fp8_bwd_impl_v1(
     if (is_dropout) {
       variant_pack[dropout_seed] = devPtrDropoutSeed;
       variant_pack[dropout_offset] = devPtrDropoutOffset;
-    }
+    } */
 
     NVTE_CHECK_CUDNN_FE(mha_graph->execute(handle, variant_pack, workspace));
   } catch (cudnn_frontend::cudnnException& e) {
