@@ -19,7 +19,7 @@ from ..cpp_extensions.cast import (
     cast_to_fp8,
 )
 from ..fp8 import FP8GlobalStateManager
-from ..utils import devices_match
+from ..utils import devices_match, supports_fp8_transposes
 from .quantized_tensor import QuantizedTensor, Quantizer
 
 aten = torch.ops.aten
