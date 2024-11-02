@@ -18,7 +18,7 @@ from ..cpp_extensions.transpose import fp8_cast_transpose_fused
 from ..cpp_extensions.cast import (
     cast_to_fp8,
 )
-from ..fp8 import FP8GlobalStateManager
+from ..fp8 import DelayedScalingRecipeState, FP8GlobalStateManager
 from ..utils import devices_match, supports_fp8_transposes
 from .quantized_tensor import QuantizedTensor, Quantizer
 
@@ -204,34 +204,36 @@ class Float8Quantizer(Quantizer):
         raise NotImplementedError("Not implemented yet!")
 
 
-class FP8TensorMetaProxyQuantizer(Quantizer):
+class DelayedScalingFloat8Quantizer(Quantizer):
 
-    meta: tex.FP8TensorMeta
+    recipe_state: DelayedScalingRecipeState
     index: int
 
     def __init__(
         self,
-        meta: dict,
+        recipe_state: DelayedScalingRecipeState,
         index: int,
-        fp8_dtype: TE_Dtype,
         *,
         rowwise: bool = True,
         columnwise: bool = True,
     ):
         super().__init__()
-        self.meta = meta
+        self.recipe_state = recipe_state
         self.index = index
-        self.dtype = fp8_dtype
         self.rowwise_usage = rowwise
         self.columnwise_usage = columnwise
 
     @property
     def scale(self) -> torch.Tensor:
-        return self.meta.scale[self.index]
+        return self.recipe_state.scale[self.index]
 
     @property
     def amax(self) -> torch.Tensor:
-        return self.meta.amax_history[0][self.index]
+        return self.recipe_state.amax_history[0][self.index]
+
+    @property
+    def dtype(self) -> TE_Dtype:
+        return self.recipe_state.dtype
 
     def resolve(self) -> Float8Quantizer:
         return Float8Quantizer(

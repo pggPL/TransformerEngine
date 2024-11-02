@@ -710,3 +710,35 @@ def split_and_copy(
     """Split `buffer` by `chunk_sizes` and copy into `outputs`."""
     splits = buffer.split(chunk_sizes)
     torch._foreach_copy_(outputs, splits)
+
+
+class DelayedScalingRecipeState:
+
+    recipe: DelayedScaling
+    forward: bool
+    dtype: tex.DType
+    scale: torch.Tensor
+    amax_history: torch.Tensor
+
+    def __init__(
+        self,
+        recipe: DelayedScaling,
+        *,
+        forward: bool,
+        num_tensors: int = 1,
+        device: Optional[torch.device] = None,
+    ):
+        self.recipe = recipe
+        self.forward = forward
+        self.dtype = get_fp8_te_dtype(recipe, forward)
+
+        # Allocate buffers
+        if device is None:
+            device = torch.device("cuda")
+        self.scale = torch.ones(num_tensors, dtype=torch.float32, device=device)
+        self.amax_history = torch.zeros(
+            recipe.amax_history_len,
+            num_tensors,
+            dtype=torch.float32,
+            device=device,
+        )

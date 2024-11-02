@@ -24,6 +24,7 @@ from ...common.recipe import DelayedScaling
 from ..fp8 import (
     get_fp8_te_dtype,
     FP8GlobalStateManager,
+    DelayedScalingRecipeState,
 )
 from ..distributed import (
     gather_along_first_dim,
@@ -38,7 +39,7 @@ from ..cpp_extensions import (
 )
 from ..constants import dist_group_type
 from ..tensor import Float8Tensor, QuantizedTensor, Quantizer
-from ..tensor.float8_tensor import FP8TensorMetaProxyQuantizer
+from ..tensor.float8_tensor import DelayedScalingFloat8Quantizer
 from transformer_engine.common.recipe import Recipe
 
 __all__ = ["initialize_ub", "destroy_ub"]
@@ -554,28 +555,19 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         )
 
         # Allocate buffers for FP8 scaling factors
-        self.fp8_meta[fp8_meta_tensor_key] = tex.FP8TensorMeta()
-        self.fp8_meta[fp8_meta_tensor_key].scale = torch.ones(
-            num_fp8_tensors, dtype=torch.float32, device="cuda"
-        )
-        self.fp8_meta[fp8_meta_tensor_key].scale_inv = torch.ones(
-            num_fp8_tensors, dtype=torch.float32, device="cuda"
-        )
-        self.fp8_meta[fp8_meta_tensor_key].amax_history = torch.zeros(
-            self.fp8_meta["recipe"].amax_history_len,
-            num_fp8_tensors,
-            dtype=torch.float32,
-            device="cuda",
+        self.fp8_meta[fp8_meta_tensor_key] = DelayedScalingRecipeState(
+            recipe,
+            forward=fwd,
+            num_tensors=num_fp8_tensors,
         )
 
         # Construct builders for FP8 tensors
         if not isinstance(recipe, DelayedScaling):
             raise NotImplementedError
         self.quantizers[fp8_meta_tensor_key] = [
-            FP8TensorMetaProxyQuantizer(
+            DelayedScalingFloat8Quantizer(
                 self.fp8_meta[fp8_meta_tensor_key],
                 index,
-                get_fp8_te_dtype(recipe, fprop_tensor=fwd),
                 rowwise=True,
                 columnwise=torch.is_grad_enabled(),
             )
