@@ -817,43 +817,44 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         """
         grad_output = grad_output.contiguous()
-        grad_output_mat = grad_output.view(-1, grad_output.shape[-1])
         gather_grad_output = row_parallel_mode and ctx.sequence_parallel
 
         # No-FP8 case: bgrad is fused with wgrad for this case.
         if not ctx.fp8:
             if gather_grad_output:
                 if not ctx.ub_overlap_ag:
-                    grad_output_mat, _ = gather_along_first_dim(grad_output_mat, ctx.tp_group)
+                    grad_output, _ = gather_along_first_dim(grad_output, ctx.tp_group)
                 else:
                     ctx.ub_obj_gradout.copy_input_to_ubuf(grad_output, True)
-                    grad_output_mat = ctx.ub_obj_gradout.get_ubuf_output(1)
-            return grad_output_mat, None
+                    grad_output = ctx.ub_obj_gradout.get_ubuf_output(1)
+            return grad_output, None
 
         # FP8 case with gather: unfused bgrad, cast, transpose for efficient gather
-        # TODO: What should we do in this case?
-        # Possibly will need to do Float8Tensor vs everything else
+        # TODO: Implement
         if gather_grad_output:
             if ctx.use_bias:
                 # TODO: We know it creates spike in memory usage, we should WAR that
-                grad_bias = grad_output_mat.sum(dim=0)
+                grad_bias = grad_output.view(-1, grad_output.shape[-1]).sum(dim=0)
             else:
                 grad_bias = None
-            if ctx.fp8_meta["scaling_bwd"].recipe_type == DelayedScaling:
+            if ctx.fp8_meta["scaling_bwd"].single_usage_sufficient:
                 if ctx.ub_overlap_ag:
                     grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(0)
                 else:
-                    grad_output_c = torch.empty_like(grad_output_mat, dtype=torch.uint8)
-                if not isinstance(grad_output_mat, Float8Tensor):
+                    grad_output_c = torch.empty_like(grad_output, dtype=torch.uint8)
+                if not isinstance(grad_output, Float8Tensor):
+                    # grad_output_mat = ctx.fp8_meta["scaling_bwd"].quantize(grad_output_mat,
+                    #                                                        tex.FP8BwdTensors.GRAD_OUTPUT1,
+                    #                                                        columnwise = False)
                     cast_to_fp8(
-                        grad_output_mat,
+                        grad_output,
                         ctx.fp8_meta["scaling_bwd"],
                         tex.FP8BwdTensors.GRAD_OUTPUT1,
                         fp8_dtype_backward,
                         out=grad_output_c,
                     )
                 else:
-                    grad_output_c = grad_output_mat
+                    grad_output_c = grad_output
                 if not ctx.ub_overlap_ag:
                     grad_output_c, _ = gather_along_first_dim(grad_output_c, ctx.tp_group)
                     if not isinstance(grad_output_c, Float8Tensor):
@@ -865,16 +866,17 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     grad_output_t = None
 
 
-                return grad_output_mat, grad_output_c, grad_output_t, grad_bias
+                return grad_output, grad_output_c, grad_output_t, grad_bias
             else:
                 # TODO: Figure out UB and write BF16 AG + cast/transpose
                 pass
 
         # FP8 case without gather: cast, transpose, bgrad fused
         if ctx.use_bias:
-            grad_output_mat_no_fp8 = grad_output_mat
-            if isinstance(grad_output_mat, QuantizedTensor):
-                grad_output_mat_no_fp8 = grad_output_mat.dequantize()
+            grad_output_mat_no_fp8 = grad_output
+            # TODO: This part is kind of stupid
+            if isinstance(grad_output, QuantizedTensor):
+                grad_output_mat_no_fp8 = grad_output.dequantize()
             qparams = ctx.fp8_meta["scaling_bwd"].get_quantization_params(tex.FP8BwdTensors.GRAD_OUTPUT1)
             # TODO: Should check whether we do wgrad/dgrad or both to properly set
             # rowwise/columnwise
@@ -886,18 +888,15 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             )
             return grad_output, grad_bias
         else:
-            if isinstance(grad_output_mat, QuantizedTensor):
-                return grad_output_mat, None
+            if isinstance(grad_output, QuantizedTensor):
+                return grad_output, None
             else:
-                qparams = ctx.fp8_meta["scaling_bwd"].get_quantization_params(tex.FP8BwdTensors.GRAD_OUTPUT1)
                 # TODO: Should check whether we do wgrad/dgrad or both to properly set
                 # rowwise/columnwise
-                grad_output = tex.generic_cast(
-                    grad_output_mat,
-                    qparams,
-                    rowwise_usage=True,
-                    columnwise_usage=True,
-                )
+                grad_output = ctx.fp8_meta["scaling_bwd"].quantize(grad_output,
+                                                                   tex.FP8BwdTensors.GRAD_OUTPUT1,
+                                                                   rowwise=True,
+                                                                   columnwise=True)
             return grad_output, None
 
     def register_parameter(self, name, param, **kwargs):
@@ -971,6 +970,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         update_workspace: bool = True,
         skip_update_flag: Optional[torch.Tensor] = None,
         fsdp_group: Optional[dist_group_type] = None,
+        is_grad_enabled: bool = False,
     ) -> QuantizedTensor:
         """Get FP8 workspace buffer and maybe update its values
 
@@ -1022,7 +1022,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     "must be provided to construct FP8 workspace"
                 )
 
-            need_columnwise = torch.is_grad_enabled()
+            need_columnwise = is_grad_enabled
             if (
                 not need_columnwise
                 and is_fp8_activation_recompute_enabled()

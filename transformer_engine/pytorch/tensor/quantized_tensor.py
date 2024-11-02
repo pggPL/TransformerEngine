@@ -166,6 +166,11 @@ class QuantizedTensor(torch.Tensor):
             f"{self.__class__.__name__} class does not implement update_usage function"
         )
 
+    def clear(self):
+        """Deallocate this tensor's memory. Typically not needed and must be used carefully.
+        """
+        pass
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(data={self.dequantize(dtype=self.dtype)})"
 

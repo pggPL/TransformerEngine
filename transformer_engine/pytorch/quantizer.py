@@ -22,6 +22,7 @@ class Quantizer:
                  recipe: Recipe,
                  num_tensors: int,
                  forward: bool):
+        self.single_usage_sufficient = False
         if isinstance(recipe, DelayedScaling):
             self.recipe_type = DelayedScaling
             self.scale = torch.ones(num_tensors, dtype=torch.float32, device="cuda")
@@ -32,6 +33,7 @@ class Quantizer:
                 device="cuda",
             )
             self.fp8_type = get_fp8_te_dtype(recipe, forward)
+            self.single_usage_sufficient = True
         elif isinstance(recipe, BlockScaling):
             self.recipe_type = BlockScaling
             self.fp8_type = get_fp8_te_dtype(recipe, forward)
