@@ -5,7 +5,7 @@
 """Tensor with quantized data"""
 
 from __future__ import annotations
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import torch
 from torch.utils._pytree import tree_map

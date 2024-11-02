@@ -20,7 +20,7 @@ from torch.distributed.fsdp._traversal_utils import _get_fsdp_states_with_module
 from .utils import safely_set_viewless_tensor_data
 from .constants import dist_group_type
 from .fp8 import FP8GlobalStateManager
-from .float8_tensor import Float8Tensor
+from .tensor import QuantizedTensor, Float8Tensor
 
 
 __all__ = ["checkpoint", "CudaRNGStatesTracker"]
@@ -840,7 +840,9 @@ def gather_along_first_dim(
     input_: torch.Tensor,
     process_group: dist_group_type,
     async_op: bool = False,
-) -> tuple[torch.Tensor, Any]:
+    rowwise: bool = True,
+    columnwise: bool = True,
+) -> tuple[torch.Tensor, Optional[List[Any]]]:
     """All-gather tensors and concatenate along first dimension."""
 
     # Return immediately if no communication is required
@@ -851,8 +853,8 @@ def gather_along_first_dim(
     # Allocate output tensor
     output_shape = list(input_.size())
     output_shape[0] *= world_size
-    if isinstance(input_, Float8Tensor):
-        output = Float8Tensor.make_like(
+    if isinstance(input_, QuantizedTensor):
+        output = input_.__class__.make_like(
             input_,
             data=torch.empty(
                 output_shape,
