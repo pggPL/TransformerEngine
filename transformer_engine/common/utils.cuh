@@ -946,7 +946,7 @@ __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
     : "f"(val));
   return *reinterpret_cast<e8m0_t*>(&out);
 #else
-  if (std::isinf(val) || std::isnan(val)) {
+  if (isinf(val) || isnan(val)) {
     return 0xFF;
   }
   uint32_t val_u32 = *reinterpret_cast<uint32_t*>(&val);
