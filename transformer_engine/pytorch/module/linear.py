@@ -106,7 +106,8 @@ class _Linear(torch.autograd.Function):
             if own_quantized_input:
                 meta = fp8_meta["scaling_fwd"]
                 inputmat = meta.quantize(inputmat, tex.FP8FwdTensors.GEMM1_INPUT,
-                                         columnwise = backward_needs_input)
+                                         columnwise = backward_needs_input,
+                                         internal=True)
 
         # Column Parallel Linear
         if parallel_mode == "column" and sequence_parallel:

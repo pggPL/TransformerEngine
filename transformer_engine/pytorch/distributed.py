@@ -854,7 +854,7 @@ def gather_along_first_dim(
     output_shape = list(input_.size())
     output_shape[0] *= world_size
     if isinstance(input_, QuantizedTensor):
-        output = input_.__class__.make_like(
+        output = input_.make_like(
             input_,
             data=torch.empty(
                 output_shape,

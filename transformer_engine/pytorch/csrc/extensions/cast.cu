@@ -17,7 +17,8 @@ py::object cast(const at::Tensor& tensor,
                 py::handle quantization_params,
                 bool rowwise_usage,
                 bool columnwise_usage,
-                py::handle proxy
+                py::handle proxy,
+                bool internal
                 ) {
   using namespace pybind11::literals;
   init_extension();
@@ -33,7 +34,8 @@ py::object cast(const at::Tensor& tensor,
     auto opts = input_tensor.options().dtype(torch::kFloat32);
     at::Tensor scale_inv = at::empty({1}, opts);
     at::Tensor data, data_transpose;
-    if (columnwise_usage && !supports_fp8_transposes()) {
+    bool create_transpose = columnwise_usage && !supports_fp8_transposes();
+    if (create_transpose) {
       const auto dim = tensor.dim();
       NVTE_CHECK(dim >= 2, "Tensor needs to be at least 2D for columnwise usage");
       auto reshaped_input = input_tensor.view({-1, tensor.size(dim - 1)});
@@ -61,20 +63,23 @@ py::object cast(const at::Tensor& tensor,
     if (!detail::IsFloatingPointType(fake_tensor_type)) {
       fake_tensor_type = at::kFloat;
     }
-    py::handle Float8TensorClass(reinterpret_cast<PyObject*>(Float8TensorPythonClass));
-    if (columnwise_usage && !supports_fp8_transposes()) {
+    PyObject* tensor_class = internal ? reinterpret_cast<PyObject*>(Float8TensorBasePythonClass)
+                                      : reinterpret_cast<PyObject*>(Float8TensorPythonClass);
+    py::handle Float8TensorClass(tensor_class);
+    if (internal) {
       auto ret = Float8TensorClass("data"_a=data,
-                                   "data_transpose"_a=data_transpose,
+                                   "data_transpose"_a= create_transpose ? py::cast(data_transpose) : py::none(),
                                    "fp8_scale_inv"_a=scale_inv,
                                    "fp8_dtype"_a=type,
-                                   "dtype"_a=fake_tensor_type,
                                    "proxy"_a=proxy);
       return ret;
     } else {
-      auto ret = Float8TensorClass("data"_a=data,
+      auto ret = Float8TensorClass("shape"_a=data.sizes(),
+                                   "dtype"_a=fake_tensor_type,
+                                   "data"_a=data,
+                                   "data_transpose"_a= create_transpose ? py::cast(data_transpose) : py::none(),
                                    "fp8_scale_inv"_a=scale_inv,
                                    "fp8_dtype"_a=type,
-                                   "dtype"_a=fake_tensor_type,
                                    "proxy"_a=proxy);
       return ret;
     }

@@ -1031,7 +1031,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 need_columnwise = True
             out = quantizer.quantize(tensor, tensor_index,
                                      rowwise=True,
-                                     columnwise=need_columnwise)
+                                     columnwise=need_columnwise,
+                                     internal=True)
 
             # Update cache
             if cache_name is not None:

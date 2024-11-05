@@ -9,11 +9,10 @@ from transformer_engine.common.recipe import (
 )
 import torch
 
-import transformer_engine_torch as tex
-
 from .fp8 import get_fp8_te_dtype
 from .tensor import QuantizedTensor, Float8Tensor
 from .tensor.float8_tensor import Float8ParamsProxy
+from .tensor._internal.float8_tensor_base import Float8TensorBase
 
 from .quantization_params import Float8Params
 
@@ -45,14 +44,22 @@ class Quantizer:
                  index: int,
                  *,
                  rowwise: bool = True,
-                 columnwise: bool = True) -> QuantizedTensor:
+                 columnwise: bool = True,
+                 internal: bool = False) -> QuantizedTensor:
         if self.recipe_type == DelayedScaling:
             proxy = Float8ParamsProxy(self, index, self.fp8_type)
-            return Float8Tensor.quantize(tensor,
-                                         self.get_quantization_params(index),
-                                         rowwise_usage=rowwise,
-                                         columnwise_usage=columnwise,
-                                         proxy=proxy)
+            if internal:
+                return Float8TensorBase.quantize(tensor,
+                                                 self.get_quantization_params(index),
+                                                 rowwise_usage=rowwise,
+                                                 columnwise_usage=columnwise,
+                                                 proxy=proxy)
+            else:
+                return Float8Tensor.quantize(tensor,
+                                             self.get_quantization_params(index),
+                                             rowwise_usage=rowwise,
+                                             columnwise_usage=columnwise,
+                                             proxy=proxy)
         raise NotImplementedError("Not implemented yet!")
 
     def get_quantization_params(self,
