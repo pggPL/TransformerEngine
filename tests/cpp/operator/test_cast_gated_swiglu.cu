@@ -21,6 +21,7 @@
 #include "../test_common.h"
 
 using namespace transformer_engine;
+using namespace test;
 
 namespace {
 

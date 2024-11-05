@@ -30,6 +30,7 @@ void compute_ref_act_cast(const IT *input_h,
                           const size_t H) {
   CT amax  = 0.;
 
+  #pragma omp parallel for schedule(static) reduction(max: amax) proc_bind(spread)
   for (size_t i = 0; i < N; i++) {
     for (size_t j = 0; j < H; j++) {
       CT elt = static_cast<CT>(input_h[i * H + j]);
@@ -49,6 +50,7 @@ void compute_ref_dact_cast(const IT *input_h,
                            const size_t N,
                            const size_t H) {
   using CT = float;
+  #pragma omp parallel for schedule(static) proc_bind(spread)
   for (size_t i = 0; i < N; i++) {
     for (size_t j = 0; j < H; j++) {
       CT elt = static_cast<CT>(input_h[i * H + j]);
@@ -66,6 +68,7 @@ void compute_ref_glu_act_cast(const IT *input_h, OT *output_h, const CT scale, C
 
   const int col = H * 2;
 
+  #pragma omp parallel for schedule(static) reduction(max: amax) proc_bind(spread)
   for (size_t i = 0; i < N; i++) {
     for (size_t j = 0; j < H; j++) {
       CT gelu_elt = static_cast<CT>(input_h[i * col + j]);
@@ -87,6 +90,7 @@ void compute_ref_dglu_act_cast(const IT *input_h, const IT *grad_h, OT *output_h
   const int col = H * 2;
   using CT = float;
 
+  #pragma omp parallel for schedule(static) proc_bind(spread)
   for (size_t i = 0; i < N; i++) {
     for (size_t j = 0; j < H; j++) {
       CT grad = static_cast<CT>(grad_h[i * H + j]);

@@ -86,7 +86,7 @@ void compute_ref_x1(const IType* grad,
                     const size_t cols,
                     const size_t block_size_Y,
                     const size_t block_size_X) {
-    const size_t tile_size_Y = std::max(16lu, block_size_Y);
+    const size_t tile_size_Y = std::max(32lu, block_size_Y);
     const size_t tile_size_X = std::max(64lu, block_size_X);
     const size_t tiles_num_Y = (rows + tile_size_Y - 1) / tile_size_Y;
     const size_t tiles_num_X = (cols + tile_size_X - 1) / tile_size_X;
