@@ -79,35 +79,12 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
 
     """
 
-    def __init__(self,
-                 shape: list[int],
-                 dtype: torch.dtype = torch.float32,
-                 *,
-                 data: Optional[torch.Tensor],
-                 fp8_scale_inv: torch.Tensor,
-                 fp8_dtype: TE_DType,
-                 requires_grad: bool = False,
-                 data_transpose: Optional[torch.Tensor] = None,
-                 proxy: Optional[Float8ParamsProxy] = None,
-    ):
-        super().__init__(self,
-                         shape,
-                         dtype,
-                         data=data,
-                         fp8_scale_inv=fp8_scale_inv,
-                         fp8_dtype=fp8_dtype,
-                         requires_grad=requires_grad,
-                         data_transpose=data_transpose,
-                         proxy=proxy
-        )
-
-
     def __repr__(self):
         return (
             "Float8Tensor("
             f"fp8_dtype={self._fp8_dtype}, "
             f"scale_inv={self._scale_inv.item()}, "
-            f"data={self.from_float8(dtype=self.dtype)}"
+            f"data={self.dequantize(dtype=self.dtype)}"
             ")"
         )
 
@@ -121,7 +98,6 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         # Convert PyTorch dtype to TE dtype
         if dtype is None:
             dtype = self.dtype
-        dtype = torch_to_transformer_engine_dtype[dtype]
 
         if torch.is_grad_enabled():
             return _FromFloat8Func.apply(self, dtype)

@@ -72,27 +72,16 @@ class Float8TensorBase:
                 **kwargs
     ):
         instance = super().__new__(cls, *args, **kwargs)
-        return instance
-
-    def __init__(self,
-                 *args,
-                data: Optional[torch.Tensor],
-                fp8_scale_inv: torch.Tensor,
-                fp8_dtype: TE_DType,
-                data_transpose: Optional[torch.Tensor] = None,
-                proxy: Optional[Float8ParamsProxy] = None,
-                **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        self._data = data
-        self._proxy = proxy
-        self._fp8_dtype = fp8_dtype
-        self._scale_inv = fp8_scale_inv
-        self._transpose = data_transpose
-        self._transpose_invalid = self._transpose is None
+        instance._data = data
+        instance._proxy = proxy
+        instance._fp8_dtype = fp8_dtype
+        instance._scale_inv = fp8_scale_inv
+        instance._transpose = data_transpose
+        instance._transpose_invalid = instance._transpose is None
 
         assert data is not None or data_transpose is not None, \
                "Tensor does not hold any data!"
+        return instance
 
     def get_metadata(self) -> Dict[str, Any]:
         return {"data": self._data,
