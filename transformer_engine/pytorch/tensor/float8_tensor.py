@@ -128,7 +128,7 @@ class Float8Quantizer(Quantizer):
         self,
         shape: Iterable[int],
         *,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype = torch.float32,
         device: Optional[torch.device] = None,
         requires_grad: bool = False,
     ) -> Float8Tensor:
@@ -136,8 +136,6 @@ class Float8Quantizer(Quantizer):
         # Canonicalize tensor attributes
         if device is None:
             device = torch.device("cuda")
-        if dtype is None:
-            dtype = torch.float32
 
         # Allocate FP8 data
         data = torch.empty(shape, dtype=torch.uint8, device=device)
@@ -163,12 +161,9 @@ class Float8Quantizer(Quantizer):
             quantizer=self,
         )
 
-    def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
-        if isinstance(recipe, DelayedScaling):
-            amin, amax = tensor.aminmax()
-            self.amax.copy_(torch.max(-amin, amax))
-            return
-        raise NotImplementedError("Not implemented yet!")
+    def calibrate(self, tensor: torch.Tensor) -> None:
+        amin, amax = tensor.aminmax()
+        self.amax.copy_(torch.max(-amin, amax))
 
 
 class DelayedScalingFloat8Quantizer(Quantizer):
@@ -230,7 +225,7 @@ class DelayedScalingFloat8Quantizer(Quantizer):
         self,
         shape: Iterable[int],
         *,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype = torch.float32,
         device: Optional[torch.device] = None,
         requires_grad: bool = False,
     ) -> Float8Tensor:
@@ -241,8 +236,8 @@ class DelayedScalingFloat8Quantizer(Quantizer):
             requires_grad=requires_grad,
         )
 
-    def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
-        self.resolve().calibrate(recipe, tensor)
+    def calibrate(self, tensor: torch.Tensor) -> None:
+        self.resolve().calibrate(tensor)
 
 
 def _make_fp8_attr_property_funcs(name: str) -> Any:

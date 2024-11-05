@@ -44,7 +44,7 @@ class Quantizer(abc.ABC):
         self,
         shape: Iterable[int],
         *,
-        dtype: Optional[torch.dtype] = None,
+        dtype: torch.dtype = torch.float32,
         device: Optional[torch.device] = None,
     ) -> QuantizedTensor:
         ...
@@ -138,11 +138,6 @@ class QuantizedTensor(torch.Tensor):
         raise NotImplementedError(
             f"{self.__class__.__name__} class does not implement quantize_ function"
         )
-
-    @staticmethod
-    def quantize(tensor: torch.Tensor, quantizer: Quantizer) -> QuantizedTensor:
-        """Construct quantized tensor from plain PyTorch tensor"""
-        return quantizer.quantize(tensor)
 
     def detach(self) -> QuantizedTensor:
         """Create new quantized tensor with same data
