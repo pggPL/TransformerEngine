@@ -26,28 +26,6 @@ aten = torch.ops.aten
 updated_fp8_params = {}
 
 
-class _QuantizeFunc(torch.autograd.Function):
-    """Cast to FP8 from other dtype"""
-
-    @staticmethod
-    def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        tensor: torch.Tensor,
-        quantizer: Float8Quantizer,
-    ) -> Float8Tensor:
-        # pylint: disable=missing-function-docstring
-        return tex.generic_cast(tensor, quantizer)
-
-    @staticmethod
-    def backward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        grad: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        # pylint: disable=missing-function-docstring
-        # Assume that we want gradients in full precision
-        return grad, None
-
-
 class _DequantizeFunc(torch.autograd.Function):
     """Cast from FP8 to other dtype"""
 
@@ -86,6 +64,7 @@ class Float8Quantizer(Quantizer):
     scale: torch.Tensor
     amax: torch.Tensor
     dtype: TE_Dtype
+    single_usage_sufficient: bool = True
 
     def __init__(
         self,
@@ -144,18 +123,6 @@ class Float8Quantizer(Quantizer):
         dst._fp8_dtype = self.dtype
 
         return dst
-
-    def quantize(
-        self,
-        tensor: torch.Tensor,
-        *,
-        out: Optional[Float8Tensor] = None,
-    ) -> Float8Tensor:
-        if out is not None:
-            return self.update_quantized(tensor, out)
-        if torch.is_grad_enabled():
-            return _QuantizeFunc.apply(tensor, self)
-        return _QuantizeFunc.forward(None, tensor, self)
 
     def make_empty(
         self,
@@ -755,15 +722,6 @@ class Float8Tensor(QuantizedTensor):
 
         return self
 
-    @classmethod
-    def quantize(
-        cls,
-        tensor: torch.Tensor,
-        quantizer: Float8Quantizer,
-    ) -> Float8Tensor:
-        """Construct Float8Tensor from plain PyTorch tensor"""
-        return quantizer.quantize(tensor)
-
     def detach(self) -> Float8Tensor:
         # pylint: disable=missing-function-docstring
         return Float8Tensor.make_like(
@@ -857,6 +815,13 @@ class Float8Tensor(QuantizedTensor):
         Set transpose cache as invalid.
         Should be called after any in-place operation.
         """
+        self._transpose_invalid = True
+
+    def clear(self):
+        """Deallocate this tensor's memory. Typically not needed and must be used carefully.
+        """
+        self._data = torch.Tensor() if self._data is not None else None
+        self._transpose = torch.Tensor() if self._transpose is not None else None
         self._transpose_invalid = True
 
     @classmethod

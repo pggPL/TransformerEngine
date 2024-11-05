@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include <optional>
+#include <string>
 
 #include "common.h"
 #include "common/util/cuda_runtime.h"
@@ -90,8 +91,12 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   const TensorWrapper& A_tensor = makeTransformerEngineTensor(A, none);
   const TensorWrapper& B_tensor = makeTransformerEngineTensor(B, none);
 
-  NVTE_CHECK(A_tensor.shape().ndim == 2, "Tensor A needs to have at least 2 dimensions!");
-  NVTE_CHECK(B_tensor.shape().ndim >= 2, "Tensor B needs to have at least 2 dimensions!");
+  NVTE_CHECK(A_tensor.shape().ndim >= 2,
+             "Tensor A needs to have at least 2 dimensions (got " +
+             std::to_string(A_tensor.shape().ndim) + ")!");
+  NVTE_CHECK(B_tensor.shape().ndim >= 2,
+             "Tensor B needs to have at least 2 dimensions (got " +
+             std::to_string(B_tensor.shape().ndim) + ")!");
 
   DType output_dtype = out_dtype ? *out_dtype
                                  : A_tensor.dtype();
@@ -116,7 +121,7 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
     if (!grad) {
       bias_tensor = makeTransformerEngineTensor(*bias);
     } else {
-      *bias_grad = at::empty_like(*bias);
+      bias_grad = at::empty_like(*bias);
       bias_tensor = makeTransformerEngineTensor(*bias_grad);
     }
   }

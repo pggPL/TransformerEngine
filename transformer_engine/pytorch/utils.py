@@ -12,6 +12,7 @@ import torch
 import transformer_engine.pytorch.cpp_extensions as ext
 
 
+
 def requires_grad(*tensors: Tuple[Optional[torch.Tensor], ...]) -> None:
     """Check if any of the given tensors require gradient."""
     for tensor in tensors:
@@ -27,12 +28,13 @@ def clear_tensor_data(*tensors: Tuple[Optional[torch.Tensor], ...]) -> None:
 
     Must be used carefully.
     """
-    from .float8_tensor import Float8Tensor
+    # TODO: Figure out how to move that import to top level (additional overhead)
+    from .tensor.quantized_tensor import QuantizedTensor
 
     for t in tensors:
         if t is not None:
-            if isinstance(t, Float8Tensor):
-                t._data.data = torch.Tensor()
+            if isinstance(t, QuantizedTensor):
+                t.clear()
             else:
                 t.data = torch.Tensor()
             del t

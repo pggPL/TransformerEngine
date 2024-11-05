@@ -11,9 +11,13 @@ from typing import Optional, Tuple
 import torch
 from torch.utils._pytree import tree_map
 
+import transformer_engine_torch as tex
 from ...common.recipe import Recipe
 
+
 class Quantizer(abc.ABC):
+
+    single_usage_sufficient: bool = False
 
     @abc.abstractmethod
     def update_quantized(
@@ -29,14 +33,11 @@ class Quantizer(abc.ABC):
         *,
         out: Optional[QuantizedTensor] = None,
     ) -> QuantizedTensor:
-        if out is None:
-            out = self.make_empty(
-                tensor.size(),
-                dtype=tensor.dtype,
-                device=tensor.device,
-            )
-        self._quantize_impl(tensor, out)
-        return out
+        if out is not None:
+            return self._quantize_impl(tensor, out)
+        if torch.is_grad_enabled():
+            return _QuantizeFunc.apply(tensor, self)
+        return _QuantizeFunc.forward(None, tensor, self)
 
     @abc.abstractmethod
     def make_empty(
@@ -51,6 +52,28 @@ class Quantizer(abc.ABC):
     @abc.abstractmethod
     def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
         ...
+
+
+class _QuantizeFunc(torch.autograd.Function):
+    """Cast to FP8 from other dtype"""
+
+    @staticmethod
+    def forward(
+        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        tensor: torch.Tensor,
+        quantizer: Float8Quantizer,
+    ) -> Float8Tensor:
+        # pylint: disable=missing-function-docstring
+        return tex.generic_cast(tensor, quantizer)
+
+    @staticmethod
+    def backward(
+        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        grad: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        # pylint: disable=missing-function-docstring
+        # Assume that we want gradients in full precision
+        return grad, None
 
 
 class _DequantizeFunc(torch.autograd.Function):
@@ -116,6 +139,11 @@ class QuantizedTensor(torch.Tensor):
             f"{self.__class__.__name__} class does not implement quantize_ function"
         )
 
+    @staticmethod
+    def quantize(tensor: torch.Tensor, quantizer: Quantizer) -> QuantizedTensor:
+        """Construct quantized tensor from plain PyTorch tensor"""
+        return quantizer.quantize(tensor)
+
     def detach(self) -> QuantizedTensor:
         """Create new quantized tensor with same data
 
@@ -136,6 +164,11 @@ class QuantizedTensor(torch.Tensor):
         raise NotImplementedError(
             f"{self.__class__.__name__} class does not implement update_usage function"
         )
+
+    def clear(self):
+        """Deallocate this tensor's memory. Typically not needed and must be used carefully.
+        """
+        pass
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(data={self.dequantize(dtype=self.dtype)})"
