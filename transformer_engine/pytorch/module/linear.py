@@ -318,12 +318,10 @@ class _Linear(torch.autograd.Function):
                 accumulate_wgrad_into_param_main_grad = ctx.fuse_wgrad_accumulation
 
             if ctx.requires_dgrad:
+
+                grad_input_quantizer = None
                 if ctx.is_input_fp8:
-                    meta_tensor = ctx.fp8_meta["scaling_bwd"]
-                    out_index = tex.FP8BwdTensors.GRAD_INPUT1
-                    qparams = meta_tensor.get_quantization_params(out_index)
-                else:
-                    qparams = None
+                    grad_input_quantizer = quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT1]
 
                 print(weight_fp8.shape)
                 print(grad_output.shape)
@@ -333,7 +331,7 @@ class _Linear(torch.autograd.Function):
                         get_workspace(),
                         layout="NN",
                         grad=True,
-                        quantization_params=qparams,
+                        quantization_params=grad_input_quantizer,
                         out_dtype=ctx.activation_dtype,
                         use_split_accumulator=_2X_ACC_DGRAD,
                         ub_algo=ub_algo if ctx.ub_overlap_ag else None,

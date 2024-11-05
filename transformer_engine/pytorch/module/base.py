@@ -851,6 +851,12 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     grad_output = ctx.ub_obj_gradout.get_ubuf_output(1)
             return grad_output, None
 
+        # Builder class for quantized tensor
+        ### TODO Avoid unnecessary usages
+        quantizer = ctx.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
+        quantizer.rowwise_usage = True
+        quantizer.columnwise_usage = True
+
         # FP8 case with gather: unfused bgrad, cast, transpose for efficient gather
         # TODO: Implement
         if gather_grad_output:
@@ -859,7 +865,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 grad_bias = grad_output.view(-1, grad_output.shape[-1]).sum(dim=0)
             else:
                 grad_bias = None
-            if ctx.fp8_meta["scaling_bwd"].single_usage_sufficient:
+            if quantizer.single_usage_sufficient:
                 if ctx.ub_overlap_ag:
                     grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(0)
                 else:
@@ -899,14 +905,13 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             # TODO: This part is kind of stupid
             if isinstance(grad_output, QuantizedTensor):
                 grad_output_mat_no_fp8 = grad_output.dequantize()
-            qparams = ctx.fp8_meta["scaling_bwd"].get_quantization_params(tex.FP8BwdTensors.GRAD_OUTPUT1)
             # TODO: Should check whether we do wgrad/dgrad or both to properly set
             # rowwise/columnwise
             grad_bias, grad_output = tex.bgrad_cast(
                 grad_output_mat_no_fp8,
-                qparams,
-                rowwise_usage=True,
-                columnwise_usage=True,
+                quantizer,
+                rowwise_usage=quantizer.rowwise_usage,
+                columnwise_usage=quantizer.columnwise_usage,
             )
             return grad_output, grad_bias
         else:
@@ -915,10 +920,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             else:
                 # TODO: Should check whether we do wgrad/dgrad or both to properly set
                 # rowwise/columnwise
-                grad_output = ctx.fp8_meta["scaling_bwd"].quantize(grad_output,
-                                                                   tex.FP8BwdTensors.GRAD_OUTPUT1,
-                                                                   rowwise=True,
-                                                                   columnwise=True)
+                grad_output = quantizer.quantize(grad_output)
             return grad_output, None
 
     def register_parameter(self, name, param, **kwargs):
