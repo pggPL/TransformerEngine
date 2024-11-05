@@ -10,15 +10,14 @@ import torch
 import transformer_engine_torch as tex
 
 from transformer_engine_torch import DType as TE_DType
-from ..constants import TE_DType as torch_to_transformer_engine_dtype
 from ..cpp_extensions.transpose import fp8_cast_transpose_fused
 from ..cpp_extensions.cast import (
     cast_to_fp8,
 )
 from ..fp8 import FP8GlobalStateManager
 from ..utils import devices_match, supports_fp8_transposes
-from .quantized_tensor import QuantizedTensor, _QuantizeFunc, _IdentityFunc
-from ..quantization_params import Float8ParamsProxy
+from .quantized_tensor import QuantizedTensor, _IdentityFunc
+from ..quantization_params import QuantizationParamsProxy, QuantizationParams
 
 from ._internal.float8_tensor_base import Float8TensorBase, _FromFloat8Func
 
@@ -112,23 +111,10 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
                  rowwise_usage: bool = True,
                  columnwise_usage: bool = True,
     ) -> QuantizedTensor:
-        if torch.is_grad_enabled():
-            return _QuantizeFunc.apply(
-                tensor,
-                params,
-                rowwise_usage,
-                columnwise_usage,
-                proxy,
-            )
-        else:
-            return _QuantizeFunc.forward(
-                None,
-                tensor,
-                params,
-                rowwise_usage,
-                columnwise_usage,
-                proxy,
-            )
+        return QuantizedTensor.quantize(tensor, params,
+                                        proxy=proxy,
+                                        rowwise_usage=rowwise_usage,
+                                        columnwise_usage=columnwise_usage)
 
     def quantize_(
         self,

@@ -11,10 +11,9 @@ import torch
 
 from .fp8 import get_fp8_te_dtype
 from .tensor import QuantizedTensor, Float8Tensor
-from .tensor.float8_tensor import Float8ParamsProxy
 from .tensor._internal.float8_tensor_base import Float8TensorBase
 
-from .quantization_params import Float8Params
+from .quantization_params import Float8Params, Float8ParamsProxy
 
 class Quantizer:
     def __init__(self,
