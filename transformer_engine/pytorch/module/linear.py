@@ -255,7 +255,6 @@ class _Linear(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
         # pylint: disable=missing-function-docstring
 
-        print (grad_output.shape)
         with torch.cuda.nvtx.range("_Linear_backward"):
             (
                 inputmat,
