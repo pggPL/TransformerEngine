@@ -39,12 +39,18 @@ class Format(Enum):
     HYBRID = _FormatHelper(max_fwd=E4M3.max_fwd, max_bwd=E5M2.max_bwd)
 
 
-@dataclass
 class Recipe:
     """
-    Abstract base recipe class.
+    Base recipe class.
     """
-    pass
+    def block(self):
+        """Whether the given recipe is block scaling."""
+        return isinstance(self, BlockScaling)
+
+    def delayed(self):
+        """Whether the given recipe is delayed scaling."""
+        return isinstance(self, DelayedScaling)
+
 
 @dataclass()
 class DelayedScaling(Recipe):

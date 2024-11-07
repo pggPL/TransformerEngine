@@ -7,7 +7,7 @@
 #include "util.h"
 #include "ATen/cuda/CUDAContextLight.h"
 
-bool supports_fp8_transposes() {
+bool non_tn_fp8_gemm_supported() {
   int major = at::cuda::getCurrentDeviceProperties()->major;
   return major >= 10;
 }

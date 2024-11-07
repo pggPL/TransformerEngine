@@ -312,40 +312,26 @@ def _linear_bwd_fp8(
             dgrad, handle = allreduce(dgrad, tp_group, sync_op=False)
 
     if requires_wgrad:
-        if not fp8_meta["recipe"].override_linear_precision.wgrad:
-            if inputmat_t_total is None:
-                inputmat_t_total = transpose(inputmat_total, fp8_dtype_backward)
-                clear_tensor_data(inputmat_total)
-
-            wgrad, _ = fp8_gemm(
-                inputmat_t_total,
-                fwd_scale_inverses,
-                inputmat_fp8_index,
-                fp8_dtype_forward,
-                grad_output_t,
-                fp8_meta["scaling_bwd"].scale_inv,
-                grad_output_fp8_index,
-                fp8_dtype_backward,
-                "float32" if fuse_wgrad_accumulation else activation_dtype,
-                get_workspace(),
-                accumulate=accumulate_wgrad_into_param_main_grad,
-                out=weight.main_grad if fuse_wgrad_accumulation else None,
-                use_split_accumulator=_2X_ACC_WGRAD,
-            )
-            clear_tensor_data(inputmat_t_total, grad_output_t)
-        else:
-            wgrad, _, _ = gemm(
-                inputmat_total,
-                grad_output,
-                activation_dtype,
-                get_workspace(),
-                grad=True,
-                accumulate=accumulate_wgrad_into_param_main_grad,
-                layout="NT",
-                out=weight.main_grad if fuse_wgrad_accumulation else None,
-                out_dtype="float32" if fuse_wgrad_accumulation else None,
-            )
+        if inputmat_t_total is None:
+            inputmat_t_total = transpose(inputmat_total, fp8_dtype_backward)
             clear_tensor_data(inputmat_total)
+
+        wgrad, _ = fp8_gemm(
+            inputmat_t_total,
+            fwd_scale_inverses,
+            inputmat_fp8_index,
+            fp8_dtype_forward,
+            grad_output_t,
+            fp8_meta["scaling_bwd"].scale_inv,
+            grad_output_fp8_index,
+            fp8_dtype_backward,
+            "float32" if fuse_wgrad_accumulation else activation_dtype,
+            get_workspace(),
+            accumulate=accumulate_wgrad_into_param_main_grad,
+            out=weight.main_grad if fuse_wgrad_accumulation else None,
+            use_split_accumulator=_2X_ACC_WGRAD,
+        )
+        clear_tensor_data(inputmat_t_total, grad_output_t)
 
         if fuse_wgrad_accumulation:
             weight.main_grad = wgrad
@@ -541,11 +527,7 @@ class _Linear(paddle.autograd.PyLayer):
         inputmat_t = None
         if fp8_enabled:
             fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
-            if (
-                not fp8_meta["recipe"].override_linear_precision.wgrad
-                and is_grad_enabled
-                and not sequence_parallel
-            ):
+            if is_grad_enabled and not sequence_parallel:
                 inputmat, inputmat_t = cast_transpose(
                     inputmat,
                     fp8_meta["scaling_fwd"],

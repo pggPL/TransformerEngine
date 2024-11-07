@@ -108,11 +108,6 @@ fp8_recipes = [
     recipe.DelayedScaling(
         margin=0,
         fp8_format=recipe.Format.E4M3,
-        override_linear_precision=(False, False, True),
-    ),
-    recipe.DelayedScaling(
-        margin=0,
-        fp8_format=recipe.Format.E4M3,
         amax_history_len=16,
         amax_compute_algo="most_recent",
     ),

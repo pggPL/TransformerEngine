@@ -231,17 +231,8 @@ def _mlp_backward(
     if fp8_enabled:
         fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
         fp8_dtype_backward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=False)
-        # FC2 Bwd
-        fp8_wgrad = not fp8_meta["recipe"].override_linear_precision.wgrad
-        if requires_fc2_wgrad and not fp8_wgrad:
-            fc2_input = cast_from_fp8(
-                fc2_input,
-                fp8_meta["scaling_fwd"],
-                fc2_input_fp8_index,
-                fp8_dtype_forward,
-                TE_DType[activation_dtype],
-            )
 
+        # FC2 Bwd
         fc2_dgrad, fc2_wgrad = _linear_bwd_fp8(
             fc2_input,
             None,
@@ -290,24 +281,6 @@ def _mlp_backward(
             fc1_bgrad = fc1_bgrad_
 
         # FC1 Bwd
-        dgelu_no_fp8 = None
-        if requires_fc1_wgrad and not fp8_wgrad:
-            # TODO(tizheng) Paddle lacks fused dgelu_bgrad OP. Cast from dgrad(fp8) instead.
-            dgelu_no_fp8 = cast_from_fp8(
-                dgelu,
-                fp8_meta["scaling_bwd"],
-                fc1_grad_output_fp8_index,
-                fp8_dtype_backward,
-                TE_DType[activation_dtype],
-            )
-            fc1_input = cast_from_fp8(
-                fc1_input,
-                fp8_meta["scaling_fwd"],
-                fc1_input_fp8_index,
-                fp8_dtype_forward,
-                TE_DType[activation_dtype],
-            )
-
         fc1_dgrad, fc1_wgrad = _linear_bwd_fp8(
             fc1_input,
             None,
@@ -315,7 +288,7 @@ def _mlp_backward(
             fc1_weight,
             fc1_weight_t_fp8,
             fc1_weight_fp8_index,
-            dgelu_no_fp8,
+            None,  # dgelu_no_fp8
             dgelu,
             dgelu_t,
             fc1_grad_output_fp8_index,

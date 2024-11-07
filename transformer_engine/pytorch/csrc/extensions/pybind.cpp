@@ -175,6 +175,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("input"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
         py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
         py::arg("scale_inv_offset") = 0);
+  m.def("cast_to_fp8_x2", &cast_to_fp8_x2, "Cast to FP8", py::call_guard<py::gil_scoped_release>(),
+        py::arg("input"), py::arg("scale_inv_rowwise"),
+        py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("cast_to_fp8_noalloc", &cast_to_fp8_noalloc, "Cast to FP8",
         py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
         py::arg("output"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
@@ -213,34 +216,28 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
         py::arg("scale_inv_offset") = 0);
   m.def("fp8_cast_dbias_x2", &fp8_cast_dbias_x2, "FP8 cast + dbias",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::call_guard<py::gil_scoped_release>(), py::arg("input"),
+        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("fp8_cast_dbias_dgelu_x2", &fp8_cast_dbias_dgelu_x2,
         "Fused Cast + BGRAD + DGELU with rowwise and columnwise scaled outputs",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("fp8_cast_dbias_drelu_x2", &fp8_cast_dbias_drelu_x2,
         "Fused Cast + BGRAD + DRELU with rowwise and columnwise scaled outputs",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("fp8_cast_dbias_dsilu_x2", &fp8_cast_dbias_dsilu_x2,
         "Fused Cast + BGRAD + DSILU with rowwise and columnwise scaled outputs",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("fp8_cast_dbias_dqgelu_x2", &fp8_cast_dbias_dqgelu_x2,
         "Fused Cast + BGRAD + DQGELU with rowwise and columnwise scaled outputs",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("fp8_cast_dbias_dsrelu_x2", &fp8_cast_dbias_dsrelu_x2,
         "Fused Cast + BGRAD + DSRELU with rowwise and columnwise scaled outputs",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("te_gemm", &te_gemm, "CublasLt GEMM");  /// TODO Think
   m.def("te_grouped_gemm", &te_grouped_gemm, "Grouped GEMM");
   m.def("te_grouped_gemm_single_output", &te_grouped_gemm_single_output,
@@ -293,6 +290,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "Update amax history and FP8 scale/scale_inv after reduction",
         py::call_guard<py::gil_scoped_release>());
   m.def("fused_multi_row_padding", &fused_multi_row_padding, "Fused Multi-tensor padding",
+        py::call_guard<py::gil_scoped_release>());
+  m.def("swizzle_scaling_factors", &swizzle_scaling_factors, "Swizzle scale inverses.",
         py::call_guard<py::gil_scoped_release>());
   // fused apply rope
   m.def("fused_rope_forward", &fused_rope_forward, "Fused Apply RoPE FWD",

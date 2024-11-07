@@ -339,16 +339,6 @@ class _LayerNormLinear(paddle.autograd.PyLayer):
 
             # Prepare ln_out for Linear bwd
             linear_inputmat = ln_out
-            if ctx.fp8_enabled:
-                fp8_dtype_forward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=True)
-                if ctx.requires_wgrad and ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-                    linear_inputmat = cast_from_fp8(
-                        ln_out,
-                        ctx.fp8_meta["scaling_fwd"],
-                        FP8FwdTensors.GEMM1_INPUT,
-                        fp8_dtype_forward,
-                        TE_DType[ctx.activation_dtype],
-                    )
 
             # Linear Bwd
             dgrad, wgrad, bgrad_ = _linear_bwd(

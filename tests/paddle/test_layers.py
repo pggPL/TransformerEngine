@@ -145,7 +145,6 @@ class TestLinear:
     @pytest.mark.parametrize("has_bias,no_dbias", [[True, False], [True, True], [False, False]])
     @pytest.mark.parametrize("no_dgrad", [True, False])
     @pytest.mark.parametrize("no_wgrad", [True, False])
-    @pytest.mark.parametrize("fp8_wgrad", [True, False])
     @pytest.mark.parametrize("do_calibration", [True, False])
     @pytest.mark.parametrize("activation_dtype", ["bfloat16", "float32"])
     def test_linear_fp8(
@@ -156,7 +155,6 @@ class TestLinear:
         no_dbias,
         no_dgrad,
         no_wgrad,
-        fp8_wgrad,
         do_calibration,
         activation_dtype,
     ):
@@ -170,7 +168,7 @@ class TestLinear:
         input_tensor.stop_gradient = no_dgrad
         grad_out = paddle.uniform(shape=(bs, out_features), dtype=activation_dtype)
 
-        recipe = DelayedScaling(override_linear_precision=(False, False, not fp8_wgrad))
+        recipe = DelayedScaling()
 
         paddle.set_default_dtype(activation_dtype)
         layer_te = te.Linear(
@@ -404,7 +402,6 @@ class TestLayerNormLinear:
     @pytest.mark.parametrize("has_bias,no_dbias", [[True, False], [True, True], [False, False]])
     @pytest.mark.parametrize("no_dgrad", [True, False])
     @pytest.mark.parametrize("no_wgrad", [True, False])
-    @pytest.mark.parametrize("fp8_wgrad", [True, False])
     @pytest.mark.parametrize("do_calibration", [True, False])
     @pytest.mark.parametrize("return_ln_out", [True, False])
     @pytest.mark.parametrize("activation_dtype", ["bfloat16", "float32"])
@@ -417,7 +414,6 @@ class TestLayerNormLinear:
         no_dbias,
         no_dgrad,
         no_wgrad,
-        fp8_wgrad,
         do_calibration,
         return_ln_out,
         activation_dtype,
@@ -436,7 +432,7 @@ class TestLayerNormLinear:
         eps = 1e-3
         has_ln_bias = normalization == "LayerNorm"
 
-        recipe = DelayedScaling(override_linear_precision=(False, False, not fp8_wgrad))
+        recipe = DelayedScaling()
 
         layer_te = te.LayerNormLinear(
             in_features=in_features,
@@ -681,7 +677,6 @@ class TestLayerNormMLP:
     @pytest.mark.parametrize("has_bias,no_dbias", [[True, False], [True, True], [False, False]])
     @pytest.mark.parametrize("no_dgrad", [True, False])
     @pytest.mark.parametrize("no_wgrad", [True, False])
-    @pytest.mark.parametrize("fp8_wgrad", [True, False])
     @pytest.mark.parametrize("do_calibration", [True, False])
     @pytest.mark.parametrize("return_ln_out", [True, False])
     @pytest.mark.parametrize("activation_dtype", ["bfloat16", "float32"])
@@ -695,7 +690,6 @@ class TestLayerNormMLP:
         no_dbias,
         no_dgrad,
         no_wgrad,
-        fp8_wgrad,
         do_calibration,
         return_ln_out,
         activation_dtype,
@@ -715,7 +709,7 @@ class TestLayerNormMLP:
         eps = 1e-3
         has_ln_bias = normalization == "LayerNorm"
 
-        recipe = DelayedScaling(override_linear_precision=(False, False, not fp8_wgrad))
+        recipe = DelayedScaling()
 
         layer_te = te.LayerNormMLP(
             hidden_size=hidden_size,
