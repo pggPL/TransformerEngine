@@ -314,8 +314,6 @@ class NormFwdTe : public NormBase {
 
   void set_workspace_and_barrier(void* workspace_ptr, void* barrier_ptr) override;
 
-  void set_amax();
-
   void execute() override;
 
   std::vector<size_t> get_workspace_shape() override;
