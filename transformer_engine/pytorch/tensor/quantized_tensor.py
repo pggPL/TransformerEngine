@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 import abc
+import copy
 from typing import Optional, Tuple
 
 import torch
@@ -52,6 +53,10 @@ class Quantizer(abc.ABC):
     @abc.abstractmethod
     def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
         ...
+
+    def copy(self) -> Quantizer:
+        """Create shallow copy"""
+        return copy.copy(self)
 
 
 class _QuantizeFunc(torch.autograd.Function):

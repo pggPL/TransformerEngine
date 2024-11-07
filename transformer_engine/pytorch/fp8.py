@@ -3,6 +3,9 @@
 # See LICENSE for license information.
 
 """FP8 utilities for TransformerEngine"""
+from __future__ import annotations
+
+import abc
 import os
 from contextlib import contextmanager
 from collections import deque
@@ -712,10 +715,34 @@ def split_and_copy(
     torch._foreach_copy_(outputs, splits)
 
 
-class DelayedScalingRecipeState:
+class RecipeState(abc.ABC):
+
+    @staticmethod
+    def create(
+        recipe: Recipe,
+        *,
+        mode: str,
+        num_quantizers: int = 1,
+        device: Optional[torch.device] = None,
+    ) -> RecipeState:
+        if isinstance(recipe, DelayedScaling):
+            return DelayedScalingRecipeState(
+                recipe,
+                mode=mode,
+                num_quantizers=num_quantizers,
+                device=device,
+            )
+        raise ValueError("{recipe.__class__.__name__} is not supported")
+
+    @abc.abstractmethod
+    def make_quantizers(self) -> list:
+        ...
+
+
+class DelayedScalingRecipeState(RecipeState):
 
     recipe: DelayedScaling
-    forward: bool
+    mode: str
     dtype: tex.DType
     scale: torch.Tensor
     amax_history: torch.Tensor
@@ -724,21 +751,29 @@ class DelayedScalingRecipeState:
         self,
         recipe: DelayedScaling,
         *,
-        forward: bool,
-        num_tensors: int = 1,
+        mode: str,
+        num_quantizers: int = 1,
         device: Optional[torch.device] = None,
-    ):
+    ) -> None:
         self.recipe = recipe
-        self.forward = forward
-        self.dtype = get_fp8_te_dtype(recipe, forward)
+        self.mode = mode
+        self.num_quantizers = num_quantizers
+        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
 
         # Allocate buffers
         if device is None:
             device = torch.device("cuda")
-        self.scale = torch.ones(num_tensors, dtype=torch.float32, device=device)
+        self.scale = torch.ones(num_quantizers, dtype=torch.float32, device=device)
         self.amax_history = torch.zeros(
             recipe.amax_history_len,
-            num_tensors,
+            num_quantizers,
             dtype=torch.float32,
             device=device,
         )
+
+    def make_quantizers(self) -> list:
+        from .tensor.float8_tensor import Float8Quantizer
+        return [
+            Float8Quantizer(self.scale[i], self.amax_history[0][i], self.dtype)
+            for i in range(self.num_quantizers)
+        ]

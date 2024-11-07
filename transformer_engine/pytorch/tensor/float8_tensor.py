@@ -64,6 +64,8 @@ class Float8Quantizer(Quantizer):
     scale: torch.Tensor
     amax: torch.Tensor
     dtype: TE_Dtype
+    rowwise_usage: bool
+    columnwise_usage: bool
     single_usage_sufficient: bool = True
 
     def __init__(
@@ -164,80 +166,6 @@ class Float8Quantizer(Quantizer):
     def calibrate(self, tensor: torch.Tensor) -> None:
         amin, amax = tensor.aminmax()
         self.amax.copy_(torch.max(-amin, amax))
-
-
-class DelayedScalingFloat8Quantizer(Quantizer):
-
-    recipe_state: DelayedScalingRecipeState
-    index: int
-
-    def __init__(
-        self,
-        recipe_state: DelayedScalingRecipeState,
-        index: int,
-        *,
-        rowwise: bool = True,
-        columnwise: bool = True,
-    ):
-        super().__init__()
-        self.recipe_state = recipe_state
-        self.index = index
-        self.rowwise_usage = rowwise
-        self.columnwise_usage = columnwise
-
-    @property
-    def scale(self) -> torch.Tensor:
-        return self.recipe_state.scale[self.index]
-
-    @property
-    def amax(self) -> torch.Tensor:
-        return self.recipe_state.amax_history[0][self.index]
-
-    @property
-    def dtype(self) -> TE_Dtype:
-        return self.recipe_state.dtype
-
-    def resolve(self) -> Float8Quantizer:
-        return Float8Quantizer(
-            scale=self.scale,
-            amax=self.amax,
-            fp8_dtype=self.dtype,
-            rowwise=self.rowwise_usage,
-            columnwise=self.columnwise_usage,
-        )
-
-    def update_quantized(
-        self,
-        src: torch.Tensor,
-        dst: Float8Tensor,
-    ) -> Float8Tensor:
-        self.resolve().update_quantized(src, dst)
-
-    def quantize(
-        self,
-        tensor: torch.Tensor,
-        *,
-        out: Optional[Float8Tensor] = None,
-    ) -> Float8Tensor:
-        return self.resolve().quantize(tensor, out=out)
-
-    def make_empty(
-        self,
-        shape: Iterable[int],
-        *,
-        dtype: torch.dtype = torch.float32,
-        device: Optional[torch.device] = None,
-        requires_grad: bool = False,
-    ) -> Float8Tensor:
-        return self.resolve().make_empty(
-            shape,
-            dtype=dtype,
-            device=device,
-            requires_grad=requires_grad,
-        )
-
-    def calibrate(self, tensor: torch.Tensor) -> None:
-        self.resolve().calibrate(tensor)
 
 
 def _make_fp8_attr_property_funcs(name: str) -> Any:

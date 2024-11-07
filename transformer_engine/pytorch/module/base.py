@@ -24,6 +24,7 @@ from ...common.recipe import DelayedScaling
 from ..fp8 import (
     FP8GlobalStateManager,
     DelayedScalingRecipeState,
+    RecipeState,
 )
 from ..distributed import (
     gather_along_first_dim,
@@ -36,7 +37,6 @@ from ..cpp_extensions import (
 )
 from ..constants import dist_group_type
 from ..tensor import Float8Tensor, QuantizedTensor, Quantizer
-from ..tensor.float8_tensor import DelayedScalingFloat8Quantizer
 from transformer_engine.common.recipe import DelayedScaling, Recipe
 
 __all__ = ["initialize_ub", "destroy_ub"]
@@ -516,6 +516,9 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     self.fp8_meta[meta_key].amax_history, pad=(0, 0, 0, extra_rows)
                 )
 
+            # Update quantizers with new amax pointers.
+            self.quantizers[meta_key] = self.fp8_meta[meta_key].make_quantizers()
+
             # Update the global buffers with new amax and history pointers.
             if FP8GlobalStateManager.get_buffer_info() in self.fp8_meta:
                 fwd_pos, fwd_key, bwd_pos, bwd_key = self.fp8_meta[
@@ -551,26 +554,14 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             self.fp8_meta["num_gemms"] * 3 if fwd else self.fp8_meta["num_gemms"] * 2
         )
 
-        # Allocate buffers for FP8 scaling factors
-        self.fp8_meta[fp8_meta_tensor_key] = DelayedScalingRecipeState(
+        # Initialize recipe state and quantizers
+        recipe_state = RecipeState.create(
             recipe,
-            forward=fwd,
-            num_tensors=num_fp8_tensors,
+            mode=("forward" if fwd else "backward"),
+            num_quantizers=num_fp8_tensors,
         )
-
-        # Construct builders for FP8 tensors
-        if not isinstance(recipe, DelayedScaling):
-            raise NotImplementedError
-        self.quantizers[fp8_meta_tensor_key] = [
-            DelayedScalingFloat8Quantizer(
-                self.fp8_meta[fp8_meta_tensor_key],
-                index,
-                rowwise=True,
-                columnwise=torch.is_grad_enabled(),
-            )
-            for index in range(num_fp8_tensors)
-        ]
-
+        self.fp8_meta[fp8_meta_tensor_key] = recipe_state
+        self.quantizers[fp8_meta_tensor_key] = recipe_state.make_quantizers()
 
     def init_fp8_meta_tensors(self,
                               recipe: Recipe) -> None:
@@ -828,7 +819,10 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
     @staticmethod
     def grad_output_preprocess(
-        ctx, grad_output: torch.Tensor, row_parallel_mode: bool
+        ctx,
+        grad_output: torch.Tensor,
+        row_parallel_mode: bool,
+        quantizer: Optional[Quantizer],
     ) -> Tuple[Union[torch.Tensor, None], ...]:
         """Utility function for backward.
         Returns tuple in order (all optional/None based on training precion/recipe):
@@ -850,12 +844,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     ctx.ub_obj_gradout.copy_input_to_ubuf(grad_output, True)
                     grad_output = ctx.ub_obj_gradout.get_ubuf_output(1)
             return grad_output, None
-
-        # Builder class for quantized tensor
-        ### TODO Avoid unnecessary usages
-        quantizer = ctx.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
-        quantizer.rowwise_usage = True
-        quantizer.columnwise_usage = True
 
         # FP8 case with gather: unfused bgrad, cast, transpose for efficient gather
         # TODO: Implement
