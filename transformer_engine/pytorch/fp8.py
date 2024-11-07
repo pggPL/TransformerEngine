@@ -3,6 +3,9 @@
 # See LICENSE for license information.
 
 """FP8 utilities for TransformerEngine"""
+from __future__ import annotations
+
+import abc
 import os
 from contextlib import contextmanager
 from collections import deque
@@ -710,3 +713,67 @@ def split_and_copy(
     """Split `buffer` by `chunk_sizes` and copy into `outputs`."""
     splits = buffer.split(chunk_sizes)
     torch._foreach_copy_(outputs, splits)
+
+
+class RecipeState(abc.ABC):
+
+    @staticmethod
+    def create(
+        recipe: Recipe,
+        *,
+        mode: str,
+        num_quantizers: int = 1,
+        device: Optional[torch.device] = None,
+    ) -> RecipeState:
+        if isinstance(recipe, DelayedScaling):
+            return DelayedScalingRecipeState(
+                recipe,
+                mode=mode,
+                num_quantizers=num_quantizers,
+                device=device,
+            )
+        raise ValueError("{recipe.__class__.__name__} is not supported")
+
+    @abc.abstractmethod
+    def make_quantizers(self) -> list:
+        ...
+
+
+class DelayedScalingRecipeState(RecipeState):
+
+    recipe: DelayedScaling
+    mode: str
+    dtype: tex.DType
+    scale: torch.Tensor
+    amax_history: torch.Tensor
+
+    def __init__(
+        self,
+        recipe: DelayedScaling,
+        *,
+        mode: str,
+        num_quantizers: int = 1,
+        device: Optional[torch.device] = None,
+    ) -> None:
+        self.recipe = recipe
+        self.mode = mode
+        self.num_quantizers = num_quantizers
+        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
+
+        # Allocate buffers
+        if device is None:
+            device = torch.device("cuda")
+        self.scale = torch.ones(num_quantizers, dtype=torch.float32, device=device)
+        self.amax_history = torch.zeros(
+            recipe.amax_history_len,
+            num_quantizers,
+            dtype=torch.float32,
+            device=device,
+        )
+
+    def make_quantizers(self) -> list:
+        from .tensor.float8_tensor import Float8Quantizer
+        return [
+            Float8Quantizer(self.scale[i], self.amax_history[0][i], self.dtype)
+            for i in range(self.num_quantizers)
+        ]

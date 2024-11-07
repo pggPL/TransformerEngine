@@ -13,21 +13,19 @@
 
 namespace transformer_engine::pytorch {
 
-py::object cast(const at::Tensor& tensor,
-                py::handle quantization_params,
-                bool rowwise_usage,
-                bool columnwise_usage,
-                py::handle proxy
-                ) {
+  /// TODO Rename to "quantize"
+py::object cast(const at::Tensor& tensor, py::handle quantizer) {
   using namespace pybind11::literals;
   init_extension();
   auto input_tensor = tensor.contiguous();
-  NVTE_CHECK(rowwise_usage || columnwise_usage,
-             "Could not create a QuantizedTensor with no usage.");
-  if (detail::IsFloat8QParams(quantization_params.ptr())) {
-    auto py_scale = quantization_params.attr("scale");
-    auto py_amax = quantization_params.attr("amax");
-    DType type = quantization_params.attr("dtype").cast<DType>();
+  if (detail::IsFloat8QParams(quantizer.ptr())) {
+    auto rowwise_usage = quantizer.attr("rowwise_usage").cast<bool>();
+    auto columnwise_usage = quantizer.attr("columnwise_usage").cast<bool>();
+    NVTE_CHECK(rowwise_usage || columnwise_usage,
+               "Could not create a QuantizedTensor with no usage.");
+    auto py_scale = quantizer.attr("scale");
+    auto py_amax = quantizer.attr("amax");
+    DType type = quantizer.attr("dtype").cast<DType>();
     const at::Tensor& scale = py_scale.cast<at::Tensor>();
     at::Tensor amax = py_amax.cast<at::Tensor>();
     auto opts = input_tensor.options().dtype(torch::kFloat32);
@@ -68,14 +66,14 @@ py::object cast(const at::Tensor& tensor,
                                    "fp8_scale_inv"_a=scale_inv,
                                    "fp8_dtype"_a=type,
                                    "dtype"_a=fake_tensor_type,
-                                   "proxy"_a=proxy);
+                                   "quantizer"_a=quantizer);
       return ret;
     } else {
       auto ret = Float8TensorClass("data"_a=data,
                                    "fp8_scale_inv"_a=scale_inv,
                                    "fp8_dtype"_a=type,
                                    "dtype"_a=fake_tensor_type,
-                                   "proxy"_a=proxy);
+                                   "quantizer"_a=quantizer);
       return ret;
     }
   }

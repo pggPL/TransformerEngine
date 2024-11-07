@@ -6,7 +6,7 @@
 import functools
 from typing import Iterable, Optional, Tuple, Union, List
 import torch
-from ..quantization_params import QuantizationParams
+from ..tensor.quantized_tensor import Quantizer
 import transformer_engine_torch as tex
 from ..constants import TE_DType
 from ..utils import assert_dim_for_fp8_exec, get_sm_count
@@ -103,7 +103,7 @@ def general_gemm(
     B: torch.Tensor,
     workspace: torch.Tensor,
     out_dtype: Optional[torch.dtype] = None,
-    quantization_params: Optional[QuantizationParams] = None,
+    quantization_params: Optional[Quantizer] = None,
     gelu: bool = False,
     accumulate: bool = False,
     layout: str = "TN",
