@@ -898,8 +898,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             grad_bias, grad_output = tex.bgrad_cast(
                 grad_output_mat_no_fp8,
                 quantizer,
-                rowwise_usage=quantizer.rowwise_usage,
-                columnwise_usage=quantizer.columnwise_usage,
             )
             return grad_output, grad_bias
         else:
