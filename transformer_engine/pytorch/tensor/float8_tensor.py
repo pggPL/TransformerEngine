@@ -64,8 +64,6 @@ class Float8Quantizer(Quantizer):
     scale: torch.Tensor
     amax: torch.Tensor
     dtype: TE_Dtype
-    rowwise_usage: bool
-    columnwise_usage: bool
     single_usage_sufficient: bool = True
 
     def __init__(
@@ -77,12 +75,10 @@ class Float8Quantizer(Quantizer):
         rowwise: bool = True,
         columnwise: bool = True,
     ) -> None:
-        super().__init__()
+        super().__init__(rowwise=rowwise, columnwise=columnwise)
         self.scale = scale
         self.amax = amax
         self.dtype = fp8_dtype
-        self.rowwise_usage = rowwise
-        self.columnwise_usage = columnwise
 
     def update_quantized(
         self,

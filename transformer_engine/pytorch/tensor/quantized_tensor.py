@@ -18,7 +18,13 @@ from ...common.recipe import Recipe
 
 class Quantizer(abc.ABC):
 
+    rowwise_usage: bool
+    columnwise_usage: bool
     single_usage_sufficient: bool = False
+
+    def __init__(self, *, rowwise: bool, columnwise: bool) -> None:
+        self.rowwise_usage = rowwise
+        self.columnwise_usage = columnwise
 
     @abc.abstractmethod
     def update_quantized(
@@ -53,6 +59,17 @@ class Quantizer(abc.ABC):
     @abc.abstractmethod
     def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
         ...
+
+    def set_usage(
+        self,
+        *,
+        rowwise: Optional[bool] = None,
+        columnwise: Optional[bool] = None,
+    ) -> None:
+        if rowwise is not None:
+            self.rowwise_usage = rowwise
+        if columnwise is not None:
+            self.columnwise_usage = columnwise
 
     def copy(self) -> Quantizer:
         """Create shallow copy"""

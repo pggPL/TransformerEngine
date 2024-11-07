@@ -100,10 +100,26 @@ class _Linear(torch.autograd.Function):
 
         inputmat_no_fp8 = inputmat
 
-        backward_needs_input = (
-            is_grad_enabled
-            and weight.requires_grad
-        )
+        weight_requires_grad = weight.requires_grad
+        backward_needs_input = is_grad_enabled and weight_requires_grad
+
+        # Configure quantizers
+        if input_quantizer is not None:
+            input_quantizer.set_usage(
+                rowwise=True,
+                columnwise=(is_grad_enabled and weight_requires_grad),
+            )
+        if weight_quantizer is not None:
+            columnwise_usage = is_grad_enabled and inp.requires_grad
+            if not columnwise_usage:
+                columnwise_usage = (
+                    is_fp8_activation_recompute_enabled()
+                    and not in_fp8_activation_recompute_phase()
+                )
+            weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
+        if output_quantizer is not None:
+            output_quantizer.set_usage(rowwise=True, columnwise=False)
+
         own_quantized_input = not isinstance(inputmat, QuantizedTensor)
         if fp8 and own_quantized_input:
             inputmat = input_quantizer.quantize(inputmat)
@@ -249,7 +265,6 @@ class _Linear(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
         # pylint: disable=missing-function-docstring
 
-        print (grad_output.shape)
         with torch.cuda.nvtx.range("_Linear_backward"):
             (
                 inputmat,
@@ -268,6 +283,15 @@ class _Linear(torch.autograd.Function):
                 inputmat,
                 weight_fp8,
             )
+
+            # Configure quantizers
+            if ctx.grad_output_quantizer is not None:
+                ctx.grad_output_quantizer.set_usage(
+                    rowwise=ctx.requires_dgrad,
+                    columnwise=ctx.requires_wgrad,
+                )
+            if ctx.grad_input_quantizer is not None:
+                ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
 
             #TODO: understand and fix
             # if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
@@ -770,32 +794,16 @@ class Linear(TransformerEngineBaseModule):
             else:
                 bias_tensor = None
 
-            # Set quantizers with required usages
-            is_grad_enabled = torch.is_grad_enabled()
+            # Get quantizers
             input_quantizer, weight_quantizer, output_quantizer = None, None, None
             grad_output_quantizer, grad_input_quantizer = None, None
             if self.fp8:
-                weight_requires_grad = weight_tensor.requires_grad
-                input_requires_grad = inp.requires_grad
-                input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_INPUT].copy()
-                input_quantizer.rowwise_usage = True
-                input_quantizer.columnwise_usage = is_grad_enabled and weight_requires_grad
-                weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT].copy()
-                weight_quantizer.rowwise_usage = True
-                weight_quantizer.columnwise_usage = is_grad_enabled and input_requires_grad
-                if not weight_quantizer.columnwise_usage:
-                    weight_quantizer.columnwise_usage = (
-                        is_fp8_activation_recompute_enabled()
-                        and not in_fp8_activation_recompute_phase()
-                    )
+                input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_INPUT]
+                weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
                 if fp8_output:
-                    output_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_OUTPUT].copy()
-                    output_quantizer.rowwise_usage = True
-                    output_quantizer.columnwise_usage = False
-                if is_grad_enabled:
-                    grad_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1].copy()
-                    grad_output_quantizer.rowwise_usage = True
-                    grad_output_quantizer.columnwise_usage = weight_requires_grad
+                    output_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_OUTPUT]
+                if torch.is_grad_enabled():
+                    grad_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
 
             if torch.is_grad_enabled():
                 linear_fn = _Linear.apply
