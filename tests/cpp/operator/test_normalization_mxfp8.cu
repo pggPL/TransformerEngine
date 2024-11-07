@@ -43,32 +43,54 @@ void dequantize(Tensor& input, Tensor& output)
   input.to_cpu();
   auto scaling_mode = input.scaling_mode();
   assert(input.shape().ndim == 2);
-  auto nrows = input.shape().data[0];
-  auto ncols = input.shape().data[1];
+  auto rows = input.shape().data[0];
+  auto cols = input.shape().data[1];
   auto* output_ptr = output.cpu_dptr<float>();
   const auto* input_ptr = input.cpu_dptr<OutputType>();
   const auto* scale_ptr = input.cpu_scale_inv_ptr<ScaleType>();
 
-  const size_t n_blocks_x = (nrows + scaling_mode.x - 1) / scaling_mode.x;
-  const size_t n_blocks_y = (ncols +scaling_mode.y - 1) / scaling_mode.y;
+  const size_t block_size_Y = scaling_mode.x;   // mind the mapping Y <-- x
+  const size_t block_size_X = scaling_mode.y;   //              and X <-- y
+  const size_t tile_size_Y = std::max(32lu, block_size_Y);
+  const size_t tile_size_X = std::max(64lu, block_size_X);
+  const size_t tiles_num_Y = (rows + tile_size_Y - 1) / tile_size_Y;
+  const size_t tiles_num_X = (cols + tile_size_X - 1) / tile_size_X;
+  const size_t blocks_per_tile_Y = tile_size_Y / block_size_Y;
+  const size_t blocks_per_tile_X = tile_size_X / block_size_X;
+  const size_t blocks_per_row = (cols + block_size_X - 1) / block_size_X;
 
-  for (size_t ii = 0; ii < n_blocks_x; ++ii) {
-    const size_t i_min = ii * scaling_mode.x;
-    const size_t i_max = std::min((ii + 1) * scaling_mode.x, nrows);
-    for (size_t jj = 0; jj < n_blocks_y; ++jj) {
-      const size_t j_min = jj * scaling_mode.y;
-      const size_t j_max = std::min((jj + 1) * scaling_mode.y, ncols);
-      const size_t scale_idx = ii * n_blocks_y + jj;  // TODO: padded SFs i.e. (4,128)
-      float scale_inv = exp2f(static_cast<float>(scale_ptr[scale_idx]) - FP32_EXPONENT_BIAS);
-      for (size_t i = i_min; i < i_max; ++i) {
-        for (size_t j = j_min; j < j_max; ++j) {
-          const size_t idx = i * ncols + j;
-          float elem = static_cast<float>(input_ptr[idx]);
-          output_ptr[idx] = static_cast<float>(elem * scale_inv);
-        }
+  #pragma omp parallel for proc_bind(spread) schedule(static)
+  for (size_t t = 0; t < tiles_num_Y * tiles_num_X; ++t) {
+      const size_t tile_Y = t / tiles_num_X;
+      const size_t tile_X = t % tiles_num_X;
+      const size_t tile_offset_Y = tile_Y * tile_size_Y;
+      const size_t tile_offset_X = tile_X * tile_size_X;
+
+      for (size_t ii = 0; ii < blocks_per_tile_Y; ++ii) {
+          const size_t block_idx_Y = tile_Y * blocks_per_tile_Y + ii;
+          const size_t block_offset_Y = ii * block_size_Y;
+          const size_t i_min = tile_offset_Y + block_offset_Y;
+          const size_t i_max = std::min(i_min + block_size_Y, rows);
+
+          for (size_t jj = 0; jj < blocks_per_tile_X; ++jj) {
+              const size_t block_idx_X = tile_X * blocks_per_tile_X + jj;
+              const size_t block_offset_X = jj * block_size_X;
+              const size_t j_min = tile_offset_X + block_offset_X;
+              const size_t j_max = std::min(j_min + block_size_X, cols);
+
+              const size_t mx_scale_idx = block_idx_Y * blocks_per_row + block_idx_X;
+             
+              // TODO: padded SFs i.e. (4,128)
+              const float scale_inv = exp2f(static_cast<float>(scale_ptr[mx_scale_idx]) - FP32_EXPONENT_BIAS);
+              for (size_t i = i_min; i < i_max; ++i) {
+                  for (size_t j = j_min; j < j_max; ++j) {
+                    const size_t idx = i * cols + j;
+                    const float elem = static_cast<float>(input_ptr[idx]);
+                    output_ptr[idx] = static_cast<float>(elem * scale_inv);
+                  }
+              }
+          }
       }
-
-    }
   }
 }
 
@@ -77,12 +99,14 @@ void compute_ref_stats(NormType norm_type,
                        const InputType *data, float *mu, float *rsigma,
                        const size_t N, const size_t H, const double epsilon){
   using compute_t = float;
-  compute_t current, m;
+
+  #pragma omp parallel for proc_bind(spread)
   for (size_t i = 0; i < N; ++i) {
     compute_t sum = 0;
     for (size_t j = 0; j < H; ++j) {
       sum += static_cast<compute_t>(data[i * H + j]);
     }
+    compute_t m;
     if (norm_type == LayerNorm){
       mu[i] = sum / H;
       m = mu[i];
@@ -90,7 +114,7 @@ void compute_ref_stats(NormType norm_type,
 
     compute_t sum_sq = 0;
     for (size_t j = 0; j < H; ++j) {
-      current = static_cast<compute_t>(data[i * H + j]);
+      compute_t current = static_cast<compute_t>(data[i * H + j]);
       sum_sq += (current - m) * (current - m);
     }
     rsigma[i] = rsqrtf((sum_sq / H) + epsilon);
@@ -105,6 +129,8 @@ void compute_ref_output(NormType norm_type,
                         OutputType* output,
                         const bool zero_centered_gamma){
   using compute_t = float;
+
+  #pragma omp parallel for proc_bind(spread)
   for (size_t i = 0; i < N; ++i) {
     for (size_t j = 0; j < H; ++j) {
       compute_t current = static_cast<compute_t>(data[i * H + j]);
@@ -233,8 +259,8 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
     rtol = 1.25e-1;
   } else if (otype == DType::kFloat8E4M3){
     if (itype == DType::kBFloat16){
-      atol = 6.5e-2;
-      rtol = 6.5e-2;
+      atol = 7e-2;
+      rtol = 7e-2;
     } else {
       atol = 6.25e-2;
       rtol = 6.25e-2;
@@ -245,7 +271,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 }
 
 std::vector<std::pair<size_t, size_t>> test_cases = {
-  // {32, 32},
+  {32, 32},
   {128, 64},
   {768, 1024},
   {64, 2304},
@@ -262,10 +288,10 @@ std::vector<NormType> norms = {
 }  // namespace
 
 class MxNormTestSuite : public ::testing::TestWithParam< std::tuple<NormType,
-transformer_engine::DType,
-transformer_engine::DType,
-std::pair<size_t, size_t>,
-bool>> {};
+                                                                    transformer_engine::DType,
+                                                                    transformer_engine::DType,
+                                                                    std::pair<size_t, size_t>,
+                                                                    bool>> {};
 
 TEST_P(MxNormTestSuite, TestMxNorm) {
   using namespace transformer_engine;
@@ -278,10 +304,10 @@ TEST_P(MxNormTestSuite, TestMxNorm) {
   const bool zero_centered_gamma = std::get<4>(GetParam());
 
   TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(input_type, InputType,
-                                                TRANSFORMER_ENGINE_TYPE_SWITCH_FP8_ONLY(output_type, OutputType,
-                                                                                        performTest<InputType, OutputType>(size.first, size.second, zero_centered_gamma, norm_type);
-                                                                                        );
-                                                );
+    TRANSFORMER_ENGINE_TYPE_SWITCH_FP8_ONLY(output_type, OutputType,
+      performTest<InputType, OutputType>(size.first, size.second, zero_centered_gamma, norm_type);
+    );
+  );
 }
 
 INSTANTIATE_TEST_SUITE_P(

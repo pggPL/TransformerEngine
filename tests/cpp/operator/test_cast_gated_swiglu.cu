@@ -14,35 +14,16 @@
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
+#include <omp.h>
 
 #include <transformer_engine/cast.h>
 #include <transformer_engine/transpose.h>
 #include "../test_common.h"
 
 using namespace transformer_engine;
+using namespace test;
 
 namespace {
-
-float sigmoid(const float val) {
-  return 1.f / (1.f + expf(-val));
-}
-
-float dsigmoid(const float val) {
-  const float s = sigmoid(val);
-  return s * (1.f - s);
-}
-
-template <typename IType>
-inline float silu(const IType val) {
-  const float cval = static_cast<float>(val);
-  return cval * sigmoid(cval);
-}
-
-template <typename IType>
-inline float dsilu(const IType val) {
-  const float cval = static_cast<float>(val);
-  return cval * dsigmoid(cval) + sigmoid(cval);
-}
 
 template <typename IType, typename OType>
 void compute_ref_cast_dgated_swiglu(const IType * const grad,
@@ -54,6 +35,8 @@ void compute_ref_cast_dgated_swiglu(const IType * const grad,
                                     const size_t cols) {
   float amax = 0;
   const size_t stride = cols * 2;
+
+  #pragma omp parallel for reduction(max: amax) proc_bind(spread)
   for (size_t i = 0; i < rows; i++) {
     for (size_t j = 0; j < cols; j++) {
       float grad_elt = static_cast<float>(grad[i * cols + j]);
@@ -63,8 +46,8 @@ void compute_ref_cast_dgated_swiglu(const IType * const grad,
       float after_dsilu = dsilu(silu_elt) * grad_elt * gate_elt;
       float after_dgate = grad_elt * silu(silu_elt);
 
-      amax = max(amax, abs(after_dsilu));
-      amax = max(amax, abs(after_dgate));
+      if (abs(after_dsilu) > amax) { amax = abs(after_dsilu); }
+      if (abs(after_dgate) > amax) { amax = abs(after_dgate); }
 
       output[i * stride + j] = static_cast<OType>(scale * after_dsilu);
       output[i * stride + cols + j] = static_cast<OType>(scale * after_dgate);
