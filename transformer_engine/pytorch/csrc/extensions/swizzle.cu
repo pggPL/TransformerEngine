@@ -16,11 +16,9 @@ at::Tensor swizzle_scaling_factors(at::Tensor input, at::Tensor scale_inv,
   void* scale_inv_dptr = getDataPtr(scale_inv, 0);
   void* swizzled_scale_inv_dptr = getDataPtr(swizzled_scale_inv, 0);
 
-  NVTEScalingMode nvte_scaling_mode = {
-      static_cast<int>(scaling_mode[0]),
-      static_cast<int>(scaling_mode[1]),
-      static_cast<int>(scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_mode = {static_cast<int>(scaling_mode[0]),
+                                       static_cast<int>(scaling_mode[1]),
+                                       static_cast<int>(scaling_mode[2])};
 
   // Construct Transformer Engine tensors
   DType dtype = GetTransformerEngineDType(input.scalar_type());

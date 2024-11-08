@@ -276,7 +276,8 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
           block_amax = fmaxf(block_amax, thread_amax);
 
           const float subwarp_amax = subwarp_reduce_max_broadcast<SUBWARP_WIDTH>(thread_amax);
-          const e8m0_t biased_exponent = float_to_e8m0(subwarp_amax * Quantized_Limits<OType>::max_norm_rcp);
+          const e8m0_t biased_exponent =
+              float_to_e8m0(subwarp_amax * Quantized_Limits<OType>::max_norm_rcp);
 
           // Only single thread writes the computed scaling factor
           if (tid_rowwise_X % THREADS_PER_SCALE_X_ROWWISE == 0) {
@@ -735,13 +736,13 @@ void cast_fp8(const Tensor &input, const Tensor &act_input, Tensor *output, Tens
           alignas(64) CUtensorMap tensor_map_output{};
 
           create_2D_tensor_map<IType>(tensor_map_input, &input, rows, cols, FP8_SHMEM_DIM_Y,
-                                   FP8_SHMEM_DIM_X);
+                                      FP8_SHMEM_DIM_X);
 
           if constexpr (IS_DACT) {
-            create_2D_tensor_map<IType>(tensor_map_act_input, &act_input, rows, cols, FP8_SHMEM_DIM_Y,
-                                     FP8_SHMEM_DIM_X);
+            create_2D_tensor_map<IType>(tensor_map_act_input, &act_input, rows, cols,
+                                        FP8_SHMEM_DIM_Y, FP8_SHMEM_DIM_X);
           } create_2D_tensor_map<OType>(tensor_map_output, output, rows, cols, FP8_SHMEM_DIM_Y,
-                                     FP8_SHMEM_DIM_X);
+                                        FP8_SHMEM_DIM_X);
 
           cast_fp8_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType><<<grid, block, 0, stream>>>(
               tensor_map_input, tensor_map_act_input, tensor_map_output, workspace_ptr, amax_ptr,
@@ -810,44 +811,47 @@ void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_row
 
   DType OutputType = USE_ROWWISE_SCALING ? output_rowwise->data.dtype : output_colwise->data.dtype;
 
-  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_Y_colwise, SCALE_DIM_Y,
-      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_X_rowwise, SCALE_DIM_X,
-          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
-              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(OutputType, OType,
+  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
+      scale_dim_Y_colwise, SCALE_DIM_Y,
+      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
+          scale_dim_X_rowwise, SCALE_DIM_X,
+          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+              input.data.dtype, IType,
+              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+                  OutputType, OType,
 
                   alignas(64) CUtensorMap tensor_map_input{};
                   alignas(64) CUtensorMap tensor_map_act_input{};
                   alignas(64) CUtensorMap tensor_map_output_rowwise{};
                   alignas(64) CUtensorMap tensor_map_output_colwise{};
 
-                  create_2D_tensor_map<IType>(tensor_map_input, &input, rows, cols, MXFP8_SHMEM_DIM_Y,
-                                           MXFP8_SHMEM_DIM_X);
+                  create_2D_tensor_map<IType>(tensor_map_input, &input, rows, cols,
+                                              MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
 
                   if constexpr (IS_DACT) {
                     create_2D_tensor_map<IType>(tensor_map_act_input, &act_input, rows, cols,
-                                             MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
+                                                MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
                   } if constexpr (USE_ROWWISE_SCALING) {
-                    create_2D_tensor_map<OType>(tensor_map_output_rowwise, output_rowwise, rows, cols,
-                                             MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
+                    create_2D_tensor_map<OType>(tensor_map_output_rowwise, output_rowwise, rows,
+                                                cols, MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
                   } if constexpr (USE_COLWISE_SCALING) {
-                    create_2D_tensor_map<OType>(tensor_map_output_colwise, output_colwise, rows, cols,
-                                             MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
+                    create_2D_tensor_map<OType>(tensor_map_output_colwise, output_colwise, rows,
+                                                cols, MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X);
                   }
 
-                  cast_mxfp8_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType, SCALE_DIM_Y, SCALE_DIM_X>
-                      <<<grid, block, 0, stream>>>
-                      (tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
+                  cast_mxfp8_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType, SCALE_DIM_Y,
+                                    SCALE_DIM_X><<<grid, block, 0, stream>>>(
+                      tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
                       tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr,
                       workspace_ptr, amax_ptr_rowwise, amax_ptr_colwise, rows, cols,
                       scale_stride_rowwise, scale_stride_colwise);
 
                   if constexpr (IS_DBIAS) {
                     reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
-                  }
-              );  // NOLINT(*)
-          );      // NOLINT(*)
-      );          // NOLINT(*)
-  );              // NOLINT(*)
+                  });  // NOLINT(*)
+          );           // NOLINT(*)
+      );               // NOLINT(*)
+  );                   // NOLINT(*)
 }
 
 namespace detail {
@@ -897,9 +901,11 @@ void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, 
     }
   } else if (is_delayed_tensor_scaling(output->scaling_mode) && !IS_DBIAS && !IS_DACT) {
     const size_t N = product(input.data.shape);
-    TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
-        TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->data.dtype, OType,
-        
+    TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+        input.data.dtype, IType,
+        TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+            output->data.dtype, OType,
+
             constexpr int nvec = 32 / sizeof(IType);
             VectorizedUnaryKernelLauncher<nvec, detail::Empty, detail::identity>(
                 reinterpret_cast<const IType *>(input.data.dptr),
@@ -907,9 +913,8 @@ void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, 
                 reinterpret_cast<const fp32 *>(output->scale.dptr),
                 reinterpret_cast<fp32 *>(output->amax.dptr),
                 reinterpret_cast<fp32 *>(output->scale_inv.dptr), N, {},
-                stream);
-        );  // NOLINT(*)
-    );      // NOLINT(*)
+                stream););  // NOLINT(*)
+    );                      // NOLINT(*)
   } else if (is_delayed_tensor_scaling(output->scaling_mode)) {
     if (output->scaling_mode.x == -1 && output->scaling_mode.y == -1) {
       cast_fp8<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);

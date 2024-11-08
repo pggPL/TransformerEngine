@@ -292,7 +292,7 @@ template <typename T>
 static size_t getFirstMismatchIdx(const DType data_type, const T* test_data, const T* ref_data,
                                   const size_t N, const double atol, const double rtol) {
   int first_mismatch_idx = N;
-  
+
   bool is_mismatch_found = false;
   #pragma omp parallel for schedule(static) firstprivate(is_mismatch_found) \
     reduction(min: first_mismatch_idx) proc_bind(spread)

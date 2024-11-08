@@ -14,28 +14,24 @@ using namespace std::placeholders;
 
 namespace te = transformer_engine;
 
-#define MAKE_TRANSFORMER_ENGINE_TENSORS(A, A_scale_inv, A_scaling_mode, A_type, B, B_scale_inv,     \
+#define MAKE_TRANSFORMER_ENGINE_TENSORS(A, A_scale_inv, A_scaling_mode, A_type, B, B_scale_inv,    \
                                         B_scaling_mode, B_type, D, D_amax, D_scale, D_type, bias,  \
                                         bias_type, pre_gelu_out, workspace)                        \
   A = A.contiguous();                                                                              \
   auto dimA = A_scaling_mode.size();                                                               \
   NVTE_CHECK(dimA == 3, "Incorrect size ", dimA, " for scaling mode.");                            \
-  NVTEScalingMode nvte_scaling_modeA = {                                                           \
-      static_cast<int>(A_scaling_mode[0]),                                                         \
-      static_cast<int>(A_scaling_mode[1]),                                                         \
-      static_cast<int>(A_scaling_mode[2])                                                          \
-  };                                                                                               \
+  NVTEScalingMode nvte_scaling_modeA = {static_cast<int>(A_scaling_mode[0]),                       \
+                                        static_cast<int>(A_scaling_mode[1]),                       \
+                                        static_cast<int>(A_scaling_mode[2])};                      \
   auto A_ = makeTransformerEngineTensor(                                                           \
       A.data_ptr(), {static_cast<size_t>(A.size(0)), static_cast<size_t>(A.size(1))}, A_type,      \
       nullptr, nullptr, A_scale_inv.data_ptr(), getTensorShape(A_scale_inv), nvte_scaling_modeA);  \
   B = B.contiguous();                                                                              \
   auto dimB = B_scaling_mode.size();                                                               \
   NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");                            \
-   NVTEScalingMode nvte_scaling_modeB = {                                                          \
-      static_cast<int>(B_scaling_mode[0]),                                                         \
-      static_cast<int>(B_scaling_mode[1]),                                                         \
-      static_cast<int>(B_scaling_mode[2])                                                          \
-  };                                                                                               \
+  NVTEScalingMode nvte_scaling_modeB = {static_cast<int>(B_scaling_mode[0]),                       \
+                                        static_cast<int>(B_scaling_mode[1]),                       \
+                                        static_cast<int>(B_scaling_mode[2])};                      \
   auto B_ = makeTransformerEngineTensor(                                                           \
       B.data_ptr(), {static_cast<size_t>(B.size(0)), static_cast<size_t>(B.size(1))}, B_type,      \
       nullptr, nullptr, B_scale_inv.data_ptr(), getTensorShape(B_scale_inv), nvte_scaling_modeB);  \
@@ -45,9 +41,9 @@ namespace te = transformer_engine;
   auto bias_ = makeTransformerEngineTensor(                                                        \
       bias.data_ptr(), std::vector<size_t>{static_cast<size_t>(bias.size(0))}, bias_type);         \
   const auto gelu_shape = (pre_gelu_out.data_ptr() == nullptr)                                     \
-                        ? std::vector<size_t>{static_cast<size_t>(pre_gelu_out.size(0))}           \
-                        : std::vector<size_t>{static_cast<size_t>(pre_gelu_out.size(0)),           \
-                                              static_cast<size_t>(pre_gelu_out.size(1))};          \
+                              ? std::vector<size_t>{static_cast<size_t>(pre_gelu_out.size(0))}     \
+                              : std::vector<size_t>{static_cast<size_t>(pre_gelu_out.size(0)),     \
+                                                    static_cast<size_t>(pre_gelu_out.size(1))};    \
   auto pre_gelu_out_ = makeTransformerEngineTensor(                                                \
       pre_gelu_out.data_ptr(), gelu_shape, GetTransformerEngineDType(pre_gelu_out.scalar_type())); \
   auto workspace_ = makeTransformerEngineTensor(                                                   \

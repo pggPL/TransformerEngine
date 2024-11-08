@@ -821,7 +821,7 @@ __device__ __forceinline__ float warp_reduce_max(const float m) {
 
 __forceinline__ __device__ float warp_reduce_max_broadcast(const float val) {
   float val_tmp = val;
-  #pragma unroll
+#pragma unroll
   for (int offset = THREADS_PER_WARP / 2; offset > 0; offset /= 2) {
     const float val_other = __shfl_down_sync(0xFFFFFFFF, val_tmp, offset);
     __builtin_assume(val_tmp >= 0);
@@ -862,7 +862,7 @@ __device__ __forceinline__ compute_t reduce_max(const compute_t m, const int war
 template <int subwarp_width>
 __forceinline__ __device__ float subwarp_reduce_max_broadcast(const float val) {
   float val_tmp = val;
-  #pragma unroll
+#pragma unroll
   for (int offset = subwarp_width / 2; offset > 0; offset /= 2) {
     const float val_other = __shfl_down_sync(0xFFFFFFFF, val_tmp, offset, subwarp_width);
     __builtin_assume(val_tmp >= 0);
@@ -904,11 +904,7 @@ using e8m0_t = uint8_t;
 constexpr uint32_t FP32_MANTISSA_BITS = 23;
 constexpr uint32_t FP32_EXPONENT_BIAS = 127;
 
-enum ScalingType {
-  ROWWISE = 0,
-  COLWISE = 1,
-  BIDIMENTIONAL = 2
-};
+enum ScalingType { ROWWISE = 0, COLWISE = 1, BIDIMENTIONAL = 2 };
 
 template <typename T>
 struct Numeric_Traits;
@@ -935,25 +931,26 @@ struct Quantized_Limits {
 };
 
 __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
-#if (defined __CUDA_ARCH__) && \
-    (defined (__CUDA_ARCH_FEAT_SM100_ALL) || defined (__CUDA_ARCH_FEAT_SM101_ALL) || defined (__CUDA_ARCH_FEAT_SM120_ALL))
+#if (defined __CUDA_ARCH__) &&                                                     \
+    (defined(__CUDA_ARCH_FEAT_SM100_ALL) || defined(__CUDA_ARCH_FEAT_SM101_ALL) || \
+     defined(__CUDA_ARCH_FEAT_SM120_ALL))
   uint16_t out;
   asm volatile(
-    "{\n"
-    "cvt.rp.satfinite.ue8m0x2.f32  %0, 0.0, %1;\n"
-    "}"
-    : "=h"(out)
-    : "f"(val));
-  return *reinterpret_cast<e8m0_t*>(&out);
+      "{\n"
+      "cvt.rp.satfinite.ue8m0x2.f32  %0, 0.0, %1;\n"
+      "}"
+      : "=h"(out)
+      : "f"(val));
+  return *reinterpret_cast<e8m0_t *>(&out);
 #else
   if (isinf(val) || isnan(val)) {
     return 0xFF;
   }
-  uint32_t val_u32 = *reinterpret_cast<uint32_t*>(&val);
+  uint32_t val_u32 = *reinterpret_cast<uint32_t *>(&val);
   e8m0_t exponent = (val_u32 >> FP32_MANTISSA_BITS) & 0xFF;
   uint32_t mantissa = val_u32 & 0x7FFFFF;
-  if ((mantissa > 0) && (exponent != 0xFE)) {   // exp can only be < 0xFE here
-    ++exponent;                                 // roundup
+  if ((mantissa > 0) && (exponent != 0xFE)) {  // exp can only be < 0xFE here
+    ++exponent;                                // roundup
   }
   return exponent;
 #endif

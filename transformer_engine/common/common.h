@@ -7,11 +7,11 @@
 #ifndef TRANSFORMER_ENGINE_COMMON_COMMON_H_
 #define TRANSFORMER_ENGINE_COMMON_COMMON_H_
 
+#include <cudaTypedefs.h>
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
 #include <cuda_runtime_api.h>
-#include <cudaTypedefs.h>
 #include <transformer_engine/transformer_engine.h>
 
 #include <functional>
@@ -23,8 +23,8 @@
 #include <vector>
 
 #include "./nvtx.h"
-#include "./util/logging.h"
 #include "./util/cuda_driver.h"
+#include "./util/logging.h"
 
 namespace transformer_engine {
 
@@ -379,9 +379,8 @@ inline bool isPointerAligned(const void *const ptr, const int alignment);
 
 // Set up parameters to create TMA descriptor.
 template <typename T>
-void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
-                          const uint64_t globalY, const uint64_t globalX,
-                          const uint32_t shmemY, const uint32_t shmemX);
+void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, const uint64_t globalY,
+                          const uint64_t globalX, const uint32_t shmemY, const uint32_t shmemX);
 
 bool is_supported_by_CC_100();
 bool is_mxfp8_cast_supported_shape(const Tensor *output);
