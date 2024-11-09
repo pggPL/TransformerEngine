@@ -14,6 +14,7 @@
 #include <cmath>
 
 #include <gtest/gtest.h>
+#include <omp.h>
 
 #include <transformer_engine/transformer_engine.h>
 #include "util/logging.h"
@@ -257,8 +258,8 @@ std::vector<size_t> unravel(const size_t i, const NVTEShape &shape) {
   return ret;
 }
 
-void compareResults(const std::string &name, const Tensor &test, const void *ref,
-                    double atol, double rtol, bool if_on_gpus) {
+void compareResults_sequential(const std::string &name, const Tensor &test, const void *ref,
+                               double atol, double rtol, bool if_on_gpus) {
   if (if_on_gpus) test.to_cpu();
   const size_t N = product(test.shape());
   TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(test.dtype(), T,
@@ -283,9 +284,74 @@ void compareResults(const std::string &name, const Tensor &test, const void *ref
       ASSERT_FALSE(assertion) << "Error in tensor " << name << std::endl
                               << "Mismatch at place " << to_string(unravel(i, test.shape()))
                               << " (" << std::to_string(i) << "): " << t << " vs " << r;
-
     }
   );
+}
+
+template <typename T>
+static size_t getFirstMismatchIdx(const DType data_type, const T* test_data, const T* ref_data,
+                                  const size_t N, const double atol, const double rtol) {
+  int first_mismatch_idx = N;
+  
+  bool is_mismatch_found = false;
+  #pragma omp parallel for schedule(static) firstprivate(is_mismatch_found) \
+    reduction(min: first_mismatch_idx) proc_bind(spread)
+  for (size_t i = 0; i < N; ++i) {
+    if (is_mismatch_found) {    // early escape of the omp thread
+      continue;
+    }
+
+    double t = static_cast<double>(test_data[i]);
+    double r = static_cast<double>(ref_data[i]);
+
+    bool mismatch = fabs(t - r) > atol && (r == 0 || fabs((t - r) / r) > rtol);
+    /* For Float32 the floating point comparison is enough to error out */
+    bool assertion = mismatch && (data_type == DType::kFloat32);
+    if (mismatch && !assertion) {
+      /* Check if it is just a failure of round to nearest choosing different
+          side of the real value */
+      const double mean = (t + r) / 2;
+      const double mean_p = mean >= 0 ? mean * (1 + 1e-6) : mean * (1 - 1e-6);
+      const double mean_m = mean >= 0 ? mean * (1 - 1e-6) : mean * (1 + 1e-6);
+      const double cast_mean_p = static_cast<double>(static_cast<T>(mean_p));
+      const double cast_mean_m = static_cast<double>(static_cast<T>(mean_m));
+      assertion = !(cast_mean_m == std::min(t,r) && cast_mean_p == std::max(t,r));
+    }
+    if (assertion && i < first_mismatch_idx) {
+      first_mismatch_idx = i;
+      is_mismatch_found = true;
+    }
+  }
+  return first_mismatch_idx;
+}
+
+void compareResults_parallel(const std::string &name, const Tensor &test, const void *ref,
+                    double atol, double rtol, bool if_on_gpus) {
+  if (if_on_gpus) test.to_cpu();
+  const size_t N = product(test.shape());
+  TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(test.dtype(), T,
+    const T *test_data = test.cpu_dptr<T>();
+    const T *ref_data = reinterpret_cast<const T*>(ref);
+
+    const size_t i = getFirstMismatchIdx<T>(test.dtype(), test_data, ref_data, N, atol, rtol);
+    if (i != N) {
+      const double t = static_cast<double>(test_data[i]);
+      const double r = static_cast<double>(ref_data[i]);
+      ASSERT_FALSE(true) << "Error in tensor " << name << std::endl
+                         << "Mismatch at place " << to_string(unravel(i, test.shape()))
+                         << " (" << std::to_string(i) << "): " << t << " vs " << r;
+    }
+  );
+}
+
+void compareResults(const std::string &name, const Tensor &test, const void *ref,
+                    double atol, double rtol, bool if_on_gpus) {
+  constexpr bool sequential = false;
+  if constexpr (sequential) {
+    compareResults_sequential(name, test, ref, atol, rtol, if_on_gpus);
+  } else {
+    compareResults_parallel(name, test, ref, atol, rtol, if_on_gpus);
+  }
 }
 
 void compareResults(const std::string &name, const float test, const float ref,
@@ -346,16 +412,31 @@ std::pair<double, double> getTolerances(const DType type) {
   return {0, 0};
 }
 
+template <typename T>
+void generate_data_uniformly(T* data, const size_t size) {
+  const int seed = 12345;
+  #pragma omp parallel proc_bind(spread)
+  {
+    std::mt19937 gen(seed);
+    gen.discard(omp_get_thread_num() * 599);
+    std::uniform_real_distribution<> dis(-2.0, 1.0);
+    #pragma omp for schedule(static)
+    for (size_t i = 0; i < size; ++i) {
+      data[i] = static_cast<T>(dis(gen));
+    }
+  }
+}
+
 void fillUniform(Tensor *t) {
   const size_t size = product(t->shape());
+  TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(t->dtype(), T,
+    {
+      T *data = t->cpu_dptr<T>();
+      generate_data_uniformly(data, size);
+    }
+  );
   static std::mt19937 gen(12345);
   std::uniform_real_distribution<> dis(-2.0, 1.0);
-  TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(t->dtype(), T, {
-      T *data = t->cpu_dptr<T>();
-      for (size_t i = 0; i < size; ++i) {
-          data[i] = T(dis(gen));
-      }
-  });
   t->set_scale_inv(dis(gen));
   t->from_cpu();
 }

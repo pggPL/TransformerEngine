@@ -14,15 +14,121 @@ from ..cpp_extensions.transpose import fp8_cast_transpose_fused
 from ..cpp_extensions.cast import (
     cast_to_fp8,
 )
-from ..fp8 import FP8GlobalStateManager
+from ..fp8 import DelayedScalingRecipeState, FP8GlobalStateManager
 from ..utils import devices_match, supports_fp8_transposes
-from .quantized_tensor import QuantizedTensor, _IdentityFunc
-from ..quantization_params import QuantizationParamsProxy, QuantizationParams
 
 from ._internal.float8_tensor_base import Float8TensorBase, _FromFloat8Func
+from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
 
 aten = torch.ops.aten
 updated_fp8_params = {}
+
+class Float8Quantizer(Quantizer):
+
+    scale: torch.Tensor
+    amax: torch.Tensor
+    dtype: TE_DType
+    single_usage_sufficient: bool = True
+
+    def __init__(
+        self,
+        scale: torch.Tensor,
+        amax: torch.Tensor,
+        fp8_dtype: TE_DType,
+        *,
+        rowwise: bool = True,
+        columnwise: bool = True,
+    ) -> None:
+        super().__init__(rowwise=rowwise, columnwise=columnwise)
+        self.scale = scale
+        self.amax = amax
+        self.dtype = fp8_dtype
+
+    def update_quantized(
+        self,
+        src: torch.Tensor,
+        dst: QuantizedTensor,
+    ) -> QuantizedTensor:
+
+        assert isinstance(dst, Float8Tensor)
+        # Launch cast kernel
+        if dst._transpose is None:
+            dst_data = dst._data
+            if src.dim() != 2:
+                src = src.view(1, -1)
+                dst_data = dst_data.view(1, -1)
+            cast_to_fp8(
+                src,
+                None,
+                None,
+                self.dtype,
+                out=dst_data,
+                scale=self.scale,
+                amax=self.amax,
+                scale_inv=dst._scale_inv,
+            )
+        else:
+            fp8_cast_transpose_fused(
+                src.view(-1, src.size(-1)),
+                None,
+                None,
+                self.dtype,
+                cast_out=dst._data,
+                transpose_out=dst._transpose,
+                scale=self.scale,
+                amax=self.amax,
+                scale_inv=dst._scale_inv,
+                noop_flag=noop_flag,  ### TODO How to handle?
+            )
+            dst._transpose_invalid = False
+
+        # Update FP8 dtype
+        dst._fp8_dtype = self.dtype
+
+        return dst
+
+    def make_empty(
+        self,
+        shape: Iterable[int],
+        *,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[torch.device] = None,
+        requires_grad: bool = False,
+    ) -> Float8Tensor:
+
+        # Canonicalize tensor attributes
+        if device is None:
+            device = torch.device("cuda")
+
+        # Allocate FP8 data
+        data = torch.empty(shape, dtype=torch.uint8, device=device)
+
+        # Allocate FP8 data transpose if needed
+        data_transpose = None
+        if self.columnwise_usage:
+            inner_dim = data.size(-1)
+            data_transpose = torch.empty(
+                inner_dim,
+                data.numel() // inner_dim,
+                dtype=torch.uint8,
+                device=device,
+            )
+
+        # Construct FP8 tensor
+        return Float8Tensor(
+            shape=shape,
+            dtype=dtype,
+            data=data,
+            fp8_dtype=self.fp8_dtype,
+            requires_grad=requires_grad,
+            data_transpose=data_transpose,
+            quantizer=self,
+        )
+
+    def calibrate(self, tensor: torch.Tensor) -> None:
+        amin, amax = tensor.aminmax()
+        self.amax.copy_(torch.max(-amin, amax))
+
 
 def post_optimizer_step_fwd_amax_reduction(param: Float8Tensor) -> None:
     """Amax scale and update when there is at least 1 trainable FP8 parameter."""
@@ -60,11 +166,6 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
     ----------
     data: torch.Tensor
           Raw FP8 data in a uint8 tensor
-    fp8_attrs: dict, optional
-               FP8 metadata, primarily managed by Float8Tensor. If
-               provided, all other FP8 configuration is ignored.
-    proxy: FP8ParamsProxy, optional
-              FP8 metadata object, primarily managed by TE modules.
     fp8_dtype: transformer_engine_torch.DType, default = kFloat8E4M3
                FP8 format.
     fp8_scale_inv: torch.Tensor
@@ -78,7 +179,9 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
 
     """
 
-    def __repr__(self):
+    def __repr__(self,
+                 *,
+                 tensor_contents = None):
         return (
             "Float8Tensor("
             f"fp8_dtype={self._fp8_dtype}, "
@@ -102,19 +205,6 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             return _FromFloat8Func.apply(self, dtype)
         else:
             return _FromFloat8Func.forward(None, self, dtype)
-
-    @staticmethod
-    def quantize(tensor: torch.Tensor,
-                 params: QuantizationParams,
-                 *,
-                 proxy: Optional[QuantizationParamsProxy] = None,
-                 rowwise_usage: bool = True,
-                 columnwise_usage: bool = True,
-    ) -> QuantizedTensor:
-        return QuantizedTensor.quantize(tensor, params,
-                                        proxy=proxy,
-                                        rowwise_usage=rowwise_usage,
-                                        columnwise_usage=columnwise_usage)
 
     def quantize_(
         self,
@@ -338,25 +428,12 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         Returns `self` if data is already in correct memory format.
 
         """
-        if self._data.is_contiguous(memory_format=memory_format):
+        if self._data is not None and self._data.is_contiguous(memory_format=memory_format):
             return self
-        return _IdentityFunc.apply(
-            self,
-            {"data": self._data.detach().contiguous(memory_format=memory_format)},
-        )
-
-    def to_dtype(self, dtype: torch.dtype) -> Float8Tensor:
-        """Create `Float8Tensor` with given nominal dtype
-
-        The new tensor has the same underlying FP8 data.
-
-        """
-        return Float8Tensor.make_like(
-            self,
-            data=self._data,
-            fp8_attrs=self._fp8_attrs,
-            dtype=dtype,
-        )
+        if (self._transpose is not None and
+            self._transpose.is_contiguous(memory_format=memory_format)):
+            return self
+        raise ValueError("Float8Tensor does not support different memory formats!")
 
     def _reset_caches(self) -> None:
         """
@@ -474,14 +551,9 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
                 self.requires_grad_(requires_grad=tensor.requires_grad)
             return
 
-        assert self._proxy is not None, "Can't quantize without a proxy"
-
-        self.data = Float8Tensor.quantize(tensor,
-                                          self._proxy.get_quantization_params(),
-                                          rowwise_usage=self._data is not None,
-                                          columnwise_usage=self._transpose is not None,
-                                          proxy=self._proxy)
-
+        # Quantize to FP8
+        assert self._quantizer is not None, "Can't quantize without a quantizer"
+        self.data = self._quantizer.quantize(tensor)
         if self.requires_grad != tensor.requires_grad:
             self.requires_grad_(requires_grad=tensor.requires_grad)
 

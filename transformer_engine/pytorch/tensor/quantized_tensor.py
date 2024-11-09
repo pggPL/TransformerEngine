@@ -6,13 +6,14 @@
 
 from __future__ import annotations
 from typing import Optional, Tuple, Iterable, Any, Dict
+import abc
+import copy
 
 import torch
 from torch.utils._pytree import tree_map
 
 import transformer_engine_torch as tex
-
-from ..quantization_params import QuantizationParams, QuantizationParamsProxy
+from ...common.recipe import Recipe
 
 def prepare_for_saving(tensor) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
     if isinstance(tensor, torch.Tensor):
@@ -27,71 +28,78 @@ def restore_from_saved(tensor: Optional[Any],
     new_tensors = tensor.restore_from_saved(saved_tensors)
     return tensor, new_tensors
 
-class _DequantizeFunc(torch.autograd.Function):
-    """Autograd function to convert quantized tensor to standard tensor"""
+class Quantizer(abc.ABC):
 
-    @staticmethod
-    def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        tensor: QuantizedTensor,
-        dtype: Optional[torch.dtype] = None,
-    ) -> torch.Tensor:
-        # pylint: disable=missing-function-docstring
-        return tensor.dequantize(dtype=dtype)
+    rowwise_usage: bool
+    columnwise_usage: bool
+    single_usage_sufficient: bool = False
 
-    @staticmethod
-    def backward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        grad: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        # pylint: disable=missing-function-docstring
-        return grad, None
+    def __init__(self, *, rowwise: bool, columnwise: bool) -> None:
+        self.rowwise_usage = rowwise
+        self.columnwise_usage = columnwise
 
-
-class _IdentityFunc(torch.autograd.Function):
-    """Autograd function to create quantized tensor with same data"""
-
-    @staticmethod
-    def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        tensor: QuantizedTensor,
+    @abc.abstractmethod
+    def update_quantized(
+        self,
+        src: torch.Tensor,
+        dst: QuantizedTensor,
     ) -> QuantizedTensor:
-        # pylint: disable=missing-function-docstring
-        return tensor.detach()
+        ...
 
-    @staticmethod
-    def backward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        grad: torch.Tensor,
-    ) -> torch.Tensor:
-        # pylint: disable=missing-function-docstring
-        return grad
+    def quantize(
+        self,
+        tensor: torch.Tensor,
+        *,
+        out: Optional[QuantizedTensor] = None,
+    ) -> QuantizedTensor:
+        if out is not None:
+            return self.update_quantized(tensor, out)
+        if torch.is_grad_enabled():
+            return _QuantizeFunc.apply(tensor, self)
+        return _QuantizeFunc.forward(None, tensor, self)
+
+    @abc.abstractmethod
+    def make_empty(
+        self,
+        shape: Iterable[int],
+        *,
+        dtype: torch.dtype = torch.float32,
+        device: Optional[torch.device] = None,
+    ) -> QuantizedTensor:
+        ...
+
+    @abc.abstractmethod
+    def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
+        ...
+
+    def set_usage(
+        self,
+        *,
+        rowwise: Optional[bool] = None,
+        columnwise: Optional[bool] = None,
+    ) -> None:
+        if rowwise is not None:
+            self.rowwise_usage = rowwise
+        if columnwise is not None:
+            self.columnwise_usage = columnwise
+
+    def copy(self) -> Quantizer:
+        """Create shallow copy"""
+        return copy.copy(self)
+
 
 class _QuantizeFunc(torch.autograd.Function):
-    """Autograd function to convert standard tensor to quantized tensor"""
+    """Cast to FP8 from other dtype"""
 
     @staticmethod
     def forward(
         _ctx: Optional[torch.autograd.function.FunctionCtx],  # unused
         tensor: torch.Tensor,
-        qparams: QuantizationParams,
-        rowwise_usage: bool = True,
-        columnwise_usage: bool = True,
-        proxy: Optional[QuantizationParamsProxy] = None,
+        quantizer: Quantizer,
         internal: bool = False,
-    ) -> Any:
+    ) -> QuantizedTensor:
         # pylint: disable=missing-function-docstring
-        if isinstance(tensor, QuantizedTensor):
-            tensor = tensor.dequantize()
-
-        out = tex.generic_cast(tensor,
-                               qparams,
-                               rowwise_usage,
-                               columnwise_usage,
-                               proxy,
-                               internal)
-
-        return out
+        return tex.generic_cast(tensor, quantizer, internal)
 
     @staticmethod
     def backward(
@@ -100,7 +108,7 @@ class _QuantizeFunc(torch.autograd.Function):
     ) -> Tuple[Optional[torch.Tensor], ...]:
         # pylint: disable=missing-function-docstring
         # Assume that we want gradients in full precision
-        return grad, None, None, None, None, None, None, None
+        return grad, None
 
 class _IdentityFunc(torch.autograd.Function):
     """Identity function
@@ -120,7 +128,7 @@ class _IdentityFunc(torch.autograd.Function):
 
         # Return input tensor if constructor kwargs are not provided
         if init_kwargs is None:
-            return tensor
+            return tensor.detach()
 
         # Construct new tensor if constructor kwargs are provided
         ctx.input_dtype = tensor.dtype
@@ -185,33 +193,6 @@ class QuantizedTensor(torch.Tensor):
             f"{self.__class__.__name__} class does not implement quantize_ function"
         )
 
-    @staticmethod
-    def quantize(tensor: torch.Tensor,
-                 params: QuantizationParams,
-                 *,
-                 proxy: Optional[QuantizationParamsProxy] = None,
-                 rowwise_usage: bool = True,
-                 columnwise_usage: bool = True,
-    ) -> QuantizedTensor:
-        if torch.is_grad_enabled():
-            return _QuantizeFunc.apply(
-                tensor,
-                params,
-                rowwise_usage,
-                columnwise_usage,
-                proxy,
-            )
-        else:
-            return _QuantizeFunc.forward(
-                None,
-                tensor,
-                params,
-                rowwise_usage,
-                columnwise_usage,
-                proxy,
-            )
-
-
     def detach(self) -> QuantizedTensor:
         """Create new quantized tensor with same data
 
@@ -238,24 +219,27 @@ class QuantizedTensor(torch.Tensor):
         """
         pass
 
-    def __repr__(self) -> str:
+    def __repr__(self,
+                 *,
+                 tensor_contents = None) -> str:
         return f"{self.__class__.__name__}(data={self.dequantize(dtype=self.dtype)})"
 
     def float(self) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        return _DequantizeFunc.apply(self, torch.float32)
+        return self.dequantize(dtype=torch.float32)
 
     def bfloat16(self) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        return _DequantizeFunc.apply(self, torch.bfloat16)
+        return self.dequantize(dtype=torch.bfloat16)
 
     def half(self) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        return _DequantizeFunc.apply(self, torch.float16)
+        return self.dequantize(dtype=torch.float16)
 
-    def cpu(self) -> torch.Tensor:
+    def cpu(self,
+            memory_format = torch.preserve_format) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        return _DequantizeFunc.apply(self).cpu()
+        return self.dequantize().cpu(memory_format=memory_format)
 
     def expand_as(self, other: torch.Tensor) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
@@ -362,3 +346,11 @@ class QuantizedTensor(torch.Tensor):
         return cls(shape=shape, dtype=dtype,
                    requires_grad=requires_grad,
                    **kwargs)
+
+    def to_dtype(self, dtype: torch.dtype) -> QuantizedTensor:
+        """Create `QuantizedTensor` with given nominal dtype
+
+        The new tensor has the same underlying quantized data.
+
+        """
+        return self.__class__.make_like(self, dtype=dtype)

@@ -20,8 +20,11 @@ import torch.nn.functional as F
 import transformer_engine_torch as tex
 
 from ._common import _ParameterInitMeta
+from ...common.recipe import DelayedScaling
 from ..fp8 import (
     FP8GlobalStateManager,
+    DelayedScalingRecipeState,
+    RecipeState,
 )
 from ..distributed import (
     gather_along_first_dim,
@@ -33,9 +36,8 @@ from ..cpp_extensions import (
     cast_to_fp8,
 )
 from ..constants import dist_group_type
-from ..tensor import QuantizedTensor, Float8Tensor
-from ..quantizer import Quantizer
-from transformer_engine.common.recipe import Recipe, DelayedScaling
+from ..tensor import Float8Tensor, QuantizedTensor, Quantizer
+from transformer_engine.common.recipe import DelayedScaling, Recipe
 
 __all__ = ["initialize_ub", "destroy_ub"]
 
@@ -446,6 +448,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fp8_meta["fp8_checkpoint"] = False
         self.fp8_meta["fp8_group"] = None
         self.fp8_meta_tensors_initialized = False
+        self.quantizers = {"scaling_fwd": {}, "scaling_bwd": {}}
         self.tp_group = None
         self.tp_size = 1
         self.sequence_parallel = False
@@ -513,6 +516,9 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     self.fp8_meta[meta_key].amax_history, pad=(0, 0, 0, extra_rows)
                 )
 
+            # Update quantizers with new amax pointers.
+            self.quantizers[meta_key] = self.fp8_meta[meta_key].make_quantizers()
+
             # Update the global buffers with new amax and history pointers.
             if FP8GlobalStateManager.get_buffer_info() in self.fp8_meta:
                 fwd_pos, fwd_key, bwd_pos, bwd_key = self.fp8_meta[
@@ -548,7 +554,14 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             self.fp8_meta["num_gemms"] * 3 if fwd else self.fp8_meta["num_gemms"] * 2
         )
 
-        self.fp8_meta[fp8_meta_tensor_key] = Quantizer(recipe, num_fp8_tensors, forward=fwd)
+        # Initialize recipe state and quantizers
+        recipe_state = RecipeState.create(
+            recipe,
+            mode=("forward" if fwd else "backward"),
+            num_quantizers=num_fp8_tensors,
+        )
+        self.fp8_meta[fp8_meta_tensor_key] = recipe_state
+        self.quantizers[fp8_meta_tensor_key] = recipe_state.make_quantizers()
 
     def init_fp8_meta_tensors(self,
                               recipe: Recipe) -> None:
@@ -806,7 +819,10 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
     @staticmethod
     def grad_output_preprocess(
-        ctx, grad_output: torch.Tensor, row_parallel_mode: bool
+        ctx,
+        grad_output: torch.Tensor,
+        row_parallel_mode: bool,
+        quantizer: Optional[Quantizer],
     ) -> Tuple[Union[torch.Tensor, None], ...]:
         """Utility function for backward.
         Returns tuple in order (all optional/None based on training precion/recipe):
@@ -837,7 +853,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 grad_bias = grad_output.view(-1, grad_output.shape[-1]).sum(dim=0)
             else:
                 grad_bias = None
-            if ctx.fp8_meta["scaling_bwd"].single_usage_sufficient:
+            if quantizer.single_usage_sufficient:
                 if ctx.ub_overlap_ag:
                     grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(0)
                 else:
@@ -877,14 +893,11 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             # TODO: This part is kind of stupid
             if isinstance(grad_output, QuantizedTensor):
                 grad_output_mat_no_fp8 = grad_output.dequantize()
-            qparams = ctx.fp8_meta["scaling_bwd"].get_quantization_params(tex.FP8BwdTensors.GRAD_OUTPUT1)
             # TODO: Should check whether we do wgrad/dgrad or both to properly set
             # rowwise/columnwise
             grad_bias, grad_output = tex.bgrad_cast(
                 grad_output_mat_no_fp8,
-                qparams,
-                rowwise_usage=True,
-                columnwise_usage=True,
+                quantizer,
             )
             return grad_output, grad_bias
         else:
@@ -893,10 +906,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             else:
                 # TODO: Should check whether we do wgrad/dgrad or both to properly set
                 # rowwise/columnwise
-                grad_output = ctx.fp8_meta["scaling_bwd"].quantize(grad_output,
-                                                                   tex.FP8BwdTensors.GRAD_OUTPUT1,
-                                                                   rowwise=True,
-                                                                   columnwise=True)
+                grad_output = quantizer.quantize(grad_output)
             return grad_output, None
 
     def register_parameter(self, name, param, **kwargs):
@@ -965,7 +975,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         *,
         tensor: Optional[torch.Tensor] = None,
         quantizer: Optional[Quantizer] = None,
-        tensor_index: Optional[int] = None,
         cache_name: Optional[str] = None,
         update_workspace: bool = True,
         skip_update_flag: Optional[torch.Tensor] = None,
@@ -983,9 +992,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             is being constructed or updated.
         quantizer: Quantizer, optional
             Quantizer used to cast the weights. Required if the
-            workspace is being constructed or updated.
-        tensor_index: int, optional
-            Index of the tensor in the quantizer. Required if the
             workspace is being constructed or updated.
         cache_name: str, optional
             Key for caching.
@@ -1016,23 +1022,12 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         # Construct workspace if needed
         if out is None:
-            if tensor is None or quantizer is None or tensor_index is None:
+            if tensor is None or quantizer is None:
                 raise ValueError(
-                    "tensor, quantizer and tensor_index kwargs "
+                    "tensor and quantizer kwargs "
                     "must be provided to construct FP8 workspace"
                 )
-
-            need_columnwise = is_grad_enabled
-            if (
-                not need_columnwise
-                and is_fp8_activation_recompute_enabled()
-                and not in_fp8_activation_recompute_phase()
-            ):
-                need_columnwise = True
-            out = quantizer.quantize(tensor, tensor_index,
-                                     rowwise=True,
-                                     columnwise=need_columnwise,
-                                     internal=True)
+            out = quantizer.quantize(tensor, internal=True)
 
             # Update cache
             if cache_name is not None:

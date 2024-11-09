@@ -476,7 +476,6 @@ NormalizationPlan::NormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage No
 
         auto mx_quantize_row_opts = fe::graph::Block_scale_quantize_attributes()
                                         .set_block_size(mode.y)
-                                        .set_mode(fe::DenomMode_t::EMAX)
                                         .set_axis(1)
                                         .set_transpose(false);
         auto bs_row_ret = _graph.block_scale_quantize(z_2d, mx_quantize_row_opts);
@@ -486,7 +485,6 @@ NormalizationPlan::NormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage No
 
         auto mx_quantize_col_opts = fe::graph::Block_scale_quantize_attributes()
                                         .set_block_size(mode.y)
-                                        .set_mode(fe::DenomMode_t::EMAX)
                                         .set_axis(0)
                                         .set_transpose(false);
         auto bs_col_ret = _graph.block_scale_quantize(z_2d, mx_quantize_col_opts);

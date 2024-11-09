@@ -357,14 +357,11 @@ at::Tensor rmsnorm_fwd_inf(const at::Tensor &input, const at::Tensor &weight, fl
 namespace transformer_engine::pytorch {
 
 py::object cast(const at::Tensor& tensor,
-                py::handle quantization_params,
-                bool rowwise_usage,
-                bool columnwise_usage,
-                py::handle proxy,
+                py::handle quantizer,
                 bool internal);
 
 std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb,
-                             py::object D, py::handle quantization_params,
+                             py::object D, py::handle quantizer,
                              std::optional<DType> out_dtype,
                              MaybeTensor bias, DType bias_type, bool gelu,
                              bool grad, at::Tensor workspace, size_t workspaceSize,

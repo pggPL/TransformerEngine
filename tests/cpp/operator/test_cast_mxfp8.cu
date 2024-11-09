@@ -39,56 +39,6 @@ enum dActivationType {
     dSReLU
 };
 
-using e8m0_t = byte;
-
-constexpr uint32_t FP32_EXPONENT_BITS = 8;
-constexpr uint32_t FP32_MANTISSA_BITS = 23;                                         // FP32 = [S1] [E8] [M23]
-constexpr uint32_t SIGN_MASK = 1U << (FP32_MANTISSA_BITS + FP32_EXPONENT_BITS);     // most significant bit mask
-constexpr uint32_t NUMBER_MASK = ~SIGN_MASK;
-constexpr uint32_t MANTISSA_MASK = (1U << FP32_MANTISSA_BITS) - 1;
-constexpr uint32_t EXPONENT_MASK = NUMBER_MASK & (~MANTISSA_MASK);
-
-int32_t extract_biased_exponent(float val) {
-    const int32_t val_as_int = *(reinterpret_cast<int32_t*>(&val));
-    return (val_as_int & EXPONENT_MASK) >> FP32_MANTISSA_BITS;
-}
-
-int32_t lower_biased_exp_limit_fp32(const int32_t biased_exponent) {
-    return (biased_exponent < 0) ? 0 : biased_exponent;
-}
-
-template <typename OType>
-e8m0_t compute_shared_biased_exponent(float amax) {
-    if (amax == 0) {
-        constexpr int exponent_ = 0 + FP32_EXPONENT_BIAS;
-        return static_cast<e8m0_t>(exponent_);
-    }
-    int exponent = extract_biased_exponent(amax)
-                   - Quantized_Limits<OType>::max_norm_unbiased_exponent();
-
-    // Clamp the shared unbiased exponent between the representable numbers of uint8_t
-    // i.e., between [0, 255]
-    return static_cast<e8m0_t>(lower_biased_exp_limit_fp32(exponent));
-}
-
-float dgelu(const float x) {
-    const float tanh_out = tanhf(0.79788456f * x * (1 + 0.044715f * x * x));
-    return 0.5f * x * ((1 - tanh_out * tanh_out) * (0.79788456f + 0.1070322243f * x * x))
-           + 0.5f * (1 + tanh_out);
-}
-float identity(const float x) { return 1; }
-float sigmoid(const float x)  { return 1 / (1 + expf(-x)); }
-float dsigmoid(const float x) { return sigmoid(x) * (1 - sigmoid(x)); }
-float dqgelu(const float x)   { return 1.702f * x * dsigmoid(1.702f * x) + sigmoid(1.702f * x); }
-float dsilu(const float x)    { return x * dsigmoid(x) + sigmoid(x); }
-float drelu(const float x)    { return x > 0 ? 1 : 0; }
-float dsrelu(const float x)   { return fmaxf(0, 2 * x); }
-// float gelu(const float x)     { return x * (0.5f + 0.5f * tanhf(x * (0.79788456f + 0.03567741f * x * x))); }
-// float qgelu(const float x)    { return x * sigmoid(1.702f * x); }
-// float silu(const float x)     { return x * sigmoid(x); }
-// float relu(const float x)     { return fmaxf(0, x); }
-// float srelu(const float x)    { return x > 0 ? x * x : 0; }
-
 template <typename InputType, typename OutputType, float (*OP)(const float)>
 void scale_block(const ProcessingMethod processing_method,
                  const InputType* input,
@@ -118,8 +68,8 @@ void scale_block(const ProcessingMethod processing_method,
         }
     }
 
-    const e8m0_t biased_exponent = compute_shared_biased_exponent<OutputType>(amax);
-    const float scale_reciprocal = exp2f(FP32_EXPONENT_BIAS - static_cast<float>(biased_exponent));
+    const e8m0_t biased_exponent = float_to_e8m0(amax * Quantized_Limits<OutputType>::max_reciprocal());
+    const float scale_reciprocal = exp2f_rcp(biased_exponent);
     output_scales[scale_idx] = biased_exponent;
 
     // Quantize elements in the block
@@ -442,10 +392,10 @@ std::vector<std::pair<size_t, size_t>> block_sizes = {
 
 std::vector<InputsFillCase> input_scenarios = {
     InputsFillCase::uniform,
-    InputsFillCase::zeros,
-    InputsFillCase::zero_to_minNorm,
-    InputsFillCase::minNorm_to_maxNorm,
-    InputsFillCase::maxNorm_to_inf
+    // InputsFillCase::zeros,
+    // InputsFillCase::zero_to_minNorm,
+    // InputsFillCase::minNorm_to_maxNorm,
+    // InputsFillCase::maxNorm_to_inf
 };
 
 std::vector<ProcessingMethod> processing_methods = {

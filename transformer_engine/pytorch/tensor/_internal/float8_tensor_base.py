@@ -13,9 +13,8 @@ from transformer_engine_torch import DType as TE_DType
 
 from ...constants import TE_DType as torch_to_transformer_engine_dtype
 
-from ..quantized_tensor import _QuantizeFunc
+from ..quantized_tensor import _QuantizeFunc, Quantizer
 
-from ...quantization_params import Float8Params, Float8ParamsProxy
 
 class _FromFloat8Func(torch.autograd.Function):
     """Cast from FP8 to other dtype"""
@@ -54,7 +53,7 @@ class _FromFloat8Func(torch.autograd.Function):
 
 class Float8TensorBase:
     _data: Optional[torch.Tensor]
-    _proxy: Optional[Float8ParamsProxy]
+    _quantizer: Optional[Quantizer]
     _fp8_dtype: TE_DType
     _scale_inv: torch.Tensor
 
@@ -68,19 +67,17 @@ class Float8TensorBase:
                 fp8_scale_inv: torch.Tensor,
                 fp8_dtype: TE_DType,
                 data_transpose: Optional[torch.Tensor] = None,
-                proxy: Optional[Float8ParamsProxy] = None,
+                quantizer: Optional[Quantizer] = None,
                 **kwargs
     ):
         instance = super().__new__(cls, *args, **kwargs)
         instance._data = data
-        instance._proxy = proxy
+        instance._quantizer = quantizer
         instance._fp8_dtype = fp8_dtype
         instance._scale_inv = fp8_scale_inv
         instance._transpose = data_transpose
         instance._transpose_invalid = instance._transpose is None
 
-        assert data is not None or data_transpose is not None, \
-               "Tensor does not hold any data!"
         return instance
 
     def get_metadata(self) -> Dict[str, Any]:
@@ -88,7 +85,7 @@ class Float8TensorBase:
                 "fp8_scale_inv": self._scale_inv,
                 "fp8_dtype": self._fp8_dtype,
                 "data_transpose": self._transpose,
-                "proxy": self._proxy,
+                "quantizer": self._quantizer,
         }
 
     def prepare_for_saving(self) -> Tuple[list[Optional[torch.Tensor]], Float8TensorBase]:
@@ -113,19 +110,12 @@ class Float8TensorBase:
 
     @staticmethod
     def quantize(tensor: torch.Tensor,
-                 params: Float8Params,
-                 *,
-                 proxy: Optional[Float8ParamsProxy] = None,
-                 rowwise_usage: bool = True,
-                 columnwise_usage: bool = True,
+                 quantizer: Quantizer,
     ) -> Float8TensorBase:
             return _QuantizeFunc.forward(
                 None,
                 tensor,
-                params,
-                rowwise_usage,
-                columnwise_usage,
-                proxy,
+                quantizer,
                 internal=True,
             )
 

@@ -52,6 +52,7 @@ using fp16 = half;
 using bf16 = nv_bfloat16;
 using fp8e4m3 = __nv_fp8_e4m3;
 using fp8e5m2 = __nv_fp8_e5m2;
+using e8m0_t = uint8_t;
 
 template <typename T>
 struct TypeInfo{
@@ -196,6 +197,7 @@ class Tensor {
 };
 
 constexpr uint32_t FP32_EXPONENT_BIAS = 127;
+constexpr uint32_t FP32_MANTISSA_BITS = 23;
 
 template <typename T>
 struct Numeric_Traits {
@@ -216,6 +218,7 @@ struct Numeric_Traits<fp8e4m3> {
     static constexpr double artifInf   = 10.0 * maxNorm;                        // artificial Infinity
     static constexpr int maxBiasedExponentAsFP32 = 8 + FP32_EXPONENT_BIAS;
     static constexpr int maxUnbiasedExponentAsFP32 = 8;
+    static constexpr int maxExpNorm    = 1 << maxUnbiasedExponentAsFP32;
 };
 
 template <>
@@ -227,6 +230,7 @@ struct Numeric_Traits<fp8e5m2> {
     static constexpr double artifInf   = 10.0 * maxNorm;                        // artificial Infinity
     static constexpr int maxBiasedExponentAsFP32 = 15 + FP32_EXPONENT_BIAS;
     static constexpr int maxUnbiasedExponentAsFP32 = 15;
+    static constexpr int maxExpNorm    = 1 << maxUnbiasedExponentAsFP32;
 };
 
 template <>
@@ -251,6 +255,8 @@ struct Quantized_Limits {
     };
     static constexpr inline fp32 max() { return static_cast<fp32>(Numeric_Traits<T>::maxNorm); }
     static constexpr inline fp32 max_reciprocal() { return static_cast<fp32>(1.0 / max()); }
+    static constexpr inline fp32 emax() { return static_cast<fp32>(Numeric_Traits<T>::maxExpNorm); }
+    static constexpr inline fp32 emax_reciprocal() { return static_cast<fp32>(1.0 / emax()); }
     static constexpr inline int max_norm_biased_exponent() { return Numeric_Traits<T>::maxBiasedExponentAsFP32; }
     static constexpr inline int max_norm_unbiased_exponent() { return Numeric_Traits<T>::maxUnbiasedExponentAsFP32; }
 };
@@ -265,6 +271,41 @@ enum InputsFillCase {
     zeros                       = 3,    // {0}
     uniform                     = 4,    // std::uniform_real_distribution<> dis(-2.0, 1.0)
 };
+
+inline e8m0_t float_to_e8m0(float val) {
+  if (std::isinf(val) || std::isnan(val)) {
+    return 0xFF;
+  }
+  uint32_t val_u32 = *reinterpret_cast<uint32_t*>(&val);
+  e8m0_t exponent = (val_u32 >> FP32_MANTISSA_BITS) & 0xFF;
+  uint32_t mantissa = val_u32 & 0x7FFFFF;
+  if ((mantissa > 0) && (exponent != 0xFE)) {     // exp can only be < 0xFE here
+    ++exponent;                                   // roundup
+  }
+  return exponent;
+}
+
+inline float exp2f_rcp(e8m0_t biased_exp) {
+  return exp2f(FP32_EXPONENT_BIAS - static_cast<float>(biased_exp));
+}
+
+inline float identity(const float x) { return 1; }
+inline float gelu(const float x)     { return x * (0.5f + 0.5f * tanhf(x * (0.79788456f + 0.03567741f * x * x))); }
+inline float dgelu(const float x) {
+    const float tanh_out = tanhf(0.79788456f * x * (1 + 0.044715f * x * x));
+    return 0.5f * x * ((1 - tanh_out * tanh_out) * (0.79788456f + 0.1070322243f * x * x))
+           + 0.5f * (1 + tanh_out);
+}
+inline float sigmoid(const float x)  { return 1 / (1 + expf(-x)); }
+inline float dsigmoid(const float x) { return sigmoid(x) * (1 - sigmoid(x)); }
+inline float qgelu(const float x)    { return x * sigmoid(1.702f * x); }
+inline float dqgelu(const float x)   { return 1.702f * x * dsigmoid(1.702f * x) + sigmoid(1.702f * x); }
+inline float relu(const float x)     { return fmaxf(0, x); }
+inline float drelu(const float x)    { return x > 0 ? 1 : 0; }
+inline float silu(const float x)     { return x * sigmoid(x); }
+inline float dsilu(const float x)    { return x * dsigmoid(x) + sigmoid(x); }
+inline float srelu(const float x)    { return x > 0 ? x * x : 0; }
+inline float dsrelu(const float x)   { return fmaxf(0, 2 * x); }
 
 size_t typeToSize(DType type);
 size_t product(const NVTEShape &shape);

@@ -32,6 +32,7 @@ from ..distributed import (
     allreduce,
     reduce_scatter_along_first_dim,
     gather_along_first_dim,
+    is_fp8_activation_recompute_enabled,
     in_fp8_activation_recompute_phase,
     _fsdp_scatter_tensors,
     _fsdp_gather_tensors,
@@ -43,7 +44,7 @@ from ..constants import GemmParallelModes, dist_group_type
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
 from ..float8_tensor import Float8Tensor
-from ..tensor import QuantizedTensor
+from ..tensor import QuantizedTensor, Quantizer
 from ..cpu_offload import is_cpu_offload_enabled
 
 __all__ = ["Linear"]
@@ -63,7 +64,11 @@ class _Linear(torch.autograd.Function):
         is_first_microbatch: Union[bool, None],
         fp8: bool,
         fp8_calibration: bool,
-        fp8_meta: Dict[str, Any],
+        input_quantizer: Optional[Quantizer],
+        weight_quantizer: Optional[Quantizer],
+        output_quantizer: Optional[Quantizer],
+        grad_output_quantizer: Optional[Quantizer],
+        grad_input_quantizer: Optional[Quantizer],
         fuse_wgrad_accumulation: bool,
         cpu_offloading: bool,
         tp_group: Union[dist_group_type, None],
@@ -96,18 +101,29 @@ class _Linear(torch.autograd.Function):
 
         inputmat_no_fp8 = inputmat
 
-        backward_needs_input = (
-            is_grad_enabled
-            and weight.requires_grad
-        )
-        own_quantized_input = not isinstance(inputmat, QuantizedTensor)
+        weight_requires_grad = weight.requires_grad
+        backward_needs_input = is_grad_enabled and weight_requires_grad
 
-        if fp8:
-            if own_quantized_input:
-                meta = fp8_meta["scaling_fwd"]
-                inputmat = meta.quantize(inputmat, tex.FP8FwdTensors.GEMM1_INPUT,
-                                         columnwise = backward_needs_input,
-                                         internal=True)
+        # Configure quantizers
+        if input_quantizer is not None:
+            input_quantizer.set_usage(
+                rowwise=True,
+                columnwise=(is_grad_enabled and weight_requires_grad),
+            )
+        if weight_quantizer is not None:
+            columnwise_usage = is_grad_enabled and inp.requires_grad
+            if not columnwise_usage:
+                columnwise_usage = (
+                    is_fp8_activation_recompute_enabled()
+                    and not in_fp8_activation_recompute_phase()
+                )
+            weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
+        if output_quantizer is not None:
+            output_quantizer.set_usage(rowwise=True, columnwise=False)
+
+        own_quantized_input = not isinstance(inputmat, QuantizedTensor)
+        if fp8 and own_quantized_input:
+            inputmat = input_quantizer.quantize(inputmat, internal=True)
 
         # Column Parallel Linear
         if parallel_mode == "column" and sequence_parallel:
@@ -123,8 +139,7 @@ class _Linear(torch.autograd.Function):
                 update_workspace = is_first_microbatch is None or is_first_microbatch
                 weight_fp8 = module.get_weight_workspace(
                     tensor=weight,
-                    quantizer=fp8_meta["scaling_fwd"],
-                    tensor_index=tex.FP8FwdTensors.GEMM1_WEIGHT,
+                    quantizer=weight_quantizer,
                     cache_name=(None if is_first_microbatch is None else "weight"),
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
@@ -140,15 +155,8 @@ class _Linear(torch.autograd.Function):
         bias = cast_if_needed(bias, bias_dtype) if bias is not None else bias
 
         if not fp8 and fp8_calibration:
-            fp8_meta["scaling_fwd"].calibrate(inputmat_total, tex.FP8FwdTensors.GEMM1_INPUT)
-            fp8_meta["scaling_fwd"].calibrate(weight, tex.FP8FwdTensors.GEMM1_WEIGHT)
-
-        if fp8_output:
-            meta_tensor = fp8_meta["scaling_fwd"]
-            out_index = tex.FP8FwdTensors.GEMM1_OUTPUT
-            qparams = meta_tensor.get_quantization_params(out_index)
-        else:
-            qparams = None
+            input_quantizer.calibrate(inputmat_total)
+            weight_quantizer.calibrate(weight)
 
         if ub_overlap_rs:
             # I think this should be inside the gemm call rather than linear
@@ -166,13 +174,15 @@ class _Linear(torch.autograd.Function):
                     ub_algo = tex.UbufOverlapAlgo.SPLIT_PIPELINED_RS
             if fp8 and ub_obj_projout.is_fp8_ubuf():
                 assert fp8_output
-                ub_obj_projout.set_ubuf_scale_inv(qparams.scale_inv)
+                ub_obj_projout.set_ubuf_scale_inv(
+                    torch.reciprocal(output_quantizer.scale)
+                )
 
         out, _, _ = general_gemm(
             weight_fp8,
             inputmat_total,
             get_workspace(),
-            quantization_params=qparams,
+            quantization_params=output_quantizer,
             out_dtype=activation_dtype,
             bias=bias,
             use_split_accumulator=_2X_ACC_FPROP,
@@ -218,7 +228,8 @@ class _Linear(torch.autograd.Function):
 
             ctx.activation_dtype = activation_dtype
             ctx.fp8 = fp8
-            ctx.fp8_meta = fp8_meta
+            ctx.grad_output_quantizer = grad_output_quantizer
+            ctx.grad_input_quantizer = grad_input_quantizer
             ctx.fuse_wgrad_accumulation = fuse_wgrad_accumulation
             ctx.cpu_offloading = cpu_offloading
             ctx.is_first_microbatch = is_first_microbatch
@@ -274,6 +285,15 @@ class _Linear(torch.autograd.Function):
                 weight_fp8,
             )
 
+            # Configure quantizers
+            if ctx.grad_output_quantizer is not None:
+                ctx.grad_output_quantizer.set_usage(
+                    rowwise=ctx.requires_dgrad,
+                    columnwise=ctx.requires_wgrad,
+                )
+            if ctx.grad_input_quantizer is not None:
+                ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
+
             #TODO: understand and fix
             # if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
             #     weight = torch.nn.Parameter(weight, weight.requires_grad)
@@ -295,7 +315,10 @@ class _Linear(torch.autograd.Function):
                 grad_output,
                 grad_bias,
             ) = TransformerEngineBaseModule.grad_output_preprocess(
-                ctx, grad_output, ctx.parallel_mode == "row"
+                ctx,
+                grad_output,
+                ctx.parallel_mode == "row",
+                ctx.grad_output_quantizer,
             )
 
             # Column Parallel Linear
@@ -318,22 +341,13 @@ class _Linear(torch.autograd.Function):
                 accumulate_wgrad_into_param_main_grad = ctx.fuse_wgrad_accumulation
 
             if ctx.requires_dgrad:
-                if ctx.is_input_fp8:
-                    meta_tensor = ctx.fp8_meta["scaling_bwd"]
-                    out_index = tex.FP8BwdTensors.GRAD_INPUT1
-                    qparams = meta_tensor.get_quantization_params(out_index)
-                else:
-                    qparams = None
-
-                print(weight_fp8.shape)
-                print(grad_output.shape)
                 dgrad, _, _ = general_gemm(
                         weight_fp8,
                         grad_output,
                         get_workspace(),
                         layout="NN",
                         grad=True,
-                        quantization_params=qparams,
+                        quantization_params=ctx.grad_input_quantizer,
                         out_dtype=ctx.activation_dtype,
                         use_split_accumulator=_2X_ACC_DGRAD,
                         ub_algo=ub_algo if ctx.ub_overlap_ag else None,
@@ -435,7 +449,11 @@ class _Linear(torch.autograd.Function):
             None,  # is_first_microbatch
             None,  # fp8
             None,  # fp8_calibration
-            None,  # fp8_meta
+            None,  # input_quantizer
+            None,  # weight_quantizer
+            None,  # output_quantizer
+            None,  # grad_output_quantizer
+            None,  # grad_input_quantizer
             None,  # fuse_wgrad_accumulation
             None,  # cpu_offloading
             None,  # tp_group
@@ -777,6 +795,17 @@ class Linear(TransformerEngineBaseModule):
             else:
                 bias_tensor = None
 
+            # Get quantizers
+            input_quantizer, weight_quantizer, output_quantizer = None, None, None
+            grad_output_quantizer, grad_input_quantizer = None, None
+            if self.fp8:
+                input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_INPUT]
+                weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
+                if fp8_output:
+                    output_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_OUTPUT]
+                if torch.is_grad_enabled():
+                    grad_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
+
             if torch.is_grad_enabled():
                 linear_fn = _Linear.apply
                 args = []
@@ -790,7 +819,11 @@ class Linear(TransformerEngineBaseModule):
                 is_first_microbatch,
                 self.fp8,
                 self.fp8_calibration,
-                self.fp8_meta,
+                input_quantizer,
+                weight_quantizer,
+                output_quantizer,
+                grad_output_quantizer,
+                grad_input_quantizer,
                 self.fuse_wgrad_accumulation,
                 is_cpu_offload_enabled(),
                 self.tp_group,
