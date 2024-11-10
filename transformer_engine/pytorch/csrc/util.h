@@ -7,6 +7,6 @@
 #ifndef TRANSFORMER_ENGINE_PYTORCH_CSRC_UTIL_H_
 #define TRANSFORMER_ENGINE_PYTORCH_CSRC_UTIL_H_
 
-bool supports_fp8_transposes();
+bool non_tn_fp8_gemm_supported();
 
 #endif  // TRANSFORMER_ENGINE_PYTORCH_CSRC_UTIL_H_

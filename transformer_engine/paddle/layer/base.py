@@ -434,25 +434,21 @@ class TransformerEngineBaseLayer(paddle.nn.Layer, ABC):
         fp8_dtype_backward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=False)
 
         if gather_grad_output:
-            if not ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-                # FP8 case with gather: unfused bgrad, cast, transpose for efficient gather
-                if ctx.use_bias:
-                    bgrad = grad_output_mat.sum(axis=0)
-                else:
-                    bgrad = None
-                grad_output_c = cast_to_fp8(
-                    grad_output_mat,
-                    ctx.fp8_meta["scaling_bwd"],
-                    FP8BwdTensors.GRAD_OUTPUT1,
-                    fp8_dtype_backward,
-                )
-                grad_output_c, _ = allgather(grad_output_c, ctx.tp_group)
-                grad_output_t = transpose(grad_output_c, fp8_dtype_backward)
+            # FP8 case with gather: unfused bgrad, cast, transpose for efficient gather
+            if ctx.use_bias:
+                bgrad = grad_output_mat.sum(axis=0)
+            else:
+                bgrad = None
+            grad_output_c = cast_to_fp8(
+                grad_output_mat,
+                ctx.fp8_meta["scaling_bwd"],
+                FP8BwdTensors.GRAD_OUTPUT1,
+                fp8_dtype_backward,
+            )
+            grad_output_c, _ = allgather(grad_output_c, ctx.tp_group)
+            grad_output_t = transpose(grad_output_c, fp8_dtype_backward)
 
-                return grad_output_mat, grad_output_c, grad_output_t, bgrad
-
-            # FP8 case with gather and non-FP8 wgrad
-            grad_output_mat, _ = allgather(grad_output_mat, ctx.tp_group)
+            return grad_output_mat, grad_output_c, grad_output_t, bgrad
 
         # FP8 case without gather: cast, transpose, bgrad fused
         if ctx.use_bias:
@@ -463,21 +459,12 @@ class TransformerEngineBaseLayer(paddle.nn.Layer, ABC):
                 fp8_dtype_backward,
             )
         else:
-            if not ctx.fp8_meta["recipe"].override_linear_precision.wgrad:
-                grad_output_c, grad_output_t = cast_transpose(
-                    grad_output_mat,
-                    ctx.fp8_meta["scaling_bwd"],
-                    FP8BwdTensors.GRAD_OUTPUT1,
-                    fp8_dtype_backward,
-                )
-            else:
-                grad_output_t = None
-                grad_output_c = cast_to_fp8(
-                    grad_output_mat,
-                    ctx.fp8_meta["scaling_bwd"],
-                    FP8BwdTensors.GRAD_OUTPUT1,
-                    fp8_dtype_backward,
-                )
+            grad_output_c, grad_output_t = cast_transpose(
+                grad_output_mat,
+                ctx.fp8_meta["scaling_bwd"],
+                FP8BwdTensors.GRAD_OUTPUT1,
+                fp8_dtype_backward,
+            )
             bgrad = None
         return grad_output_mat, grad_output_c, grad_output_t, bgrad
 

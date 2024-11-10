@@ -11,11 +11,9 @@ import transformer_engine_torch as tex
 
 from transformer_engine_torch import DType as TE_DType
 from ..cpp_extensions.transpose import fp8_cast_transpose_fused
-from ..cpp_extensions.cast import (
-    cast_to_fp8,
-)
+from ..cpp_extensions.cast import cast_to_fp8
 from ..fp8 import DelayedScalingRecipeState, FP8GlobalStateManager
-from ..utils import devices_match, supports_fp8_transposes
+from ..utils import devices_match, non_tn_fp8_gemm_supported
 
 from ._internal.float8_tensor_base import Float8TensorBase, _FromFloat8Func
 from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
@@ -382,7 +380,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             assert self._data is not None, \
                    "Rowwise usage of the tensor was already disabled"
         else:
-            if not supports_fp8_transposes():
+            if not non_tn_fp8_gemm_supported():
                 if self._transpose is None or self._transpose_invalid:
                     self._create_transpose()
                 self._data = None
@@ -390,7 +388,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             if self._transpose is None or self._transpose_invalid:
                 assert self._data is not None, \
                        "The tensor does not hold any data anymore"
-                if not supports_fp8_transposes():
+                if not non_tn_fp8_gemm_supported():
                     self._create_transpose()
         else:
             self._transpose = None

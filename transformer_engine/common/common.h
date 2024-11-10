@@ -402,14 +402,18 @@ inline bool is_block_scaling(const ScalingMode &mode) {
 }
 
 inline bool is_rowwise_block_scaling(const ScalingMode &mode) {
-  return (mode.x < mode.y) && (mode.delayed_scaling == 0);
+  return (mode.x < mode.y) && (mode.x == 1) && (mode.delayed_scaling == 0);
+}
+
+inline bool is_columnwise_block_scaling(const ScalingMode &mode) {
+  return (mode.x > mode.y) && (mode.y == 1) && (mode.delayed_scaling == 0);
 }
 
 inline bool is_delayed_tensor_scaling(const ScalingMode &mode) {
   return is_tensor_scaling(mode) && mode.delayed_scaling;
 }
 
-bool is_columnwise_block_scaling(const Tensor *t);
+bool is_block_scaling(const Tensor *t);
 
 /*! \brief Update a tensor's FP8 scale-inverse
  *

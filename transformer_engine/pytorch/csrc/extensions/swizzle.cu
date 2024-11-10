@@ -10,6 +10,8 @@ at::Tensor swizzle_scaling_factors(at::Tensor input, at::Tensor scale_inv,
                                    std::vector<int64_t> scaling_mode) {
   using namespace transformer_engine::pytorch;
 
+  NVTE_CHECK(input.element_size() == 1, "8-bit input required for swizzling scaling factors.");
+
   auto options = at::TensorOptions().dtype(scale_inv.dtype()).device(torch::kCUDA);
   auto swizzled_scale_inv = at::empty_like(scale_inv, options);
 
@@ -23,7 +25,7 @@ at::Tensor swizzle_scaling_factors(at::Tensor input, at::Tensor scale_inv,
   };
 
   // Construct Transformer Engine tensors
-  DType dtype = GetTransformerEngineDType(input.scalar_type());
+  DType dtype = DType::kFloat8E4M3;  // Use any 8 bit dummy type.
   auto input_cu =
       makeTransformerEngineTensor(input.data_ptr(), getTensorShape(input), dtype, nullptr, nullptr,
                                   scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);

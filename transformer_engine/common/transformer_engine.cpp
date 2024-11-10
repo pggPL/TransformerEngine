@@ -125,20 +125,20 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
   }
 }
 
-bool is_columnwise_block_scaling(const Tensor *t) {
-  ScalingMode mode = t->scaling_mode;
-  auto block_size = mode.x;
-  bool columnwise_block_scaling = mode.y == 1 && !(mode.delayed_scaling);
-  if (columnwise_block_scaling) {
-    auto nelem = t->numel();
-    NVTE_CHECK(nelem % block_size == 0, "Incorrect number of inputs elements ", nelem, " for ",
-               block_size, " block scaling.");
-  }
-  if (block_size != 32) {
-    NVTE_ERROR("Block size not supported.");
-  }
-  return columnwise_block_scaling;
+bool is_block_scaling(const Tensor *t) {
+  auto mode = t->scaling_mode;
+  auto colwise_block_scaling = is_columnwise_block_scaling(mode);
+  auto rowwise_block_scaling = is_rowwise_block_scaling(mode);
+  int block_size = (colwise_block_scaling) ? mode.x : mode.y;
+
+  auto nelem = t->numel();
+  NVTE_CHECK(nelem % block_size == 0, "Incorrect number of inputs elements ", nelem, " for ",
+             block_size, " block scaling.");
+  NVTE_CHECK(block_size == 32, "Unsupported block size ", block_size, " provided.");
+
+  return rowwise_block_scaling || colwise_block_scaling;
 }
+
 
 }  // namespace transformer_engine
 

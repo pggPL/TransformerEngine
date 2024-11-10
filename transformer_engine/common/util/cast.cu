@@ -56,8 +56,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
                       const __grid_constant__ CUtensorMap tensor_map_output_rowwise,
                       const __grid_constant__ CUtensorMap tensor_map_output_colwise,
                       e8m0_t *const scales_rowwise, e8m0_t *const scales_colwise,
-                      float *const dbias_workspace, float *const amax_ptr_rowwise,
-                      float *const amax_ptr_colwise, const size_t rows, const size_t cols,
+                      float *const dbias_workspace, const size_t rows, const size_t cols,
                       const size_t scale_stride_rowwise, const size_t scale_stride_colwise) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
   constexpr bool USE_ROWWISE_SCALING = SCALE_DIM_X > 1;
@@ -386,20 +385,6 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
         dbias_workspace[dbias_offset] = partial_dbias_colwise[i];
       }
     }
-  }
-
-  if (amax_ptr_rowwise != nullptr || amax_ptr_colwise != nullptr) {
-    const int warp_id = threadIdx.x / THREADS_PER_WARP;
-    // Reduce the amax over the block
-    block_amax = reduce_max<MXFP8_THREADS_PER_CHUNK / THREADS_PER_WARP>(block_amax, warp_id);
-  }
-
-  if (is_master_thread && amax_ptr_rowwise != nullptr) {
-    atomicMaxFloat(amax_ptr_rowwise, block_amax);
-  }
-
-  if (is_master_thread && amax_ptr_colwise != nullptr) {
-    atomicMaxFloat(amax_ptr_colwise, block_amax);
   }
 
   // Destroy barrier. This invalidates the memory region of the barrier. If
@@ -800,10 +785,6 @@ void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_row
   }
 
   float *const workspace_ptr = IS_DBIAS ? reinterpret_cast<float *>(workspace->data.dptr) : nullptr;
-  float *const amax_ptr_rowwise =
-      USE_ROWWISE_SCALING ? reinterpret_cast<float *>(output_rowwise->amax.dptr) : nullptr;
-  float *const amax_ptr_colwise =
-      USE_COLWISE_SCALING ? reinterpret_cast<float *>(output_colwise->amax.dptr) : nullptr;
 
   const dim3 block(MXFP8_THREADS_PER_CHUNK);
   const dim3 grid(blocks_X, blocks_Y);
@@ -838,8 +819,7 @@ void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_row
                       <<<grid, block, 0, stream>>>
                       (tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
                       tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr,
-                      workspace_ptr, amax_ptr_rowwise, amax_ptr_colwise, rows, cols,
-                      scale_stride_rowwise, scale_stride_colwise);
+                      workspace_ptr, rows, cols, scale_stride_rowwise, scale_stride_colwise);
 
                   if constexpr (IS_DBIAS) {
                     reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
