@@ -26,7 +26,7 @@ def setup_pytorch_extension(
     csrc_source_files = Path(csrc_source_files)
     extensions_dir = csrc_source_files / "extensions"
     sources = [
-        csrc_source_files / "common.cu",
+        csrc_source_files / "common.cpp",
     ] + all_files_in_dir(extensions_dir)
 
     # Header files

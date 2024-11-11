@@ -52,15 +52,37 @@ pybind11::dict Registrations() {
   dict["te_fused_attn_forward"] = EncapsulateFunction(FusedAttnForward);
   dict["te_fused_attn_backward"] = EncapsulateFunction(FusedAttnBackward);
 
+  // Transpose
   dict["te_transpose_ffi"] = EncapsulateFFI(TransposeHandler);
   dict["te_cast_transpose_ffi"] = EncapsulateFFI(CastTransposeHandler);
+  dict["te_dbias_cast_transpose_ffi"] = EncapsulateFFI(DBiasCastTransposeHandler);
+
+  // Activation
   dict["te_act_lu_ffi"] = EncapsulateFFI(ActLuHandler);
   dict["te_act_lu_fp8_ffi"] = EncapsulateFFI(ActLuFP8Handler);
   dict["te_dact_lu_ffi"] = EncapsulateFFI(DActLuHandler);
+  dict["te_dact_lu_dbias_cast_transpose_ffi"] =
+      EncapsulateFunction(DActLuDBiasCastTransposeHandler);
+  dict["te_dgated_act_lu_cast_transpose_ffi"] =
+      EncapsulateFunction(DGatedActLuCastTransposeHandler);
+
+  // Quantization
   dict["te_quantize_ffi"] = EncapsulateFFI(QuantizeHandler);
+
+  // Normalization
+  dict["te_layernorm_forward_ffi"] = EncapsulateFFI(LayerNormForwardHandler);
   dict["te_layernorm_forward_fp8_ffi"] = EncapsulateFFI(LayerNormForwardFP8Handler);
   dict["te_layernorm_backward_ffi"] = EncapsulateFFI(LayerNormBackwardHandler);
-  dict["te_fused_attn_forward_ffi"] = EncapsulateFFI(FusedAttnForwardHandler);
+  dict["te_rmsnorm_forward_ffi"] = EncapsulateFunction(RMSNormForwardHandler);
+  dict["te_rmsnorm_forward_fp8_ffi"] = EncapsulateFunction(RMSNormForwardFP8Handler);
+  dict["te_rmsnorm_backward_ffi"] = EncapsulateFunction(RMSNormBackwardHandler);
+
+  // Attention
+  pybind11::dict fused_attn_forward_ffi;
+  fused_attn_forward_ffi["prepare"] = EncapsulateFFI(CudnnHandleInitHandler);
+  fused_attn_forward_ffi["execute"] = EncapsulateFFI(FusedAttnForwardHandler);
+  dict["te_fused_attn_forward_ffi"] = fused_attn_forward_ffi;
+
   return dict;
 }
 

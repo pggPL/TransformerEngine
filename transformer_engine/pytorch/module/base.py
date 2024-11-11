@@ -11,7 +11,7 @@ import socket
 import fcntl
 import struct
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 from contextlib import contextmanager
 
 import torch
@@ -234,6 +234,7 @@ def initialize_ub(
                 ranks_per_domain_list, backend=bootstrap_backend
             )
             local_rank = torch.distributed.get_rank(intra_domain_group)
+            intra_domain_ranks = torch.distributed.get_process_group_ranks(intra_domain_group)
 
             inter_domain_group, _ = torch.distributed.new_subgroups_by_enumeration(
                 [list(ranks) for ranks in zip(*ranks_per_domain_list)],
@@ -376,8 +377,6 @@ def initialize_ub(
                 atomic_gemm=atomic_gemm,
                 use_ce=use_ce,
                 aggregate=aggregate,
-                comm_priority=comm_priority,
-                gemm_priority=gemm_priority,
             )
         else:
             ub_obj = tex.CommOverlap(
@@ -391,8 +390,6 @@ def initialize_ub(
                 num_comm_sm=num_sm,
                 set_sm_margin=set_sm_margin,
                 atomic_gemm=atomic_gemm,
-                comm_priority=comm_priority,
-                gemm_priority=gemm_priority,
             )
         _ub_communicators[name] = ub_obj
 
@@ -457,15 +454,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fsdp_group = None
         self._fp8_workspaces: Dict[str, Float8Tensor] = {}
         self.activation_dtype: Optional[torch.dtype] = None
-
-        # Fast getter for parameters
-        # Note: torch.nn.Module does not store parameters like normal
-        # attrs, but rather in a dict. When attempting to access, the
-        # module will raise an AttributeError in __getattribute__ and
-        # call a custom __getattr__. This is unnecessary overhead if
-        # we know we are accessing a parameter.
-        self._fast_get_param: Callable[str, torch.nn.Parameter]
-        self._fast_get_param = self.__dict__["_parameters"].get
 
     # Names of attributes that can be set quickly (see __setattr__
     # method)
