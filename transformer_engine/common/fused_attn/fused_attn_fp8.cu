@@ -1915,8 +1915,8 @@ void fused_attn_fp8_fwd_impl_v1(
         {Stats, devPtrM}};
 
     /* if (is_bias) {
-         variant_pack[bias] = devPtrBias;
-    }
+       variant_pack[bias] = devPtrBias;
+    } */
 
     if (is_padding) {
       constexpr size_t nthreads_per_block = 128;
@@ -1924,14 +1924,14 @@ void fused_attn_fp8_fwd_impl_v1(
       void* devActualSeqlenQ = static_cast<int8_t*>(workspace) + plan_workspace_size;
       void* devActualSeqlenKV = static_cast<int8_t*>(devActualSeqlenQ) + b * sizeof(int32_t);
       cu_seqlens_to_actual_seqlens<<<grid, nthreads_per_block, 0, stream>>>(
-          b, static_cast<const int32_t*>(devPtrcuSeqlensQ),
+          b, b, static_cast<const int32_t*>(devPtrcuSeqlensQ),  // TODO(pass max_b)
           static_cast<const int32_t*>(devPtrcuSeqlensKV), static_cast<int32_t*>(devActualSeqlenQ),
           static_cast<int32_t*>(devActualSeqlenKV));
       variant_pack[seq_q] = devActualSeqlenQ;
       variant_pack[seq_kv] = devActualSeqlenKV;
     }
 
-    if (is_dropout) {
+    /* if (is_dropout) {
       variant_pack[dropout_seed] = devPtrDropoutSeed;
       variant_pack[dropout_offset] = devPtrDropoutOffset;
     } */
@@ -2299,29 +2299,29 @@ void fused_attn_fp8_bwd_impl_v1(
         {amax_dP, devPtrAmaxdP},
     };
 
-    // if (is_bias) {
-    //     variant_pack[bias] = devPtrBias;
-    //     if ((bias_b == 1) && (bias_h == h)) {
-    //       variant_pack[dBias] = devPtrdBias;
-    //     } else {
-    //       variant_pack[dBias] = nullptr;
-    //     }
-    // }
+    /* if (is_bias) {
+       variant_pack[bias] = devPtrBias;
+       if ((bias_b == 1) && (bias_h == h)) {
+         variant_pack[dBias] = devPtrdBias;
+       } else {
+         variant_pack[dBias] = nullptr;
+       }
+    } */
 
-    /* if (is_padding) {
+    if (is_padding) {
       constexpr size_t nthreads_per_block = 128;
       const size_t grid = (b + nthreads_per_block - 1) / nthreads_per_block;
       void* devActualSeqlenQ = static_cast<int8_t*>(workspace) + plan_workspace_size;
       void* devActualSeqlenKV = static_cast<int8_t*>(devActualSeqlenQ) + b * sizeof(int32_t);
       cu_seqlens_to_actual_seqlens<<<grid, nthreads_per_block, 0, stream>>>(
-          b, static_cast<const int32_t*>(devPtrcuSeqlensQ),
+          b, b, static_cast<const int32_t*>(devPtrcuSeqlensQ),  // TODO(pass max_b)
           static_cast<const int32_t*>(devPtrcuSeqlensKV), static_cast<int32_t*>(devActualSeqlenQ),
           static_cast<int32_t*>(devActualSeqlenKV));
       variant_pack[seq_q] = devActualSeqlenQ;
       variant_pack[seq_kv] = devActualSeqlenKV;
     }
 
-    if (is_dropout) {
+    /* if (is_dropout) {
       variant_pack[dropout_seed] = devPtrDropoutSeed;
       variant_pack[dropout_offset] = devPtrDropoutOffset;
     } */
