@@ -293,11 +293,11 @@ class NormBase {
 
   virtual void execute() = 0;
 
-  virtual void set_workspace_and_barrier(void* workspace_ptr, void* barrier_ptr) {};
+  virtual void set_workspace_and_barrier(void* workspace_ptr, void* barrier_ptr){}
 
-  virtual std::vector<size_t> get_workspace_shape() { return {0}; };
+  virtual std::vector<size_t> get_workspace_shape() { return {0}; }
 
-  virtual std::vector<size_t> get_barrier_shape() { return {0}; };
+  virtual std::vector<size_t> get_barrier_shape() { return {0}; }
 };
 
 template <NVTE_NORM_TYPE NormEnum>
@@ -390,7 +390,7 @@ class NormalizationPlanRegistry {
   static NormalizationPlanRegistry& getInstance() {
     static NormalizationPlanRegistry instance;
     return instance;
-  };
+  }
 
   NormalizationPlan* getNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
                                           DType wtype, DType itype, DType otype,
