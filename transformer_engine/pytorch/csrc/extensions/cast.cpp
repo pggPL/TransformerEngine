@@ -203,11 +203,9 @@ std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor& input, const at::Tensor
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
-  NVTEScalingMode nvte_scaling_mode = {
-      static_cast<int>(scaling_mode[0]),
-      static_cast<int>(scaling_mode[1]),
-      static_cast<int>(scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_mode = {static_cast<int>(scaling_mode[0]),
+                                       static_cast<int>(scaling_mode[1]),
+                                       static_cast<int>(scaling_mode[2])};
 
   auto input_cu = makeTransformerEngineTensor(input);
   auto dbias_cu = makeTransformerEngineTensor(grad_bias);
@@ -245,11 +243,9 @@ std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor 
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
-  NVTEScalingMode nvte_scaling_mode = {
-      static_cast<int>(scaling_mode[0]),
-      static_cast<int>(scaling_mode[1]),
-      static_cast<int>(scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_mode = {static_cast<int>(scaling_mode[0]),
+                                       static_cast<int>(scaling_mode[1]),
+                                       static_cast<int>(scaling_mode[2])};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
@@ -294,11 +290,9 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor 
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
-  NVTEScalingMode nvte_scaling_mode = {
-      static_cast<int>(scaling_mode[0]),
-      static_cast<int>(scaling_mode[1]),
-      static_cast<int>(scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_mode = {static_cast<int>(scaling_mode[0]),
+                                       static_cast<int>(scaling_mode[1]),
+                                       static_cast<int>(scaling_mode[2])};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
@@ -343,11 +337,9 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor 
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
-  NVTEScalingMode nvte_scaling_mode = {
-      static_cast<int>(scaling_mode[0]),
-      static_cast<int>(scaling_mode[1]),
-      static_cast<int>(scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_mode = {static_cast<int>(scaling_mode[0]),
+                                       static_cast<int>(scaling_mode[1]),
+                                       static_cast<int>(scaling_mode[2])};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
@@ -392,11 +384,9 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
-  NVTEScalingMode nvte_scaling_mode = {
-      static_cast<int>(scaling_mode[0]),
-      static_cast<int>(scaling_mode[1]),
-      static_cast<int>(scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_mode = {static_cast<int>(scaling_mode[0]),
+                                       static_cast<int>(scaling_mode[1]),
+                                       static_cast<int>(scaling_mode[2])};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
@@ -441,11 +431,9 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
   void* scale_dptr = getDataPtr(scale, scale_offset);
   void* amax_dptr = getDataPtr(amax, amax_offset);
   void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
-  NVTEScalingMode nvte_scaling_mode = {
-      static_cast<int>(scaling_mode[0]),
-      static_cast<int>(scaling_mode[1]),
-      static_cast<int>(scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_mode = {static_cast<int>(scaling_mode[0]),
+                                       static_cast<int>(scaling_mode[1]),
+                                       static_cast<int>(scaling_mode[2])};
 
   // Construct Transformer Engine tensors
   DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());

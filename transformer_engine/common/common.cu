@@ -16,19 +16,20 @@ namespace transformer_engine {
 namespace {
 
 __global__ void __launch_bounds__(1)
-    update_tensor_scale_inv_kernel(const float* __restrict__ scale_ptr,
-                                   float* __restrict__ scale_inv_ptr) {
+    update_tensor_scale_inv_kernel(const float *__restrict__ scale_ptr,
+                                   float *__restrict__ scale_inv_ptr) {
   const float scale = scale_ptr == nullptr ? 1 : *scale_ptr;
   reciprocal<float>(scale_inv_ptr, scale);
 }
 
 }  // namespace
 
-void update_tensor_scale_inv(Tensor* t, cudaStream_t stream) {
+void update_tensor_scale_inv(Tensor *t, cudaStream_t stream) {
   if (is_fp8_dtype(t->data.dtype) && is_tensor_scaling(t->scaling_mode)) {
     NVTE_CHECK(t->scale_inv.dptr != nullptr, "Tensor should have allocated scale_inv.");
     update_tensor_scale_inv_kernel<<<1, 1, 0, stream>>>(
-        reinterpret_cast<const float*>(t->scale.dptr), reinterpret_cast<float*>(t->scale_inv.dptr));
+        reinterpret_cast<const float *>(t->scale.dptr),
+        reinterpret_cast<float *>(t->scale_inv.dptr));
   }
 }
 
@@ -77,9 +78,8 @@ inline bool isPointerAligned(const void *const ptr, const int alignment) {
 
 // Set up parameters to create TMA descriptor.
 template <typename T>
-void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
-                          const uint64_t globalY, const uint64_t globalX,
-                          const uint32_t shmemY, const uint32_t shmemX) {
+void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, const uint64_t globalY,
+                          const uint64_t globalX, const uint32_t shmemY, const uint32_t shmemX) {
   const Tensor &tensor = *tensor_ptr;
   // rank is the number of dimensions of the array
   constexpr uint32_t rank = 2;
@@ -125,9 +125,9 @@ void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr,
       CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE));
 }
 
-#define TRANSFORMER_ENGINE_CREATE_2D_TMAP(T) \
-  template void create_2D_tensor_map<T>(CUtensorMap &tensorMap, const Tensor *tensor_ptr,\
-                                        const uint64_t globalY, const uint64_t globalX,\
+#define TRANSFORMER_ENGINE_CREATE_2D_TMAP(T)                                               \
+  template void create_2D_tensor_map<T>(CUtensorMap & tensorMap, const Tensor *tensor_ptr, \
+                                        const uint64_t globalY, const uint64_t globalX,    \
                                         const uint32_t shmemY, const uint32_t shmemX);
 
 TRANSFORMER_ENGINE_CREATE_2D_TMAP(float)
@@ -137,15 +137,13 @@ TRANSFORMER_ENGINE_CREATE_2D_TMAP(fp8e4m3)
 TRANSFORMER_ENGINE_CREATE_2D_TMAP(fp8e5m2)
 #undef TRANSFORMER_ENGINE_CREATE_2D_TMAP
 
-static const int32_t deviceComputeCapability = [](){
+static const int32_t deviceComputeCapability = []() {
   cudaDeviceProp deviceProp;
   cudaGetDeviceProperties(&deviceProp, 0);
   return 10 * deviceProp.major + deviceProp.minor;
 }();
 
-bool is_supported_by_CC_100() {
-  return deviceComputeCapability >= 100; 
-}
+bool is_supported_by_CC_100() { return deviceComputeCapability >= 100; }
 
 bool is_mxfp8_cast_supported_shape(const Tensor *output) {
   const NVTEScalingMode &scaling_mode = output->scaling_mode;

@@ -378,7 +378,10 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
                                    workspaceSize, stream));                 /* stream */
 
   // Update FP8 scale-inv in output tensor
-  if (is_fp8_dtype(outputD->data.dtype)) {
+  // Note: This is a WAR for the case when we have fp8 output but D->scale_inv is not allocated.
+  // TODO: Changing gemm interface so that D->scale_inv is allocated and the scale_inv can be
+  // calculated here.
+  if (is_fp8_dtype(outputD->data.dtype) && outputD->scale_inv.dptr) {
     update_tensor_scale_inv(outputD, stream);
   }
 

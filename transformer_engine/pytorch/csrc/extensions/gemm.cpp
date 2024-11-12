@@ -193,16 +193,12 @@ void te_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType
   auto dimB = B_scaling_mode.size();
   NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
 
-  NVTEScalingMode nvte_scaling_modeA = {
-      static_cast<int>(A_scaling_mode[0]),
-      static_cast<int>(A_scaling_mode[1]),
-      static_cast<int>(A_scaling_mode[2])
-  };
-  NVTEScalingMode nvte_scaling_modeB = {
-      static_cast<int>(B_scaling_mode[0]),
-      static_cast<int>(B_scaling_mode[1]),
-      static_cast<int>(B_scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_modeA = {static_cast<int>(A_scaling_mode[0]),
+                                        static_cast<int>(A_scaling_mode[1]),
+                                        static_cast<int>(A_scaling_mode[2])};
+  NVTEScalingMode nvte_scaling_modeB = {static_cast<int>(B_scaling_mode[0]),
+                                        static_cast<int>(B_scaling_mode[1]),
+                                        static_cast<int>(B_scaling_mode[2])};
 
   auto te_A = makeTransformerEngineTensor(
       A.data_ptr(), {static_cast<size_t>(A.size(0)), static_cast<size_t>(A.size(1))}, A_type,
@@ -250,16 +246,12 @@ void te_atomic_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine
   auto dimB = B_scaling_mode.size();
   NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
 
-  NVTEScalingMode nvte_scaling_modeA = {
-      static_cast<int>(A_scaling_mode[0]),
-      static_cast<int>(A_scaling_mode[1]),
-      static_cast<int>(A_scaling_mode[2])
-  };
-  NVTEScalingMode nvte_scaling_modeB = {
-      static_cast<int>(B_scaling_mode[0]),
-      static_cast<int>(B_scaling_mode[1]),
-      static_cast<int>(B_scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_modeA = {static_cast<int>(A_scaling_mode[0]),
+                                        static_cast<int>(A_scaling_mode[1]),
+                                        static_cast<int>(A_scaling_mode[2])};
+  NVTEScalingMode nvte_scaling_modeB = {static_cast<int>(B_scaling_mode[0]),
+                                        static_cast<int>(B_scaling_mode[1]),
+                                        static_cast<int>(B_scaling_mode[2])};
 
   auto te_A = makeTransformerEngineTensor(
       A.data_ptr(), {static_cast<size_t>(A.size(0)), static_cast<size_t>(A.size(1))}, A_type,
@@ -313,16 +305,12 @@ void te_grouped_gemm(std::vector<at::Tensor> A, at::Tensor A_scale_inverse, int 
   auto dimB = B_scaling_mode.size();
   NVTE_CHECK(dimB == 3, "Incorrect size ", dimB, " for scaling mode.");
 
-  NVTEScalingMode nvte_scaling_modeA = {
-      static_cast<int>(A_scaling_mode[0]),
-      static_cast<int>(A_scaling_mode[1]),
-      static_cast<int>(A_scaling_mode[2])
-  };
-  NVTEScalingMode nvte_scaling_modeB = {
-      static_cast<int>(B_scaling_mode[0]),
-      static_cast<int>(B_scaling_mode[1]),
-      static_cast<int>(B_scaling_mode[2])
-  };
+  NVTEScalingMode nvte_scaling_modeA = {static_cast<int>(A_scaling_mode[0]),
+                                        static_cast<int>(A_scaling_mode[1]),
+                                        static_cast<int>(A_scaling_mode[2])};
+  NVTEScalingMode nvte_scaling_modeB = {static_cast<int>(B_scaling_mode[0]),
+                                        static_cast<int>(B_scaling_mode[1]),
+                                        static_cast<int>(B_scaling_mode[2])};
 
   auto make_tensor = [&tensor_wrappers](void* dptr, const std::vector<size_t>& shape,
                                         transformer_engine::DType dtype, void* amax_dptr,

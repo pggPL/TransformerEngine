@@ -340,7 +340,7 @@ def fp8_gemm(
         use_split_accumulator,
     )
     if ub_algo is None:
-        args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))), ))
+        args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),))
     else:
         assert ub is not None, "ub object is None!"
         if ub_algo == tex.CommOverlapAlgo.BULK_OVERLAP_AG:
@@ -522,7 +522,7 @@ def gemm(
         False,  # use_split_accumulator
     )
     if ub_algo is None:
-        args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))), ))
+        args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),))
     else:
         assert ub is not None, "ub object is None!"
         if ub_algo == tex.CommOverlapAlgo.BULK_OVERLAP_AG:
