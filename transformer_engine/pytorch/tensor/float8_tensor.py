@@ -76,7 +76,7 @@ class Float8Quantizer(Quantizer):
                 scale=self.scale,
                 amax=self.amax,
                 scale_inv=dst._scale_inv,
-                noop_flag=noop_flag,  ### TODO How to handle?
+                # noop_flag=noop_flag,  ### TODO How to handle?
             )
             dst._transpose_invalid = False
 
