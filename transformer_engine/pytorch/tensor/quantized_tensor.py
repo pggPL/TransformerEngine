@@ -51,12 +51,13 @@ class Quantizer(abc.ABC):
         tensor: torch.Tensor,
         *,
         out: Optional[QuantizedTensor] = None,
+        internal: bool = False,
     ) -> QuantizedTensor:
         if out is not None:
             return self.update_quantized(tensor, out)
-        if torch.is_grad_enabled():
-            return _QuantizeFunc.apply(tensor, self)
-        return _QuantizeFunc.forward(None, tensor, self)
+        if (not internal) and torch.is_grad_enabled():
+            return _QuantizeFunc.apply(tensor, self, internal)
+        return _QuantizeFunc.forward(None, tensor, self, internal)
 
     @abc.abstractmethod
     def make_empty(
