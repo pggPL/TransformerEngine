@@ -44,7 +44,7 @@ void init_extension() {
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   NVTE_DECLARE_COMMON_PYBIND11_HANDLES(m)
-  m.def("generic_cast", transformer_engine::pytorch::cast);
+  m.def("quantize", transformer_engine::pytorch::quantize);
   m.def("generic_gemm", transformer_engine::pytorch::gemm);
 
   // Permutation functions

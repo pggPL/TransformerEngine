@@ -1015,7 +1015,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     "tensor and quantizer kwargs "
                     "must be provided to construct FP8 workspace"
                 )
-            out = quantizer.quantize(tensor, internal=True)
+            out = quantizer.quantize(tensor)
 
             # Update cache
             if cache_name is not None:

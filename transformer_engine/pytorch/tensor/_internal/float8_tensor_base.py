@@ -108,17 +108,6 @@ class Float8TensorBase:
                    dtype: torch.dtype = torch.float32) -> torch.Tensor:
         return _FromFloat8Func.forward(None, self, dtype)
 
-    @staticmethod
-    def quantize(tensor: torch.Tensor,
-                 quantizer: Quantizer,
-    ) -> Float8TensorBase:
-            return _QuantizeFunc.forward(
-                None,
-                tensor,
-                quantizer,
-                internal=True,
-            )
-
     def __repr__(self):
         return (
             "Float8TensorBase("

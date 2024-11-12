@@ -32,11 +32,13 @@ class Quantizer(abc.ABC):
 
     rowwise_usage: bool
     columnwise_usage: bool
+    internal: bool
     single_usage_sufficient: bool = False
 
     def __init__(self, *, rowwise: bool, columnwise: bool) -> None:
         self.rowwise_usage = rowwise
         self.columnwise_usage = columnwise
+        self.internal = False
 
     @abc.abstractmethod
     def update_quantized(
@@ -51,13 +53,12 @@ class Quantizer(abc.ABC):
         tensor: torch.Tensor,
         *,
         out: Optional[QuantizedTensor] = None,
-        internal: bool = False,
     ) -> QuantizedTensor:
         if out is not None:
             return self.update_quantized(tensor, out)
-        if (not internal) and torch.is_grad_enabled():
-            return _QuantizeFunc.apply(tensor, self, internal)
-        return _QuantizeFunc.forward(None, tensor, self, internal)
+        if (not self.internal) and torch.is_grad_enabled():
+            return _QuantizeFunc.apply(tensor, self)
+        return _QuantizeFunc.forward(None, tensor, self)
 
     @abc.abstractmethod
     def make_empty(
@@ -97,10 +98,9 @@ class _QuantizeFunc(torch.autograd.Function):
         _ctx: Optional[torch.autograd.function.FunctionCtx],  # unused
         tensor: torch.Tensor,
         quantizer: Quantizer,
-        internal: bool = False,
     ) -> QuantizedTensor:
         # pylint: disable=missing-function-docstring
-        return tex.generic_cast(tensor, quantizer, internal)
+        return tex.quantize(tensor, quantizer)
 
     @staticmethod
     def backward(

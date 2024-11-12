@@ -13,9 +13,7 @@
 
 namespace transformer_engine::pytorch {
 
-  /// TODO: Rename to "quantize"
-py::object cast(const at::Tensor& tensor, py::handle quantizer,
-                bool internal) {
+py::object quantize(const at::Tensor& tensor, py::handle quantizer) {
   using namespace pybind11::literals;
   init_extension();
   auto input_tensor = tensor.contiguous();
@@ -27,6 +25,7 @@ py::object cast(const at::Tensor& tensor, py::handle quantizer,
     auto py_scale = quantizer.attr("scale");
     auto py_amax = quantizer.attr("amax");
     DType type = quantizer.attr("dtype").cast<DType>();
+    bool internal = quantizer.attr("internal").cast<bool>();
     const at::Tensor& scale = py_scale.cast<at::Tensor>();
     at::Tensor amax = py_amax.cast<at::Tensor>();
     auto opts = input_tensor.options().dtype(torch::kFloat32);

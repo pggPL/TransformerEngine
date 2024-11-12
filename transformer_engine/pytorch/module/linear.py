@@ -129,7 +129,7 @@ class _Linear(torch.autograd.Function):
 
         own_quantized_input = not isinstance(inputmat, QuantizedTensor)
         if fp8 and own_quantized_input:
-            inputmat = input_quantizer.quantize(inputmat, internal=True)
+            inputmat = input_quantizer.quantize(inputmat)
 
         # Column Parallel Linear
         if parallel_mode == "column" and sequence_parallel:
@@ -811,11 +811,14 @@ class Linear(TransformerEngineBaseModule):
             grad_output_quantizer, grad_input_quantizer = None, None
             if self.fp8:
                 input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_INPUT]
+                input_quantizer.internal = True
                 weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
+                weight_quantizer.internal = True
                 if fp8_output:
                     output_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_OUTPUT]
                 if torch.is_grad_enabled():
                     grad_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
+                    grad_output_quantizer.internal = True
 
             if torch.is_grad_enabled():
                 linear_fn = _Linear.apply
