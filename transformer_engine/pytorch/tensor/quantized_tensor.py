@@ -7,7 +7,7 @@
 from __future__ import annotations
 import abc
 import copy
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Iterable
 
 import torch
 from torch.utils._pytree import tree_map
@@ -83,8 +83,8 @@ class _QuantizeFunc(torch.autograd.Function):
     def forward(
         _ctx: torch.autograd.function.FunctionCtx,  # unused
         tensor: torch.Tensor,
-        quantizer: Float8Quantizer,
-    ) -> Float8Tensor:
+        quantizer: Quantizer,
+    ) -> QuantizedTensor:
         # pylint: disable=missing-function-docstring
         return tex.generic_cast(tensor, quantizer)
 
