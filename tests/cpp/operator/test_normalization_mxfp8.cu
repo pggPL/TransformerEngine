@@ -79,7 +79,7 @@ void dequantize(Tensor& input, Tensor& output)
               const size_t j_max = std::min(j_min + block_size_X, cols);
 
               const size_t mx_scale_idx = block_idx_Y * blocks_per_row + block_idx_X;
-             
+
               // TODO: padded SFs i.e. (4,128)
               const float scale_inv = exp2f(static_cast<float>(scale_ptr[mx_scale_idx]) - FP32_EXPONENT_BIAS);
               for (size_t i = i_min; i < i_max; ++i) {

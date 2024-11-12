@@ -214,7 +214,7 @@ void nvte_fp8_quantize_swiglu(const NVTETensor grad, const NVTETensor gated_inpu
   Supported activations: SiLU
 */
 void nvte_fp8_quantize_swiglu_x2(const NVTETensor grad, const NVTETensor gated_input,
-                                 NVTETensor output_rowwise, NVTETensor output_colwise, 
+                                 NVTETensor output_rowwise, NVTETensor output_colwise,
                                  cudaStream_t stream);
 
 #ifdef __cplusplus

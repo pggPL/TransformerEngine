@@ -21,7 +21,7 @@
 
 #include "../common.h"
 // TODO move cudnn common utils out of fused_attn
-#include "../fused_attn/utils.h"
+#include "../cudnn_utils.h"
 
 namespace transformer_engine {
 
@@ -313,8 +313,6 @@ class NormFwdTe : public NormBase {
   void initialize() override;
 
   void set_workspace_and_barrier(void* workspace_ptr, void* barrier_ptr) override;
-
-  void set_amax();
 
   void execute() override;
 

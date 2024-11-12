@@ -49,7 +49,7 @@ void scale_block(const IType* grad,
             float after_dsilu = dsilu(silu_elt) * grad_elt * gate_elt;
             float after_dgate = silu(silu_elt) * grad_elt;
 
-            const float gated_amax = max(abs(after_dsilu), abs(after_dgate)); 
+            const float gated_amax = max(abs(after_dsilu), abs(after_dgate));
 
             if (abs(gated_amax) > block_amax) { block_amax = abs(gated_amax); }
         }

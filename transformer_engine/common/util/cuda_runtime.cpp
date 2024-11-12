@@ -90,10 +90,10 @@ void stream_priority_range(int *low_priority, int *high_priority, int device_id)
   NVTE_CHECK(0 <= device_id && device_id < num_devices(), "invalid CUDA device ID");
   auto init = [&]() {
     int ori_dev = current_device();
-    if(device_id != ori_dev) NVTE_CHECK_CUDA(cudaSetDevice(device_id));
+    if (device_id != ori_dev) NVTE_CHECK_CUDA(cudaSetDevice(device_id));
     int min_pri, max_pri;
     NVTE_CHECK_CUDA(cudaDeviceGetStreamPriorityRange(&min_pri, &max_pri));
-    if(device_id != ori_dev) NVTE_CHECK_CUDA(cudaSetDevice(ori_dev));
+    if (device_id != ori_dev) NVTE_CHECK_CUDA(cudaSetDevice(ori_dev));
     cache[device_id] = std::make_pair(min_pri, max_pri);
   };
   std::call_once(flags[device_id], init);

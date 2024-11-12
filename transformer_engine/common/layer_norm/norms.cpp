@@ -202,7 +202,6 @@ NormFwdTe<NormEnum>::NormFwdTe(const Tensor& x, const Tensor& gamma, const Tenso
                                          z->data.dtype,     // otype,
                                          DType::kFloat32,   // ctype,
                                          params);
-  if (params.fp8_out) set_amax();
 }
 
 /*** BWD TE ***/
@@ -266,12 +265,6 @@ void NormFwdTe<NormEnum>::set_workspace_and_barrier(void* workspace_ptr, void* b
                     _launch_params.barrier_size * typeToSize(DType::kFloat32),
                     _launch_params.stream);
   }
-}
-
-template <NVTE_NORM_TYPE NormEnum>
-void NormFwdTe<NormEnum>::set_amax() {
-  cudaMemsetAsync(_launch_params.params.amax, 0, _launch_params.params.amax_byte_size,
-                  _launch_params.stream);
 }
 
 template <NVTE_NORM_TYPE NormEnum>
