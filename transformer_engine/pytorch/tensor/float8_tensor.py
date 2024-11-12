@@ -4,8 +4,7 @@
 
 """Tensor class with FP8 data"""
 from __future__ import annotations
-from typing import Any, Dict, Optional, Tuple
-import warnings
+from typing import Any, Dict, Optional, Tuple, Iterable
 
 import torch
 import transformer_engine_torch as tex
@@ -60,14 +59,14 @@ class Float8Quantizer(Quantizer):
 
     scale: torch.Tensor
     amax: torch.Tensor
-    dtype: TE_Dtype
+    dtype: TE_DType
     single_usage_sufficient: bool = True
 
     def __init__(
         self,
         scale: torch.Tensor,
         amax: torch.Tensor,
-        fp8_dtype: TE_Dtype,
+        fp8_dtype: TE_DType,
         *,
         rowwise: bool = True,
         columnwise: bool = True,
@@ -110,7 +109,7 @@ class Float8Quantizer(Quantizer):
                 scale=self.scale,
                 amax=self.amax,
                 scale_inv=dst._scale_inv,
-                noop_flag=noop_flag,  ### TODO How to handle?
+                # noop_flag=noop_flag,  ### TODO How to handle?
             )
             dst._transpose_invalid = False
 
