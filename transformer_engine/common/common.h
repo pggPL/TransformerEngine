@@ -219,6 +219,25 @@ struct TypeInfo {
       NVTE_ERROR("Invalid type.");                              \
   }
 
+#define TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(dtype, type, ...) \
+  switch (dtype) {                                                   \
+    using namespace transformer_engine;                              \
+    case DType::kFloat32: {                                          \
+      using type = float;                                            \
+      { __VA_ARGS__ }                                                \
+    } break;                                                         \
+    case DType::kFloat16: {                                          \
+      using type = fp16;                                             \
+      { __VA_ARGS__ }                                                \
+    } break;                                                         \
+    case DType::kBFloat16: {                                         \
+      using type = bf16;                                             \
+      { __VA_ARGS__ }                                                \
+    } break;                                                         \
+    default:                                                         \
+      NVTE_ERROR("Invalid type.");                                   \
+  }
+
 #define TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(dtype, type, ...) \
   switch (dtype) {                                               \
     using namespace transformer_engine;                          \
