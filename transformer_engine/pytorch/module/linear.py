@@ -224,7 +224,7 @@ class _Linear(torch.autograd.Function):
             )
 
             saved_input_tensors, saved_input = prepare_for_saving(saved_inputmat)
-            saved_weight_tensors, saved_weight = prepare_for_saving(saved_inputmat)
+            saved_weight_tensors, saved_weight = prepare_for_saving(weight_fp8)
             ctx.save_for_backward(
                 *saved_input_tensors,
                 *saved_weight_tensors,
