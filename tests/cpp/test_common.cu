@@ -211,8 +211,9 @@ void Tensor::set_scale_inv(float scale_inv) {
     } else{
       static std::mt19937 gen(12345);
       std::uniform_int_distribution<uint8_t> dis(0, 127);
+      auto* scale_inv_ptr = cpu_scale_inv_ptr<uint8_t>();
       for (size_t i = 0; i < num_scales; i++){
-        cpu_scale_inv_ptr<uint8_t>()[i] = dis(gen);
+        scale_inv_ptr[i] = dis(gen);
       }
     }
     from_cpu();
