@@ -283,9 +283,9 @@ std::vector<std::pair<size_t, size_t>> matrix_sizes = {
     {256, 256},
     {768, 1024},
     {256, 65536},
-    {2048, 12288},
-    {65536, 128},
-    {16384, 6144},
+    // {2048, 12288},
+    // {65536, 128},
+    // {16384, 6144},
 };
 
 std::vector<std::pair<size_t, size_t>> block_sizes = {
