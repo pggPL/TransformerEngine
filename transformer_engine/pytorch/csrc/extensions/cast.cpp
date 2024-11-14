@@ -16,7 +16,8 @@ namespace transformer_engine::pytorch {
   /// TODO Rename to "quantize"
 py::object cast(const at::Tensor& tensor, py::handle quantizer) {
   using namespace pybind11::literals;
-  init_extension();
+  init_float8_extension();
+  init_mxfp8_extension();
   auto input_tensor = tensor.contiguous();
   if (detail::IsFloat8QParams(quantizer.ptr())) {
     auto rowwise_usage = quantizer.attr("rowwise_usage").cast<bool>();

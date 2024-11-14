@@ -21,15 +21,29 @@ namespace transformer_engine::pytorch {
 
 PyTypeObject *Float8TensorPythonClass = nullptr;  /// TODO Remove
 PyTypeObject *Float8QParamsClass = nullptr;  /// TODO Rename to Float8QuantizerClass
+PyTypeObject *MXFP8TensorPythonClass = nullptr;  /// TODO Remove
+PyTypeObject *MXFP8QParamsClass = nullptr;  /// TODO Rename
 
-void init_extension() {
+void init_float8_extension() {
   if (Float8TensorPythonClass) return;
-  auto float8tensor_module = py::module_::import("transformer_engine.pytorch.tensor.float8_tensor");
-  Float8QParamsClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(),
+  auto fp8_module = py::module_::import("transformer_engine.pytorch.tensor.float8_tensor");
+  Float8QParamsClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
                                                                               "Float8Quantizer"));
-  Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(), "Float8Tensor"));
+  Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
+                                                                                   "Float8Tensor"));
   NVTE_CHECK(Float8TensorPythonClass != nullptr,
-             "Internal error: could not initialize pyTorch extension.");
+             "Internal error: could not initialize pyTorch Float8 extension.");
+}
+
+void init_mxfp8_extension() {
+  if (MXFP8TensorPythonClass) return;
+  auto fp8_module = py::module_::import("transformer_engine.pytorch.tensor.mxfp8_tensor");
+  MXFP8QParamsClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
+                                                                              "MXFP8Quantizer"));
+  MXFP8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
+                                                                                  "MXFP8Tensor"));
+  NVTE_CHECK(MXFP8TensorPythonClass != nullptr,
+             "Internal error: could not initialize pyTorch MXFP8 extension.");
 }
 
 }  // namespace transformer_engine::pytorch
@@ -44,7 +58,7 @@ struct type_caster<transformer_engine::pytorch::Float8Tensor> {
 
   bool load(handle src, bool) {
     std::cout << "Loading Float8Tensor!" << std::endl;
-    transformer_engine::pytorch::init_extension();
+    transformer_engine::pytorch::init_float8_extension();
     if (Py_TYPE(src.ptr()) != transformer_engine::pytorch::Float8TensorPythonClass) return false;
     auto py_data = src.attr("_data");
     value.data = py_data.cast<at::Tensor>();
@@ -61,6 +75,35 @@ struct type_caster<transformer_engine::pytorch::Float8Tensor> {
 
   static handle cast(const transformer_engine::pytorch::Float8Tensor &src, return_value_policy, handle) {
     throw std::runtime_error("Casting back from Float8Tensor not implemented yet!");
+    return none().release();
+  }
+};
+
+template <>
+struct type_caster<transformer_engine::pytorch::MXFP8Tensor> {
+ public:
+  PYBIND11_TYPE_CASTER(transformer_engine::pytorch::MXFP8Tensor,
+                       _("transformer_engine.pytorch.tensor.MXFP8Tensor"));
+
+  bool load(handle src, bool) {
+    std::cout << "Loading MXFP8Tensor!" << std::endl;
+    transformer_engine::pytorch::init_mxfp8_extension();
+    if (Py_TYPE(src.ptr()) != transformer_engine::pytorch::MXFP8TensorPythonClass) return false;
+    auto py_data = src.attr("_data");
+    value.data = py_data.cast<at::Tensor>();
+    auto py_transpose = src.attr("_transpose");
+    if (!py_transpose.is_none()) {
+      value.transpose = py_transpose.cast<at::Tensor>();
+    }
+    auto py_scale_inv = src.attr("_scale_inv");
+    value.scale_inv = py_scale_inv.cast<at::Tensor>();
+    auto py_dtype = src.attr("_fp8_dtype");
+    value.dtype = py_dtype.cast<transformer_engine::DType>();
+    return true;
+  }
+
+  static handle cast(const transformer_engine::pytorch::MXFP8Tensor &src, return_value_policy, handle) {
+    throw std::runtime_error("Casting back from MXFP8Tensor not implemented yet!");
     return none().release();
   }
 };

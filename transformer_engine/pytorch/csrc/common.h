@@ -111,6 +111,15 @@ class Float8Tensor {
   DType dtype;
 };
 
+class MXFP8Tensor {
+ public:
+  at::Tensor data_rowwise;
+  at::Tensor data_colwise;
+  at::Tensor scale_inv_rowwise;
+  at::Tensor scale_inv_colwise;
+  DType dtype;
+};
+
 class QuantizationParams {
  public:
   virtual NVTEScalingMode get_scaling_mode() const = 0;
@@ -141,6 +150,21 @@ class Float8Params : public QuantizationParams {
 
   virtual NVTEScalingMode get_scaling_mode() const override {
     return {-1, -1, 1};
+  }
+
+  virtual void set_quantization_params(TensorWrapper* tensor) const override;
+
+  virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
+                                                             DType dtype) const override;
+};
+
+class MXFP8Params : public QuantizationParams {
+ public:
+  DType dtype;
+  NVTEScalingMode scaling_mode;
+
+  virtual NVTEScalingMode get_scaling_mode() const override {
+    return scaling_mode;
   }
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;

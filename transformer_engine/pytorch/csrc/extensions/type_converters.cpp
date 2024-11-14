@@ -43,6 +43,35 @@ TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, QuantizationParams* 
   return ret;
 }
 
+TensorWrapper NVTETensorFromMXFP8Tensor(py::handle tensor, QuantizationParams* quantization_params) {
+  const at::Tensor &data_rowwise = tensor.attr("_data_rowwise").cast<at::Tensor>();
+  const at::Tensor &data_colwise = tensor.attr("_data_colwise").cast<at::Tensor>();
+  const at::Tensor &scale_inv_rowwise = tensor.attr("_scale_inv_rowwise").cast<at::Tensor>();
+  const at::Tensor &scale_inv_colwise = tensor.attr("_scale_inv_colwise").cast<at::Tensor>();
+  float *scale_inv_rowwise_dptr = reinterpret_cast<float*>(scale_inv_rowwise.data_ptr());
+  float *scale_inv_colwise_dptr = reinterpret_cast<float*>(scale_inv_colwise.data_ptr());
+  const DType dtype = tensor.attr("_fp8_dtype").cast<DType>();
+
+  const auto& shape = getTensorShape(data_rowwise);
+
+  auto ret = TensorWrapper(quantization_params->get_scaling_mode());
+  ret.set_rowwise_data(data_rowwise.data_ptr(), dtype, shape);
+  ret.set_columnwise_data(data_colwise->data_ptr(), dtype, shape);
+
+  const auto scale_inv_rowwise_dtype = GetTransformerEngineDType(scale_inv_rowwise.scalar_type());
+  const auto scale_inv_colwise_dtype = GetTransformerEngineDType(scale_inv_colwise.scalar_type());
+  const auto scale_inv_rowwise_shape = getTensorShape(scale_inv_rowwise);
+  const auto scale_inv_colwise_shape = getTensorShape(scale_inv_colwise);
+  ret.set_rowwise_scale_inv(scale_inv_rowwise_dptr,
+                            scale_inv_rowwise_dtype,
+                            scale_inv_rowwise_shape);
+  ret.set_columnwise_scale_inv(scale_inv_colwise_dptr,
+                               scale_inv_colwise_dtype,
+                               scale_inv_colwise_shape);
+  quantization_params->set_quantization_params(&ret);
+  return ret;
+}
+
 std::unique_ptr<QuantizationParams> CreateFloat8Params(const py::handle params) {
   auto ret = std::make_unique<Float8Params>();
 
@@ -53,6 +82,18 @@ std::unique_ptr<QuantizationParams> CreateFloat8Params(const py::handle params) 
   ret->amax = amax;
   ret->scale = scale;
   ret->dtype = type;
+
+  return ret;
+}
+
+std::unique_ptr<QuantizationParams> CreateMXFP8Params(const py::handle params) {
+  auto ret = std::make_unique<MXFP8Params>();
+
+  const DType type = params.attr("dtype").cast<DType>();
+  const NVTEScalingMode scaling_mode = params.attr("scaling_mode").cast<NVTEScalingMode>();
+
+  ret->dtype = type;
+  ret->scaling_mode = scaling_mode;
 
   return ret;
 }
