@@ -99,7 +99,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
   // const int thread_offset_X_colwise = tid_colwise_X;
 
   const int dbias_rowwise_offset_Y =
-      blockIdx.y * MXFP8_CHUNKS_PER_BLOCK_Y * THREADS_PER_CHUNK_Y_ROWWISE + tid_rowwise_Y;
+      blockIdx.y * MXFP8_CHUNKS_PER_BLOCK_Y + tid_rowwise_Y;
   const int dbias_rowwise_block_offset_X =
       blockIdx.x * MXFP8_CHUNKS_PER_BLOCK_X * MXFP8_CHUNK_DIM_X + thread_offset_X_rowwise;
   const int dbias_colwise_offset_Y = blockIdx.y;
@@ -111,12 +111,12 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
   float partial_dbias_colwise[MXFP8_CHUNKS_PER_BLOCK_X];
   if constexpr (IS_DBIAS) {
     if constexpr (COMPUTE_DBIAS_IN_ROWWISE_SECTION) {
-#pragma unroll
+      #pragma unroll
       for (int i = 0; i < MXFP8_CHUNKS_PER_BLOCK_X; ++i) {
         partial_dbias_rowwise[i].clear();
       }
     } else {
-#pragma unroll
+      #pragma unroll
       for (int i = 0; i < MXFP8_CHUNKS_PER_BLOCK_X; ++i) {
         partial_dbias_colwise[i] = 0;
       }
@@ -373,14 +373,38 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
 
   if constexpr (IS_DBIAS) {
     if constexpr (COMPUTE_DBIAS_IN_ROWWISE_SECTION) {
-#pragma unroll
-      for (int i = 0; i < MXFP8_CHUNKS_PER_BLOCK_X; ++i) {
-        const int dbias_rowwise_offset_X = dbias_rowwise_block_offset_X + i * MXFP8_CHUNK_DIM_X;
-        const int dbias_offset = dbias_rowwise_offset_Y * dbias_stride + dbias_rowwise_offset_X;
-        partial_dbias_rowwise[i].store_to(&dbias_workspace[dbias_offset]);
+      constexpr size_t CZ = MXFP8_CHUNKS_PER_BLOCK_X;
+      constexpr size_t Y = THREADS_PER_CHUNK_Y_ROWWISE - 1;
+      constexpr size_t X = THREADS_PER_CHUNK_X_ROWWISE;
+      __shared__ float shmem_partial_dbias_rowwise[CZ][Y][X][ELEMS_PER_THREAD];
+
+      if (tid_rowwise_Y > 0) {
+        #pragma unroll
+        for (int c = 0; c < MXFP8_CHUNKS_PER_BLOCK_X; ++c) {
+          partial_dbias_rowwise[c].store_to(&shmem_partial_dbias_rowwise[c][tid_rowwise_Y - 1][tid_rowwise_X]);
+        }
+      }
+      __syncthreads();
+
+      if (tid_rowwise_Y == 0) {
+        #pragma unroll
+        for (int c = 0; c < MXFP8_CHUNKS_PER_BLOCK_X; ++c) {
+          Vec<float, ELEMS_PER_THREAD> other_row_dbias;
+          #pragma unroll
+          for (int i = 0; i < Y; ++i) {
+            other_row_dbias.load_from(&shmem_partial_dbias_rowwise[c][i][tid_rowwise_X]);
+            #pragma unroll
+            for (int j = 0; j < ELEMS_PER_THREAD; ++j) {
+              partial_dbias_rowwise[c].data.elt[j] += other_row_dbias.data.elt[j];
+            }
+          }
+          const int dbias_rowwise_offset_X = dbias_rowwise_block_offset_X + c * MXFP8_CHUNK_DIM_X;
+          const int dbias_offset = dbias_rowwise_offset_Y * dbias_stride + dbias_rowwise_offset_X;
+          partial_dbias_rowwise[c].store_to(&dbias_workspace[dbias_offset]);
+        }
       }
     } else {
-#pragma unroll
+      #pragma unroll
       for (int i = 0; i < MXFP8_CHUNKS_PER_BLOCK_X; ++i) {
         const int dbias_colwise_offset_X = dbias_colwise_block_offset_X + i * MXFP8_CHUNK_DIM_X;
         const int dbias_offset = dbias_colwise_offset_Y * dbias_stride + dbias_colwise_offset_X;
@@ -646,7 +670,7 @@ constexpr size_t CHUNKS_PER_BLOCK = 128;
 constexpr size_t THREADS_PER_BLOCK = FP8_THREADS_PER_CHUNK;
 constexpr size_t CHUNK_SIZE = THREADS_PER_BLOCK;
 constexpr size_t ELEMS_PER_BLOCK = CHUNKS_PER_BLOCK * CHUNK_SIZE;
-constexpr size_t CHUNKS_PER_ITERATION = 8;
+constexpr size_t CHUNKS_PER_ITERATION = 32;
 constexpr size_t SHMEM_DIM = CHUNKS_PER_ITERATION * CHUNK_SIZE;
 constexpr size_t ITERATIONS = CHUNKS_PER_BLOCK / CHUNKS_PER_ITERATION;
 constexpr size_t SHMEM_BUFFERS = 2;
@@ -977,8 +1001,7 @@ void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_row
       USE_ROWWISE_SCALING ? reinterpret_cast<e8m0_t *>(output_rowwise->scale_inv.dptr) : nullptr;
   e8m0_t *const scales_colwise_ptr =
       USE_COLWISE_SCALING ? reinterpret_cast<e8m0_t *>(output_colwise->scale_inv.dptr) : nullptr;
-  const size_t dbias_rows =
-      (scale_dim_Y_colwise > 1) ? blocks_Y : blocks_Y * THREADS_PER_CHUNK_Y_ROWWISE;
+  const size_t dbias_rows = blocks_Y;
   const size_t dbias_cols = cols;
 
   if constexpr (IS_DBIAS) {
