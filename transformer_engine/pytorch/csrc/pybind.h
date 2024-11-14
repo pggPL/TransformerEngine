@@ -16,6 +16,7 @@
 namespace transformer_engine::pytorch {
 
 extern PyTypeObject *Float8TensorPythonClass;
+extern PyTypeObject *Float8TensorBasePythonClass;
 extern PyTypeObject *Float8QParamsClass;
 
 void init_extension();
@@ -27,7 +28,8 @@ inline bool IsFloat8QParams(PyObject *obj) {
 }
 
 inline bool IsFloat8Tensor(PyObject *obj) {
-  return Py_TYPE(obj) == Float8TensorPythonClass;
+  return Py_TYPE(obj) == Float8TensorPythonClass ||
+         Py_TYPE(obj) == Float8TensorBasePythonClass;
 }
 
 TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, QuantizationParams* quantization_params);

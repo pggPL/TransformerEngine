@@ -44,7 +44,13 @@ from ..constants import GemmParallelModes, dist_group_type
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
 from ..float8_tensor import Float8Tensor
-from ..tensor import QuantizedTensor, Quantizer
+from ..tensor.quantized_tensor import (
+    QuantizedTensor,
+    Quantizer,
+    prepare_for_saving,
+    restore_from_saved
+)
+
 from ..cpu_offload import is_cpu_offload_enabled
 
 __all__ = ["Linear"]
@@ -217,15 +223,19 @@ class _Linear(torch.autograd.Function):
                 weight_fp8 if fp8 and not isinstance(weight, QuantizedTensor) else None,
             )
 
+            saved_input_tensors, saved_input = prepare_for_saving(saved_inputmat)
+            saved_weight_tensors, saved_weight = prepare_for_saving(weight_fp8)
             ctx.save_for_backward(
-                saved_inputmat,
-                weight_fp8,
+                *saved_input_tensors,
+                *saved_weight_tensors,
                 weight.main_grad if cpu_offloading and fuse_wgrad_accumulation else None,
                 bias,
                 weight if (fuse_wgrad_accumulation and
                            hasattr(weight, "grad_added_to_main_grad")) else None
             )
 
+            ctx.saved_input = saved_input
+            ctx.saved_weight = saved_weight
             ctx.activation_dtype = activation_dtype
             ctx.fp8 = fp8
             ctx.grad_output_quantizer = grad_output_quantizer
@@ -267,13 +277,14 @@ class _Linear(torch.autograd.Function):
         # pylint: disable=missing-function-docstring
 
         with torch.cuda.nvtx.range("_Linear_backward"):
+            saved_tensors = ctx.saved_tensors
+            inputmat, saved_tensors = restore_from_saved(ctx.saved_input, saved_tensors)
+            weight_fp8, saved_tensors = restore_from_saved(ctx.saved_weight, saved_tensors)
             (
-                inputmat,
-                weight_fp8,
                 main_grad,
                 bias,
                 weight
-            ) = ctx.saved_tensors
+            ) = saved_tensors
 
             # Gather intermediate/activation tensors if needed
             # NOTE: weight_fp8 = weight when ctx.fp8 == False and torch.disttributed.FSDP already
@@ -800,11 +811,14 @@ class Linear(TransformerEngineBaseModule):
             grad_output_quantizer, grad_input_quantizer = None, None
             if self.fp8:
                 input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_INPUT]
+                input_quantizer.internal = True
                 weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
+                weight_quantizer.internal = True
                 if fp8_output:
                     output_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_OUTPUT]
                 if torch.is_grad_enabled():
                     grad_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
+                    grad_output_quantizer.internal = True
 
             if torch.is_grad_enabled():
                 linear_fn = _Linear.apply

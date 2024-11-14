@@ -20,6 +20,7 @@
 namespace transformer_engine::pytorch {
 
 PyTypeObject *Float8TensorPythonClass = nullptr;  /// TODO Remove
+PyTypeObject *Float8TensorBasePythonClass = nullptr;
 PyTypeObject *Float8QParamsClass = nullptr;  /// TODO Rename to Float8QuantizerClass
 
 void init_extension() {
@@ -28,50 +29,22 @@ void init_extension() {
   Float8QParamsClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(),
                                                                               "Float8Quantizer"));
   Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(), "Float8Tensor"));
+  auto float8tensorbase_module =
+    py::module_::import("transformer_engine.pytorch.tensor._internal.float8_tensor_base");
+  Float8TensorBasePythonClass = reinterpret_cast<PyTypeObject*>(
+      PyObject_GetAttrString(float8tensorbase_module.ptr(),
+                             "Float8TensorBase"));
   NVTE_CHECK(Float8TensorPythonClass != nullptr,
              "Internal error: could not initialize pyTorch extension.");
 }
 
 }  // namespace transformer_engine::pytorch
 
-namespace pybind11::detail {
-
-template <>
-struct type_caster<transformer_engine::pytorch::Float8Tensor> {
- public:
-  PYBIND11_TYPE_CASTER(transformer_engine::pytorch::Float8Tensor,
-                       _("transformer_engine.pytorch.tensor.Float8Tensor"));
-
-  bool load(handle src, bool) {
-    std::cout << "Loading Float8Tensor!" << std::endl;
-    transformer_engine::pytorch::init_extension();
-    if (Py_TYPE(src.ptr()) != transformer_engine::pytorch::Float8TensorPythonClass) return false;
-    auto py_data = src.attr("_data");
-    value.data = py_data.cast<at::Tensor>();
-    auto py_transpose = src.attr("_transpose");
-    if (!py_transpose.is_none()) {
-      value.transpose = py_transpose.cast<at::Tensor>();
-    }
-    auto py_scale_inv = src.attr("_scale_inv");
-    value.scale_inv = py_scale_inv.cast<at::Tensor>();
-    auto py_dtype = src.attr("_fp8_dtype");
-    value.dtype = py_dtype.cast<transformer_engine::DType>();
-    return true;
-  }
-
-  static handle cast(const transformer_engine::pytorch::Float8Tensor &src, return_value_policy, handle) {
-    throw std::runtime_error("Casting back from Float8Tensor not implemented yet!");
-    return none().release();
-  }
-};
-
-}  // namespace pybind11::detail
-
 #include "common/util/pybind_helper.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   NVTE_DECLARE_COMMON_PYBIND11_HANDLES(m)
-  m.def("generic_cast", transformer_engine::pytorch::cast);
+  m.def("quantize", transformer_engine::pytorch::quantize);
   m.def("generic_gemm", transformer_engine::pytorch::gemm);
 
   // Permutation functions
