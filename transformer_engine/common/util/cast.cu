@@ -642,7 +642,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-constexpr size_t CHUNKS_PER_BLOCK = 64;
+constexpr size_t CHUNKS_PER_BLOCK = 128;
 constexpr size_t THREADS_PER_BLOCK = FP8_THREADS_PER_CHUNK;
 constexpr size_t CHUNK_SIZE = THREADS_PER_BLOCK;
 constexpr size_t ELEMS_PER_BLOCK = CHUNKS_PER_BLOCK * CHUNK_SIZE;
@@ -696,10 +696,12 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
   int parity = 0;
 
   constexpr int iter_zero = 0;
+  constexpr int buff_zero = 0;
+
   if (is_master_thread) {
     // Initiate bulk tensor copy
     ptx::cp_async_bulk_tensor_1d_global_to_shared(
-        reinterpret_cast<uint64_t *>(&in_sh[iter_zero]), 
+        reinterpret_cast<uint64_t *>(&in_sh[buff_zero]), 
         reinterpret_cast<const uint64_t *>(input),
         transaction_size_IN,
         &mbar[iter_zero]);
@@ -746,7 +748,6 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
     for (int chunk = 0; chunk < CHUNKS_PER_ITERATION; ++chunk) {
       const int shmem_offset = chunk * CHUNK_SIZE + threadIdx.x;
       float elt = static_cast<float>(in_sh[buff][shmem_offset]);
-
       if (isfinite(elt)) {
         amax = fmaxf(amax, fabsf(elt));
       }
@@ -855,7 +856,7 @@ void reduce_dbias(const float *workspace_ptr, Tensor *dbias, const size_t rows, 
 void cast_fp8_1D(const Tensor &input, Tensor *output, cudaStream_t stream) {
   const size_t N = product(input.data.shape);
 
-  const bool isFullTile = (N % CHUNK_SIZE == 0);
+  const bool isFullTile = (N % ELEMS_PER_BLOCK == 0);
   NVTE_CHECK(isFullTile, "Only full tiles are supported.");
 
   const size_t chunks = DIVUP(N, CHUNK_SIZE);
@@ -1059,6 +1060,71 @@ __device__ inline float dequantize_func(float value, const DequantizeParam &para
 
 }  // namespace detail
 
+// Supported by the Arch < 10.0
+void CastVectorizedUnaryKernelLauncher(const Tensor &input, const Tensor &act_input, Tensor *output,
+                                       Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
+  const size_t N = product(input.data.shape);
+  TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(input.data.dtype, IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->data.dtype, OType,
+
+          constexpr int nvec = 32 / sizeof(IType);
+          VectorizedUnaryKernelLauncher<nvec, detail::Empty, detail::identity>(
+              reinterpret_cast<const IType *>(input.data.dptr),
+              reinterpret_cast<OType *>(output->data.dptr),
+              reinterpret_cast<const fp32 *>(output->scale.dptr),
+              reinterpret_cast<fp32 *>(output->amax.dptr),
+              reinterpret_cast<fp32 *>(output->scale_inv.dptr), N, {},
+              stream);
+      );  // NOLINT(*)
+  );      // NOLINT(*)
+}
+
+// Supported by the Arch >= 10.0
+template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
+void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor &act_input, Tensor *output,
+                              Tensor *dbias, Tensor *workspace, cudaStream_t stream)
+{
+  // MXFP8 Scaling
+  if (is_mxfp8_cast_supported_shape(output)) {
+    const bool is_colwise_scaling = (output->scaling_mode.x > 1);
+    if (is_colwise_scaling) {
+      cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::COLWISE, ParamOP, OP>(
+          input, act_input, nullptr, output, dbias, workspace, stream);
+    } else {
+      cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::ROWWISE, ParamOP, OP>(
+          input, act_input, output, nullptr, dbias, workspace, stream);
+    }
+  // Regular FP8 Scaling
+  } else if (is_fp8_cast_supported_shape(output)) {
+    if (!IS_DBIAS && !IS_DACT) {
+      const size_t N = product(input.data.shape);
+      const bool isFullTile = (N % ELEMS_PER_BLOCK == 0);
+      // Aligned
+      if (isFullTile) {
+        cast_fp8_1D(input, output, stream);
+      } else {
+      // Unaligned
+        CastVectorizedUnaryKernelLauncher(input, act_input, output, dbias, workspace, stream);
+      }
+    } else {
+      cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
+    }
+  } else {
+    NVTE_ERROR("Not implemented on Arch >= 10.0: " + to_string(output->scaling_mode) + ".");
+  }
+}
+
+// Supported by the Arch < 10.0
+template <bool IS_DBIAS, bool IS_DACT>
+void fp8_quantize_arch_l_100(const Tensor &input, const Tensor &act_input, Tensor *output,
+                             Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
+  if (is_delayed_tensor_scaling(output->scaling_mode) && !IS_DBIAS && !IS_DACT) {
+    CastVectorizedUnaryKernelLauncher(input, act_input, output, dbias, workspace, stream);
+  } else {
+    NVTE_ERROR("Not implemented on Arch < 10.0: " + to_string(output->scaling_mode) + ".");
+  }
+}
+
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
 void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, Tensor *dbias,
                   Tensor *workspace, cudaStream_t stream) {
@@ -1081,47 +1147,12 @@ void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, 
 
   // Supported by the Arch >= 10.0
   if (is_supported_by_CC_100()) {
-    // MXFP8 Scaling
-    if (is_mxfp8_cast_supported_shape(output)) {
-      const bool is_colwise_scaling = (output->scaling_mode.x > 1);
-      if (is_colwise_scaling) {
-        cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::COLWISE, ParamOP, OP>(
-            input, act_input, nullptr, output, dbias, workspace, stream);
-      } else {
-        cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::ROWWISE, ParamOP, OP>(
-            input, act_input, output, nullptr, dbias, workspace, stream);
-      }
-    // Regular FP8 Scaling
-    } else if (is_fp8_cast_supported_shape(output)) {
-      if (!IS_DBIAS && !IS_DACT) {
-        cast_fp8_1D(input, output, stream);
-      } else {
-        cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
-      }
-    } else {
-      NVTE_ERROR("Not implemented on Arch >= 10.0: " + to_string(output->scaling_mode) + ".");
-    }
-    return;
-  }
-
-  // Supported by the Arch < 10.0
-  if (is_delayed_tensor_scaling(output->scaling_mode) && !IS_DBIAS && !IS_DACT) {
-    const size_t N = product(input.data.shape);
-    TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
-        TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->data.dtype, OType,
-
-            constexpr int nvec = 32 / sizeof(IType);
-            VectorizedUnaryKernelLauncher<nvec, detail::Empty, detail::identity>(
-                reinterpret_cast<const IType *>(input.data.dptr),
-                reinterpret_cast<OType *>(output->data.dptr),
-                reinterpret_cast<const fp32 *>(output->scale.dptr),
-                reinterpret_cast<fp32 *>(output->amax.dptr),
-                reinterpret_cast<fp32 *>(output->scale_inv.dptr), N, {},
-                stream);
-        );  // NOLINT(*)
-    );      // NOLINT(*)
+    fp8_quantize_arch_ge_100<IS_DBIAS, IS_DACT, ParamOP, OP>
+      (input, act_input, output, dbias, workspace, stream);
   } else {
-    NVTE_ERROR("Not implemented on Arch < 10.0: " + to_string(output->scaling_mode) + ".");
+  // Supported by the Arch < 10.0
+    fp8_quantize_arch_l_100<IS_DBIAS, IS_DACT>
+      (input, act_input, output, dbias, workspace, stream);
   }
 }
 
