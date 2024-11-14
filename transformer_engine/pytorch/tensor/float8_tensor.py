@@ -590,7 +590,7 @@ class _ViewFunc(torch.autograd.Function):
                             fp8_scale_inv=tensor._scale_inv,
                             fp8_dtype=tensor._fp8_dtype,
                             data_transpose=new_transpose,
-                            proxy=tensor._proxy,
+                            quantizer=tensor._quantizer,
         )
 
     @staticmethod
@@ -612,7 +612,7 @@ class _ViewFunc(torch.autograd.Function):
                                  fp8_scale_inv=grad._scale_inv,
                                  fp8_dtype=grad._fp8_dtype,
                                  data_transpose=new_transpose,
-                                 proxy=grad._proxy,
+                                 quantizer=grad._quantizer,
             )
             return dgrad, None
         return grad.view(ctx.shape), None
@@ -650,7 +650,7 @@ class _ReshapeFunc(torch.autograd.Function):
                             fp8_scale_inv=tensor._scale_inv,
                             fp8_dtype=tensor._fp8_dtype,
                             data_transpose=new_transpose,
-                            proxy=tensor._proxy,
+                            quantizer=tensor._quantizer,
         )
 
     @staticmethod
@@ -672,7 +672,7 @@ class _ReshapeFunc(torch.autograd.Function):
                                  fp8_scale_inv=grad._scale_inv,
                                  fp8_dtype=grad._fp8_dtype,
                                  data_transpose=new_transpose,
-                                 proxy=grad._proxy,
+                                 quantizer=grad._quantizer,
             )
             return dgrad, None
         return grad.reshape(ctx.shape), None
