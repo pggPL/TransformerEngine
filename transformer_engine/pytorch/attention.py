@@ -918,7 +918,7 @@ def get_attention_backend(
         and use_fused_attention
         and fused_attention_backend == FusedAttnBackend["F16_arbitrary_seqlen"]
     ):
-        if device_compute_capability == (9, 0):
+        if device_compute_capability >= (9, 0):
             logger.debug(
                 "Disabling FlashAttention to give FusedAttention preference on Hopper+ "
                 "for performance reasons"
