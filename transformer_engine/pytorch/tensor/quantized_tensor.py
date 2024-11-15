@@ -5,9 +5,9 @@
 """Tensor with quantized data"""
 
 from __future__ import annotations
+from typing import Optional, Tuple, Iterable, Any, Dict
 import abc
 import copy
-from typing import Optional, Tuple, Iterable
 
 import torch
 from torch.utils._pytree import tree_map
@@ -15,16 +15,30 @@ from torch.utils._pytree import tree_map
 import transformer_engine_torch as tex
 from ...common.recipe import Recipe
 
+def prepare_for_saving(tensor) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
+    if isinstance(tensor, torch.Tensor):
+        return [tensor], None
+    return tensor.prepare_for_saving()
+
+def restore_from_saved(tensor: Optional[Any],
+                       saved_tensors: list[Optional[torch.Tensor]]
+) -> Tuple[Optional[Any], list[Optional[torch.Tensor]]]:
+    if tensor is None:
+        return saved_tensors[0], saved_tensors[1:]
+    new_tensors = tensor.restore_from_saved(saved_tensors)
+    return tensor, new_tensors
 
 class Quantizer(abc.ABC):
 
     rowwise_usage: bool
     columnwise_usage: bool
+    internal: bool
     single_usage_sufficient: bool = False
 
     def __init__(self, *, rowwise: bool, columnwise: bool) -> None:
         self.rowwise_usage = rowwise
         self.columnwise_usage = columnwise
+        self.internal = False
 
     @abc.abstractmethod
     def update_quantized(
@@ -41,8 +55,8 @@ class Quantizer(abc.ABC):
         out: Optional[QuantizedTensor] = None,
     ) -> QuantizedTensor:
         if out is not None:
-            return self._quantize_impl(tensor, out)
-        if torch.is_grad_enabled():
+            return self.update_quantized(tensor, out)
+        if (not self.internal) and torch.is_grad_enabled():
             return _QuantizeFunc.apply(tensor, self)
         return _QuantizeFunc.forward(None, tensor, self)
 
@@ -81,12 +95,12 @@ class _QuantizeFunc(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        _ctx: Optional[torch.autograd.function.FunctionCtx],  # unused
         tensor: torch.Tensor,
         quantizer: Quantizer,
     ) -> QuantizedTensor:
         # pylint: disable=missing-function-docstring
-        return tex.generic_cast(tensor, quantizer)
+        return tex.quantize(tensor, quantizer)
 
     @staticmethod
     def backward(
@@ -97,47 +111,46 @@ class _QuantizeFunc(torch.autograd.Function):
         # Assume that we want gradients in full precision
         return grad, None
 
-
-class _DequantizeFunc(torch.autograd.Function):
-    """Autograd function to convert quantized tensor to standard tensor"""
-
-    @staticmethod
-    def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        tensor: QuantizedTensor,
-        dtype: Optional[torch.dtype] = None,
-    ) -> torch.Tensor:
-        # pylint: disable=missing-function-docstring
-        return tensor.dequantize(dtype=dtype)
-
-    @staticmethod
-    def backward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        grad: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        # pylint: disable=missing-function-docstring
-        return grad, None
-
-
 class _IdentityFunc(torch.autograd.Function):
-    """Autograd function to create quantized tensor with same data"""
+    """Identity function
+
+    If constructor keyword-arguments are provided, then construct a
+    new Float8Tensor using the provided tensor's attributes.
+
+    """
 
     @staticmethod
     def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
+        ctx,
         tensor: QuantizedTensor,
+        init_kwargs: Optional[Dict[str, Any]] = None,
     ) -> QuantizedTensor:
         # pylint: disable=missing-function-docstring
-        return tensor.detach()
+
+        # Return input tensor if constructor kwargs are not provided
+        if init_kwargs is None:
+            return tensor.detach()
+
+        # Construct new tensor if constructor kwargs are provided
+        ctx.input_dtype = tensor.dtype
+        kwargs = tensor.get_metadata()
+        for key, val in init_kwargs.items():
+            kwargs[key] = val
+        return type(tensor)(tensor.shape, tensor.dtype,
+                            **kwargs)
 
     @staticmethod
-    def backward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        grad: torch.Tensor,
-    ) -> torch.Tensor:
+    def backward(ctx, grad):
         # pylint: disable=missing-function-docstring
-        return grad
+        # TODO: Why this cast?
+        return grad.to(ctx.input_dtype), None
 
+def _stride_from_shape(shape: list[int]):
+    # TODO: This is probably pretty inefficient
+    stride = [1] * len(shape)
+    for i in range(len(stride) - 1, 0, -1):
+        stride[i - 1] = stride[i] * shape[i]
+    return stride
 
 class QuantizedTensor(torch.Tensor):
     """Abstract base class for tensor with quantized data
@@ -148,6 +161,26 @@ class QuantizedTensor(torch.Tensor):
     by overriding the `quantize_` and `dequantize` functions.
 
     """
+
+    def __new__(cls,
+                shape: Iterable[int],
+                dtype: torch.dtype,
+                *,
+                requires_grad: bool = False):
+        # We are assuming only contiguous tensors
+        stride = _stride_from_shape(shape)
+        instance = torch.Tensor._make_wrapper_subclass(
+            cls,
+            shape,
+            strides=stride,
+            storage_offset=0,
+            dtype=dtype,
+            layout=torch.strided,
+            requires_grad=requires_grad,
+            device=torch.cuda.current_device(),
+        )
+
+        return instance
 
     def dequantize(self, *, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """Convert quantized data to standard PyTorch tensor"""
@@ -187,24 +220,27 @@ class QuantizedTensor(torch.Tensor):
         """
         pass
 
-    def __repr__(self) -> str:
+    def __repr__(self,
+                 *,
+                 tensor_contents = None) -> str:
         return f"{self.__class__.__name__}(data={self.dequantize(dtype=self.dtype)})"
 
     def float(self) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        return _DequantizeFunc.apply(self, torch.float32)
+        return self.dequantize(dtype=torch.float32)
 
     def bfloat16(self) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        return _DequantizeFunc.apply(self, torch.bfloat16)
+        return self.dequantize(dtype=torch.bfloat16)
 
     def half(self) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        return _DequantizeFunc.apply(self, torch.float16)
+        return self.dequantize(dtype=torch.float16)
 
-    def cpu(self) -> torch.Tensor:
+    def cpu(self,
+            memory_format = torch.preserve_format) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        return _DequantizeFunc.apply(self).cpu()
+        return self.dequantize().cpu(memory_format=memory_format)
 
     def expand_as(self, other: torch.Tensor) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
@@ -289,3 +325,33 @@ class QuantizedTensor(torch.Tensor):
         raise NotImplementedError(
             f"{self.__class__.__name__} class does not implement contiguous function"
         )
+
+    def get_metadata(self) -> Dict[str, Any]:
+        return {}
+
+    @classmethod
+    def make_like(
+        cls,
+        tensor: QuantizedTensor,
+        *,
+        shape: Optional[Iterable[int]] = None,
+        dtype: Optional[torch.dtype] = None,
+        requires_grad: bool = False,
+    ) -> QuantizedTensor:
+        """Use attributes of a QuantizedTensor to create another QuantizedTensor,
+        potentially changing shape or type.
+        """
+        shape = shape if shape is not None else tensor.shape
+        dtype = dtype if dtype is not None else tensor.dtype
+        kwargs = tensor.get_metadata()
+        return cls(shape=shape, dtype=dtype,
+                   requires_grad=requires_grad,
+                   **kwargs)
+
+    def to_dtype(self, dtype: torch.dtype) -> QuantizedTensor:
+        """Create `QuantizedTensor` with given nominal dtype
+
+        The new tensor has the same underlying quantized data.
+
+        """
+        return self.__class__.make_like(self, dtype=dtype)

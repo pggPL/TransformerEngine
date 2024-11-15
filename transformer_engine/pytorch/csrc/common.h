@@ -122,6 +122,8 @@ class MXFP8Tensor {
 
 class QuantizationParams {
  public:
+  virtual std::pair<bool, bool> get_usage() const = 0;
+
   virtual NVTEScalingMode get_scaling_mode() const = 0;
 
   virtual void set_quantization_params(TensorWrapper* tensor) const = 0;
@@ -132,6 +134,10 @@ class QuantizationParams {
 
 class NoneQuantizationParams : public QuantizationParams {
  public:
+  virtual std::pair<bool, bool> get_usage() const override {
+    return {true, true};
+  }
+
   virtual NVTEScalingMode get_scaling_mode() const override {
     return {-1, -1, 1};
   }
@@ -148,6 +154,10 @@ class Float8Params : public QuantizationParams {
   at::Tensor amax;
   DType dtype;
 
+  virtual std::pair<bool, bool> get_usage() const override {
+    return {true, true};
+  }
+
   virtual NVTEScalingMode get_scaling_mode() const override {
     return {-1, -1, 1};
   }
@@ -160,11 +170,16 @@ class Float8Params : public QuantizationParams {
 
 class MXFP8Params : public QuantizationParams {
  public:
+  bool rowwise_usage;
+  bool columnwise_usage;
   DType dtype;
-  NVTEScalingMode scaling_mode;
+
+  virtual std::pair<bool, bool> get_usage() const override {
+    return {rowwise_usage, columnwise_usage};
+  }
 
   virtual NVTEScalingMode get_scaling_mode() const override {
-    return scaling_mode;
+    return {-1, -1, 1};
   }
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;

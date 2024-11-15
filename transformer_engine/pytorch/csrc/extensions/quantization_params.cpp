@@ -66,7 +66,7 @@ std::pair<TensorWrapper, py::object> Float8Params::create_tensor(const std::vect
                                "fp8_scale_inv"_a=scale_inv,
                                "fp8_dtype"_a=this->dtype,
                                "dtype"_a=dtype);
-  TensorWrapper tensor(this->get_scaling_mode());
+  TensorWrapper tensor{};
   tensor.set_rowwise_data(data.data_ptr(),
                           this->dtype,
                           shape);
@@ -78,12 +78,6 @@ std::pair<TensorWrapper, py::object> Float8Params::create_tensor(const std::vect
 }
 
 void MXFP8Params::set_quantization_params(TensorWrapper* tensor) const {
-  tensor->set_scale(scale.data_ptr(),
-                    GetTransformerEngineDType(scale.scalar_type()),
-                    getTensorShape(scale));
-  tensor->set_amax(amax.data_ptr(),
-                   GetTransformerEngineDType(amax.scalar_type()),
-                   getTensorShape(amax));
   auto rowwise_data = tensor->get_rowwise_data();
   rowwise_data.dtype = static_cast<NVTEDType>(dtype);
 
@@ -108,14 +102,13 @@ std::pair<TensorWrapper, py::object> MXFP8Params::create_tensor(const std::vecto
   at::TensorOptions opts;
   opts = opts.dtype(torch::kUInt8).device(torch::kCUDA);
   at::Tensor data = at::empty(torch_shape, opts);
-  opts = opts.dtype(torch::kFloat32);
   at::Tensor scale_inv = at::empty({1}, opts);
-  py::handle Float8TensorClass(reinterpret_cast<PyObject*>(Float8TensorPythonClass));
-  auto ret = Float8TensorClass("data"_a=data,
-                               "fp8_scale_inv"_a=scale_inv,
-                               "fp8_dtype"_a=this->dtype,
-                               "dtype"_a=dtype);
-  TensorWrapper tensor(this->get_scaling_mode());
+  py::handle MXFP8TensorClass(reinterpret_cast<PyObject*>(MXFP8TensorPythonClass));
+  auto ret = MXFP8TensorClass("data"_a=data,
+                              "fp8_scale_inv"_a=scale_inv,
+                              "fp8_dtype"_a=this->dtype,
+                              "dtype"_a=dtype);
+  TensorWrapper tensor{};
   tensor.set_rowwise_data(data.data_ptr(),
                           this->dtype,
                           shape);
