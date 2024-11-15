@@ -61,10 +61,10 @@ inline bool IsFloatingPointType(at::ScalarType type) {
 }
 
 constexpr std::array custom_types_converters = {
-  //std::make_tuple(IsFloat8Tensor,
-  //                IsFloat8QParams,
-  //                NVTETensorFromFloat8Tensor,
-  //                CreateFloat8Params),
+  std::make_tuple(IsFloat8Tensor,
+                  IsFloat8QParams,
+                  NVTETensorFromFloat8Tensor,
+                  CreateFloat8Params),
   std::make_tuple(IsMXFP8Tensor,
                   IsMXFP8QParams,
                   NVTETensorFromMXFP8Tensor,
