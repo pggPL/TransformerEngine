@@ -88,9 +88,7 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
                              bool accumulate, bool use_split_accumulator) {
   NVTE_CHECK(!A.is_none() && !B.is_none(), "A and B matrices cannot be None!");
   auto none = py::none();
-  std::cout << "Converting A" << std::endl;
   const TensorWrapper& A_tensor = makeTransformerEngineTensor(A, none);
-  std::cout << "Converting B" << std::endl;
   const TensorWrapper& B_tensor = makeTransformerEngineTensor(B, none);
 
   NVTE_CHECK(A_tensor.shape().ndim >= 2,
@@ -107,7 +105,6 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   const auto& A_shape = A_tensor.shape();
   const auto& B_shape = B_tensor.shape();
   const auto& D_shape = detail::getGemmOutputShape(A_shape, transa, B_shape, transb);
-  std::cout << "Preparing D" << std::endl;
   if (D.is_none()) {
     std::tie(D_tensor, D) = createOutputTensor(D_shape, output_dtype, quantization_params);
   } else {
@@ -120,7 +117,6 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
 
   TensorWrapper bias_tensor;
   MaybeTensor bias_grad = std::nullopt;
-  std::cout << "Preparing bias" << std::endl;
   if (bias.has_value()) {
     if (!grad) {
       bias_tensor = makeTransformerEngineTensor(*bias);
@@ -132,7 +128,6 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
 
   MaybeTensor pre_gelu_out = std::nullopt;
   DType gelu_type = bias_type;
-  std::cout << "Preparing GELU" << std::endl;
   if (gelu && !grad) {
     auto dtype = GetATenDType(bias_type);
     auto opts = torch::TensorOptions().dtype(dtype).device(torch::kCUDA);
@@ -154,7 +149,6 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   const int sm_count = transformer_engine::cuda::sm_count(device_id);
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
-  std::cout << "Calling common!" << std::endl;
   nvte_cublas_gemm(A_tensor.data(), B_tensor.data(), D_tensor.data(), bias_tensor.data(),
                    te_pre_gelu_out.data(), transa, transb, grad, te_workspace.data(), accumulate,
                    use_split_accumulator, num_math_sms, at::cuda::getCurrentCUDAStream());

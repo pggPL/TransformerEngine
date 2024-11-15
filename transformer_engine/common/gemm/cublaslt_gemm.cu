@@ -12,7 +12,6 @@
 
 #include <cstdint>
 #include <mutex>
-#include <iostream>
 
 #include "../common.h"
 #include "../util/logging.h"
@@ -148,13 +147,8 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
                  void *workspace, size_t workspaceSize, bool accumulate, bool use_split_accumulator,
                  int math_sm_count, int m_split, int n_split, bool gemm_producer,
                  const Tensor *inputCounter, cudaStream_t stream) {
-  std::cout << "Input: " << transa << " " << transb << std::endl;
-  std::cout << "A ptrs: " << inputA->data.dptr << " " << inputA->columnwise_data.dptr << std::endl;
-  std::cout << "B ptrs: " << inputB->data.dptr << " " << inputB->columnwise_data.dptr << std::endl;
   const GemmParam& param = CanonicalizeGemmInput(*inputA, transa, *inputB, transb,
                                                   k, lda, ldb);
-  std::cout << "After changing: " << param.transA << " " << param.transB << std::endl;
-  std::cout << "Ptrs: " << param.A << " " << param.B << std::endl;
   void *C = outputD->data.dptr;
   void *D = outputD->data.dptr;
   void *D_scale = outputD->scale.dptr;
