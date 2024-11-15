@@ -57,19 +57,23 @@ struct GemmParam {
   transformer_engine::DType Btype;
   void* A_scale_inv;
   void* B_scale_inv;
+  int lda;
+  int ldb;
 
   GemmParam(cublasOperation_t transA, cublasOperation_t transB) :
   A(nullptr), B(nullptr), transA(transA), transB(transB),
   Atype(transformer_engine::DType::kNumTypes),
   Btype(transformer_engine::DType::kNumTypes),
-  A_scale_inv(nullptr), B_scale_inv(nullptr) {}
+  A_scale_inv(nullptr), B_scale_inv(nullptr),
+  lda(0), ldb(0) {}
 };
 
 GemmParam CanonicalizeGemmInput(
     const transformer_engine::Tensor& A,
     const cublasOperation_t transA,
     const transformer_engine::Tensor& B,
-    const cublasOperation_t transB) {
+    const cublasOperation_t transB,
+    const int k, const int lda, const int ldb) {
   using namespace transformer_engine;
   NVTE_CHECK(A.scaling_mode == B.scaling_mode,
              "Inputs A and B to GEMM need to have the same scaling mode!");
@@ -82,6 +86,8 @@ GemmParam CanonicalizeGemmInput(
   if (is_tensor_scaling(A.scaling_mode)) {
     ret.A = A.data.dptr;
     ret.A_scale_inv = A.scale_inv.dptr;
+    ret.lda = lda;
+    ret.ldb = ldb;
     if (transA == CUBLAS_OP_T) {
       ret.Atype = A.data.dtype;
     } else {
@@ -95,6 +101,7 @@ GemmParam CanonicalizeGemmInput(
           ret.A = A.columnwise_data.dptr;
           ret.transA = CUBLAS_OP_T;
           ret.A_scale_inv = A.columnwise_scale_inv.dptr;
+          ret.lda = k;
         }
       }
     }
@@ -111,6 +118,7 @@ GemmParam CanonicalizeGemmInput(
           ret.B = B.columnwise_data.dptr;
           ret.transB = CUBLAS_OP_N;
           ret.B = B.columnwise_scale_inv.dptr;
+          ret.ldb = k;
         }
       }
     } else {
@@ -143,7 +151,8 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
   std::cout << "Input: " << transa << " " << transb << std::endl;
   std::cout << "A ptrs: " << inputA->data.dptr << " " << inputA->columnwise_data.dptr << std::endl;
   std::cout << "B ptrs: " << inputB->data.dptr << " " << inputB->columnwise_data.dptr << std::endl;
-  const GemmParam& param = CanonicalizeGemmInput(*inputA, transa, *inputB, transb);
+  const GemmParam& param = CanonicalizeGemmInput(*inputA, transa, *inputB, transb,
+                                                  k, lda, ldb);
   std::cout << "After changing: " << param.transA << " " << param.transB << std::endl;
   std::cout << "Ptrs: " << param.A << " " << param.B << std::endl;
   void *C = outputD->data.dptr;
@@ -205,9 +214,9 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
 
   // Create matrix descriptors. Not setting any extra attributes.
   NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Adesc, A_type, param.transA == CUBLAS_OP_N ? m : k,
-                                               param.transA == CUBLAS_OP_N ? k : m, lda));
+                                               param.transA == CUBLAS_OP_N ? k : m, param.lda));
   NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Bdesc, B_type, param.transB == CUBLAS_OP_N ? k : n,
-                                               param.transB == CUBLAS_OP_N ? n : k, ldb));
+                                               param.transB == CUBLAS_OP_N ? n : k, param.ldb));
   NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Ddesc, D_type, m, n, ldd));
 
   NVTE_CHECK_CUBLAS(cublasLtMatmulDescCreate(&operationDesc, gemm_compute_type, CUDA_R_32F));
