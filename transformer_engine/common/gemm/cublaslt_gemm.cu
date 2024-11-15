@@ -117,7 +117,7 @@ GemmParam CanonicalizeGemmInput(
                      "Input B is not suitable for columnwise usage!");
           ret.B = B.columnwise_data.dptr;
           ret.transB = CUBLAS_OP_N;
-          ret.B = B.columnwise_scale_inv.dptr;
+          ret.B_scale_inv = B.columnwise_scale_inv.dptr;
           ret.ldb = k;
         }
       }
