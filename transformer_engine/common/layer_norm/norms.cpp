@@ -97,8 +97,9 @@ FwdFunction& get_fwd_launcher(DType wtype, DType itype, DType otype, DType ctype
       is_aligned(params.gamma) && is_aligned(params.z) && FWD_TUNED_FUNCS.count(tuned_key) > 0) {
     if constexpr (NormEnum == NVTE_NORM_TYPE::LN_FWD_TE) {
       if (is_aligned(params.mu) && is_aligned(params.beta)) return FWD_TUNED_FUNCS.at(tuned_key);
-    } else
+    } else {
       return FWD_TUNED_FUNCS.at(tuned_key);
+    }
   }
 
   // Pick general kernel
@@ -138,8 +139,9 @@ BwdFunction& get_bwd_launcher(DType wtype, DType itype, DType otype, DType ctype
       if (is_aligned(params.mu) && is_aligned(params.dbeta) && is_aligned(params.dbeta_part))
         return BWD_TUNED_FUNCS.at(tuned_key);
 
-    } else
+    } else {
       return BWD_TUNED_FUNCS.at(tuned_key);
+    }
   }
 
   // Pick general kernel

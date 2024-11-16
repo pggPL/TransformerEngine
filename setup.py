@@ -105,7 +105,8 @@ def setup_requirements() -> Tuple[List[str], List[str], List[str]]:
             test_reqs.extend(["numpy", "torchvision", "prettytable"])
         if "jax" in frameworks:
             install_reqs.extend(["jax", "flax>=0.7.1"])
-            test_reqs.extend(["numpy", "praxis"])
+            #test_reqs.extend(["numpy", "praxis"])
+            test_reqs.extend(["numpy"])
         if "paddle" in frameworks:
             install_reqs.append("paddlepaddle-gpu")
             test_reqs.append("numpy")

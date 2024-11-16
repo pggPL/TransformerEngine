@@ -30,8 +30,8 @@ __device__ inline void regs_shuffle_with_bit_shifts(LType* regs_vec) {
   // out, swapping byte to form new 4-byte chunks [0,4,8,12, 1,5,9,13, 2,6,10,14, 3,7,11,15]
 
   constexpr int N_TILE_PER_TD = sizeof(LType) / sizeof(int);
-  constexpr int size = N_SF_PER_TD_PER_TILE * N_TILE_PER_TD;
-  int32_t new_regs[size];
+  constexpr int kVectorSize = N_SF_PER_TD_PER_TILE * N_TILE_PER_TD;
+  int32_t new_regs[kVectorSize];
   int32_t* regs = reinterpret_cast<int32_t*>(regs_vec);
 
 #pragma unroll
@@ -46,7 +46,7 @@ __device__ inline void regs_shuffle_with_bit_shifts(LType* regs_vec) {
     }
   }
 #pragma unroll
-  for (int i = 0; i < size; i++) regs[i] = new_regs[i];
+  for (int i = 0; i < kVectorSize; i++) regs[i] = new_regs[i];
 }
 
 template <typename LType, int SF_TILE_DIM_M, int SF_TILE_DIM_K>
@@ -130,15 +130,15 @@ __device__ inline void regs_shuffle(LType* regs_vec) {
   constexpr int N_TILE_PER_TD = sizeof(LType) / sizeof(int);
   if constexpr (N_TILE_PER_TD == 1) return;
 
-  constexpr int size = N_SF_PER_TD_PER_TILE * N_TILE_PER_TD;
-  int32_t tmp[size];
+  constexpr int kVectorSize = N_SF_PER_TD_PER_TILE * N_TILE_PER_TD;
+  int32_t tmp[kVectorSize];
   int32_t* ptr = reinterpret_cast<int32_t*>(regs_vec);
 #pragma unroll
-  for (int i = 0; i < size; i++)
+  for (int i = 0; i < kVectorSize; i++)
     tmp[i % N_TILE_PER_TD * N_SF_PER_TD_PER_TILE + i / N_TILE_PER_TD] = ptr[i];
 
 #pragma unroll
-  for (int i = 0; i < size; i++) ptr[i] = tmp[i];
+  for (int i = 0; i < kVectorSize; i++) ptr[i] = tmp[i];
 }
 
 template <typename LType, int SF_TILE_DIM_M, int SF_TILE_DIM_K>
