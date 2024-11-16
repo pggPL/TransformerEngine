@@ -8,9 +8,10 @@
 #include "pybind.h"
 #include <transformer_engine/transformer_engine.h>
 
-namespace transformer_engine::pytorch::detail {
+namespace transformer_engine::pytorch {
+namespace detail {
 
-TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, QuantizationParams* quantization_params) {
+TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, Quantizer* quantizer) {
   const at::Tensor &data = tensor.attr("_data").cast<at::Tensor>();
   const at::Tensor &scale_inv = tensor.attr("_scale_inv").cast<at::Tensor>();
   float *scale_inv_dptr = reinterpret_cast<float*>(scale_inv.data_ptr());
@@ -24,7 +25,7 @@ TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, QuantizationParams* 
     transpose = tensor.attr("_transpose").cast<std::optional<at::Tensor>>();
   }
 
-  auto ret = TensorWrapper(quantization_params->get_scaling_mode());
+  auto ret = TensorWrapper(quantizer->get_scaling_mode());
   ret.set_rowwise_data(data.data_ptr(), dtype, shape);
   if (transpose_valid && transpose != std::nullopt) {
     const auto& transpose_shape = getTensorShape(*transpose);
@@ -39,22 +40,10 @@ TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, QuantizationParams* 
   ret.set_columnwise_scale_inv(scale_inv_dptr,
                                scale_inv_dtype,
                                scale_inv_shape);
-  quantization_params->set_quantization_params(&ret);
+  quantizer->set_quantization_params(&ret);
   return ret;
 }
 
-std::unique_ptr<QuantizationParams> CreateFloat8Params(const py::handle params) {
-  auto ret = std::make_unique<Float8Params>();
+}  // namespace detail
 
-  const at::Tensor &scale = params.attr("scale").cast<at::Tensor>();
-  const at::Tensor &amax = params.attr("amax").cast<at::Tensor>();
-  const DType type = params.attr("dtype").cast<DType>();
-
-  ret->amax = amax;
-  ret->scale = scale;
-  ret->dtype = type;
-
-  return ret;
-}
-
-}  // namespace transformer_engine::pytorch::detail
+}  // namespace transformer_engine::pytorch

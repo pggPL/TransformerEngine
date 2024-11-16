@@ -75,13 +75,13 @@ bool checkGemmShape(const std::vector<size_t>& expected,
 
 std::pair<TensorWrapper, py::object> createOutputTensor(const std::vector<size_t>& shape,
                                                         DType dtype,
-                                                        py::handle quantization_params) {
-  std::unique_ptr<QuantizationParams> qparams = convert_quantization_params(quantization_params);
-  return qparams->create_tensor(shape, dtype);
+                                                        py::handle quantizer) {
+  std::unique_ptr<Quantizer> my_quantizer = convert_quantizer(quantizer);
+  return my_quantizer->create_tensor(shape, dtype);
 }
 
 std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb,
-                             py::object D, py::handle quantization_params,
+                             py::object D, py::handle quantizer,
                              std::optional<DType> out_dtype,
                              MaybeTensor bias, DType bias_type, bool gelu,
                              bool grad, at::Tensor workspace, size_t workspaceSize,
@@ -106,9 +106,9 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   const auto& B_shape = B_tensor.shape();
   const auto& D_shape = detail::getGemmOutputShape(A_shape, transa, B_shape, transb);
   if (D.is_none()) {
-    std::tie(D_tensor, D) = createOutputTensor(D_shape, output_dtype, quantization_params);
+    std::tie(D_tensor, D) = createOutputTensor(D_shape, output_dtype, quantizer);
   } else {
-    D_tensor = makeTransformerEngineTensor(D, quantization_params);
+    D_tensor = makeTransformerEngineTensor(D, quantizer);
     NVTE_CHECK(detail::checkGemmShape(D_shape, D_tensor.shape()),
                "Incorrect shape of the GEMM output. Expected " +
                std::to_string(D_shape) + " and got " +

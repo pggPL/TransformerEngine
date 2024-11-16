@@ -41,16 +41,11 @@
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
 #include <cassert>
 #include <cstring>
-#include <iomanip>
 #include <iostream>
 #include <memory>
-#include <random>
-#include <stdexcept>
 #include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
 #include <vector>
 
-#include "c10/core/DeviceType.h"
-#include "common/util/cuda_runtime.h"
 #include "c10/util/ArrayRef.h"
 #include "common/util/logging.h"
 
@@ -103,15 +98,7 @@ enum FP8BwdTensors {
   GRAD_INPUT3 = 5
 };
 
-class Float8Tensor {
- public:
-  at::Tensor data;
-  std::optional<at::Tensor> transpose = std::nullopt;
-  at::Tensor scale_inv;
-  DType dtype;
-};
-
-class QuantizationParams {
+class Quantizer {
  public:
   virtual NVTEScalingMode get_scaling_mode() const = 0;
 
@@ -119,10 +106,18 @@ class QuantizationParams {
 
   virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
                                                              DType dtype) const = 0;
+
+  bool rowwise_usage = true;
+  bool columnwise_usage = true;
+  bool internal = false;
+
+ protected:
+  Quantizer(const py::handle& quantizer);
 };
 
-class NoneQuantizationParams : public QuantizationParams {
+class NoneQuantizer : public Quantizer {
  public:
+  NoneQuantizer(const py::handle& quantizer) : Quantizer(quantizer) {}
   virtual NVTEScalingMode get_scaling_mode() const override {
     return {-1, -1, 1};
   }
@@ -133,11 +128,13 @@ class NoneQuantizationParams : public QuantizationParams {
                                                              DType dtype) const override;
 };
 
-class Float8Params : public QuantizationParams {
+class Float8Quantizer : public Quantizer {
  public:
   at::Tensor scale;
   at::Tensor amax;
   DType dtype;
+
+  Float8Quantizer(const py::handle& quantizer);
 
   virtual NVTEScalingMode get_scaling_mode() const override {
     return {-1, -1, 1};
@@ -149,7 +146,7 @@ class Float8Params : public QuantizationParams {
                                                              DType dtype) const override;
 };
 
-std::unique_ptr<QuantizationParams> convert_quantization_params(py::handle params);
+std::unique_ptr<Quantizer> convert_quantizer(py::handle params);
 
 std::vector<size_t> getTensorShape(at::Tensor t);
 
@@ -218,7 +215,7 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(void* data_ptr,
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor);
 
-TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantization_params);
+TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantizer);
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
     at::Tensor tensor, at::Tensor amax, const at::Tensor scale, at::Tensor scale_inv,

@@ -20,14 +20,14 @@ std::vector<size_t> getTensorShape(at::Tensor t) {
   return shape;
 }
 
-std::unique_ptr<QuantizationParams> convert_quantization_params(py::handle params) {
-  if (params.is_none()) {
-    return std::make_unique<NoneQuantizationParams>();
+std::unique_ptr<Quantizer> convert_quantizer(py::handle quantizer) {
+  if (quantizer.is_none()) {
+    return std::make_unique<NoneQuantizer>(quantizer);
   }
-  for (auto [_check_type, check_params_type, _create_tensor, create_params]:
+  for (auto [_check_type, check_quantizer_type, _create_tensor, create_quantizer]:
       detail::custom_types_converters) {
-    if (check_params_type(params.ptr())) {
-      return create_params(params);
+    if (check_quantizer_type(quantizer.ptr())) {
+      return create_quantizer(quantizer);
     }
   }
 
@@ -43,15 +43,15 @@ transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
   return transformer_engine::DType::kFloat8E5M2;
 }
 
-TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantization_params) {
+TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantizer) {
   NVTE_CHECK(!tensor.is_none(), "Tensor is not allocated!");
-  std::unique_ptr<QuantizationParams> qparams = convert_quantization_params(quantization_params);
-  for (auto [check_type, check_param_type, create_tensor, _]: detail::custom_types_converters) {
+  std::unique_ptr<Quantizer> my_quantizer = convert_quantizer(quantizer);
+  for (auto [check_type, check_quantizer_type, create_tensor, _]: detail::custom_types_converters) {
     if (check_type(tensor.ptr())) {
-      NVTE_CHECK(quantization_params.is_none() ||
-                 check_param_type(quantization_params.ptr()),
+      NVTE_CHECK(quantizer.is_none() ||
+                 check_quantizer_type(quantizer.ptr()),
                  "Unexpected quantization params type.");
-      return create_tensor(tensor, qparams.get());
+      return create_tensor(tensor, my_quantizer.get());
     }
   }
 
@@ -61,11 +61,11 @@ TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantiza
   if (!torch_tensor.is_contiguous()) {
     torch_tensor = torch_tensor.contiguous();
   }
-  auto ret = TensorWrapper(qparams->get_scaling_mode());
+  auto ret = TensorWrapper(my_quantizer->get_scaling_mode());
   ret.set_rowwise_data(torch_tensor.data_ptr(),
                        GetTransformerEngineDType(torch_tensor.scalar_type()),
                        getTensorShape(torch_tensor));
-  qparams->set_quantization_params(&ret);
+  my_quantizer->set_quantization_params(&ret);
   return ret;
 }
 

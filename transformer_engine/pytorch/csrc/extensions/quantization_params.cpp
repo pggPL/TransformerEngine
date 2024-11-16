@@ -11,7 +11,29 @@
 
 namespace transformer_engine::pytorch {
 
-std::pair<TensorWrapper, py::object> NoneQuantizationParams::create_tensor(
+Quantizer::Quantizer(const py::handle& quantizer) {
+  if (quantizer.is_none()) {
+    this->rowwise_usage = true;
+    this->columnwise_usage = true;
+    this->internal = false;
+  } else {
+    this->rowwise_usage = quantizer.attr("rowwise_usage").cast<bool>();
+    this->columnwise_usage = quantizer.attr("columnwise_usage").cast<bool>();
+    this->internal = quantizer.attr("internal").cast<bool>();
+  }
+}
+
+Float8Quantizer::Float8Quantizer(const py::handle& quantizer) : Quantizer(quantizer) {
+  const at::Tensor &scale = quantizer.attr("scale").cast<at::Tensor>();
+  const at::Tensor &amax = quantizer.attr("amax").cast<at::Tensor>();
+  const DType type = quantizer.attr("dtype").cast<DType>();
+
+  this->amax = amax;
+  this->scale = scale;
+  this->dtype = type;
+}
+
+std::pair<TensorWrapper, py::object> NoneQuantizer::create_tensor(
     const std::vector<size_t>& shape,
     DType dtype) const {
   at::TensorOptions opts;
@@ -28,7 +50,7 @@ std::pair<TensorWrapper, py::object> NoneQuantizationParams::create_tensor(
   return {std::move(tensor), py::cast(ret)};
 }
 
-void Float8Params::set_quantization_params(TensorWrapper* tensor) const {
+void Float8Quantizer::set_quantization_params(TensorWrapper* tensor) const {
   tensor->set_scale(scale.data_ptr(),
                     GetTransformerEngineDType(scale.scalar_type()),
                     getTensorShape(scale));
@@ -49,8 +71,8 @@ void Float8Params::set_quantization_params(TensorWrapper* tensor) const {
                               columnwise_data.shape);
 }
 
-std::pair<TensorWrapper, py::object> Float8Params::create_tensor(const std::vector<size_t>& shape,
-                                                                 DType dtype) const {
+std::pair<TensorWrapper, py::object> Float8Quantizer::create_tensor(
+    const std::vector<size_t>& shape, DType dtype) const {
   using namespace pybind11::literals;
   std::vector<int64_t> torch_shape;
   for (auto s : shape) {

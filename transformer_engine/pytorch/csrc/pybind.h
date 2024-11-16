@@ -32,9 +32,12 @@ inline bool IsFloat8Tensor(PyObject *obj) {
          Py_TYPE(obj) == Float8TensorBasePythonClass;
 }
 
-TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, QuantizationParams* quantization_params);
+TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, Quantizer* quantizer);
 
-std::unique_ptr<QuantizationParams> CreateFloat8Params(const py::handle params);
+template <typename T>
+std::unique_ptr<Quantizer> CreateQuantizer(const py::handle quantizer) {
+  return std::make_unique<T>(quantizer);
+}
 
 inline bool IsFloatingPointType(at::ScalarType type) {
   return type == at::kFloat ||
@@ -46,7 +49,7 @@ constexpr std::array custom_types_converters = {
   std::make_tuple(IsFloat8Tensor,
                   IsFloat8QParams,
                   NVTETensorFromFloat8Tensor,
-                  CreateFloat8Params)
+                  CreateQuantizer<Float8Quantizer>)
 };
 
 }  // namespace detail
