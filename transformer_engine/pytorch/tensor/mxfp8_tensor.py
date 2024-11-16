@@ -10,50 +10,15 @@ import torch
 import transformer_engine_torch as tex
 
 from transformer_engine_torch import DType as TE_DType
-from ...common.recipe import DelayedScaling, Recipe
-from ..constants import TE_DType as torch_to_transformer_engine_dtype
 from ..cpp_extensions.transpose import fp8_cast_transpose_fused
 from ..cpp_extensions.cast import cast_to_fp8
 from ..fp8 import DelayedScalingRecipeState, FP8GlobalStateManager
 from ..utils import devices_match, non_tn_fp8_gemm_supported
-from .quantized_tensor import QuantizedTensor, Quantizer
+
+from ._internal.float8_tensor_base import MXFP8TensorBase, _FromMXFP8Func
+from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
 
 aten = torch.ops.aten
-updated_fp8_params = {}
-
-
-class _DequantizeFunc(torch.autograd.Function):
-    """Cast from FP8 to other dtype"""
-
-    @staticmethod
-    def forward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        tensor: MXFP8Tensor,
-        dtype: Optional[torch.dtype] = None,
-    ) -> torch.Tensor:
-        # pylint: disable=missing-function-docstring
-
-        # Convert PyTorch dtype to TE dtype
-        if dtype is None:
-            dtype = tensor.dtype
-        dtype = torch_to_transformer_engine_dtype[dtype]
-
-        # Make sure FP8 data is in expected format
-        data = tensor._data
-        assert data is not None
-
-        # Cast from FP8
-        return tex.cast_from_fp8(data, tensor._scale_inv, tensor._fp8_dtype, dtype, 0)
-
-    @staticmethod
-    def backward(
-        _ctx: torch.autograd.function.FunctionCtx,  # unused
-        grad: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        # pylint: disable=missing-function-docstring
-        # Assume that we want gradients in full precision
-        return grad, None
-
 
 class MXFP8Quantizer(Quantizer):
 
@@ -79,9 +44,10 @@ class MXFP8Quantizer(Quantizer):
     def update_quantized(
         self,
         src: torch.Tensor,
-        dst: MXFP8Tensor,
-    ) -> MXFP8Tensor:
+        dst: QuantizedTensor,
+    ) -> QuantizedTensor:
 
+        assert isinstance(dst, MXFP8Tensor)
         # Launch cast kernel
         if dst._transpose is None:
             dst_data = dst._data
@@ -147,9 +113,10 @@ class MXFP8Quantizer(Quantizer):
 
         # Construct FP8 tensor
         return MXFP8Tensor(
+            shape=shape,
+            dtype=dtype,
             data=data,
             fp8_dtype=self.fp8_dtype,
-            dtype=dtype,
             requires_grad=requires_grad,
             data_transpose=data_transpose,
             quantizer=self,
@@ -160,174 +127,11 @@ class MXFP8Quantizer(Quantizer):
         self.amax.copy_(torch.max(-amin, amax))
 
 
-def _make_fp8_attr_property_funcs(name: str) -> Any:
-    """Make accessors for an FP8 attribute
-
-    We store FP8 attributes in a dictionary so we can share them
-    between tensors with the same data, e.g. detached tensors. For
-    convenience, we also expose them as property attributes. This
-    function creates the accessors for property attributes.
-
-    Parameters
-    ----------
-    name: str
-          Key in dictionary of FP8 attributes
-
-    """
-
-    def get_func(self) -> Any:
-        return self._fp8_attrs[name]
-
-    def set_func(self, value: Any) -> None:
-        self._fp8_attrs[name] = value
-
-    def del_func(self) -> None:
-        del self._fp8_attrs[name]
-
-    return {"fget": get_func, "fset": set_func, "fdel": del_func}
-
-
-class _IdentityFunc(torch.autograd.Function):
-    """Identity function
-
-    If constructor keyword-arguments are provided, then construct a
-    new MXFP8Tensor using the provided tensor's attributes.
-
-    """
-
-    @staticmethod
-    def forward(
-        ctx,
-        tensor: MXFP8Tensor,
-        init_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> torch.Tensor:
-        # pylint: disable=missing-function-docstring
-
-        # Return input tensor if constructor kwargs are not provided
-        ctx.input_dtype = tensor.dtype
-        if init_kwargs is None:
-            return tensor
-
-        # Construct new tensor if constructor kwargs are provided
-        default_kwargs = {
-            "data": tensor._data,
-            "quantizer": tensor._quantizer,
-            "fp8_dtype": tensor._fp8_dtype,
-            "fp8_scale_inv": tensor._scale_inv,
-            "dtype": tensor.dtype,
-        }
-        for key, val in default_kwargs.items():
-            if key not in init_kwargs:
-                init_kwargs[key] = val
-        return MXFP8Tensor(**init_kwargs)
-
-    @staticmethod
-    def backward(ctx, grad):
-        # pylint: disable=missing-function-docstring
-        return grad.to(ctx.input_dtype), None
-
-
-class _ViewFunc(torch.autograd.Function):
-    """View function
-
-    View the MXFP8Tensor using the provided shape.
-
-    """
-
-    @staticmethod
-    def forward(
-        ctx,
-        tensor: torch.Tensor,
-        shape: Optional[Tuple[int]] = None,
-    ) -> torch.Tensor:
-        # pylint: disable=missing-function-docstring
-
-        # Return input tensor if shape is not provided
-        ctx.shape = tensor.shape
-        if shape is None:
-            return tensor
-
-        # Construct new tensor if shape is provided
-        if isinstance(tensor, MXFP8Tensor):
-            if tensor._data is None:
-                return tensor
-            return MXFP8Tensor.make_like(
-                tensor,
-                data=tensor._data.view(*shape),
-            )
-        return tensor.view(*shape)
-
-    @staticmethod
-    def backward(
-        ctx,
-        grad: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        # pylint: disable=missing-function-docstring
-
-        if isinstance(grad, MXFP8Tensor):
-            if grad._data is None:
-                return grad, None
-            dgrad = MXFP8Tensor.make_like(
-                grad,
-                data=grad._data.view(ctx.shape),
-            )
-            return dgrad, None
-        return grad.view(ctx.shape), None
-
-
-class _ReshapeFunc(torch.autograd.Function):
-    """Reshape function
-
-    Reshape the MXFP8Tensor using the provided shape.
-
-    """
-
-    @staticmethod
-    def forward(
-        ctx,
-        tensor: torch.Tensor,
-        shape: Optional[Tuple[int]] = None,
-    ) -> torch.Tensor:
-        # pylint: disable=missing-function-docstring
-
-        # Return input tensor if shape is not provided
-        ctx.shape = tensor.shape
-        if shape is None:
-            return tensor
-
-        # Construct new tensor if shape is provided
-        if isinstance(tensor, MXFP8Tensor):
-            if tensor._data is None:
-                return tensor
-            return MXFP8Tensor.make_like(
-                tensor,
-                data=tensor._data.reshape(*shape),
-            )
-        return tensor.reshape(*shape)
-
-    @staticmethod
-    def backward(
-        ctx,
-        grad: torch.Tensor,
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        # pylint: disable=missing-function-docstring
-
-        if isinstance(grad, MXFP8Tensor):
-            if grad._data is None:
-                return grad, None
-            dgrad = MXFP8Tensor.make_like(
-                grad,
-                data=grad._data.reshape(ctx.shape),
-            )
-            return dgrad, None
-        return grad.reshape(ctx.shape), None
-
-
-class MXFP8Tensor(QuantizedTensor):
-    """Experimental tensor class with MXFP8 data
+class MXFP8Tensor(MXFP8TensorBase, QuantizedTensor):
+    """Experimental tensor class with FP8 data
 
     The tensor presents as having a standard, higher-precision dtype,
-    but the data itself is (scaled) MXFP8. For most tensor operations,
+    but the data itself is (scaled) FP8. For most tensor operations,
     the data will be cast to the nominal dtype before performing the
     operation.
 
@@ -335,9 +139,6 @@ class MXFP8Tensor(QuantizedTensor):
     ----------
     data: torch.Tensor
           Raw FP8 data in a uint8 tensor
-    fp8_attrs: dict, optional
-               FP8 metadata, primarily managed by MXFP8Tensor. If
-               provided, all other FP8 configuration is ignored.
     fp8_dtype: transformer_engine_torch.DType, default = kFloat8E4M3
                FP8 format.
     fp8_scale_inv: torch.Tensor
@@ -351,113 +152,32 @@ class MXFP8Tensor(QuantizedTensor):
 
     """
 
-    _data: Optional[torch.Tensor]
-    _fp8_attrs: Dict[str, Any]
-    _quantizer: Optional[MXFP8Quantizer]
-    _fp8_dtype: TE_DType
-    _scale_inv: torch.Tensor
-
-    # FP8 transpose cache
-    _transpose: Optional[torch.Tensor]
-    _transpose_invalid: bool
-
-    def __new__(
-        cls,
-        *,
-        data: torch.Tensor,
-        fp8_scale_inv: torch.Tensor,
-        fp8_dtype: TE_DType,
-        dtype: torch.dtype = torch.float32,
-        requires_grad: bool = False,
-        data_transpose: Optional[torch.Tensor] = None,
-        quantizer: Optional[MXFP8Quantizer] = None,
-        fp8_attrs: Optional[Dict[str, Any]] = None,
-    ):
-        # Initialize tensor object
-        self = torch.Tensor._make_wrapper_subclass(
-            cls,
-            data.size(),
-            strides=data.stride(),
-            storage_offset=data.storage_offset(),
-            dtype=dtype,
-            layout=data.layout,
-            requires_grad=requires_grad,
-            device=data.device,
-        )
-        self._data = data
-
-        # Initialize dict of class attributes
-        # Note: We store FP8 attributes in a dictionary so we can
-        # share them between tensors with the same data, e.g. detached
-        # tensors.
-        if fp8_attrs is None:
-            self._fp8_attrs = {}
-        else:
-            self._fp8_attrs = fp8_attrs
-            return self
-
-        # Builder class for MXFP8Tensor
-        self._quantizer = quantizer
-
-        # FP8 dtype
-        self._fp8_dtype = fp8_dtype
-
-        # FP8 scale-inverse
-        self._scale_inv = fp8_scale_inv
-
-        # FP8 transpose cache
-        self._transpose = data_transpose
-        self._transpose_invalid = self._transpose is None
-
-        return self
-
-    @classmethod
-    def make_like(
-        cls,
-        tensor: MXFP8Tensor,
-        *,
-        data: torch.Tensor,
-        fp8_attrs: Optional[Dict[str, Any]] = None,
-        **kwargs,
-    ) -> MXFP8Tensor:
-        """Use attributes of a MXFP8Tensor to create another MXFP8Tensor
-
-        See constructor for list of keyword arguments.
-
-        """
-        default_kwargs = {
-            "quantizer": tensor._quantizer,
-            "fp8_dtype": tensor._fp8_dtype,
-            "fp8_scale_inv": tensor._scale_inv,
-            "dtype": tensor.dtype,
-        }
-        for key, val in default_kwargs.items():
-            if key not in kwargs:
-                kwargs[key] = val
-        return MXFP8Tensor(data=data, fp8_attrs=fp8_attrs, **kwargs)
-
-    def __repr__(self):
+    def __repr__(self,
+                 *,
+                 tensor_contents = None):
         return (
             "MXFP8Tensor("
             f"fp8_dtype={self._fp8_dtype}, "
             f"scale_inv={self._scale_inv.item()}, "
-            f"data={self.from_float8(dtype=self.dtype)}"
+            f"data={self.dequantize(dtype=self.dtype)}"
             ")"
         )
 
     def dequantize(self, *, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
-        if torch.is_grad_enabled():
-            return _DequantizeFunc.apply(self, dtype)
-        return _DequantizeFunc.forward(None, self, dtype)
-
-    def from_float8(self, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """
         Construct plain PyTorch tensor from MXFP8Tensor
 
         By default the resulting tensor's dtype is the
         MXFP8Tensor's nominal dtype.
         """
-        return _DequantizeFunc.apply(self, dtype)
+        # Convert PyTorch dtype to TE dtype
+        if dtype is None:
+            dtype = self.dtype
+
+        if torch.is_grad_enabled():
+            return _FromMXFP8Func.apply(self, dtype)
+        else:
+            return _FromMXFP8Func.forward(None, self, dtype)
 
     def quantize_(
         self,
@@ -678,25 +398,12 @@ class MXFP8Tensor(QuantizedTensor):
         Returns `self` if data is already in correct memory format.
 
         """
-        if self._data.is_contiguous(memory_format=memory_format):
+        if self._data is not None and self._data.is_contiguous(memory_format=memory_format):
             return self
-        return _IdentityFunc.apply(
-            self,
-            {"data": self._data.detach().contiguous(memory_format=memory_format)},
-        )
-
-    def to_dtype(self, dtype: torch.dtype) -> MXFP8Tensor:
-        """Create `MXFP8Tensor` with given nominal dtype
-
-        The new tensor has the same underlying FP8 data.
-
-        """
-        return MXFP8Tensor.make_like(
-            self,
-            data=self._data,
-            fp8_attrs=self._fp8_attrs,
-            dtype=dtype,
-        )
+        if (self._transpose is not None and
+            self._transpose.is_contiguous(memory_format=memory_format)):
+            return self
+        raise ValueError("MXFP8Tensor does not support different memory formats!")
 
     def _reset_caches(self) -> None:
         """
@@ -823,12 +530,121 @@ class MXFP8Tensor(QuantizedTensor):
     # Cast to FP8 when setting MXFP8Tensor.data
     data = property(_get_data, _set_data)
 
-    # Accessors for objects in self._fp8_attrs
-    # Note: We store FP8 attributes in a dictionary so we can share
-    # them between tensors with the same data, e.g. detached tensors.
-    # For convenience, we also expose them as property attributes.
-    _quantizer = property(**_make_fp8_attr_property_funcs("quantizer"))
-    _fp8_dtype = property(**_make_fp8_attr_property_funcs("dtype"))
-    _transpose = property(**_make_fp8_attr_property_funcs("transpose"))
-    _transpose_invalid = property(**_make_fp8_attr_property_funcs("transpose_invalid"))
-    _scale_inv = property(**_make_fp8_attr_property_funcs("scale_inv"))
+class _ViewFunc(torch.autograd.Function):
+    """View function
+
+    View the MXFP8Tensor using the provided shape.
+
+    """
+
+    @staticmethod
+    def forward(
+        ctx,
+        tensor: MXFP8Tensor,
+        shape: Optional[list[int]] = None,
+    ) -> MXFP8Tensor:
+        # pylint: disable=missing-function-docstring
+
+        # Return input tensor if shape is not provided
+        ctx.shape = tensor.shape
+        if shape is None:
+            return tensor
+
+        # Construct new tensor if shape is provided
+        new_data = tensor._data.view(*shape) if tensor._data is not None else None
+        if tensor._transpose is not None:
+            new_transpose = tensor._transpose.view(shape[-1], -1)
+        else:
+            new_transpose = None
+        return MXFP8Tensor(shape,
+                            tensor.dtype,
+                            data=new_data,
+                            fp8_scale_inv=tensor._scale_inv,
+                            fp8_dtype=tensor._fp8_dtype,
+                            data_transpose=new_transpose,
+                            quantizer=tensor._quantizer,
+        )
+
+    @staticmethod
+    def backward(
+        ctx,
+        grad: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        # pylint: disable=missing-function-docstring
+
+        if isinstance(grad, MXFP8Tensor):
+            new_data = grad._data.view(*ctx.shape) if grad._data is not None else None
+            if grad._transpose is not None:
+                new_transpose = grad._transpose.view(ctx.shape[-1], -1)
+            else:
+                new_transpose = None
+            dgrad = MXFP8Tensor(ctx.shape,
+                                 grad.dtype,
+                                 data=new_data,
+                                 fp8_scale_inv=grad._scale_inv,
+                                 fp8_dtype=grad._fp8_dtype,
+                                 data_transpose=new_transpose,
+                                 quantizer=grad._quantizer,
+            )
+            return dgrad, None
+        return grad.view(ctx.shape), None
+
+
+class _ReshapeFunc(torch.autograd.Function):
+    """Reshape function
+
+    Reshape the MXFP8Tensor using the provided shape.
+
+    """
+
+    @staticmethod
+    def forward(
+        ctx,
+        tensor: MXFP8Tensor,
+        shape: Optional[Tuple[int]] = None,
+    ) -> MXFP8Tensor:
+        # pylint: disable=missing-function-docstring
+
+        # Return input tensor if shape is not provided
+        ctx.shape = tensor.shape
+        if shape is None:
+            return tensor
+
+        # Construct new tensor if shape is provided
+        new_data = tensor._data.reshape(*shape) if tensor._data is not None else None
+        if tensor._transpose is not None:
+            new_transpose = tensor._transpose.reshape(shape[-1], -1)
+        else:
+            new_transpose = None
+        return MXFP8Tensor(shape,
+                            tensor.dtype,
+                            data=new_data,
+                            fp8_scale_inv=tensor._scale_inv,
+                            fp8_dtype=tensor._fp8_dtype,
+                            data_transpose=new_transpose,
+                            quantizer=tensor._quantizer,
+        )
+
+    @staticmethod
+    def backward(
+        ctx,
+        grad: torch.Tensor,
+    ) -> Tuple[Optional[torch.Tensor], ...]:
+        # pylint: disable=missing-function-docstring
+
+        if isinstance(grad, MXFP8Tensor):
+            new_data = grad._data.reshape(*ctx.shape) if grad._data is not None else None
+            if grad._transpose is not None:
+                new_transpose = grad._transpose.reshape(ctx.shape[-1], -1)
+            else:
+                new_transpose = None
+            dgrad = MXFP8Tensor(ctx.shape,
+                                 grad.dtype,
+                                 data=new_data,
+                                 fp8_scale_inv=grad._scale_inv,
+                                 fp8_dtype=grad._fp8_dtype,
+                                 data_transpose=new_transpose,
+                                 quantizer=grad._quantizer,
+            )
+            return dgrad, None
+        return grad.reshape(ctx.shape), None

@@ -129,7 +129,9 @@ class QuantizationParams {
   virtual void set_quantization_params(TensorWrapper* tensor) const = 0;
 
   virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
-                                                             DType dtype) const = 0;
+                                                             DType dtype,
+                                                             bool rowwise_usage,
+                                                             bool columnwise_usage) const = 0;
 };
 
 class NoneQuantizationParams : public QuantizationParams {
@@ -145,7 +147,9 @@ class NoneQuantizationParams : public QuantizationParams {
   virtual void set_quantization_params(TensorWrapper* tensor) const override {}
 
   virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
-                                                             DType dtype) const override;
+                                                             DType dtype,
+                                                             bool rowwise_usage,
+                                                             bool columnwise_usage) const override;
 };
 
 class Float8Params : public QuantizationParams {
@@ -165,7 +169,9 @@ class Float8Params : public QuantizationParams {
   virtual void set_quantization_params(TensorWrapper* tensor) const override;
 
   virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
-                                                             DType dtype) const override;
+                                                             DType dtype,
+                                                             bool rowwise_usage,
+                                                             bool columnwise_usage) const override;
 };
 
 class MXFP8Params : public QuantizationParams {
@@ -185,7 +191,9 @@ class MXFP8Params : public QuantizationParams {
   virtual void set_quantization_params(TensorWrapper* tensor) const override;
 
   virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
-                                                             DType dtype) const override;
+                                                             DType dtype,
+                                                             bool rowwise_usage,
+                                                             bool columnwise_usage) const override;
 };
 
 std::unique_ptr<QuantizationParams> convert_quantization_params(py::handle params);

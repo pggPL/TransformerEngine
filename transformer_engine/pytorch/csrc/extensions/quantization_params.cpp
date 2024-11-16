@@ -12,8 +12,8 @@
 namespace transformer_engine::pytorch {
 
 std::pair<TensorWrapper, py::object> NoneQuantizationParams::create_tensor(
-    const std::vector<size_t>& shape,
-    DType dtype) const {
+    const std::vector<size_t>& shape, DType dtype,
+    bool rowwise_usage, bool columnwise_usage) const {
   at::TensorOptions opts;
   opts = opts.dtype(GetATenDType(dtype)).device(torch::kCUDA);
   std::vector<int64_t> torch_shape;
@@ -50,7 +50,9 @@ void Float8Params::set_quantization_params(TensorWrapper* tensor) const {
 }
 
 std::pair<TensorWrapper, py::object> Float8Params::create_tensor(const std::vector<size_t>& shape,
-                                                                 DType dtype) const {
+                                                                 DType dtype,
+                                                                 bool rowwise_usage,
+                                                                 bool columnwise_usage) const {
   using namespace pybind11::literals;
   std::vector<int64_t> torch_shape;
   for (auto s : shape) {
@@ -93,29 +95,54 @@ void MXFP8Params::set_quantization_params(TensorWrapper* tensor) const {
 }
 
 std::pair<TensorWrapper, py::object> MXFP8Params::create_tensor(const std::vector<size_t>& shape,
-                                                                DType dtype) const {
+                                                                DType dtype,
+                                                                bool rowwise_usage,
+                                                                bool columnwise_usage) const {
   using namespace pybind11::literals;
   std::vector<int64_t> torch_shape;
+  size_t numel = 1;
   for (auto s : shape) {
     torch_shape.emplace_back(static_cast<int64_t>(s));
+    numel *= s;
   }
+
+  TensorWrapper tensor{};
   at::TensorOptions opts;
+  at::Tensor rowwise_data, columnwise_data, rowwise_scale_inv, columnwise_scale_inv;
   opts = opts.dtype(torch::kUInt8).device(torch::kCUDA);
-  at::Tensor data = at::empty(torch_shape, opts);
-  at::Tensor scale_inv = at::empty({1}, opts);
+
+  if (rowwise_usage) {
+    at::Tensor rowwise_data = at::empty(torch_shape, opts);
+    at::Tensor rowwise_scale_inv = at::empty({numel / 32}, opts);  // TODO (fix size)
+
+    tensor.set_rowwise_data(rowwise_data.data_ptr(),
+                            this->dtype,
+                            shape);
+    tensor.set_rowwise_scale_inv(rowwise_scale_inv.data_ptr(),
+                                 DType::kFloat8E8M0,
+                                 std::vector<size_t>{numel / 32});
+  }
+  if (columnwise_usage) {
+    at::Tensor columnwise_data = at::empty(torch_shape, opts);
+    at::Tensor columnwise_scale_inv = at::empty({numel / 32}, opts);  // TODO (fix size)
+
+    tensor.set_columnwise_data(columnwise_data.data_ptr(),
+                               this->dtype,
+                               shape);
+    tensor.set_columnwise_scale_inv(columnwise_scale_inv.data_ptr(),
+                                    DType::kFloat8E8M0,
+                                    std::vector<size_t>{numel / 32});
+  }
+  this->set_quantization_params(&tensor);
+
   py::handle MXFP8TensorClass(reinterpret_cast<PyObject*>(MXFP8TensorPythonClass));
-  auto ret = MXFP8TensorClass("data"_a=data,
-                              "fp8_scale_inv"_a=scale_inv,
+  auto ret = MXFP8TensorClass("rowwise_data"_a=rowwise_data,
+                              "columnwise_data"_a=columnwise_data,
+                              "rowwise_scale_inv"_a=rowwise_scale_inv,
+                              "columnwise_scale_inv"_a=columnwise_scale_inv,
                               "fp8_dtype"_a=this->dtype,
                               "dtype"_a=dtype);
-  TensorWrapper tensor{};
-  tensor.set_rowwise_data(data.data_ptr(),
-                          this->dtype,
-                          shape);
-  tensor.set_rowwise_scale_inv(scale_inv.data_ptr(),
-                               DType::kFloat32,
-                               std::vector<size_t>{1});
-  this->set_quantization_params(&tensor);
+
   return {std::move(tensor), std::move(ret)};
 }
 

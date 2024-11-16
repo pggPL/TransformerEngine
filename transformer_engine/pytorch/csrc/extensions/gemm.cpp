@@ -77,7 +77,8 @@ std::pair<TensorWrapper, py::object> createOutputTensor(const std::vector<size_t
                                                         DType dtype,
                                                         py::handle quantization_params) {
   std::unique_ptr<QuantizationParams> qparams = convert_quantization_params(quantization_params);
-  return qparams->create_tensor(shape, dtype);
+  auto [rowwise_usage, columnwise_usage] = qparams->get_usage();
+  return qparams->create_tensor(shape, dtype, rowwise_usage, columnwise_usage);
 }
 
 std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb,
