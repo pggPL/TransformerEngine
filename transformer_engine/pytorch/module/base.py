@@ -378,6 +378,8 @@ def initialize_ub(
                 atomic_gemm=atomic_gemm,
                 use_ce=use_ce,
                 aggregate=aggregate,
+                gemm_priority=gemm_priority,
+                comm_priority=comm_priority,
             )
         else:
             ub_obj = tex.CommOverlap(
@@ -391,6 +393,8 @@ def initialize_ub(
                 num_comm_sm=num_sm,
                 set_sm_margin=set_sm_margin,
                 atomic_gemm=atomic_gemm,
+                gemm_priority=gemm_priority,
+                comm_priority=comm_priority,
             )
         _ub_communicators[name] = ub_obj
 
