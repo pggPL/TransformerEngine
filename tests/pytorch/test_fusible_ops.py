@@ -12,7 +12,6 @@ import torch
 import transformer_engine
 import transformer_engine.common.recipe
 import transformer_engine.pytorch as te
-from transformer_engine.pytorch.float8_tensor import Float8Tensor
 from transformer_engine.pytorch.fp8 import FP8GlobalStateManager
 import transformer_engine.pytorch.ops as te_ops
 from transformer_engine.pytorch.ops._common import is_float8_tensor
@@ -21,6 +20,7 @@ from transformer_engine.pytorch.ops.fused import (
     ForwardLinearBiasActivation,
     ForwardLinearBiasAdd,
 )
+from transformer_engine.pytorch.tensor import Float8Tensor, Float8Quantizer
 from transformer_engine.pytorch.utils import is_bf16_compatible
 import transformer_engine_torch as tex
 
@@ -89,7 +89,12 @@ def make_reference_and_test_tensors(
     ref = torch.rand(shape, dtype=ref_dtype, device=ref_device)
     test = ref.to(device=test_device, dtype=test_dtype)
     if test_is_fp8:
-        test = Float8Tensor.to_float8(test, with_transpose_cache=True)
+        quantizer = Float8Quantizer(
+            scale=torch.ones(1, dtype=torch.float32, device=test_device),
+            amax=torch.zeros(1, dtype=torch.float32, device=test_device),
+            fp8_dtype=tex.DType.kFloat8E4M3,
+        )
+        test = quantizer(test)
     elif test.data_ptr() == ref.data_ptr():
         test = test.clone()
     ref.copy_(test)
@@ -640,7 +645,7 @@ class TestBasicOps:
     def test_cast_float8(
         self,
         *,
-        in_shape: Iterable[int] = (1,),
+        in_shape: Iterable[int] = (16, 16),
         dtype: torch.dtype = torch.bfloat16,
         device: torch.device = "cuda",
         cast_forward: bool,
@@ -656,7 +661,7 @@ class TestBasicOps:
             requires_grad=False,
             test_is_fp8=True,
         )
-        x_test = x_test.from_float8().requires_grad_()
+        x_test = x_test.dequantize().requires_grad_()
         dy_ref, dy_test = make_reference_and_test_tensors(
             in_shape,
             test_dtype=dtype,
@@ -664,7 +669,7 @@ class TestBasicOps:
             requires_grad=False,
             test_is_fp8=True,
         )
-        dy_test = dy_test.from_float8()
+        dy_test = dy_test.dequantize()
 
         # Plain PyTorch implementation
         y_ref = x_ref
