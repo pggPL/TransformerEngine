@@ -60,6 +60,9 @@ class Quantizer(abc.ABC):
             return _QuantizeFunc.apply(tensor, self)
         return _QuantizeFunc.forward(None, tensor, self)
 
+    def __call__(self, tensor: torch.Tensor) -> QuantizedTensor:
+        return self.quantize(tensor)
+
     @abc.abstractmethod
     def make_empty(
         self,

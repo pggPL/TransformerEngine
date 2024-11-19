@@ -129,7 +129,7 @@ class _Linear(torch.autograd.Function):
 
         own_quantized_input = not isinstance(inputmat, QuantizedTensor)
         if fp8 and own_quantized_input:
-            inputmat = input_quantizer.quantize(inputmat)
+            inputmat = input_quantizer(inputmat)
 
         # Column Parallel Linear
         if parallel_mode == "column" and sequence_parallel:

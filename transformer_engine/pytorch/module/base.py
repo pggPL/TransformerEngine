@@ -892,7 +892,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             else:
                 # TODO: Should check whether we do wgrad/dgrad or both to properly set
                 # rowwise/columnwise
-                grad_output = quantizer.quantize(grad_output)
+                grad_output = quantizer(grad_output)
             return grad_output, None
 
     def register_parameter(self, name, param, **kwargs):
@@ -1013,7 +1013,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     "tensor and quantizer kwargs "
                     "must be provided to construct FP8 workspace"
                 )
-            out = quantizer.quantize(tensor)
+            out = quantizer(tensor)
 
             # Update cache
             if cache_name is not None:
