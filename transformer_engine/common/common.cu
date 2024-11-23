@@ -77,16 +77,16 @@ inline bool isPointerAligned(const void *const ptr, const int alignment) {
 }
 
 // Set up parameters to create TMA descriptor.
-template <typename T>
-void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, const uint64_t globalY,
-                          const uint64_t globalX, const uint32_t shmemY, const uint32_t shmemX) {
-  const Tensor &tensor = *tensor_ptr;
+void create_2D_tensor_map(CUtensorMap &tensorMap, const SimpleTensor &tensor,
+                          const uint64_t globalY, const uint64_t globalX,
+                          const uint32_t shmemY, const uint32_t shmemX,
+                          const size_t type_size) {
   // rank is the number of dimensions of the array
   constexpr uint32_t rank = 2;
   uint64_t size[rank] = {globalX, globalY};
 
   // The stride is the number of bytes to traverse from the first element of one row to the next
-  uint64_t stride[rank - 1] = {globalX * sizeof(T)};
+  uint64_t stride[rank - 1] = {globalX * type_size};
 
   // The boxSize is the size of the shared memory buffer that is used as the
   // source/destination of a TMA transfer
@@ -95,8 +95,8 @@ void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, cons
   // The distance between elements in units of sizeof(element)
   uint32_t elemStride[rank] = {1, 1};
 
-  const CUtensorMapDataType tensorDataType = get_CUtensorMapDataType(tensor.data.dtype);
-  void *dataPtr = reinterpret_cast<void *>(tensor.data.dptr);
+  const CUtensorMapDataType tensorDataType = get_CUtensorMapDataType(tensor.dtype);
+  void *dataPtr = reinterpret_cast<void *>(tensor.dptr);
   NVTE_CHECK(isPointerAligned(dataPtr, 16), "Tensor data must be 16B aligned");
 
   // Create the tensor descriptor.
@@ -125,18 +125,6 @@ void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, cons
       CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE));
 }
 
-#define TRANSFORMER_ENGINE_CREATE_2D_TMAP(T)                                               \
-  template void create_2D_tensor_map<T>(CUtensorMap & tensorMap, const Tensor *tensor_ptr, \
-                                        const uint64_t globalY, const uint64_t globalX,    \
-                                        const uint32_t shmemY, const uint32_t shmemX);
-
-TRANSFORMER_ENGINE_CREATE_2D_TMAP(float)
-TRANSFORMER_ENGINE_CREATE_2D_TMAP(fp16)
-TRANSFORMER_ENGINE_CREATE_2D_TMAP(bf16)
-TRANSFORMER_ENGINE_CREATE_2D_TMAP(fp8e4m3)
-TRANSFORMER_ENGINE_CREATE_2D_TMAP(fp8e5m2)
-#undef TRANSFORMER_ENGINE_CREATE_2D_TMAP
-
 static const int32_t deviceComputeCapability = []() {
   cudaDeviceProp deviceProp;
   cudaGetDeviceProperties(&deviceProp, 0);
@@ -144,20 +132,5 @@ static const int32_t deviceComputeCapability = []() {
 }();
 
 bool is_supported_by_CC_100() { return deviceComputeCapability >= 100; }
-
-bool is_mxfp8_cast_supported_shape(const Tensor *output) {
-  const NVTEScalingMode &scaling_mode = output->scaling_mode;
-  const bool is_mxfp8_cast_supported = (scaling_mode.delayed_scaling == 0) &&
-                                       (scaling_mode.x == 1 || scaling_mode.x == 32) &&
-                                       (scaling_mode.y == 1 || scaling_mode.y == 32);
-  return is_mxfp8_cast_supported;
-}
-
-bool is_fp8_cast_supported_shape(const Tensor *output) {
-  const NVTEScalingMode &scaling_mode = output->scaling_mode;
-  const bool is_fp8_cast_supported =
-      is_delayed_tensor_scaling(scaling_mode) && (scaling_mode.x == -1) && (scaling_mode.y == -1);
-  return is_fp8_cast_supported;
-}
 
 }  // namespace transformer_engine

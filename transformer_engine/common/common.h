@@ -28,6 +28,27 @@
 
 namespace transformer_engine {
 
+inline size_t product(const std::vector<size_t> &shape,
+                      const size_t begin,
+                      const size_t end) {
+  NVTE_CHECK(begin <= end && end <= shape.size(),
+             "Attempted to access entries ", begin, " to ", end,
+             " in a vector with ", shape.size(), " entries");
+  size_t ret = 1;
+  for (size_t i = begin; i < end; ++i) {
+    ret *= shape[i];
+  }
+  return ret;
+}
+
+inline size_t product(const std::vector<size_t> &shape) {
+  size_t ret = 1;
+  for (const auto &elem : shape) {
+    ret *= elem;
+  }
+  return ret;
+}
+
 struct SimpleTensor {
   void *dptr;
   std::vector<size_t> shape;
@@ -120,6 +141,50 @@ struct Tensor {
 
   bool has_columnwise_data() const noexcept {
     return columnwise_data.dptr != nullptr;
+  }
+
+  DType dtype() const {
+    if (has_data()) return data.dtype;
+    if (has_columnwise_data()) return columnwise_data.dtype;
+    return DType::kNumTypes;
+  }
+
+  /*! Matrix height after tensor is flattened to 2D
+   *
+   * If a tensor has dimensions (D1, D2, ..., Dn), it is reinterpreted
+   * as a (D1*D2*...*D(n-1), Dn) matrix.
+   */
+  size_t flat_first_dim() const {
+    if (has_data()) {
+      const auto& data_shape = data.shape;
+      if (data_shape.empty()) return 1;
+      return product(data_shape, 0, data_shape.size() - 1);
+    }
+    if (has_columnwise_data()) {
+      const auto& data_shape = columnwise_data.shape;
+      if (data_shape.empty()) return 1;
+      return product(data_shape, 1, data_shape.size());
+    }
+    return 1;
+  }
+
+  /*! Matrix width after tensor is flattened to 2D
+   *
+   * If a tensor has dimensions (D1, D2, ..., Dn), it is reinterpreted
+   * as a (D1*D2*...*D(n-1), Dn) matrix.
+   */
+  size_t flat_last_dim() const {
+    if (has_data()) {
+      const auto& data_shape = data.shape;
+      if (data_shape.empty()) return 1;
+      return data_shape.back();
+    }
+    if (has_columnwise_data()) {
+      const auto& data_shape = columnwise_data.shape;
+      if (data_shape.empty()) return 1;
+      return data_shape.front();
+    }
+    return 1;
   }
 };
 
@@ -349,25 +414,6 @@ struct TypeInfo {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-inline size_t product(const std::vector<size_t> &shape,
-                      const size_t begin,
-                      const size_t end) {
-  NVTE_CHECK(end <= shape.size());
-  size_t ret = begin < end ? 1 : 0;
-  for (size_t i = begin; i < end; ++i) {
-    ret *= shape[i];
-  }
-  return ret;
-}
-
-inline size_t product(const std::vector<size_t> &shape) {
-  size_t ret = 1;
-  for (const auto &elem : shape) {
-    ret *= elem;
-  }
-  return ret;
-}
-
 inline int log2_ceil(int value) {
   int log2_value = 0;
   while ((1 << log2_value) < value) ++log2_value;
@@ -398,19 +444,6 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
 
 bool is_fp8_dtype(const DType t);
 
-template <typename T>
-std::string to_string(const std::vector<T> &v) {
-  std::string s = "(";
-  for (size_t i = 0; i < v.size(); ++i) {
-    s += std::to_string(v[i]);
-    if (i < v.size() - 1) {
-      s += ", ";
-    }
-  }
-  s += ")";
-  return s;
-}
-
 std::string to_string(const DType type);
 std::string to_string(const ScalingMode &type);
 
@@ -432,6 +465,13 @@ inline bool is_delayed_tensor_scaling(const ScalingMode &mode) {
   return is_tensor_scaling(mode) && mode.delayed_scaling;
 }
 
+inline bool is_mxfp_scaling(const ScalingMode &mode) {
+  return (mode.delayed_scaling == 0) &&
+         (mode.x == 1 || mode.x == 32) &&
+         (mode.y == 1 || mode.y == 32);
+}
+
+
 bool is_block_scaling(const Tensor *t);
 
 /*! \brief Update a tensor's FP8 scale-inverse
@@ -451,13 +491,12 @@ CUtensorMapDataType get_CUtensorMapDataType(DType dtype);
 inline bool isPointerAligned(const void *const ptr, const int alignment);
 
 // Set up parameters to create TMA descriptor.
-template <typename T>
-void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, const uint64_t globalY,
-                          const uint64_t globalX, const uint32_t shmemY, const uint32_t shmemX);
+void create_2D_tensor_map(CUtensorMap &tensorMap, const SimpleTensor& tensor,
+                          const uint64_t globalY, const uint64_t globalX,
+                          const uint32_t shmemY, const uint32_t shmemX,
+                          const size_t type_size);
 
 bool is_supported_by_CC_100();
-bool is_mxfp8_cast_supported_shape(const Tensor *output);
-bool is_fp8_cast_supported_shape(const Tensor *output);
 
 }  // namespace transformer_engine
 

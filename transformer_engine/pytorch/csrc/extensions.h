@@ -365,6 +365,10 @@ namespace transformer_engine::pytorch {
 py::object quantize(const at::Tensor& tensor,
                     py::handle quantizer);
 
+py::object dequantize(const py::handle& input, transformer_engine::DType otype);
+
+std::vector<py::object> bgrad_quantize(const at::Tensor& input, py::handle py_quantizer);
+
 std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb,
                              py::object D, py::handle quantizer,
                              std::optional<DType> out_dtype,
@@ -383,13 +387,6 @@ void cast_to_fp8_noalloc(const at::Tensor &input, const at::Tensor &scale, at::T
                          at::Tensor amax, at::Tensor scale_inv, transformer_engine::DType otype,
                          std::vector<int64_t> scaling_mode, const int scale_offset = 0,
                          const int amax_offset = 0, const int scale_inv_offset = 0);
-
-at::Tensor cast_from_fp8(const at::Tensor &input, const at::Tensor &scale_inv,
-                         transformer_engine::DType itype, transformer_engine::DType otype,
-                         const int scale_inv_offset = 0);
-
-std::vector<at::Tensor> cast_to_fp8_x2(const at::Tensor& input, const at::Tensor& scale_inv_rowwise,
-                         at::Tensor scale_inv_colwise, transformer_engine::DType otype);
 
 /***************************************************************************************************
  * Cast fusions
@@ -435,29 +432,6 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
                                               std::vector<int64_t> scaling_mode,
                                               int scale_offset = 0, int amax_offset = 0,
                                               int scale_inv_offset = 0);
-
-std::vector<at::Tensor> fp8_cast_dbias_x2(const at::Tensor& input, at::Tensor scale_inv_rowwise,
-                                          at::Tensor scale_inv_colwise, transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_dgelu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_dsilu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_drelu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_dqgelu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_dsrelu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
 
 /***************************************************************************************************
  * Softmax

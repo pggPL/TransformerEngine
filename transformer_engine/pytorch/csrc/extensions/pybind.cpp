@@ -45,6 +45,9 @@ void init_extension() {
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   NVTE_DECLARE_COMMON_PYBIND11_HANDLES(m)
   m.def("quantize", transformer_engine::pytorch::quantize);
+  m.def("dequantize", &transformer_engine::pytorch::dequantize, "Dequantize",
+        py::arg("input"), py::arg("otype"));
+  m.def("bgrad_quantize", transformer_engine::pytorch::bgrad_quantize);
   m.def("generic_gemm", transformer_engine::pytorch::gemm);
 
   // Permutation functions
@@ -154,16 +157,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("input"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
         py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
         py::arg("scale_inv_offset") = 0);
-  m.def("cast_to_fp8_x2", &cast_to_fp8_x2, "Cast to FP8", py::call_guard<py::gil_scoped_release>(),
-        py::arg("input"), py::arg("scale_inv_rowwise"),
-        py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("cast_to_fp8_noalloc", &cast_to_fp8_noalloc, "Cast to FP8",
         py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
         py::arg("output"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
         py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("cast_from_fp8", &cast_from_fp8, "Cast from FP8", py::call_guard<py::gil_scoped_release>(),
-        py::arg("input"), py::arg("scale_inv"), py::arg("itype"), py::arg("otype"),
         py::arg("scale_inv_offset") = 0);
   m.def("fp8_cast_dbias", &fp8_cast_dbias, "FP8 cast + dbias",
         py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
@@ -194,29 +191,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
         py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
         py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_x2", &fp8_cast_dbias_x2, "FP8 cast + dbias",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_dgelu_x2", &fp8_cast_dbias_dgelu_x2,
-        "Fused Cast + BGRAD + DGELU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_drelu_x2", &fp8_cast_dbias_drelu_x2,
-        "Fused Cast + BGRAD + DRELU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_dsilu_x2", &fp8_cast_dbias_dsilu_x2,
-        "Fused Cast + BGRAD + DSILU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_dqgelu_x2", &fp8_cast_dbias_dqgelu_x2,
-        "Fused Cast + BGRAD + DQGELU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_dsrelu_x2", &fp8_cast_dbias_dsrelu_x2,
-        "Fused Cast + BGRAD + DSRELU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("te_gemm", &te_gemm, "CublasLt GEMM");  /// TODO Think
   m.def("te_grouped_gemm", &te_grouped_gemm, "Grouped GEMM");
   m.def("te_grouped_gemm_single_output", &te_grouped_gemm_single_output,

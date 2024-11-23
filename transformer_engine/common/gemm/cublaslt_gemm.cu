@@ -429,12 +429,10 @@ void nvte_cublas_gemm(const NVTETensor A, const NVTETensor B, NVTETensor D, cons
   Tensor *outputGelu = reinterpret_cast<Tensor *>(pre_gelu_out);
   Tensor *wspace = reinterpret_cast<Tensor *>(workspace);
 
-  const auto& A_shape = inputA->data.shape;
-  const auto& B_shape = inputB->data.shape;
-  const size_t A0 = product(A_shape, 0, A_shape.size() - 1);
-  const size_t A1 = A_shape[A_shape.size() - 1];
-  const size_t B0 = product(B_shape, 0, B_shape.size() - 1);
-  const size_t B1 = B_shape[B_shape.size() - 1];
+  const size_t A0 = inputA->flat_first_dim();
+  const size_t A1 = inputA->flat_last_dim();
+  const size_t B0 = inputB->flat_first_dim();
+  const size_t B1 = inputB->flat_last_dim();
 
   const int m = transa ? A0 : A1;
   const int k = transa ? A1 : A0;
