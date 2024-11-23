@@ -217,10 +217,8 @@ __global__ void __launch_bounds__(block_size) cast_transpose_general_kernel(
 
 }  // namespace
 
-void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output_,
-                    Tensor *transposed_output_, cudaStream_t stream) {
-  Tensor &cast_output = *cast_output_;
-  Tensor &transposed_output = *transposed_output_;
+void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *output_, cudaStream_t stream) {
+  Tensor &output = *output_;
 
   // Check no-op flag
   if (noop.data.dptr != nullptr) {
@@ -229,39 +227,37 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output
     NVTE_CHECK(noop.data.dptr != nullptr);
   }
 
-  // Check tensor dims
   CheckInputTensor(input, "cast_transpose_input");
-  CheckOutputTensor(cast_output, "cast_output");
-  CheckOutputTensor(transposed_output, "transposed_output");
-  NVTE_CHECK(input.data.shape.size() == 2, "Input must have 2 dimensions.");
-  NVTE_CHECK(cast_output.data.shape.size() == 2, "Cast output must have 2 dimensions.");
-  NVTE_CHECK(transposed_output.data.shape.size() == 2, "Transposed output must have 2 dimensions.");
-  const size_t row_length = input.data.shape[1];
-  const size_t num_rows = input.data.shape[0];
-  NVTE_CHECK(cast_output.data.shape[0] == num_rows, "Wrong dimension of cast output.");
-  NVTE_CHECK(cast_output.data.shape[1] == row_length, "Wrong dimension of cast output.");
-  NVTE_CHECK(transposed_output.data.shape[0] == row_length,
-             "Wrong dimension of transposed output.");
-  NVTE_CHECK(transposed_output.data.shape[1] == num_rows, "Wrong dimension of transposed output.");
+  CheckOutputTensor(output, "cast_output");
 
-  // Check tensor pointers
-  NVTE_CHECK(input.data.dptr != nullptr, "Input is not allocated.");
-  NVTE_CHECK(cast_output.data.dptr != nullptr, "Cast output is not allocated.");
-  NVTE_CHECK(transposed_output.data.dptr != nullptr, "Transposed output is not allocated.");
-  NVTE_CHECK(cast_output.data.dtype == transposed_output.data.dtype,
+  // Check that inputs and outputs are available
+  NVTE_CHECK(input.has_data(), "Input is not allocated");
+  NVTE_CHECK(output.has_data(), "Output rowwise data is not allocated");
+  NVTE_CHECK(output.has_columnwise_data(), "Output columnwise is not allocated");
+
+  // Flatten tensor to 2D
+  NVTE_CHECK(input.data.shape == output.data.shape,
+             "Input and output shapes do not match (input=", input.data.shape,
+             ", output=", output.data.shape);
+  const size_t row_length = input.flat_last_dim();
+  const size_t num_rows = input.flat_first_dim();
+  NVTE_CHECK(output.flat_first_dim() == num_rows &&
+             output.flat_last_dim() == row_length,
+             "Invalid output dimensions (expected ",
+             std::vector<size_t>{num_rows, row_length}, ", got ",
+             std::vector<size_t>{output.flat_first_dim(), output.flat_last_dim()}, ")");
+
+  // Check that cast and transposed output data matches
+  NVTE_CHECK(output.data.dtype == output.columnwise_data.dtype,
              "Cast and transposed output types must match.");
-  NVTE_CHECK(cast_output.amax.dptr == transposed_output.amax.dptr,
-             "Cast and transposed outputs need to share amax tensor.");
-  NVTE_CHECK(cast_output.scale.dptr == transposed_output.scale.dptr,
-             "Cast and transposed outputs need to share scale tensor.");
-  NVTE_CHECK(cast_output.scale_inv.dptr == transposed_output.scale_inv.dptr,
+  NVTE_CHECK(output.scale_inv.dptr == output.columnwise_scale_inv.dptr,
              "Cast and transposed outputs need to share scale-inverse tensor.");
 
   TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
-      input.data.dtype, InputType,
+      input.dtype(), InputType,
       TRANSFORMER_ENGINE_TYPE_SWITCH_OUTPUT(
-          cast_output.data.dtype, OutputType,
-          if (is_delayed_tensor_scaling(cast_output.scaling_mode)) {
+          output.dtype(), OutputType,
+          if (is_delayed_tensor_scaling(output.scaling_mode)) {
             constexpr const char *itype_name = TypeInfo<InputType>::name;
             constexpr const char *otype_name = TypeInfo<OutputType>::name;
             constexpr size_t itype_size = sizeof(InputType);
@@ -323,11 +319,11 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output
               rtc_manager.launch(kernel_label, num_blocks, block_size, 0, stream,
                                  static_cast<const InputType *>(input.data.dptr),
                                  reinterpret_cast<const CType *>(noop.data.dptr),
-                                 static_cast<OutputType *>(cast_output.data.dptr),
-                                 static_cast<OutputType *>(transposed_output.data.dptr),
-                                 static_cast<const CType *>(cast_output.scale.dptr),
-                                 static_cast<CType *>(cast_output.amax.dptr),
-                                 static_cast<CType *>(cast_output.scale_inv.dptr), row_length,
+                                 static_cast<OutputType *>(output.data.dptr),
+                                 static_cast<OutputType *>(output.columnwise_data.dptr),
+                                 static_cast<const CType *>(output.scale.dptr),
+                                 static_cast<CType *>(output.amax.dptr),
+                                 static_cast<CType *>(output.scale_inv.dptr), row_length,
                                  num_rows);
             } else {  // Statically-compiled general kernel
               constexpr size_t load_size = 4;
@@ -340,37 +336,33 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *cast_output
                   <<<num_blocks, block_size, 0, stream>>>(
                       static_cast<const InputType *>(input.data.dptr),
                       reinterpret_cast<const CType *>(noop.data.dptr),
-                      static_cast<OutputType *>(cast_output.data.dptr),
-                      static_cast<OutputType *>(transposed_output.data.dptr),
-                      static_cast<const CType *>(cast_output.scale.dptr),
-                      static_cast<CType *>(cast_output.amax.dptr),
-                      static_cast<CType *>(cast_output.scale_inv.dptr), row_length, num_rows);
+                      static_cast<OutputType *>(output.data.dptr),
+                      static_cast<OutputType *>(output.columnwise_data.dptr),
+                      static_cast<const CType *>(output.scale.dptr),
+                      static_cast<CType *>(output.amax.dptr),
+                      static_cast<CType *>(output.scale_inv.dptr), row_length, num_rows);
             }
           } else {
-            NVTE_ERROR("Not implemented scaling mode: " + to_string(cast_output.scaling_mode) +
-                       ".");
+            NVTE_ERROR("Not implemented scaling mode: ", to_string(output.scaling_mode));
           });  // NOLINT(*)
   );           // NOLINT(*)
 }
 
 }  // namespace transformer_engine
 
-void nvte_cast_transpose(const NVTETensor input, NVTETensor cast_output,
-                         NVTETensor transposed_output, cudaStream_t stream) {
+void nvte_cast_transpose(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose);
   using namespace transformer_engine;
   auto noop = Tensor();
   cast_transpose(*reinterpret_cast<const Tensor *>(input), noop,
-                 reinterpret_cast<Tensor *>(cast_output),
-                 reinterpret_cast<Tensor *>(transposed_output), stream);
+                 reinterpret_cast<Tensor *>(output), stream);
 }
 
 void nvte_cast_transpose_with_noop(const NVTETensor input, const NVTETensor noop,
-                                   NVTETensor cast_output, NVTETensor transposed_output,
+                                   NVTETensor output,
                                    cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose_with_noop);
   using namespace transformer_engine;
   cast_transpose(*reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(noop),
-                 reinterpret_cast<Tensor *>(cast_output),
-                 reinterpret_cast<Tensor *>(transposed_output), stream);
+                 reinterpret_cast<Tensor *>(output), stream);
 }

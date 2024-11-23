@@ -110,6 +110,7 @@ class Quantizer {
   bool rowwise_usage = true;
   bool columnwise_usage = true;
   bool internal = false;
+  py::handle quantizer;
 
  protected:
   Quantizer(const py::handle& quantizer);
@@ -146,7 +147,7 @@ class Float8Quantizer : public Quantizer {
                                                              DType dtype) const override;
 };
 
-std::unique_ptr<Quantizer> convert_quantizer(py::handle params);
+std::unique_ptr<Quantizer> convert_quantizer(py::handle quantizer);
 
 std::vector<size_t> getTensorShape(at::Tensor t);
 
@@ -209,6 +210,19 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
     void* amax_ptr, void* scale_ptr, void* scale_inv_ptr, std::vector<size_t> scale_inv_shape = {1},
     NVTEScalingMode scaling_mode = {-1, -1, 1});
 
+transformer_engine::TensorWrapper makeTransformerEngineTensor(
+    void* data_ptr, void* columnwise_data_ptr,
+    const std::vector<size_t>& shape,
+    const std::vector<size_t>& columnwise_shape,
+    const transformer_engine::DType type,
+    void* amax_ptr,
+    void* scale_ptr,
+    void* scale_inv_ptr,
+    void* columnwise_scale_inv_ptr,
+    const std::vector<size_t>& scale_inv_shape = {1},
+    const std::vector<size_t>& columnwise_scale_inv_shape = {1},
+    NVTEScalingMode scaling_mode = {-1, -1, 1});
+
 transformer_engine::TensorWrapper makeTransformerEngineTensor(void* data_ptr,
                                                               const NVTEShape& shape,
                                                               const transformer_engine::DType type);
@@ -236,6 +250,8 @@ at::Tensor allocateTorchTensor(int M, int N, transformer_engine::DType dtype);
 at::Tensor allocateTorchTensor(int M, transformer_engine::DType dtype);
 
 void* getDataPtr(at::Tensor tensor, int offset = 0);
+
+std::vector<size_t> convertShape(const NVTEShape& shape);
 
 }  // namespace transformer_engine::pytorch
 

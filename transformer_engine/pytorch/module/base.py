@@ -885,7 +885,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 grad_output_mat_no_fp8 = grad_output.dequantize()
             # TODO: Should check whether we do wgrad/dgrad or both to properly set
             # rowwise/columnwise
-            grad_bias, grad_output = tex.bgrad_cast(
+            grad_bias, grad_output = tex.bgrad_quantize(
                 grad_output_mat_no_fp8,
                 quantizer,
             )

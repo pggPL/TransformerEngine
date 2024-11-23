@@ -31,7 +31,7 @@ std::unique_ptr<Quantizer> convert_quantizer(py::handle quantizer) {
     }
   }
 
-  NVTE_ERROR("Unexpected type of quantization params");
+  NVTE_ERROR("Unexpected type for quantizer");
 }
 
 transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
@@ -82,7 +82,6 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
 transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor) {
   transformer_engine::DType dtype = GetTransformerEngineDType(tensor.scalar_type());
   std::vector<size_t> shape;
-
   for (auto s : tensor.sizes()) {
     shape.push_back(s);
   }
@@ -97,6 +96,30 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
       data_ptr, shape, type, reinterpret_cast<float*>(amax_ptr),
       reinterpret_cast<float*>(scale_ptr), reinterpret_cast<float*>(scale_inv_ptr), scale_inv_shape,
       scaling_mode);
+}
+
+transformer_engine::TensorWrapper makeTransformerEngineTensor(
+    void* data_ptr, void* columnwise_data_ptr,
+    const std::vector<size_t>& shape,
+    const std::vector<size_t>& columnwise_shape,
+    const transformer_engine::DType type,
+    void* amax_ptr,
+    void* scale_ptr,
+    void* scale_inv_ptr,
+    void* columnwise_scale_inv_ptr,
+    const std::vector<size_t>& scale_inv_shape,
+    const std::vector<size_t>& columnwise_scale_inv_shape,
+    NVTEScalingMode scaling_mode) {
+  TensorWrapper ret(scaling_mode);
+  ret.set_rowwise_data(data_ptr, type, shape);
+  ret.set_columnwise_data(columnwise_data_ptr, type, columnwise_shape);
+  const std::vector<size_t> meta_shape{1};
+  ret.set_amax(amax_ptr, DType::kFloat32, meta_shape);
+  ret.set_scale(scale_ptr, DType::kFloat32, meta_shape);
+  ret.set_rowwise_scale_inv(scale_inv_ptr, DType::kFloat32, scale_inv_shape);
+  ret.set_columnwise_scale_inv(columnwise_scale_inv_ptr, DType::kFloat32,
+                               columnwise_scale_inv_shape);
+  return ret;
 }
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor, at::Tensor amax,
@@ -126,9 +149,9 @@ size_t product(const std::vector<size_t>& shape) {
 }
 
 size_t product(const NVTEShape& shape, size_t begin, size_t end) {
-  NVTE_CHECK(begin < shape.ndim &&
-             end < shape.ndim);
-  if (begin >= end) return 0;
+  NVTE_CHECK(begin <= end && end <= shape.ndim,
+             "Attempted to access entries ", begin, " to ", end,
+             " in a shape with ", shape.ndim, " entries");
   size_t ret = 1;
   for (size_t i = begin; i < end; ++i) {
     ret *= shape.data[i];
@@ -184,6 +207,10 @@ void* getDataPtr(at::Tensor tensor, int offset) {
     dptr = reinterpret_cast<void*>(char_ptr);
   }
   return dptr;
+}
+
+std::vector<size_t> convertShape(const NVTEShape& shape) {
+  return std::vector<size_t>(shape.data, shape.data + shape.ndim);
 }
 
 }  // namespace transformer_engine::pytorch

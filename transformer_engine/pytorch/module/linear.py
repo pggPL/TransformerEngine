@@ -394,18 +394,24 @@ class _Linear(torch.autograd.Function):
                     #             inputmat_total, fp8_dtype_backward
                     #         )
                     pass
-                wgrad, grad_bias, _ = general_gemm(
+                # Perform wgrad GEMM
+                # Note: Fuse with bgrad computation if not already
+                # computed
+                wgrad, grad_bias_, _ = general_gemm(
                     inputmat_total,
                     grad_output,
                     get_workspace(),
                     layout="NT",
                     grad=True,
-                    bias=bias,
+                    bias=(bias if grad_bias is None else None),
                     out_dtype=ctx.activation_dtype,  # TODO: not sure about that
                     out=main_grad if ctx.fuse_wgrad_accumulation else None,
                     use_split_accumulator=_2X_ACC_WGRAD,
                     accumulate=accumulate_wgrad_into_param_main_grad,
                 )
+                if grad_bias is None:
+                    grad_bias = grad_bias_
+                del grad_bias_
 
                 # Deallocate input tensor
                 if ctx.owns_input:
