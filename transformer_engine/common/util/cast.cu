@@ -98,8 +98,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
   const int thread_offset_X_rowwise = tid_rowwise_X * ELEMS_PER_THREAD;
   // const int thread_offset_X_colwise = tid_colwise_X;
 
-  const int dbias_rowwise_offset_Y =
-      blockIdx.y * MXFP8_CHUNKS_PER_BLOCK_Y + tid_rowwise_Y;
+  const int dbias_rowwise_offset_Y = blockIdx.y * MXFP8_CHUNKS_PER_BLOCK_Y + tid_rowwise_Y;
   const int dbias_rowwise_block_offset_X =
       blockIdx.x * MXFP8_CHUNKS_PER_BLOCK_X * MXFP8_CHUNK_DIM_X + thread_offset_X_rowwise;
   const int dbias_colwise_offset_Y = blockIdx.y;
@@ -111,12 +110,12 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
   float partial_dbias_colwise[MXFP8_CHUNKS_PER_BLOCK_X];
   if constexpr (IS_DBIAS) {
     if constexpr (COMPUTE_DBIAS_IN_ROWWISE_SECTION) {
-      #pragma unroll
+#pragma unroll
       for (int i = 0; i < MXFP8_CHUNKS_PER_BLOCK_X; ++i) {
         partial_dbias_rowwise[i].clear();
       }
     } else {
-      #pragma unroll
+#pragma unroll
       for (int i = 0; i < MXFP8_CHUNKS_PER_BLOCK_X; ++i) {
         partial_dbias_colwise[i] = 0;
       }
@@ -379,21 +378,22 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
       __shared__ float shmem_partial_dbias_rowwise[CZ][Y][X][ELEMS_PER_THREAD];
 
       if (tid_rowwise_Y > 0) {
-        #pragma unroll
+#pragma unroll
         for (int c = 0; c < MXFP8_CHUNKS_PER_BLOCK_X; ++c) {
-          partial_dbias_rowwise[c].store_to(&shmem_partial_dbias_rowwise[c][tid_rowwise_Y - 1][tid_rowwise_X]);
+          partial_dbias_rowwise[c].store_to(
+              &shmem_partial_dbias_rowwise[c][tid_rowwise_Y - 1][tid_rowwise_X]);
         }
       }
       __syncthreads();
 
       if (tid_rowwise_Y == 0) {
-        #pragma unroll
+#pragma unroll
         for (int c = 0; c < MXFP8_CHUNKS_PER_BLOCK_X; ++c) {
           Vec<float, ELEMS_PER_THREAD> other_row_dbias;
-          #pragma unroll
+#pragma unroll
           for (int i = 0; i < Y; ++i) {
             other_row_dbias.load_from(&shmem_partial_dbias_rowwise[c][i][tid_rowwise_X]);
-            #pragma unroll
+#pragma unroll
             for (int j = 0; j < ELEMS_PER_THREAD; ++j) {
               partial_dbias_rowwise[c].data.elt[j] += other_row_dbias.data.elt[j];
             }
@@ -404,7 +404,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
         }
       }
     } else {
-      #pragma unroll
+#pragma unroll
       for (int i = 0; i < MXFP8_CHUNKS_PER_BLOCK_X; ++i) {
         const int dbias_colwise_offset_X = dbias_colwise_block_offset_X + i * MXFP8_CHUNK_DIM_X;
         const int dbias_offset = dbias_colwise_offset_Y * dbias_stride + dbias_colwise_offset_X;
@@ -464,8 +464,9 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
     cast_fp8_2D_kernel(const __grid_constant__ CUtensorMap tensor_map_input,
                        const __grid_constant__ CUtensorMap tensor_map_act_input,
                        const __grid_constant__ CUtensorMap tensor_map_output,
-                       float *const dbias_workspace, float *const amax_ptr, float *const scale_inv_ptr,
-                       const float *const scale_ptr, const size_t rows, const size_t cols) {
+                       float *const dbias_workspace, float *const amax_ptr,
+                       float *const scale_inv_ptr, const float *const scale_ptr, const size_t rows,
+                       const size_t cols) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 
   const int block_offset_Y = blockIdx.y * FP8_CHUNKS_PER_BLOCK_Y * FP8_CHUNK_DIM_Y;
@@ -658,7 +659,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   // If further computations were to take place in the kernel, this allows the
   // memory location of the shared memory barrier to be reused.
   if (is_master_thread) {
-    #pragma unroll
+#pragma unroll
     for (int iter = 0; iter < FP8_ITERATIONS; ++iter) {
       ptx::mbarrier_invalid(&mbar[iter]);
     }
@@ -678,12 +679,8 @@ static_assert(CHUNKS_PER_BLOCK % CHUNKS_PER_ITERATION == 0);
 
 template <typename IType, typename OType>
 __global__ void __launch_bounds__(THREADS_PER_BLOCK)
-    cast_fp8_1D_kernel(const IType * input_ptr,
-                       OType * output_ptr,
-                       float *const amax_ptr,
-                       float *const scale_inv_ptr,
-                       const float *const scale_ptr,
-                       const size_t N) {
+    cast_fp8_1D_kernel(const IType *input_ptr, OType *output_ptr, float *const amax_ptr,
+                       float *const scale_inv_ptr, const float *const scale_ptr, const size_t N) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 
   const int block_offset = blockIdx.x * ELEMS_PER_BLOCK;
@@ -702,13 +699,13 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
 
   const bool is_master_thread = (threadIdx.x == 0);
 
-  // Initialize shared memory barrier with the number of threads participating in the barrier.
-  #pragma nv_diag_suppress static_var_with_dynamic_init
+// Initialize shared memory barrier with the number of threads participating in the barrier.
+#pragma nv_diag_suppress static_var_with_dynamic_init
   __shared__ alignas(8) uint64_t mbar[ITERATIONS];
 
   if (is_master_thread) {
-  // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
-    #pragma unroll
+    // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
+#pragma unroll
     for (int iter = 0; iter < ITERATIONS; ++iter) {
       ptx::mbarrier_init(&mbar[iter], THREADS_PER_BLOCK);
     }
@@ -724,11 +721,9 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
 
   if (is_master_thread) {
     // Initiate bulk tensor copy
-    ptx::cp_async_bulk_tensor_1d_global_to_shared(
-        reinterpret_cast<uint64_t *>(&in_sh[buff_zero]), 
-        reinterpret_cast<const uint64_t *>(input),
-        transaction_size_IN,
-        &mbar[iter_zero]);
+    ptx::cp_async_bulk_tensor_1d_global_to_shared(reinterpret_cast<uint64_t *>(&in_sh[buff_zero]),
+                                                  reinterpret_cast<const uint64_t *>(input),
+                                                  transaction_size_IN, &mbar[iter_zero]);
 
     // Arrive on the barrier and tell how many bytes are expected to come in.
     ptx::mbarrier_arrive_expect_tx(&mbar[iter_zero], transaction_size_IN);
@@ -737,7 +732,7 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
     ptx::mbarrier_arrive(&mbar[iter_zero]);
   }
 
-  #pragma unroll
+#pragma unroll
   for (int iter = 0; iter < ITERATIONS; ++iter) {
     const int buff = iter % SHMEM_BUFFERS;
     const int it_offset = iter * SHMEM_DIM;
@@ -751,8 +746,7 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
         // Initiate bulk tensor copy
         ptx::cp_async_bulk_tensor_1d_global_to_shared(
             reinterpret_cast<uint64_t *>(&in_sh[next_buff]),
-            reinterpret_cast<const uint64_t *>(input + next_iter_offset),
-            transaction_size_IN,
+            reinterpret_cast<const uint64_t *>(input + next_iter_offset), transaction_size_IN,
             &mbar[next_iter]);
 
         // Arrive on the barrier and tell how many bytes are expected to come in.
@@ -768,7 +762,7 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
     // Wait for the data to have arrived
     ptx::mbarrier_wait_parity(&mbar[iter], parity);
 
-    #pragma unroll
+#pragma unroll
     for (int chunk = 0; chunk < CHUNKS_PER_ITERATION; ++chunk) {
       const int shmem_offset = chunk * CHUNK_SIZE + threadIdx.x;
       float elt = static_cast<float>(in_sh[buff][shmem_offset]);
@@ -787,8 +781,7 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
     if (is_master_thread) {
       ptx::cp_async_bulk_tensor_1d_shared_to_global(
           reinterpret_cast<uint64_t *>(output + it_offset),
-          reinterpret_cast<uint64_t *>(&out_sh[buff]),
-          transaction_size_OUT);
+          reinterpret_cast<uint64_t *>(&out_sh[buff]), transaction_size_OUT);
 
       // Create a "bulk async-group" out of the previous bulk copy operation.
       ptx::cp_async_bulk_commit_group();
@@ -819,7 +812,7 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
   // If further computations were to take place in the kernel, this allows the
   // memory location of the shared memory barrier to be reused.
   if (is_master_thread) {
-    #pragma unroll
+#pragma unroll
     for (int iter = 0; iter < ITERATIONS; ++iter) {
       ptx::mbarrier_invalid(&mbar[iter]);
     }
@@ -849,14 +842,14 @@ __global__ void __launch_bounds__(DBIAS_THREADS_PER_BLOCK)
   acc_vec.clear();
   for (int i = 0; i < rows; ++i) {
     ldg_vec.load_from(thread_in_base + i * cols);
-    #pragma unroll
+#pragma unroll
     for (int e = 0; e < nvec; ++e) {
       acc_vec.data.elt[e] += ldg_vec.data.elt[e];
     }
   }
 
   OutputVec stg_vec;
-  #pragma unroll
+#pragma unroll
   for (int e = 0; e < nvec; ++e) {
     stg_vec.data.elt[e] = static_cast<OType>(acc_vec.data.elt[e]);
   }
@@ -893,16 +886,17 @@ void cast_fp8_1D(const Tensor &input, Tensor *output, cudaStream_t stream) {
   const dim3 block(THREADS_PER_BLOCK);
   const dim3 grid(blocks);
 
-  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->data.dtype, OType,
+  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+      input.data.dtype, IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+          output->data.dtype, OType,
 
-          const IType* input_ptr = reinterpret_cast<const IType*>(input.data.dptr);
-          OType* output_ptr = reinterpret_cast<OType*>(output->data.dptr);
+          const IType *input_ptr = reinterpret_cast<const IType *>(input.data.dptr);
+          OType *output_ptr = reinterpret_cast<OType *>(output->data.dptr);
 
-          cast_fp8_1D_kernel<IType, OType><<<grid, block, 0, stream>>>
-              (input_ptr, output_ptr, amax_ptr, scale_inv_ptr, scale_ptr, N);
-      );  // NOLINT(*)
-  );      // NOLINT(*)
+          cast_fp8_1D_kernel<IType, OType><<<grid, block, 0, stream>>>(
+              input_ptr, output_ptr, amax_ptr, scale_inv_ptr, scale_ptr, N););  // NOLINT(*)
+  );                                                                            // NOLINT(*)
 }
 
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
@@ -943,8 +937,10 @@ void cast_fp8_2D(const Tensor &input, const Tensor &act_input, Tensor *output, T
   const dim3 block(FP8_THREADS_PER_CHUNK);
   const dim3 grid(blocks_X, blocks_Y);
 
-  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->data.dtype, OType,
+  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+      input.data.dtype, IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+          output->data.dtype, OType,
 
           alignas(64) CUtensorMap tensor_map_input{};
           alignas(64) CUtensorMap tensor_map_act_input{};
@@ -957,13 +953,14 @@ void cast_fp8_2D(const Tensor &input, const Tensor &act_input, Tensor *output, T
             create_2D_tensor_map<IType>(tensor_map_act_input, &act_input, rows, cols,
                                         FP8_SHMEM_DIM_Y, FP8_SHMEM_DIM_X);
           }
-          
-          create_2D_tensor_map<OType>(tensor_map_output, output, rows, cols, FP8_SHMEM_DIM_Y,
-                                        FP8_SHMEM_DIM_X);
 
-          cast_fp8_2D_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType><<<grid, block, 0, stream>>>(
-              tensor_map_input, tensor_map_act_input, tensor_map_output, workspace_ptr, amax_ptr,
-              scale_inv_ptr, scale_ptr, rows, cols);
+          create_2D_tensor_map<OType>(tensor_map_output, output, rows, cols, FP8_SHMEM_DIM_Y,
+                                      FP8_SHMEM_DIM_X);
+
+          cast_fp8_2D_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType>
+          <<<grid, block, 0, stream>>>(tensor_map_input, tensor_map_act_input, tensor_map_output,
+                                       workspace_ptr, amax_ptr, scale_inv_ptr, scale_ptr, rows,
+                                       cols);
 
           if constexpr (IS_DBIAS) {
             reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
@@ -1027,10 +1024,14 @@ void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_row
 
   DType OutputType = USE_ROWWISE_SCALING ? output_rowwise->data.dtype : output_colwise->data.dtype;
 
-  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_Y_colwise, SCALE_DIM_Y,
-      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_X_rowwise, SCALE_DIM_X,
-          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
-              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(OutputType, OType,
+  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
+      scale_dim_Y_colwise, SCALE_DIM_Y,
+      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
+          scale_dim_X_rowwise, SCALE_DIM_X,
+          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+              input.data.dtype, IType,
+              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+                  OutputType, OType,
 
                   alignas(64) CUtensorMap tensor_map_input{};
                   alignas(64) CUtensorMap tensor_map_act_input{};
@@ -1060,11 +1061,10 @@ void cast_mxfp8(const Tensor &input, const Tensor &act_input, Tensor *output_row
 
                   if constexpr (IS_DBIAS) {
                     reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
-                  }
-              );  // NOLINT(*)
-          );      // NOLINT(*)
-      );          // NOLINT(*)
-  );              // NOLINT(*)
+                  });  // NOLINT(*)
+          );           // NOLINT(*)
+      );               // NOLINT(*)
+  );                   // NOLINT(*)
 }
 
 namespace detail {
@@ -1087,8 +1087,10 @@ __device__ inline float dequantize_func(float value, const DequantizeParam &para
 void CastVectorizedUnaryKernelLauncher(const Tensor &input, const Tensor &act_input, Tensor *output,
                                        Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
   const size_t N = product(input.data.shape);
-  TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(input.data.dtype, IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->data.dtype, OType,
+  TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(
+      input.data.dtype, IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+          output->data.dtype, OType,
 
           constexpr int nvec = 32 / sizeof(IType);
           VectorizedUnaryKernelLauncher<nvec, detail::Empty, detail::identity>(
@@ -1097,16 +1099,14 @@ void CastVectorizedUnaryKernelLauncher(const Tensor &input, const Tensor &act_in
               reinterpret_cast<const fp32 *>(output->scale.dptr),
               reinterpret_cast<fp32 *>(output->amax.dptr),
               reinterpret_cast<fp32 *>(output->scale_inv.dptr), N, {},
-              stream);
-      );  // NOLINT(*)
-  );      // NOLINT(*)
+              stream););  // NOLINT(*)
+  );                      // NOLINT(*)
 }
 
 // Supported by the Arch >= 10.0
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
 void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor &act_input, Tensor *output,
-                              Tensor *dbias, Tensor *workspace, cudaStream_t stream)
-{
+                              Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
   // MXFP8 Scaling
   if (is_mxfp8_cast_supported_shape(output)) {
     const bool is_colwise_scaling = (output->scaling_mode.x > 1);
@@ -1117,7 +1117,7 @@ void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor &act_input, Tens
       cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::ROWWISE, ParamOP, OP>(
           input, act_input, output, nullptr, dbias, workspace, stream);
     }
-  // Regular FP8 Scaling
+    // Regular FP8 Scaling
   } else if (is_fp8_cast_supported_shape(output)) {
     if (!IS_DBIAS && !IS_DACT) {
       const size_t N = product(input.data.shape);
@@ -1126,11 +1126,12 @@ void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor &act_input, Tens
       if (isFullTile) {
         cast_fp8_1D(input, output, stream);
       } else {
-      // Unaligned
+        // Unaligned
         CastVectorizedUnaryKernelLauncher(input, act_input, output, dbias, workspace, stream);
       }
     } else {
-      cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace, stream);
+      cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
+                                                  stream);
     }
   } else {
     NVTE_ERROR("Not implemented on Arch >= 10.0: " + to_string(output->scaling_mode) + ".");
@@ -1170,12 +1171,11 @@ void fp8_quantize(const Tensor &input, const Tensor &act_input, Tensor *output, 
 
   // Supported by the Arch >= 10.0
   if (is_supported_by_CC_100()) {
-    fp8_quantize_arch_ge_100<IS_DBIAS, IS_DACT, ParamOP, OP>
-      (input, act_input, output, dbias, workspace, stream);
+    fp8_quantize_arch_ge_100<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias,
+                                                             workspace, stream);
   } else {
-  // Supported by the Arch < 10.0
-    fp8_quantize_arch_l_100<IS_DBIAS, IS_DACT>
-      (input, act_input, output, dbias, workspace, stream);
+    // Supported by the Arch < 10.0
+    fp8_quantize_arch_l_100<IS_DBIAS, IS_DACT>(input, act_input, output, dbias, workspace, stream);
   }
 }
 
@@ -1218,7 +1218,8 @@ void fp8_quantize_x2(const Tensor &input, const Tensor &act_input, Tensor *outpu
   NVTE_CHECK(output_rowwise->scale_inv.dptr != nullptr, "Rowwise scaling tensor must be allocated");
   NVTE_CHECK(output_colwise->scale_inv.dptr != nullptr, "Colwise scaling tensor must be allocated");
 
-  if (is_mxfp8_cast_supported_shape(output_rowwise) && is_mxfp8_cast_supported_shape(output_colwise)) {
+  if (is_mxfp8_cast_supported_shape(output_rowwise) &&
+      is_mxfp8_cast_supported_shape(output_colwise)) {
     cast_mxfp8<IS_DBIAS, IS_DACT, ScalingType::BIDIMENTIONAL, ParamOP, OP>(
         input, act_input, output_rowwise, output_colwise, dbias, workspace, stream);
   } else {

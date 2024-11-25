@@ -41,7 +41,7 @@ void compute_ref_cast_dbias_dgelu(const IT *input,
     for (size_t j = 0; j < H; j++) {
       CT in_elt = static_cast<CT>(input[i * H + j]);
       const CT gelu_in = static_cast<CT>(gelu_input[i * H + j]);
-      
+
       const CT elt = in_elt * static_cast<float>(dgelu(static_cast<float>(gelu_in)));
       const CT elt_abs = std::abs(elt);
 

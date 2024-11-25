@@ -293,7 +293,7 @@ class NormBase {
 
   virtual void execute() = 0;
 
-  virtual void set_workspace_and_barrier(void* workspace_ptr, void* barrier_ptr){}
+  virtual void set_workspace_and_barrier(void* workspace_ptr, void* barrier_ptr) {}
 
   virtual std::vector<size_t> get_workspace_shape() { return {0}; }
 
