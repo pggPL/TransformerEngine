@@ -63,13 +63,13 @@ __all__ = ["LayerNormMLP"]
 
 def _act_func(activation: str):
     funcs = {
-        "gelu": (pytex.gelu, pytex.dgelu),
-        "relu": (pytex.relu, pytex.drelu),
-        "geglu": (pytex.geglu, pytex.dgeglu),
-        "reglu": (pytex.reglu, pytex.dreglu),
-        "swiglu": (pytex.swiglu, pytex.dswiglu),
-        "qgelu": (pytex.qgelu, pytex.dqgelu),
-        "srelu": (pytex.srelu, pytex.dsrelu),
+        "gelu": (tex.gelu, tex.dgelu),
+        "relu": (tex.relu, tex.drelu),
+        "geglu": (tex.geglu, tex.dgeglu),
+        "reglu": (tex.reglu, tex.dreglu),
+        "swiglu": (tex.swiglu, tex.dswiglu),
+        "qgelu": (tex.qgelu, tex.dqgelu),
+        "srelu": (tex.srelu, tex.dsrelu),
     }
     if activation not in funcs:
         raise NotImplementedError("Activation type " + activation + " is not supported!")

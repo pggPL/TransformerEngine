@@ -10,14 +10,9 @@ from typing import Optional
 
 import torch
 
-import transformer_engine_torch
+import transformer_engine_torch as tex
 from ...constants import TE_DType
 from ...cpp_extensions import (
-    geglu as tex_geglu,
-    gelu as tex_gelu,
-    reglu as tex_reglu,
-    relu as tex_relu,
-    swiglu as tex_swiglu,
     fp8_dswiglu_cast_transpose_fused,
 )
 from ...fp8 import FP8GlobalStateManager, get_fp8_te_dtype
@@ -93,40 +88,20 @@ class _ActivationOperation(BasicOperation, metaclass=abc.ABCMeta):
 
         # Check if FP8 is enabled
         fp8_enabled = FP8GlobalStateManager.is_fp8_enabled()
-        with_fp8_output = False
-        output_fp8_meta = None
-        output_dtype = TE_DType[dtype]
-        output_fp8_scale_inv = None
         if fp8_enabled and next_op is not None and next_op.num_fp8_scales("input") > 0:
-            with_fp8_output = True
-            fp8_meta = next_op.get_fp8_meta("input")
-            fp8_meta_key = FP8GlobalStateManager.get_meta_tensor_key(forward=True)
-            output_fp8_meta = fp8_meta[fp8_meta_key]
-            output_dtype = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
-            output_fp8_scale_inv = torch.empty([1], dtype=torch.float32, device=x.device)
+            quantizer = next_op.get_quantizer("forward", 0)
+        else:
+            quantizer = None
 
         # Launch kernel
         y = self._activation_forward_impl(
             x,
-            output_fp8_meta,
-            0,
-            output_dtype,
-            scale_inv=output_fp8_scale_inv,
+            quantizer,
         )
 
         # Check output tensor
         if y.dim() != x.dim():
             y = y.reshape(list(x.shape[:-1]) + [-1])
-        if with_fp8_output:
-            y = Float8Tensor(
-                data=y,
-                fp8_meta=output_fp8_meta,
-                fp8_meta_forward=True,
-                fp8_meta_index=0,
-                fp8_dtype=output_dtype,
-                fp8_scale_inv=output_fp8_scale_inv,
-                dtype=dtype,
-            )
 
         # Save state for backward pass
         ctx.save_for_backward(x)
@@ -154,9 +129,10 @@ class _ActivationOperation(BasicOperation, metaclass=abc.ABCMeta):
             dy = dy.contiguous()
 
         # Launch kernel
-        dx = self._activation_backward_impl(dy, x, TE_DType[x.dtype])
+        dx = self._activation_backward_impl(dy, x, None)
 
         # Check grad input tensor
+        # TODO: I don't believe this is needed anymore
         if dx.size() != x.size():
             dx = dx.reshape(x.size())
 
@@ -181,10 +157,10 @@ class GELU(_ActivationOperation):
     """
 
     def _activation_forward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return tex_gelu(*args, **kwargs)
+        return tex.gelu(*args, **kwargs)
 
     def _activation_backward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return transformer_engine_torch.dgelu(*args, **kwargs)
+        return tex.dgelu(*args, **kwargs)
 
 
 class ReLU(_ActivationOperation):
@@ -197,10 +173,10 @@ class ReLU(_ActivationOperation):
     """
 
     def _activation_forward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return tex_relu(*args, **kwargs)
+        return tex.relu(*args, **kwargs)
 
     def _activation_backward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return transformer_engine_torch.drelu(*args, **kwargs)
+        return tex.drelu(*args, **kwargs)
 
 
 class GEGLU(_ActivationOperation):
@@ -232,10 +208,10 @@ class GEGLU(_ActivationOperation):
     """
 
     def _activation_forward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return tex_geglu(*args, **kwargs)
+        return tex.geglu(*args, **kwargs)
 
     def _activation_backward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return transformer_engine_torch.dgeglu(*args, **kwargs)
+        return tex.dgeglu(*args, **kwargs)
 
 
 class ReGLU(_ActivationOperation):
@@ -261,10 +237,10 @@ class ReGLU(_ActivationOperation):
     """
 
     def _activation_forward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return tex_reglu(*args, **kwargs)
+        return tex.reglu(*args, **kwargs)
 
     def _activation_backward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return transformer_engine_torch.dreglu(*args, **kwargs)
+        return tex.dreglu(*args, **kwargs)
 
 
 class SwiGLU(_ActivationOperation):
@@ -299,10 +275,10 @@ class SwiGLU(_ActivationOperation):
     """
 
     def _activation_forward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return tex_swiglu(*args, **kwargs)
+        return tex.swiglu(*args, **kwargs)
 
     def _activation_backward_impl(self, *args, **kwargs) -> torch.Tensor:
-        return transformer_engine_torch.dswiglu(*args, **kwargs)
+        return tex.dswiglu(*args, **kwargs)
 
     def op_backward(
         self,

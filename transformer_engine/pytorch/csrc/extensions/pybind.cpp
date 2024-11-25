@@ -49,6 +49,20 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("input"), py::arg("otype"));
   m.def("bgrad_quantize", transformer_engine::pytorch::bgrad_quantize);
   m.def("generic_gemm", transformer_engine::pytorch::gemm);
+  m.def("gelu", transformer_engine::pytorch::gelu, "GeLU activation");
+  m.def("relu", transformer_engine::pytorch::relu, "ReLU activation");
+  m.def("geglu", transformer_engine::pytorch::geglu, "GeGLU activation");
+  m.def("reglu", transformer_engine::pytorch::reglu, "ReGLU activation");
+  m.def("swiglu", transformer_engine::pytorch::swiglu, "SwiGLU activation");
+  m.def("qgelu", transformer_engine::pytorch::qgelu, "QuickGELU activation");
+  m.def("srelu", transformer_engine::pytorch::srelu, "Squared ReLU activation");
+  m.def("dgelu", transformer_engine::pytorch::dgelu, "Backward of GeLU");
+  m.def("drelu", transformer_engine::pytorch::drelu, "Backward of ReLU");
+  m.def("dgeglu", transformer_engine::pytorch::dgeglu, "Backward of GeGLU");
+  m.def("dreglu", transformer_engine::pytorch::dreglu, "Backward of ReGLU");
+  m.def("dswiglu", transformer_engine::pytorch::dswiglu, "Backward of SwiGLU");
+  m.def("dqgelu", transformer_engine::pytorch::dqgelu, "Backward of QuickGELU");
+  m.def("dsrelu", transformer_engine::pytorch::dsrelu, "Backward of Squared ReLU");
 
   // Permutation functions
   m.def("moe_permute_fwd", moe_permute_fwd);
@@ -219,20 +233,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
   m.def("fp8_transpose_noalloc_noop", &fp8_transpose_noalloc_noop,
         "Transpose with FP8 I/O with noop option.", py::call_guard<py::gil_scoped_release>());
-  m.def("gelu", &gelu, "GeLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("relu", &relu, "ReLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("geglu", &geglu, "GeGLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("reglu", &reglu, "ReGLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("swiglu", &swiglu, "SwiGLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("qgelu", &qgelu, "QuickGELU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("srelu", &srelu, "Squared ReLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("dgelu", &dgelu, "Backward of GeLU", py::call_guard<py::gil_scoped_release>());
-  m.def("drelu", &drelu, "Backward of ReLU", py::call_guard<py::gil_scoped_release>());
-  m.def("dgeglu", &dgeglu, "Backward of GeGLU", py::call_guard<py::gil_scoped_release>());
-  m.def("dreglu", &dreglu, "Backward of ReGLU", py::call_guard<py::gil_scoped_release>());
-  m.def("dswiglu", &dswiglu, "Backward of SwiGLU", py::call_guard<py::gil_scoped_release>());
-  m.def("dqgelu", &dqgelu, "Backward of QuickGELU", py::call_guard<py::gil_scoped_release>());
-  m.def("dsrelu", &dsrelu, "Backward of Squared ReLU", py::call_guard<py::gil_scoped_release>());
   m.def("fa_prepare_fwd", &fa_prepare_fwd, "Prepare QKV for Flash Attention",
         py::call_guard<py::gil_scoped_release>());
   m.def("fa_prepare_bwd", &fa_prepare_bwd, "Backward of QKV preparation for Flash Attention",

@@ -11,7 +11,6 @@
 namespace transformer_engine::pytorch {
 
 py::object quantize(const at::Tensor& tensor, py::handle quantizer) {
-  using namespace pybind11::literals;
   init_extension();
   auto my_quantizer = convert_quantizer(quantizer);
   auto input_tensor = tensor.contiguous();

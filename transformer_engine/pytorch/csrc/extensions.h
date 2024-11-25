@@ -238,44 +238,41 @@ at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype, std:
 void fp8_transpose_noalloc_noop(at::Tensor input, at::Tensor output, at::Tensor noop,
                                 transformer_engine::DType otype);
 
+namespace transformer_engine::pytorch {
+
 /***************************************************************************************************
  * Activations
  **************************************************************************************************/
 
-at::Tensor gelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                transformer_engine::DType otype);
+py::object gelu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor relu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                transformer_engine::DType otype);
+py::object relu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor geglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                 transformer_engine::DType otype);
+py::object geglu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor reglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                 transformer_engine::DType otype);
+py::object reglu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor swiglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                  transformer_engine::DType otype);
+py::object swiglu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor qgelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                 transformer_engine::DType otype);
+py::object qgelu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor srelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                 transformer_engine::DType otype);
+py::object srelu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dgelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dgelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor drelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object drelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dgeglu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dgeglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dreglu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dreglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dswiglu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dswiglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dqgelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dqgelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dsrelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dsrelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
+
+}  // namespace transformer_engine::pytorch
 
 /***************************************************************************************************
  * LayerNorm
