@@ -151,9 +151,18 @@ void compute_ref_output(NormType norm_type,
   }
 }
 
-
 template <typename InputType, typename OutputType>
 void performTest(const size_t N, const size_t H, const bool zero_centered_gamma, NormType norm_type) {
+
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, 0);
+
+  const auto deviceComputeCapability = 10 * prop.major + prop.minor;
+  constexpr int32_t blackwellComputeCapability = 100;
+  if (deviceComputeCapability < blackwellComputeCapability) {
+    GTEST_SKIP();
+  }
+
   using WeightType = InputType;
   DType itype = TypeInfo<InputType>::dtype;
   DType wtype = TypeInfo<WeightType>::dtype;
@@ -175,20 +184,6 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
   fillUniform(&input);
   fillUniform(&gamma);
   fillUniform(&beta);
-
-  // // print input tensor
-  // printf("Input tensor: \n");
-  // for (int i = 0; i < N; i++){
-  //   for (int j = 0; j < H; j++){
-  //     std::cout << "(" << i << "," << j << "): "
-  //       << static_cast<float>(input.cpu_dptr<InputType>()[i * H + j])
-  //       << std::endl;
-  //   }
-  // }
-
-
-  cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, 0);
 
   // Forward kernel
   float epsilon = 1e-5;
