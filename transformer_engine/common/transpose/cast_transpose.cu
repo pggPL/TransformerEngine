@@ -10,7 +10,7 @@
 
 #include <algorithm>
 
-#include "../common.h"
+#include "cast_transpose.h"
 #include "../util/rtc.h"
 #include "../util/string.h"
 #include "../utils.cuh"

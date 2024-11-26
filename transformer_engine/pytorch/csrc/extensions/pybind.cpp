@@ -136,8 +136,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
   m.def("rmsnorm_fwd_noalloc", &rmsnorm_fwd_noalloc, "RMSNorm FWD",
         py::call_guard<py::gil_scoped_release>());
-  m.def("fused_cast_transpose", &fused_cast_transpose, "Fused Cast + Transpose",
-        py::call_guard<py::gil_scoped_release>());
   m.def("fused_cast_transpose_noop", &fused_cast_transpose_noop,
         "Cast + Transpose with noop option", py::call_guard<py::gil_scoped_release>(),
         py::arg("input"), py::arg("noop"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),

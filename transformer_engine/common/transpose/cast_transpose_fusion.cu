@@ -8,10 +8,9 @@
 #include <transformer_engine/transpose.h>
 
 #include <cfloat>
-#include <iostream>
 #include <type_traits>
 
-#include "../common.h"
+#include "cast_transpose.h"
 #include "../util/math.h"
 #include "../util/rtc.h"
 #include "../util/string.h"
@@ -19,7 +18,7 @@
 
 namespace transformer_engine {
 
-namespace {
+namespace detail {
 
 // String with RTC kernel implementation
 #include "string_code_transpose_rtc_cast_transpose_fusion_cu.h"
@@ -479,14 +478,22 @@ int get_dactivation_type() {
 
 template <bool IS_DBIAS, bool IS_DACT, typename ComputeType, typename ParamOP,
           ComputeType (*OP)(ComputeType, const ParamOP &)>
-void cast_transpose_fused(const Tensor &input, const Tensor &act_input, Tensor *output,
+void cast_transpose_fused(const Tensor &input,
+                          const Tensor *act_input,
+                          Tensor *output,
                           Tensor *dbias, Tensor *workspace,
                           cudaStream_t stream) {
   if (workspace->data.dptr != nullptr) {
     CheckInputTensor(input, "cast_transpose_fused_input");
     CheckOutputTensor(*output, "output");
-    if constexpr (IS_DBIAS) CheckOutputTensor(*dbias, "dbias");
-    if constexpr (IS_DACT) CheckInputTensor(act_input, "act_input");
+    if constexpr (IS_DBIAS) {
+      NVTE_CHECK(dbias != nullptr && dbias->has_data());
+      CheckOutputTensor(*dbias, "dbias");
+    }
+    if constexpr (IS_DACT) {
+      NVTE_CHECK(act_input != nullptr && act_input->has_data());
+      CheckInputTensor(*act_input, "act_input");
+    }
   }
 
   // Check that inputs and outputs are available
@@ -512,8 +519,8 @@ void cast_transpose_fused(const Tensor &input, const Tensor &act_input, Tensor *
     NVTE_CHECK(dbias->data.shape == std::vector<size_t>{row_length}, "Wrong shape of DBias.");
   }
   if constexpr (IS_DACT) {
-    NVTE_CHECK(input.data.dtype == act_input.data.dtype, "Types of both inputs must match.");
-    NVTE_CHECK(input.data.shape == act_input.data.shape, "Shapes of both inputs must match.");
+    NVTE_CHECK(input.dtype() == act_input->dtype(), "Types of both inputs must match.");
+    NVTE_CHECK(input.data.shape == act_input->data.shape, "Shapes of both inputs must match.");
   }
 
   TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
@@ -638,7 +645,7 @@ void cast_transpose_fused(const Tensor &input, const Tensor &act_input, Tensor *
           if constexpr (IS_DBIAS) {
             param.workspace = reinterpret_cast<ComputeType *>(workspace->data.dptr);
           } if constexpr (IS_DACT) {
-            param.act_input = reinterpret_cast<const InputType2 *>(act_input.data.dptr);
+            param.act_input = reinterpret_cast<const InputType2 *>(act_input->data.dptr);
           }
 
           // Runtime-compiled tuned kernel
@@ -1199,6 +1206,7 @@ void nvte_cast_transpose_dbias(const NVTETensor input, NVTETensor output,
                                cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose_dbias);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = false;
@@ -1206,7 +1214,8 @@ void nvte_cast_transpose_dbias(const NVTETensor input, NVTETensor output,
   constexpr const NVTETensor activation_input = nullptr;
 
   cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, nullptr>(
-      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(activation_input),
+      *reinterpret_cast<const Tensor *>(input),
+      reinterpret_cast<const Tensor *>(activation_input),
       reinterpret_cast<Tensor *>(output),
       reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
@@ -1216,13 +1225,14 @@ void nvte_cast_transpose_dbias_dgelu(const NVTETensor input, const NVTETensor ac
                                      NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose_dbias_dgelu);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
 
   cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, dgelu<fp32, fp32>>(
-      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(act_input),
+      *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(act_input),
       reinterpret_cast<Tensor *>(output),
       reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
@@ -1232,13 +1242,14 @@ void nvte_cast_transpose_dbias_dsilu(const NVTETensor input, const NVTETensor si
                                      NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose_dbias_dsilu);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
 
   cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, dsilu<fp32, fp32>>(
-      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(silu_input),
+      *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(silu_input),
       reinterpret_cast<Tensor *>(output),
       reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
@@ -1248,13 +1259,14 @@ void nvte_cast_transpose_dbias_drelu(const NVTETensor input, const NVTETensor re
                                      NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose_dbias_drelu);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
 
   cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, drelu<fp32, fp32>>(
-      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(relu_input),
+      *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(relu_input),
       reinterpret_cast<Tensor *>(output),
       reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
@@ -1264,13 +1276,14 @@ void nvte_cast_transpose_dbias_dsrelu(const NVTETensor input, const NVTETensor s
                                       NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose_dbias_dsrelu);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
 
   cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, dsrelu<fp32, fp32>>(
-      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(srelu_input),
+      *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(srelu_input),
       reinterpret_cast<Tensor *>(output),
       reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
@@ -1280,13 +1293,14 @@ void nvte_cast_transpose_dbias_dqgelu(const NVTETensor input, const NVTETensor q
                                       NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose_dbias_dqgelu);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
 
   cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, dqgelu<fp32, fp32>>(
-      *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(qgelu_input),
+      *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(qgelu_input),
       reinterpret_cast<Tensor *>(output),
       reinterpret_cast<Tensor *>(dbias), reinterpret_cast<Tensor *>(workspace), stream);
 }
@@ -1295,6 +1309,7 @@ void nvte_dgeglu_cast_transpose(const NVTETensor input, const NVTETensor gated_a
                                 NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_dgeglu_cast_transpose);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
   dgated_act_cast_transpose<ComputeType, Empty, dgelu<fp32, fp32>, gelu<fp32, fp32>>(
       *reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(gated_act_input),
@@ -1305,6 +1320,7 @@ void nvte_dswiglu_cast_transpose(const NVTETensor input, const NVTETensor swiglu
                                 NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_dswiglu_cast_transpose);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
 
   dgated_act_cast_transpose<ComputeType, Empty, dsilu<fp32, fp32>, silu<fp32, fp32>>(
@@ -1316,6 +1332,7 @@ void nvte_dreglu_cast_transpose(const NVTETensor input, const NVTETensor gated_a
                                 NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_dreglu_cast_transpose);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
 
   dgated_act_cast_transpose<ComputeType, Empty, drelu<fp32, fp32>, relu<fp32, fp32>>(
@@ -1327,6 +1344,7 @@ void nvte_dsreglu_cast_transpose(const NVTETensor input, const NVTETensor gated_
                                 NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_dsreglu_cast_transpose);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
 
   dgated_act_cast_transpose<ComputeType, Empty, dsrelu<fp32, fp32>, srelu<fp32, fp32>>(
@@ -1338,6 +1356,7 @@ void nvte_dqgeglu_cast_transpose(const NVTETensor input, const NVTETensor gated_
                                 NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_dqgeglu_cast_transpose);
   using namespace transformer_engine;
+  using namespace transformer_engine::detail;
 
 
   dgated_act_cast_transpose<ComputeType, Empty, dqgelu<fp32, fp32>, qgelu<fp32, fp32>>(

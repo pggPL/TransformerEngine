@@ -8,28 +8,6 @@
 #include "ATen/core/TensorBody.h"
 #include "extensions.h"
 
-void fused_cast_transpose(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                          at::Tensor input_cast, at::Tensor input_transpose,
-                          transformer_engine::DType otype) {
-  using namespace transformer_engine::pytorch;
-
-  size_t M = static_cast<size_t>(input.size(0));
-  size_t N = static_cast<size_t>(input.size(1));
-
-  auto input_cu = makeTransformerEngineTensor(input);
-  auto output_cu = makeTransformerEngineTensor(input_cast.data_ptr(),
-                                               input_transpose.data_ptr(),
-                                               {M, N},
-                                               {N, M},
-                                               otype,
-                                               amax.data_ptr(),
-                                               scale.data_ptr(),
-                                               scale_inv.data_ptr(),
-                                               scale_inv.data_ptr());
-
-  nvte_cast_transpose(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
-}
-
 void fused_cast_transpose_noop(at::Tensor input, at::Tensor noop, at::Tensor scale, at::Tensor amax,
                                at::Tensor scale_inv, at::Tensor input_cast,
                                at::Tensor input_transpose, transformer_engine::DType otype,

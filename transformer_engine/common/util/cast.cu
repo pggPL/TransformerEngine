@@ -18,6 +18,7 @@
 #include "math.h"
 #include "ptx.cuh"
 #include "transformer_engine/transpose.h"
+#include "../transpose/cast_transpose.h"
 
 namespace transformer_engine {
 
@@ -1206,6 +1207,9 @@ void quantize_helper(const NVTETensor input,
                      cudaStream_t stream) {
   const auto& input_tensor = *(reinterpret_cast<const Tensor*>(input));
   auto output_tensor = reinterpret_cast<Tensor*>(output);
+  const auto activation_tensor = reinterpret_cast<const Tensor*>(activation_input);
+  auto dbias_tensor = reinterpret_cast<Tensor*>(dbias);
+  auto workspace_tensor = reinterpret_cast<Tensor*>(workspace);
 
   NVTE_CHECK(output_tensor->has_data(),
              "Quantizing in only the columnwise direction not supported yet!");
@@ -1213,34 +1217,31 @@ void quantize_helper(const NVTETensor input,
     if (!output_tensor->has_columnwise_data()) {
       fp8_quantize<IS_DBIAS, IS_DACT, Empty, nullptr>(
           input_tensor,
-          reinterpret_cast<const Tensor *>(activation_input),
+          activation_tensor,
           output_tensor,
-          reinterpret_cast<Tensor *>(dbias),
-          reinterpret_cast<Tensor *>(workspace), stream);
+          dbias_tensor,
+          workspace_tensor, stream);
     } else {
       // TODO: Change to calling some C++ function and finish
       // cast+transpose
+      // TODO: handle noop
       if constexpr (!IS_DBIAS && !IS_DACT) {
-        nvte_cast_transpose(input, output, stream);
+        cast_transpose(input_tensor, Tensor(), output_tensor, stream);
       }
-      if constexpr (IS_DBIAS && !IS_DACT) {
-        nvte_cast_transpose_dbias(input, output, dbias, workspace, stream);
+      if constexpr (IS_DBIAS) {
+        cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(input_tensor, activation_tensor,
+                                                                    output_tensor, dbias_tensor,
+                                                                    workspace_tensor, stream);
       }
       if constexpr (!IS_DBIAS && IS_DACT) {
-        NVTE_ERROR("Not implemented yet!");
-      }
-      if constexpr (IS_DBIAS && IS_DACT) {
         NVTE_ERROR("Not implemented yet!");
       }
     }
   } else {
     // MX scaling
-    mxfp8_quantize<IS_DBIAS, IS_DACT, Empty, nullptr>(
-        input_tensor,
-        reinterpret_cast<const Tensor *>(activation_input),
-        output_tensor,
-        reinterpret_cast<Tensor *>(dbias),
-        reinterpret_cast<Tensor *>(workspace), stream);
+    mxfp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(input_tensor, activation_tensor,
+                                                   output_tensor, dbias_tensor,
+                                                   workspace_tensor, stream);
   }
 }
 

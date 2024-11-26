@@ -74,7 +74,7 @@ class Quantizer(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
+    def calibrate(self, tensor: torch.Tensor) -> None:
         ...
 
     def set_usage(
