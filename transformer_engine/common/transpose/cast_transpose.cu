@@ -15,7 +15,7 @@
 #include "../util/string.h"
 #include "../utils.cuh"
 
-namespace transformer_engine {
+namespace transformer_engine::detail {
 
 namespace {
 
@@ -354,7 +354,7 @@ void nvte_cast_transpose(const NVTETensor input, NVTETensor output, cudaStream_t
   NVTE_API_CALL(nvte_cast_transpose);
   using namespace transformer_engine;
   auto noop = Tensor();
-  cast_transpose(*reinterpret_cast<const Tensor *>(input), noop,
+  transformer_engine::detail::cast_transpose(*reinterpret_cast<const Tensor *>(input), noop,
                  reinterpret_cast<Tensor *>(output), stream);
 }
 
@@ -363,6 +363,6 @@ void nvte_cast_transpose_with_noop(const NVTETensor input, const NVTETensor noop
                                    cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose_with_noop);
   using namespace transformer_engine;
-  cast_transpose(*reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(noop),
+  transformer_engine::detail::cast_transpose(*reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(noop),
                  reinterpret_cast<Tensor *>(output), stream);
 }

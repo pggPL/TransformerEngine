@@ -105,8 +105,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), py::arg("otype"),
         py::arg("sm_margin"), py::arg("zero_centered_gamma"));
   m.def("rmsnorm_bwd", &rmsnorm_bwd, "RMSNorm BWD");
-  m.def("fused_cast_transpose", &fused_cast_transpose, "Fused Cast + Transpose",
-        py::call_guard<py::gil_scoped_release>());
+  //m.def("fused_cast_transpose", &fused_cast_transpose, "Fused Cast + Transpose",
+  //      py::call_guard<py::gil_scoped_release>());
   m.def("fused_cast_transpose_noop", &fused_cast_transpose_noop,
         "Cast + Transpose with noop option", py::call_guard<py::gil_scoped_release>(),
         py::arg("input"), py::arg("noop"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),

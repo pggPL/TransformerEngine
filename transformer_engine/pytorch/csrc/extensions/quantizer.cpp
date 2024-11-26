@@ -56,15 +56,8 @@ void Float8Quantizer::set_quantization_params(TensorWrapper* tensor) const {
   tensor->set_scale(scale.data_ptr(),
                     GetTransformerEngineDType(scale.scalar_type()),
                     getTensorShape(scale));
-  if (this->get_scaling_mode().delayed_scaling == 1 && this->get_scaling_mode().x == -1) {
-    at::Tensor scale_inv = at::empty_like(scale);
-    scale_inv = 1 / scale;
-    tensor->set_rowwise_scale_inv(
-      scale_inv.data_ptr(),
-      GetTransformerEngineDType(scale_inv.scalar_type()),
-      getTensorShape(scale_inv)
-    );
-  }
+  // what with scale_inv??? 
+  // it is needed in tenor, so i think it is needed in quantizer also
   tensor->set_amax(amax.data_ptr(),
                    GetTransformerEngineDType(amax.scalar_type()),
                    getTensorShape(amax));
