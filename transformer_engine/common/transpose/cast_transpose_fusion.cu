@@ -1195,6 +1195,12 @@ void dgated_act_cast_transpose(const Tensor &input, const Tensor &gated_act_inpu
           });  // NOLINT(*)
   );           // NOLINT(*)
 }
+
+template
+void cast_transpose_fused<true, false, float, transformer_engine::Empty, nullptr>(
+    const Tensor&, const Tensor*, Tensor*,
+    Tensor*, Tensor*, cudaStream_t);
+
 }  // namespace detail
 
 }  // namespace transformer_engine

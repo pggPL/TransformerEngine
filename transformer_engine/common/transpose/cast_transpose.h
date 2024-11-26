@@ -24,7 +24,7 @@ template <typename ComputeType, typename ParamOP, ComputeType (*OP1)(ComputeType
 void dgated_act_cast_transpose(const Tensor &input, const Tensor &gated_act_input,
                                Tensor *output, cudaStream_t stream);
 
-}  // namespace transformer_engine
+}  // namespace transformer_engine::detail
 
 #endif  // TRANSFORMER_ENGINE_COMMON_TRANSPOSE_CAST_TRANSPOSE_H_
 
