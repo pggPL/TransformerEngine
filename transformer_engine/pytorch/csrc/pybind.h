@@ -17,14 +17,18 @@ namespace transformer_engine::pytorch {
 
 extern PyTypeObject *Float8TensorPythonClass;
 extern PyTypeObject *Float8TensorBasePythonClass;
-extern PyTypeObject *Float8QParamsClass;
+extern PyTypeObject *Float8QuantizerClass;
 
 void init_extension();
 
 namespace detail {
 
 inline bool IsFloat8QParams(PyObject *obj) {
-  return Py_TYPE(obj) == Float8QParamsClass;
+
+  std::cout << "Float8TensorPythonClass = " << Float8TensorPythonClass<< std::endl;
+
+  std::cout << "Py_TYPE(obj) = " << Py_TYPE(obj)<< std::endl;
+  return Py_TYPE(obj) == Float8QuantizerClass;
 }
 
 inline bool IsFloat8Tensor(PyObject *obj) {
