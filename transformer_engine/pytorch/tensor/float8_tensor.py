@@ -19,7 +19,6 @@ from ._internal.float8_tensor_base import Float8TensorBase, _FromFloat8Func
 from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
 
 aten = torch.ops.aten
-updated_fp8_params = {}
 
 class Float8Quantizer(Quantizer):
 
@@ -305,29 +304,35 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
     @classmethod
     def __torch_dispatch__(cls, func, types, args, kwargs=None):
 
-        # Slice op
-        if func == aten.slice.Tensor:
-            tensor = args[0]
-            data = tensor._data
-            data_slice = data.__torch_dispatch__(
-                func,
-                types,
-                [data] + list(args[1:]),
-                kwargs,
-            )
-            return Float8Tensor.make_like(tensor, data=data_slice)
-
         # View op
         if func == aten.view.default:
             tensor = args[0]
             data = tensor._data
-            data_view = data.__torch_dispatch__(
+            out_data = data.__torch_dispatch__(
                 func,
                 types,
                 [data] + list(args[1:]),
                 kwargs,
             )
-            return Float8Tensor.make_like(tensor, data=data_view)
+            out_shape = out_data.size()
+            out_transpose = None if tensor._transpose_invalid else tensor._transpose
+            if out_transpose is not None:
+                out_transpose_shape = out_transpose.size()
+                if (
+                    out_transpose_shape[0] != out_shape[-1]
+                    or out_transpose_shape[1:] != out_shape[:-1]
+                ):
+                    out_transpose = None
+            return Float8Tensor(
+                shape=out_shape,
+                dtype=tensor.dtype,
+                requires_grad=False,
+                data=out_data,
+                fp8_scale_inv=tensor._scale_inv,
+                fp8_dtype=tensor._fp8_dtype,
+                data_transpose=out_transpose,
+                quantizer=tensor._quantizer,
+            )
 
         # Default case
         return super().__torch_dispatch__(func, types, args, kwargs)
@@ -400,8 +405,6 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
                 )
                 # pylint: disable=unnecessary-dunder-call
                 super(Float8Tensor, type(self)).data.__set__(self, dummy_tensor)
-            elif self.requires_grad != tensor.requires_grad:
-                self.requires_grad_(requires_grad=tensor.requires_grad)
 
             # Float8Tensor attributes
             self._data = tensor._data
@@ -434,25 +437,28 @@ class _ViewFunc(torch.autograd.Function):
         shape: Optional[list[int]] = None,
     ) -> Float8Tensor:
         # pylint: disable=missing-function-docstring
-
-        # Return input tensor if shape is not provided
         ctx.shape = tensor.shape
         if shape is None:
-            return tensor
-
-        # Construct new tensor if shape is provided
-        new_data = tensor._data.view(*shape) if tensor._data is not None else None
-        if tensor._transpose is not None:
-            new_transpose = tensor._transpose.view(shape[-1], -1)
-        else:
-            new_transpose = None
-        return Float8Tensor(shape,
-                            tensor.dtype,
-                            data=new_data,
-                            fp8_scale_inv=tensor._scale_inv,
-                            fp8_dtype=tensor._fp8_dtype,
-                            data_transpose=new_transpose,
-                            quantizer=tensor._quantizer,
+            return tensor.detach()
+        out_data = tensor._data.view(*shape)
+        out_shape = out_data.size()
+        out_transpose = None if tensor._transpose_invalid else tensor._transpose
+        if out_transpose is not None:
+            out_transpose_shape = out_transpose.size()
+            if (
+                out_transpose_shape[0] != out_shape[-1]
+                or out_transpose_shape[1:] != out_shape[:-1]
+            ):
+                out_transpose = None
+        return Float8Tensor(
+            shape=out_shape,
+            dtype=tensor.dtype,
+            requires_grad=tensor.requires_grad,
+            data=out_data,
+            fp8_scale_inv=tensor._scale_inv,
+            fp8_dtype=tensor._fp8_dtype,
+            data_transpose=out_transpose,
+            quantizer=tensor._quantizer,
         )
 
     @staticmethod
@@ -461,23 +467,7 @@ class _ViewFunc(torch.autograd.Function):
         grad: torch.Tensor,
     ) -> Tuple[Optional[torch.Tensor], ...]:
         # pylint: disable=missing-function-docstring
-
-        if isinstance(grad, Float8Tensor):
-            new_data = grad._data.view(*ctx.shape) if grad._data is not None else None
-            if grad._transpose is not None:
-                new_transpose = grad._transpose.view(ctx.shape[-1], -1)
-            else:
-                new_transpose = None
-            dgrad = Float8Tensor(ctx.shape,
-                                 grad.dtype,
-                                 data=new_data,
-                                 fp8_scale_inv=grad._scale_inv,
-                                 fp8_dtype=grad._fp8_dtype,
-                                 data_transpose=new_transpose,
-                                 quantizer=grad._quantizer,
-            )
-            return dgrad, None
-        return grad.view(ctx.shape), None
+        return grad.reshape(ctx.shape), None
 
 
 class _ReshapeFunc(torch.autograd.Function):
@@ -491,28 +481,31 @@ class _ReshapeFunc(torch.autograd.Function):
     def forward(
         ctx,
         tensor: Float8Tensor,
-        shape: Optional[Tuple[int]] = None,
+        shape: Tuple[int],
     ) -> Float8Tensor:
         # pylint: disable=missing-function-docstring
-
-        # Return input tensor if shape is not provided
         ctx.shape = tensor.shape
         if shape is None:
-            return tensor
-
-        # Construct new tensor if shape is provided
-        new_data = tensor._data.reshape(*shape) if tensor._data is not None else None
-        if tensor._transpose is not None:
-            new_transpose = tensor._transpose.reshape(shape[-1], -1)
-        else:
-            new_transpose = None
-        return Float8Tensor(shape,
-                            tensor.dtype,
-                            data=new_data,
-                            fp8_scale_inv=tensor._scale_inv,
-                            fp8_dtype=tensor._fp8_dtype,
-                            data_transpose=new_transpose,
-                            quantizer=tensor._quantizer,
+            return tensor.detach()
+        out_data = tensor._data.reshape(*shape)
+        out_shape = out_data.size()
+        out_transpose = None if tensor._transpose_invalid else tensor._transpose
+        if out_transpose is not None:
+            out_transpose_shape = out_transpose.size()
+            if (
+                out_transpose_shape[0] != out_shape[-1]
+                or out_transpose_shape[1:] != out_shape[:-1]
+            ):
+                out_transpose = None
+        return Float8Tensor(
+            shape=out_shape,
+            dtype=tensor.dtype,
+            requires_grad=tensor.requires_grad,
+            data=out_data,
+            fp8_scale_inv=tensor._scale_inv,
+            fp8_dtype=tensor._fp8_dtype,
+            data_transpose=out_transpose,
+            quantizer=tensor._quantizer,
         )
 
     @staticmethod
@@ -521,20 +514,4 @@ class _ReshapeFunc(torch.autograd.Function):
         grad: torch.Tensor,
     ) -> Tuple[Optional[torch.Tensor], ...]:
         # pylint: disable=missing-function-docstring
-
-        if isinstance(grad, Float8Tensor):
-            new_data = grad._data.reshape(*ctx.shape) if grad._data is not None else None
-            if grad._transpose is not None:
-                new_transpose = grad._transpose.reshape(ctx.shape[-1], -1)
-            else:
-                new_transpose = None
-            dgrad = Float8Tensor(ctx.shape,
-                                 grad.dtype,
-                                 data=new_data,
-                                 fp8_scale_inv=grad._scale_inv,
-                                 fp8_dtype=grad._fp8_dtype,
-                                 data_transpose=new_transpose,
-                                 quantizer=grad._quantizer,
-            )
-            return dgrad, None
         return grad.reshape(ctx.shape), None

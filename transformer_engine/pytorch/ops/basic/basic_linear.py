@@ -21,7 +21,8 @@ from ...distributed import (
 )
 from ...fp8 import FP8GlobalStateManager, get_fp8_te_dtype
 from ...module.base import _2X_ACC_FPROP, _2X_ACC_DGRAD, _2X_ACC_WGRAD
-from ...tensor import QuantizedTensor
+from ...tensor import Float8Quantizer, QuantizedTensor
+from ...tensor._internal.float8_tensor_base import Float8TensorBase
 from ..op import BasicOperation, OperationContext
 from .._common import (
     canonicalize_device,
@@ -305,25 +306,32 @@ class BasicLinear(BasicOperation):
         super().pre_forward(*args, **kwargs)
 
         # Initialize weights if needed
-        if self.weight.device.type == "meta":
+        weight = self.weight
+        if weight.device.type == "meta":
             self.reset_parameters()
+            weight = self.weight
 
         # Configure quantizers
         if FP8GlobalStateManager.is_fp8_enabled():
+            input_quantizer = self.get_quantizer("forward", 0)
+            weight_quantizer = self.get_quantizer("forward", 1)
+            grad_output_quantizer = self.get_quantizer("backward", 0)
+
+            # Specify required tensor formats
             is_grad_enabled = torch.is_grad_enabled()
-            weight_requires_grad = is_grad_enabled and self.weight.requires_grad
-            self.get_quantizer("forward", 0).set_usage(
-                rowwise=True,
-                columnwise=weight_requires_grad,
-            )
-            self.get_quantizer("forward", 1).set_usage(
-                rowwise=True,
-                columnwise=is_grad_enabled,
-            )
-            self.get_quantizer("backward", 0).set_usage(
-                rowwise=True,
-                columnwise=weight_requires_grad,
-            )
+            weight_requires_grad = is_grad_enabled and weight.requires_grad
+            input_quantizer.set_usage(rowwise=True, columnwise=weight_requires_grad)
+            weight_quantizer.set_usage(rowwise=True, columnwise=is_grad_enabled)
+            grad_output_quantizer.set_usage(rowwise=True, columnwise=weight_requires_grad)
+
+            # Make sure weight tensor has correct quantizer
+            # Note: Quantizer might have changed if quantization
+            # recipe changed
+            if (
+                isinstance(weight_quantizer, Float8Quantizer)
+                and isinstance(weight, Float8TensorBase)
+            ):
+                weight._quantizer = weight_quantizer
 
     @staticmethod
     def _functional_forward(
@@ -413,6 +421,8 @@ class BasicLinear(BasicOperation):
             own_quantized_x = True
         elif not with_quantized_compute and x_is_quantized:
             x_local = x_local.dequantize()
+        if not with_quantized_compute and x_local.dtype != dtype:
+            x_local = x_local.to(dtype=dtype)
         x = x_local
         x_async = None
         if tensor_parallel_mode == "column" and sequence_parallel:
@@ -433,6 +443,8 @@ class BasicLinear(BasicOperation):
             w = weight_quantizer(w)
         elif not with_quantized_compute and w_is_quantized:
             w = w.dequantize()
+        if not with_quantized_compute and w.dtype != dtype:
+            w = w.to(dtype=dtype)
 
         # Check output tensor
         y = out
@@ -451,7 +463,10 @@ class BasicLinear(BasicOperation):
 
         # Check if accumulating into output tensor
         if accumulate_into_out:
-            assert False  ### TODO Implement
+            if y is None:
+                raise ValueError(
+                    "Attempted to accumulate into output tensor without providing output tensor"
+                )
             if tensor_parallel_mode == "row":
                 raise ValueError(
                     "Accumulating into output tensor is not supported with row tensor parallelism"
@@ -462,8 +477,10 @@ class BasicLinear(BasicOperation):
             w,
             x,
             get_workspace(),
-            quantization_params=output_quantizer,
             out_dtype=dtype,
+            quantization_params=output_quantizer,
+            accumulate=accumulate_into_out,
+            out=y,
             bias=bias,
             use_split_accumulator=_2X_ACC_FPROP,
         )
@@ -480,6 +497,12 @@ class BasicLinear(BasicOperation):
         ### TODO Restore
         # if own_quantized_x:
         #     x_local.update_usage(rowwise_usage=False)
+
+        # Detach input tensor if needed
+        # Note: PyTorch autograd produces esoteric errors if we save
+        # input tensor as context for backward pass.
+        if x_local is input:
+            x_local = x_local.detach()
 
         return y, x_local, w
 
@@ -585,6 +608,8 @@ class BasicLinear(BasicOperation):
             dy_local = grad_output_quantizer(dy_local)
         elif not with_quantized_compute and dy_is_quantized:
             dy_local = dy_local.dequantize()
+        if not with_quantized_compute and dy_local.dtype != dtype:
+            dy_local = dy_local.to(dtype=dtype)
         dy = dy_local
         dy_async = None
         if tensor_parallel_mode == "row" and sequence_parallel:
@@ -595,13 +620,31 @@ class BasicLinear(BasicOperation):
                 async_op=False,  ### TODO Async
             )
 
-        ### TODO Implement
-        if accumulate_into_grad_input:
-            assert False
-        if accumulate_into_grad_weight:
-            assert False
-        if grad_weight is None:
-            grad_weight = torch.zeros_like(weight)
+        # Check input tensor
+        x = None
+        x_async = None
+        if weight_requires_grad:
+            if input is None:
+                raise ValueError("Input tensor is required to compute weight grad")
+            x_local = input
+            x_is_quantized = isinstance(x_local, QuantizedTensor)
+            if with_quantized_compute and not x_is_quantized:
+                if input_quantizer is None:
+                    raise ValueError("Missing quantizer for input tensor")
+                input_quantizer.set_usage(columnwise=True)
+                x_local = input_quantizer(x_local)
+            elif not with_quantized_compute and x_is_quantized:
+                x_local = x_local.dequantize()
+            if not with_quantized_compute and x_local.dtype != dtype:
+                x_local = x_local.to(dtype=dtype)
+            x = x_local
+            if tensor_parallel_mode == "column" and sequence_parallel:
+                ### TODO Check
+                x, x_async = gather_along_first_dim(
+                    x_local,
+                    tensor_parallel_group,
+                    async_op=False,  ### TODO Async
+                )
 
         # Compute grad input
         dx = None
@@ -620,74 +663,81 @@ class BasicLinear(BasicOperation):
                 w = weight_quantizer(w)
             elif not with_quantized_compute and w_is_quantized:
                 w = w.dequantize()
+            if not with_quantized_compute and w.dtype != dtype:
+                w = w.to(dtype=dtype)
 
+            # Synchronize communication for grad output
             _wait_async(dy_async)
             dy_async = None
+
+            # Check grad input tensor
+            dx = grad_input
+            if accumulate_into_grad_input:
+                if dx is None:
+                    raise ValueError(
+                        "Attempted to accumulate into grad input tensor "
+                        "without providing grad input tensor"
+                    )
+                if tensor_parallel_mode == "column":
+                    raise ValueError(
+                        "Accumulating into grad input tensor "
+                        "is not supported with column tensor parallelism"
+                    )
 
             # Perform dgrad GEMM
             dx, _, _ = general_gemm(
                 w,
                 dy,
                 get_workspace(),
-                layout="NN",
-                grad=True,
-                quantization_params=grad_input_quantizer,
                 out_dtype=dtype,
+                quantization_params=grad_input_quantizer,
+                accumulate=accumulate_into_grad_input,
+                layout="NN",
+                out=dx,
                 use_split_accumulator=_2X_ACC_DGRAD,
+                grad=True,
             )
 
-            # Deallocate buffers
-            weight = None
-            del w
+            ### TODO TP comm
 
         # Compute grad weight
-        if not weight_requires_grad:
-            grad_weight = None
-        else:
+        dw = None
+        if weight_requires_grad:
 
-            # Check input tensor
-            x_local = input
-            x_is_quantized = isinstance(x_local, QuantizedTensor)
-            if with_quantized_compute and not x_is_quantized:
-                if input_quantizer is None:
-                    raise ValueError("Missing quantizer for input tensor")
-                input_quantizer.set_usage(rowwise=True)
-                x_local = input_quantizer(x_local)
-            elif not with_quantized_compute and x_is_quantized:
-                x_local = x_local.dequantize()
-            x = x_local
+            # Synchronize communication for input
+            _wait_async(x_async)
             x_async = None
-            if tensor_parallel_mode == "column" and sequence_parallel:
-                ### TODO Check
-                x, x_async = gather_along_first_dim(
-                    x_local,
-                    tensor_parallel_group,
-                    async_op=False,  ### TODO Async
-                )
+
+            # Check grad input tensor
+            dw = grad_weight
+            dw_dtype = dtype
+            if dw is None:
+                if accumulate_into_grad_weight:
+                    raise ValueError(
+                        "Attempted to accumulate into grad weight tensor "
+                        "without providing grad weight tensor"
+                    )
+            else:
+                dw_dtype = dw.dtype
 
             # Perform wgrad GEMM
-            grad_weight, _, _ = general_gemm(
+            dw, _, _ = general_gemm(
                 x,
                 dy,
                 get_workspace(),
-                layout="NT",
-                grad=True,
-                out_dtype=dtype,
-                out=grad_weight,
-                use_split_accumulator=_2X_ACC_WGRAD,
+                out_dtype=dw_dtype,
                 accumulate=accumulate_into_grad_weight,
+                layout="NT",
+                out=dw,
+                use_split_accumulator=_2X_ACC_WGRAD,
+                grad=True,
             )
-
-            # Deallocate buffers
-            input = None
-            del x_local, x
 
         # Clean up and return grads
         _wait_async(dy_async)
         _wait_async(x_async)
         _wait_async(dx_async)
-        grad_input = dx
-        return grad_input, grad_weight
+        return dx, dw
 
     def op_forward(
         self,
@@ -735,6 +785,7 @@ class BasicLinear(BasicOperation):
         # Save state for backward pass
         ctx.save_for_backward(x_local)
         ctx.with_quantized_compute = with_quantized_compute
+        ctx.input_quantizer = input_quantizer
         ctx.weight_quantizer = weight_quantizer
         ctx.grad_output_quantizer = grad_output_quantizer
         ctx.grad_input_quantizer = grad_input_quantizer

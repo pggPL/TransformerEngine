@@ -38,17 +38,23 @@ std::vector<size_t> getGemmOutputShape(const NVTEShape& A_shape,
                                        const bool transa,
                                        const NVTEShape& B_shape,
                                        const bool transb) {
-  // reshape [x_1,...,x_{n-1}, x_n] -> [y, x_n]
+  // Flatten outer dims to get 2D matrices
   const size_t A0 = product(A_shape, 0, A_shape.ndim - 1);
   const size_t A1 = A_shape.data[A_shape.ndim - 1];
-  // const size_t B0 = product(B_shape, 0, B_shape.ndim - 1);
+  const size_t B0 = product(B_shape, 0, B_shape.ndim - 1);
   const size_t B1 = B_shape.data[B_shape.ndim - 1];
 
+  // Check matrix dims
+  NVTE_CHECK((transa ? A1 : A0) == (transb ? B0 : B1),
+             "Invalid matrix dimensions for GEMM (A=(", A0, ",", A1, "), transa=",
+             transa, ", B=(", B0, ",", B1, "), transb=", transb, ")");
+
+  // Construct output dims
   std::vector<size_t> ret;
   if (transb) {
     ret.emplace_back(B1);
   } else {
-    // full B0
+    // Unflatten B0
     for (size_t i = 0; i < B_shape.ndim - 1; ++i) {
       ret.emplace_back(B_shape.data[i]);
     }
@@ -58,7 +64,6 @@ std::vector<size_t> getGemmOutputShape(const NVTEShape& A_shape,
   } else {
     ret.emplace_back(A1);
   }
-
   return ret;
 }
 
@@ -86,38 +91,45 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
                              MaybeTensor bias, DType bias_type, bool gelu,
                              bool grad, at::Tensor workspace, size_t workspaceSize,
                              bool accumulate, bool use_split_accumulator) {
-  NVTE_CHECK(!A.is_none() && !B.is_none(), "A and B matrices cannot be None!");
+  // Input tensors
+  NVTE_CHECK(!A.is_none(), "Tensor A has not been provided");
+  NVTE_CHECK(!B.is_none(), "Tensor B has not been provided");
   auto none = py::none();
   const TensorWrapper& A_tensor = makeTransformerEngineTensor(A, none);
   const TensorWrapper& B_tensor = makeTransformerEngineTensor(B, none);
 
-  NVTE_CHECK(A_tensor.shape().ndim >= 2,
-             "Tensor A needs to have at least 2 dimensions (got " +
-             std::to_string(A_tensor.shape().ndim) + ")!");
-  NVTE_CHECK(B_tensor.shape().ndim >= 2,
-             "Tensor B needs to have at least 2 dimensions (got " +
-             std::to_string(B_tensor.shape().ndim) + ")!");
-
-  DType output_dtype = out_dtype ? *out_dtype
-                                 : A_tensor.dtype();
-
-  TensorWrapper D_tensor;
+  // Check tensor dimensions
   const auto& A_shape = A_tensor.shape();
   const auto& B_shape = B_tensor.shape();
   const auto& D_shape = detail::getGemmOutputShape(A_shape, transa, B_shape, transb);
+  NVTE_CHECK(A_shape.ndim >= 1, "Tensor A needs to have at least 1 dimension");
+  NVTE_CHECK(B_shape.ndim >= 1, "Tensor B needs to have at least 1 dimension");
+
+  // Output tensor
+  TensorWrapper D_tensor;
   if (D.is_none()) {
+    DType output_dtype = out_dtype ? *out_dtype : A_tensor.dtype();
     std::tie(D_tensor, D) = createOutputTensor(D_shape, output_dtype, quantizer);
   } else {
     D_tensor = makeTransformerEngineTensor(D, quantizer);
     NVTE_CHECK(detail::checkGemmShape(D_shape, D_tensor.shape()),
-               "Incorrect shape of the GEMM output. Expected " +
-               std::to_string(D_shape) + " and got " +
-               std::to_string(D_tensor.shape()) + ".");
+               "GEMM output has invalid dims (expected ",
+               std::to_string(D_shape), ", got ",
+               std::to_string(D_tensor.shape()), ")");
+    if (out_dtype) {
+      NVTE_CHECK(*out_dtype == D_tensor.dtype(),
+                 "GEMM output has invalid dtype (expected ", int(*out_dtype),
+                 ", found ", int(D_tensor.dtype()), ")");
+    }
   }
 
+  // Bias tensor
   TensorWrapper bias_tensor;
   MaybeTensor bias_grad = std::nullopt;
   if (bias.has_value()) {
+    if (!bias->is_contiguous()) {
+      bias = bias->contiguous();
+    }
     if (!grad) {
       bias_tensor = makeTransformerEngineTensor(*bias);
     } else {
@@ -126,6 +138,7 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
     }
   }
 
+  // Activation input tensor
   MaybeTensor pre_gelu_out = std::nullopt;
   DType gelu_type = bias_type;
   if (gelu && !grad) {
@@ -140,15 +153,18 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   const auto gelu_shape = gelu ? D_shape : std::vector<size_t>{0};
   auto te_pre_gelu_out =
       makeTransformerEngineTensor(get_data_ptr(pre_gelu_out), gelu_shape, gelu_type);
+
+  // Workspace
   auto te_workspace =
       makeTransformerEngineTensor(workspace.data_ptr(), {workspaceSize}, DType::kByte);
+
   // Set an external SM Margin to all the GEMMs.
   // This comes in handy when DP is overlapped with GEMMs
-
   const int device_id = at::cuda::current_device();
   const int sm_count = transformer_engine::cuda::sm_count(device_id);
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
+  // Launch GEMM
   nvte_cublas_gemm(A_tensor.data(), B_tensor.data(), D_tensor.data(), bias_tensor.data(),
                    te_pre_gelu_out.data(), transa, transb, grad, te_workspace.data(), accumulate,
                    use_split_accumulator, num_math_sms, at::cuda::getCurrentCUDAStream());
