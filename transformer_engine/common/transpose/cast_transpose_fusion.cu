@@ -1195,7 +1195,7 @@ void dgated_act_cast_transpose(const Tensor &input, const Tensor &gated_act_inpu
           });  // NOLINT(*)
   );           // NOLINT(*)
 }
-}  // namespace
+}  // namespace detail
 
 }  // namespace transformer_engine
 

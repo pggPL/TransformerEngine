@@ -1062,7 +1062,7 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input, Tensor *output
 
 namespace detail {
 
-struct Empty {};
+using Empty = transformer_engine::Empty;
 
 __device__ inline float identity(float value, const Empty &) { return value; }
 
