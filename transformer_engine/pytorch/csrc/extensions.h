@@ -278,80 +278,28 @@ py::object dsrelu(const at::Tensor& grad, const at::Tensor& input, py::handle qu
  * LayerNorm
  **************************************************************************************************/
 
-std::vector<at::Tensor> layernorm_bwd(const at::Tensor &dz, const at::Tensor &x,
+std::vector<py::object> layernorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                       const at::Tensor &mu, const at::Tensor &rsigma,
                                       const at::Tensor &gamma, const int sm_margin,
                                       const bool zero_centered_gamma);
 
-std::vector<at::Tensor> layernorm_fwd_fp8(const at::Tensor &input, const at::Tensor &weight,
-                                          const at::Tensor &bias, float eps, at::Tensor scale,
-                                          at::Tensor amax, at::Tensor scale_inv,
-                                          transformer_engine::DType otype, const int sm_margin,
-                                          const bool zero_centered_gamma,
-                                          const int scale_offset = 0, const int amax_offset = 0,
-                                          const int scale_inv_offset = 0);
+std::vector<py::object> layernorm_fwd(py::handle input, py::handle weight,
+                                      MaybeTensor bias, float eps, py::object ln_out,
+                                      py::handle quantizer, transformer_engine::DType out_dtype,
+                                      const int sm_margin, const bool zero_centered_gamma);
 
-std::vector<at::Tensor> layernorm_fwd_fp8_noalloc(
-    const at::Tensor &input, const at::Tensor &weight, const at::Tensor &bias, float eps,
-    at::Tensor scale, at::Tensor ln_out, at::Tensor amax, at::Tensor scale_inv,
-    transformer_engine::DType otype, const int sm_margin, const bool zero_centered_gamma,
-    const int scale_offset = 0, const int amax_offset = 0, const int scale_inv_offset = 0);
-
-at::Tensor layernorm_fwd_fp8_inf(const at::Tensor &input, const at::Tensor &weight,
-                                 const at::Tensor &bias, float eps, at::Tensor scale,
-                                 at::Tensor amax, at::Tensor scale_inv,
-                                 transformer_engine::DType otype, const int sm_margin,
-                                 const bool zero_centered_gamma, const int scale_offset = 0,
-                                 const int amax_offset = 0, const int scale_inv_offset = 0);
-
-std::vector<at::Tensor> layernorm_fwd(const at::Tensor &input, const at::Tensor &weight,
-                                      const at::Tensor &bias, float eps, const int sm_margin,
-                                      const bool zero_centered_gamma);
-
-std::vector<at::Tensor> layernorm_fwd_noalloc(const at::Tensor &input, const at::Tensor &weight,
-                                              const at::Tensor &bias, at::Tensor ln_out, float eps,
-                                              const int sm_margin, const bool zero_centered_gamma);
-
-at::Tensor layernorm_fwd_inf(const at::Tensor &input, const at::Tensor &weight,
-                             const at::Tensor &bias, float eps, const int sm_margin,
-                             const bool zero_centered_gamma);
 
 /***************************************************************************************************
  * RMSNorm
  **************************************************************************************************/
 
-std::vector<at::Tensor> rmsnorm_bwd(const at::Tensor &dz, const at::Tensor &x,
+std::vector<py::object> rmsnorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                     const at::Tensor &rsigma, const at::Tensor &gamma,
                                     const int sm_margin, const bool zero_centered_gamma);
 
-std::vector<at::Tensor> rmsnorm_fwd_fp8(const at::Tensor &input, const at::Tensor &weight,
-                                        float eps, at::Tensor scale, at::Tensor amax,
-                                        at::Tensor scale_inv, transformer_engine::DType otype,
-                                        const int sm_margin, const bool zero_centered_gamma,
-                                        const int scale_offset = 0, const int amax_offset = 0,
-                                        const int scale_inv_offset = 0);
-
-std::vector<at::Tensor> rmsnorm_fwd_fp8_noalloc(
-    const at::Tensor &input, const at::Tensor &weight, float eps, at::Tensor scale,
-    at::Tensor ln_out, at::Tensor amax, at::Tensor scale_inv, transformer_engine::DType otype,
-    const int sm_margin, const bool zero_centered_gamma, const int scale_offset = 0,
-    const int amax_offset = 0, const int scale_inv_offset = 0);
-
-at::Tensor rmsnorm_fwd_fp8_inf(const at::Tensor &input, const at::Tensor &weight, float eps,
-                               at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                               transformer_engine::DType otype, const int sm_margin,
-                               const bool zero_centered_gamma, const int scale_offset = 0,
-                               const int amax_offset = 0, const int scale_inv_offset = 0);
-
-std::vector<at::Tensor> rmsnorm_fwd(const at::Tensor &input, const at::Tensor &weight, float eps,
+std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &weight, float eps,
+                                    py::object ln_out, py::handle quantizer, transformer_engine::DType otype,
                                     const int sm_margin, const bool zero_centered_gamma);
-
-std::vector<at::Tensor> rmsnorm_fwd_noalloc(const at::Tensor &input, const at::Tensor &weight,
-                                            at::Tensor ln_out, float eps, const int sm_margin,
-                                            const bool zero_centered_gamma);
-
-at::Tensor rmsnorm_fwd_inf(const at::Tensor &input, const at::Tensor &weight, float eps,
-                           const int sm_margin, const bool zero_centered_gamma);
 
 /***************************************************************************************************
  * Cast

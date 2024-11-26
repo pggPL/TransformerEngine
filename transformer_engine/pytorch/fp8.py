@@ -743,6 +743,6 @@ class DelayedScalingRecipeState(RecipeState):
     def make_quantizers(self) -> list:
         from .tensor.float8_tensor import Float8Quantizer
         return [
-            Float8Quantizer(self.scale[i], self.amax_history[0][i], self.dtype)
+            Float8Quantizer(self.scale[i], self.amax_history[0][i].reshape((1,)), self.dtype)
             for i in range(self.num_quantizers)
         ]

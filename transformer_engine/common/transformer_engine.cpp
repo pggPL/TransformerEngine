@@ -7,6 +7,7 @@
 #include <transformer_engine/transformer_engine.h>
 
 #include "common.h"
+#include <iostream>
 
 namespace transformer_engine {
 

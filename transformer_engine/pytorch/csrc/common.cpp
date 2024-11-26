@@ -9,6 +9,7 @@
 
 #include "transformer_engine/transformer_engine.h"
 #include "pybind.h"
+#include <iostream>
 
 namespace transformer_engine::pytorch {
 
@@ -21,6 +22,7 @@ std::vector<size_t> getTensorShape(at::Tensor t) {
 }
 
 std::unique_ptr<Quantizer> convert_quantizer(py::handle quantizer) {
+  init_extension();
   if (quantizer.is_none()) {
     return std::make_unique<NoneQuantizer>(quantizer);
   }
@@ -51,7 +53,8 @@ TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantize
       NVTE_CHECK(quantizer.is_none() ||
                  check_quantizer_type(quantizer.ptr()),
                  "Unexpected quantization params type.");
-      return create_tensor(tensor, my_quantizer.get());
+      auto x = create_tensor(tensor, my_quantizer.get());
+      return x;
     }
   }
 
@@ -65,6 +68,7 @@ TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantize
   ret.set_rowwise_data(torch_tensor.data_ptr(),
                        GetTransformerEngineDType(torch_tensor.scalar_type()),
                        getTensorShape(torch_tensor));
+  std::cout << "SVTRsgbndgib" << std::endl;
   my_quantizer->set_quantization_params(&ret);
   return ret;
 }

@@ -13,11 +13,7 @@ from typing import Optional
 import torch
 
 from transformer_engine_torch import rmsnorm_bwd, rmsnorm_fwd
-from ...cpp_extensions import (
-    rmsnorm_fwd_fp8,
-    rmsnorm_fwd_fp8_inf,
-    rmsnorm_fwd_inf,
-)
+from ...cpp_extensions import *
 from ...fp8 import FP8GlobalStateManager, get_fp8_te_dtype
 from ...tensor import Float8Tensor, QuantizedTensor
 from ...utils import (

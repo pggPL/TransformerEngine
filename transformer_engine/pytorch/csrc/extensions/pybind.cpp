@@ -16,19 +16,21 @@
 #include "pytorch/csrc/common.h"
 #include "pybind.h"
 #include "common.h"
+#include <iostream>
 
 namespace transformer_engine::pytorch {
 
 PyTypeObject *Float8TensorPythonClass = nullptr;  /// TODO Remove
 PyTypeObject *Float8TensorBasePythonClass = nullptr;
-PyTypeObject *Float8QParamsClass = nullptr;  /// TODO Rename to Float8QuantizerClass
+PyTypeObject *Float8QuantizerClass = nullptr;  /// TODO Rename to Float8QuantizerClass
 
 void init_extension() {
   if (Float8TensorPythonClass) return;
   auto float8tensor_module = py::module_::import("transformer_engine.pytorch.tensor.float8_tensor");
-  Float8QParamsClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(),
+  Float8QuantizerClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(),
                                                                               "Float8Quantizer"));
   Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(), "Float8Tensor"));
+  std::cout << "Float8TensorPythonClass = " << Float8TensorPythonClass<< std::endl;
   auto float8tensorbase_module =
     py::module_::import("transformer_engine.pytorch.tensor._internal.float8_tensor_base");
   Float8TensorBasePythonClass = reinterpret_cast<PyTypeObject*>(
@@ -93,62 +95,31 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
 
   // Other granular functions
-  m.def("layernorm_fwd_fp8", &layernorm_fwd_fp8, "LN FWD FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("bias"), py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("layernorm_fwd_fp8_inf", &layernorm_fwd_fp8_inf, "LN FWD FP8 for inference",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("bias"), py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("layernorm_fwd_fp8_noalloc", &layernorm_fwd_fp8_noalloc, "LN FWD FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("bias"), py::arg("eps"), py::arg("scale"), py::arg("ln_out"), py::arg("amax"),
-        py::arg("scale_inv"), py::arg("otype"), py::arg("sm_margin"),
-        py::arg("zero_centered_gamma"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("layernorm_bwd", &layernorm_bwd, "LN BWD", py::call_guard<py::gil_scoped_release>());
-  m.def("layernorm_fwd", &layernorm_fwd, "LN FWD", py::call_guard<py::gil_scoped_release>());
-  m.def("layernorm_fwd_inf", &layernorm_fwd_inf, "LN FWD for inference",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("layernorm_fwd_noalloc", &layernorm_fwd_noalloc, "LN FWD",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("rmsnorm_fwd_fp8", &rmsnorm_fwd_fp8, "RMSNorm FWD FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("sm_margin"), py::arg("zero_centered_gamma"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("rmsnorm_fwd_fp8_inf", &rmsnorm_fwd_fp8_inf, "RMSNorm FWD FP8 for inference",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("sm_margin"), py::arg("zero_centered_gamma"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("rmsnorm_fwd_fp8_noalloc", &rmsnorm_fwd_fp8_noalloc, "RMSNorm FWD FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("eps"), py::arg("scale"), py::arg("ln_out"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("rmsnorm_bwd", &rmsnorm_bwd, "RMSNorm BWD", py::call_guard<py::gil_scoped_release>());
-  m.def("rmsnorm_fwd", &rmsnorm_fwd, "RMSNorm FWD", py::call_guard<py::gil_scoped_release>());
-  m.def("rmsnorm_fwd_inf", &rmsnorm_fwd_inf, "RMSNorm FWD for inference",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("rmsnorm_fwd_noalloc", &rmsnorm_fwd_noalloc, "RMSNorm FWD",
+  m.def("layernorm_fwd", &layernorm_fwd, "LN FWD FP8",
+        py::arg("input"), py::arg("weight"),
+        py::arg("bias"), py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), 
+        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"));
+  m.def("layernorm_bwd", &layernorm_bwd, "LN BWD");
+  m.def("rmsnorm_fwd", &rmsnorm_fwd, "RMSNorm FWD FP8",
+        py::arg("input"), py::arg("weight"),
+        py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), py::arg("otype"),
+        py::arg("sm_margin"), py::arg("zero_centered_gamma"));
+  m.def("rmsnorm_bwd", &rmsnorm_bwd, "RMSNorm BWD");
+  m.def("fused_cast_transpose", &fused_cast_transpose, "Fused Cast + Transpose",
         py::call_guard<py::gil_scoped_release>());
   m.def("fused_cast_transpose_noop", &fused_cast_transpose_noop,
         "Cast + Transpose with noop option", py::call_guard<py::gil_scoped_release>(),
         py::arg("input"), py::arg("noop"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("input_cast"), py::arg("input_transpose"), py::arg("otype"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("input_cast"), py::arg("input_transpose"), py::arg("otype"), py::arg("scale_offset") = 0,
+        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_cast_transpose_bgrad", &fused_cast_transpose_bgrad, "Fused Cast + Transpose + BGRAD",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("scale"),
         py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
         py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_fp8_transpose_bgrad", &fused_fp8_transpose_bgrad, "Fused FP8 Transpose + BGRAD",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("grad_bias_type"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("grad_bias_type"), py::arg("scale_offset") = 0,
+        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_cast_transpose_bgrad_dgelu", &fused_cast_transpose_bgrad_dgelu,
         "Fused Cast + Transpose + BGRAD + DGELU", py::call_guard<py::gil_scoped_release>(),
         py::arg("grad_output"), py::arg("gelu_input"), py::arg("scale"), py::arg("amax"),
