@@ -1229,9 +1229,9 @@ void quantize_helper(const NVTETensor input,
         cast_transpose(input_tensor, Tensor(), output_tensor, stream);
       }
       if constexpr (IS_DBIAS) {
-        /*cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(input_tensor, activation_tensor,
+        cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(input_tensor, activation_tensor,
                                                                     output_tensor, dbias_tensor,
-                                                                    workspace_tensor, stream);*/
+                                                                    workspace_tensor, stream);
       }
       if constexpr (!IS_DBIAS && IS_DACT) {
         NVTE_ERROR("Not implemented yet!");
