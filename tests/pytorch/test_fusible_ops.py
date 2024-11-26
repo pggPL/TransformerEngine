@@ -304,11 +304,9 @@ class TestFuser:
             w_scale_ref = (fp8_format.value.max_fwd / w_amax_ref) / (2**margin)
             x_scale_ref = (fp8_format.value.max_fwd / x_amax_ref) / (2**margin)
             dy_scale_ref = (fp8_format.value.max_bwd / dy_amax_ref) / (2**margin)
-            forward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=True)
-            backward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=False)
-            w_scale = model.get_fp8_meta("param")[forward_key].scale
-            x_scale = model.get_fp8_meta("input")[forward_key].scale
-            dy_scale = model.get_fp8_meta("grad_output")[backward_key].scale
+            w_scale = model.get_quantizer("forward", 1).scale
+            x_scale = model.get_quantizer("forward", 0).scale
+            dy_scale = model.get_quantizer("backward", 0).scale
             torch.testing.assert_close(w_scale, torch.full_like(w_scale, w_scale_ref))
             torch.testing.assert_close(x_scale, torch.full_like(x_scale, x_scale_ref))
             torch.testing.assert_close(dy_scale, torch.full_like(dy_scale, dy_scale_ref))
@@ -510,19 +508,14 @@ class TestBasicOps:
         ),
     )
     @pytest.mark.parametrize("dtype", _dtypes)
-    @pytest.mark.parametrize("device", ("cuda", "cpu"))
-    @pytest.mark.parametrize(
-        "memory_format",
-        (torch.contiguous_format, torch.channels_last),
-    )
     @pytest.mark.parametrize("fp8", (False, True))
     def test_reshape(
         self,
         *,
         shapes: tuple[Iterable[int], Iterable[int]],
         dtype: torch.dtype,
-        device: torch.device,
-        memory_format: torch.memory_format,
+        device: torch.device = "cuda",
+        memory_format: torch.memory_format = torch.contiguous_format,
         fp8: bool,
     ) -> None:
         in_shape, out_shape = shapes

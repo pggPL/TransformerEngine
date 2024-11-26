@@ -43,12 +43,12 @@ from ..cpp_extensions import (
 from ..constants import GemmParallelModes, dist_group_type
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
-from ..float8_tensor import Float8Tensor
+from ..tensor.float8_tensor import Float8Tensor
 from ..tensor.quantized_tensor import (
     QuantizedTensor,
     Quantizer,
     prepare_for_saving,
-    restore_from_saved
+    restore_from_saved,
 )
 
 from ..cpu_offload import is_cpu_offload_enabled
@@ -827,6 +827,12 @@ class Linear(TransformerEngineBaseModule):
                 if torch.is_grad_enabled():
                     grad_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
                     grad_output_quantizer.internal = True
+
+            # Make sure weight tensor has correct quantizer
+            # Note: Quantizer might have changed if quantization
+            # recipe changed
+            if weight_quantizer is not None and isinstance(weight_tensor, Float8Tensor):
+                weight_tensor._quantizer = weight_quantizer
 
             if torch.is_grad_enabled():
                 linear_fn = _Linear.apply
