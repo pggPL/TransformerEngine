@@ -29,7 +29,6 @@ std::vector<py::object> bgrad_quantize(const at::Tensor& input, py::handle py_qu
   }
 
   auto dbias_tensor = makeTransformerEngineTensor(dbias);
-
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
   nvte_quantize_dbias(input_tensor.data(),
@@ -37,9 +36,16 @@ std::vector<py::object> bgrad_quantize(const at::Tensor& input, py::handle py_qu
                       dbias_tensor.data(),
                       workspace.data(),
                       at::cuda::getCurrentCUDAStream());
-  auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
+  
+  void* workspace_data_ptr = nullptr;
+  if (workspace.shape().ndim > 0) {
+    auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
+    workspace_data_ptr = workspace_data.data_ptr();
+  }
   workspace =
-      makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
+      makeTransformerEngineTensor(workspace_data_ptr, workspace.shape(), workspace.dtype());
+
+
 
   // Launch kernel
   nvte_quantize_dbias(input_tensor.data(),

@@ -24,10 +24,6 @@ void init_extension();
 namespace detail {
 
 inline bool IsFloat8QParams(PyObject *obj) {
-
-  std::cout << "Float8TensorPythonClass = " << Float8TensorPythonClass<< std::endl;
-
-  std::cout << "Py_TYPE(obj) = " << Py_TYPE(obj)<< std::endl;
   return Py_TYPE(obj) == Float8QuantizerClass;
 }
 

@@ -45,8 +45,6 @@ def _apply_normalization(
     zero_centered_gamma: bool,
     is_grad_enabled: bool,
 ):
-    import pdb 
-    pdb.set_trace()
     normalization_func = _get_normalization_func(normalization, True)
 
     inputs = (inputmat, ln_weight) if ln_bias is None else (inputmat, ln_weight, ln_bias)

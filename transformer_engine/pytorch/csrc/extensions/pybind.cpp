@@ -16,8 +16,6 @@
 #include "pytorch/csrc/common.h"
 #include "pybind.h"
 #include "common.h"
-#include <iostream>
-
 namespace transformer_engine::pytorch {
 
 PyTypeObject *Float8TensorPythonClass = nullptr;  /// TODO Remove
@@ -30,7 +28,6 @@ void init_extension() {
   Float8QuantizerClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(),
                                                                               "Float8Quantizer"));
   Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(), "Float8Tensor"));
-  std::cout << "Float8TensorPythonClass = " << Float8TensorPythonClass<< std::endl;
   auto float8tensorbase_module =
     py::module_::import("transformer_engine.pytorch.tensor._internal.float8_tensor_base");
   Float8TensorBasePythonClass = reinterpret_cast<PyTypeObject*>(

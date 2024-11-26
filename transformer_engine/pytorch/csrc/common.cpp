@@ -9,8 +9,6 @@
 
 #include "transformer_engine/transformer_engine.h"
 #include "pybind.h"
-#include <iostream>
-
 namespace transformer_engine::pytorch {
 
 std::vector<size_t> getTensorShape(at::Tensor t) {
@@ -68,7 +66,6 @@ TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantize
   ret.set_rowwise_data(torch_tensor.data_ptr(),
                        GetTransformerEngineDType(torch_tensor.scalar_type()),
                        getTensorShape(torch_tensor));
-  std::cout << "SVTRsgbndgib" << std::endl;
   my_quantizer->set_quantization_params(&ret);
   return ret;
 }

@@ -999,14 +999,14 @@ def _test_granular_accuracy(block, bs, dtype, config):
     with fp8_autocast():
         out = block(inp_hidden_states)
     loss = out.sum()
-    #loss.backward()
+    loss.backward()
 
     torch.cuda.synchronize()
     outputs = [out]
-    # outputs = [out, inp_hidden_states.grad]
-    #for p in block.parameters():
-    #    if p.requires_grad:
-    #        outputs.append(p.grad)
+    outputs = [out, inp_hidden_states.grad]
+    for p in block.parameters():
+        if p.requires_grad:
+            outputs.append(p.grad)
     return outputs
 
 
@@ -1199,6 +1199,7 @@ def test_layernorm_accuracy(dtype, bs, model, eps, zero_centered_gamma):
 
     te_outputs = _test_granular_accuracy(te_layernorm, bs, dtype, config)
     torch_outputs = _test_granular_accuracy(torch_layernorm, bs, dtype, config)
+
 
     atol = {
         torch.float32: 1e-7,

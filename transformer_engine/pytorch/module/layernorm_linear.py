@@ -428,8 +428,6 @@ class _LayerNormLinear(torch.autograd.Function):
                 dim_size[0] = dim_size[0] * tp_world_size
                 ub_obj_lnout = get_ub(ctx.ub_name + "_dgrad")
                 ub_obj_lnout.copy_input_to_ubuf(ln_out, 1)
-            import pdb 
-            pdb.set_trace()
             (
                 grad_output,
                 grad_bias,
