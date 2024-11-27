@@ -226,6 +226,14 @@ class Tensor {
     }
   }
 
+  bool rowwise() const {
+    return rowwise_;
+  }
+
+  bool columnwise() const {
+    return columnwise_;
+  }
+
   void to_cpu() const;
   void from_cpu() const;
   void set_scale(float scale);

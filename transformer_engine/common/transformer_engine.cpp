@@ -98,7 +98,7 @@ void CheckScaleTensor(const Tensor *t) {
 }
 
 void CheckInputTensor(const Tensor &t, const std::string &name) {
-  const DType type = t.data.dtype;
+  const DType type = t.dtype();
   if (is_fp8_dtype(type)) {
     // FP8 input needs to have scale_inv
     if (t.has_data()) {
@@ -185,14 +185,24 @@ void nvte_destroy_tensor(NVTETensor tensor) {
 
 NVTEDType nvte_tensor_type(const NVTETensor tensor) {
   return static_cast<NVTEDType>(
-      reinterpret_cast<const transformer_engine::Tensor *>(tensor)->data.dtype);
+      reinterpret_cast<const transformer_engine::Tensor *>(tensor)->dtype());
 }
 
 NVTEShape nvte_tensor_shape(const NVTETensor tensor) {
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   NVTEShape ret;
-  ret.data = t.data.shape.data();
-  ret.ndim = t.data.shape.size();
+  if (t.has_data()) {
+    ret.data = t.data.shape.data();
+    ret.ndim = t.data.shape.size();
+  } else {
+    if (t.scaling_mode == NVTE_DELAYED_TENSOR_SCALING) {
+      NVTE_ERROR("Getting the shape from a columnwise tensor is "
+                 "not supported for this scaling mode.");
+    } else {
+      ret.data = t.columnwise_data.shape.data();
+      ret.ndim = t.columnwise_data.shape.size();
+    }
+  }
   return ret;
 }
 

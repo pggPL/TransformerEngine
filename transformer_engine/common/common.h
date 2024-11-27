@@ -142,7 +142,11 @@ struct Tensor {
     if (has_columnwise_data()) {
       const auto& data_shape = columnwise_data.shape;
       if (data_shape.empty()) return 1;
-      return product(data_shape, 1, data_shape.size());
+      if (scaling_mode == NVTE_DELAYED_TENSOR_SCALING) {
+        return product(data_shape, 1, data_shape.size());
+      } else {
+        return product(data_shape, 0, data_shape.size() - 1);
+      }
     }
     return 1;
   }
@@ -161,7 +165,11 @@ struct Tensor {
     if (has_columnwise_data()) {
       const auto& data_shape = columnwise_data.shape;
       if (data_shape.empty()) return 1;
-      return data_shape.front();
+      if (scaling_mode == NVTE_DELAYED_TENSOR_SCALING) {
+        return data_shape.front();
+      } else {
+        return data_shape.back();
+      }
     }
     return 1;
   }

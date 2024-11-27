@@ -201,7 +201,7 @@ __global__ void swizzle_row_scaling_kernel(const void* input, void* output, cons
 namespace transformer_engine {
 
 void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t stream) {
-  if (!is_fp8_dtype(input->data.dtype) || is_delayed_tensor_scaling(input->scaling_mode)) {
+  if (!is_fp8_dtype(input->dtype()) || is_delayed_tensor_scaling(input->scaling_mode)) {
     NVTE_ERROR("Not implemented caling mode " + to_string(input->scaling_mode) + ".");
   }
 
@@ -212,17 +212,28 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
 
   // 1D block scaling, row-wise or colum-wise
   if (scaling_mode == NVTE_MXFP8_1D_SCALING) {
-    const int m = input->scale_inv.shape[0];
-    const int k = input->scale_inv.shape[1];
+    const int m = input->has_data() ? input->scale_inv.shape[0]
+                                    : input->columnwise_scale_inv.shape[0];
+    const int k = input->has_data() ? input->scale_inv.shape[1]
+                                    : input->columnwise_scale_inv.shape[1];
 
     constexpr int SF_TILE_DIM_M = 128;
     constexpr int SF_TILE_DIM_K = 4;
 
     NVTE_CHECK(m % SF_TILE_DIM_M == 0, "Input should be padded in M/N dimension!");
     NVTE_CHECK(k % SF_TILE_DIM_K == 0, "Input should be padded in K dimension!");
-    NVTE_CHECK(m * k == std::accumulate(output->scale_inv.shape.begin(),
-                                        output->scale_inv.shape.end(), 1, std::multiplies<int>()),
-               "Input.scale_inv size is not equal to Output.scale_inv size!");
+    if (output->has_data()) {
+      NVTE_CHECK(m * k == std::accumulate(output->scale_inv.shape.begin(),
+                                          output->scale_inv.shape.end(), 1, std::multiplies<int>()),
+                 "Input.scale_inv size is not equal to Output.scale_inv size!");
+    }
+    if (output->has_columnwise_data()) {
+      NVTE_CHECK(m * k == std::accumulate(output->columnwise_scale_inv.shape.begin(),
+                                          output->columnwise_scale_inv.shape.end(),
+                                          1, std::multiplies<int>()),
+                 "Input.columnwise_scale_inv size is not equal to "
+                 "Output.columnwise_scale_inv size!");
+    }
 
     int num_tiles_m = m / SF_TILE_DIM_M;
     int num_tiles_k = k / SF_TILE_DIM_K;

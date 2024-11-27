@@ -174,7 +174,6 @@ Tensor::Tensor(const NVTEShape &shape, const DType type,
   columnwise_scale_inv_cpu_data_ = nullptr;
   float *amax = nullptr, *scale = nullptr;
   float *rowwise_scale_inv = nullptr, *columnwise_scale_inv = nullptr;
-  std::cout << shape.ndim << std::endl;
   if (columnwise) {
     NVTE_CHECK(shape.ndim >= 2);
   }
@@ -627,13 +626,23 @@ void generate_data_uniformly(T* data, const size_t size) {
 }
 
 void fillUniform(Tensor *t) {
-  const size_t size = product(t->rowwise_shape());
-  TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(t->dtype(), T,
-    {
-      T *data = t->rowwise_cpu_dptr<T>();
-      generate_data_uniformly(data, size);
-    }
-  );
+  if (t->rowwise()) {
+    const size_t size = product(t->rowwise_shape());
+    TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(t->dtype(), T,
+      {
+        T *data = t->rowwise_cpu_dptr<T>();
+        generate_data_uniformly(data, size);
+      }
+    );
+  } else {
+    const size_t size = product(t->columnwise_shape());
+    TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(t->dtype(), T,
+      {
+        T *data = t->columnwise_cpu_dptr<T>();
+        generate_data_uniformly(data, size);
+      }
+    );
+  }
   static std::mt19937 gen(12345);
   std::uniform_real_distribution<> dis(-2.0, 1.0);
   t->set_scale_inv(dis(gen));
