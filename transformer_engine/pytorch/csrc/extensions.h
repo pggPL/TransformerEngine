@@ -308,7 +308,8 @@ std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &w
 namespace transformer_engine::pytorch {
 
 py::object quantize(const at::Tensor& tensor,
-                    py::handle quantizer);
+                    py::handle quantizer,
+                    const py::object& output);
 
 py::object dequantize(const py::handle& input, transformer_engine::DType otype);
 
@@ -321,62 +322,31 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
                              bool grad, at::Tensor workspace, size_t workspaceSize,
                              bool accumulate, bool use_split_accumulator);
 
-}  // namespace transformer_engine::pytorch
-
-at::Tensor cast_to_fp8(const at::Tensor &input, const at::Tensor &scale, at::Tensor amax,
-                       at::Tensor scale_inv, transformer_engine::DType otype,
-                       std::vector<int64_t> scaling_mode, const int scale_offset = 0,
-                       const int amax_offset = 0, const int scale_inv_offset = 0);
-
-void cast_to_fp8_noalloc(const at::Tensor &input, const at::Tensor &scale, at::Tensor output,
-                         at::Tensor amax, at::Tensor scale_inv, transformer_engine::DType otype,
-                         std::vector<int64_t> scaling_mode, const int scale_offset = 0,
-                         const int amax_offset = 0, const int scale_inv_offset = 0);
-
 /***************************************************************************************************
  * Cast fusions
  **************************************************************************************************/
 
-std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor &input, const at::Tensor &scale,
-                                       at::Tensor amax, at::Tensor scale_inv,
-                                       transformer_engine::DType otype,
-                                       std::vector<int64_t> scaling_mode, const int scale_offset,
-                                       const int amax_offset, const int scale_inv_offset);
+std::vector<py::object> dbias_dgelu(const at::Tensor& grad_output,
+                                    const at::Tensor& act_input,
+                                    py::handle quantizer);
 
-std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor act_input,
-                                             at::Tensor scale, at::Tensor amax,
-                                             at::Tensor scale_inv, transformer_engine::DType otype,
-                                             std::vector<int64_t> scaling_mode,
-                                             int scale_offset = 0, int amax_offset = 0,
-                                             int scale_inv_offset = 0);
+std::vector<py::object> dbias_dsilu(const at::Tensor& grad_output,
+                                    const at::Tensor& act_input,
+                                    py::handle quantizer);
 
-std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor act_input,
-                                             at::Tensor scale, at::Tensor amax,
-                                             at::Tensor scale_inv, transformer_engine::DType otype,
-                                             std::vector<int64_t> scaling_mode,
-                                             int scale_offset = 0, int amax_offset = 0,
-                                             int scale_inv_offset = 0);
+std::vector<py::object> dbias_drelu(const at::Tensor& grad_output,
+                                    const at::Tensor& act_input,
+                                    py::handle quantizer);
 
-std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor act_input,
-                                             at::Tensor scale, at::Tensor amax,
-                                             at::Tensor scale_inv, transformer_engine::DType otype,
-                                             std::vector<int64_t> scaling_mode,
-                                             int scale_offset = 0, int amax_offset = 0,
-                                             int scale_inv_offset = 0);
+std::vector<py::object> dbias_dqgelu(const at::Tensor& grad_output,
+                                     const at::Tensor& act_input,
+                                     py::handle quantizer);
 
-std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor act_input,
-                                              at::Tensor scale, at::Tensor amax,
-                                              at::Tensor scale_inv, transformer_engine::DType otype,
-                                              std::vector<int64_t> scaling_mode,
-                                              int scale_offset = 0, int amax_offset = 0,
-                                              int scale_inv_offset = 0);
+std::vector<py::object> dbias_dsrelu(const at::Tensor& grad_output,
+                                     const at::Tensor& act_input,
+                                     py::handle quantizer);
 
-std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor act_input,
-                                              at::Tensor scale, at::Tensor amax,
-                                              at::Tensor scale_inv, transformer_engine::DType otype,
-                                              std::vector<int64_t> scaling_mode,
-                                              int scale_offset = 0, int amax_offset = 0,
-                                              int scale_inv_offset = 0);
+}  // namespace transformer_engine::pytorch
 
 /***************************************************************************************************
  * Softmax

@@ -63,7 +63,8 @@ struct TypeInfo{
                              fp16,
                              bf16,
                              fp8e4m3,
-                             fp8e5m2>;
+                             fp8e5m2,
+                             e8m0_t>;
 
     template <typename U, DType current>
     struct Helper {
@@ -95,10 +96,17 @@ struct TypeInfo{
 
 class Tensor {
  public:
-  Tensor(const NVTEShape &shape, const DType type, const NVTEScalingMode &mode = {-1, -1, 1});
+  Tensor(const NVTEShape &shape, const DType type,
+         const bool rowwise = true,
+         const bool columnwise = false,
+         const NVTEScalingMode &mode = NVTE_DELAYED_TENSOR_SCALING);
 
-  Tensor(const std::vector<size_t> &shape, const DType type, const std::vector<int> &mode = {-1, -1, 1}) :
-    Tensor(NVTEShape{shape.data(), shape.size()}, type, NVTEScalingMode{mode[0], mode[1], mode[2]}) {}
+  Tensor(const std::vector<size_t> &shape,
+         const DType type,
+         const bool rowwise = true,
+         const bool columnwise = false,
+         const NVTEScalingMode &mode = NVTE_DELAYED_TENSOR_SCALING) :
+    Tensor(NVTEShape{shape.data(), shape.size()}, type, rowwise, columnwise, mode) {}
 
   Tensor() {}
 
@@ -113,19 +121,30 @@ class Tensor {
       cudaFree(tensor_.dptr());
     }
   }
+
   NVTETensor data() const noexcept {
     return tensor_.data();
   }
 
-  const NVTEShape shape() const noexcept {
-    return tensor_.shape();
+  NVTEShape rowwise_shape() const noexcept {
+    return tensor_.get_rowwise_data().shape;
   }
 
-  const NVTEShape scale_inv_shape() const noexcept {
-    return tensor_.scale_inv_shape();
+  NVTEShape columnwise_shape() const noexcept {
+    return tensor_.get_columnwise_data().shape;
   }
 
-  const NVTEScalingMode scaling_mode() const noexcept {
+  NVTEShape rowwise_scale_inv_shape() const {
+    NVTE_CHECK(rowwise_, "Tensor does not have rowwise data!");
+    return tensor_.get_rowwise_scale_inv().shape;
+  }
+
+  NVTEShape columnwise_scale_inv_shape() const {
+    NVTE_CHECK(columnwise_, "Tensor does not have columnwise data!");
+    return tensor_.get_columnwise_scale_inv().shape;
+  }
+
+  NVTEScalingMode scaling_mode() const noexcept {
     return tensor_.scaling_mode();
   }
 
@@ -133,14 +152,28 @@ class Tensor {
     return tensor_.dtype();
   }
 
-  void *dptr() const noexcept {
-    return tensor_.dptr();
+  void *rowwise_dptr() const {
+    NVTE_CHECK(rowwise_, "Tensor does not have rowwise data!");
+    return tensor_.get_rowwise_data().data_ptr;
+  }
+
+  void *columnwise_dptr() const {
+    NVTE_CHECK(columnwise_, "Tensor does not have columnwise data!");
+    return tensor_.get_columnwise_data().data_ptr;
   }
 
   template <typename T>
-  T *cpu_dptr() const {
+  T *rowwise_cpu_dptr() const {
     NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
-    return reinterpret_cast<T *>(cpu_data_.get());
+    NVTE_CHECK(rowwise_, "Tensor does not have rowwise data!");
+    return reinterpret_cast<T *>(cpu_data_rowwise_.get());
+  }
+
+  template <typename T>
+  T *columnwise_cpu_dptr() const {
+    NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
+    NVTE_CHECK(columnwise_, "Tensor does not have columnwise data!");
+    return reinterpret_cast<T *>(cpu_data_columnwise_.get());
   }
 
   float amax() const {
@@ -154,7 +187,7 @@ class Tensor {
 
   float scale() const {
     if(scale_cpu_data_) {
-      NVTE_CHECK(tensor_.scaling_mode().x == -1 && tensor_.scaling_mode().y == -1, "Invalid scaling_mode!");
+      NVTE_CHECK(tensor_.scaling_mode() == NVTE_DELAYED_TENSOR_SCALING, "Invalid scaling_mode!");
       to_cpu();
       return *scale_cpu_data_;
     } else {
@@ -163,19 +196,30 @@ class Tensor {
   }
 
   template <typename T>
-  T *cpu_scale_inv_ptr(){
-    if (tensor_.scaling_mode().x == -1 && tensor_.scaling_mode().y == -1){
+  T *rowwise_cpu_scale_inv_ptr(){
+    if (tensor_.scaling_mode() == NVTE_DELAYED_TENSOR_SCALING){
       NVTE_CHECK(TypeInfo<T>::dtype == DType::kFloat32, "Invalid type!");
     } else {
       NVTE_CHECK(TypeInfo<T>::dtype == DType::kByte, "Invalid type!");
     }
     to_cpu();
-    return reinterpret_cast<T*>(scale_inv_cpu_data_.get());
+    return reinterpret_cast<T*>(rowwise_scale_inv_cpu_data_.get());
   }
 
-  float scale_inv(){
-    if(scale_inv_cpu_data_) {
-      float scale_inv = cpu_scale_inv_ptr<float>()[0];
+  template <typename T>
+  T *columnwise_cpu_scale_inv_ptr(){
+    if (tensor_.scaling_mode() == NVTE_DELAYED_TENSOR_SCALING){
+      NVTE_CHECK(TypeInfo<T>::dtype == DType::kFloat32, "Invalid type!");
+    } else {
+      NVTE_CHECK(TypeInfo<T>::dtype == DType::kByte, "Invalid type!");
+    }
+    to_cpu();
+    return reinterpret_cast<T*>(columnwise_scale_inv_cpu_data_.get());
+  }
+
+  float rowwise_scale_inv(){
+    if(rowwise_scale_inv_cpu_data_) {
+      float scale_inv = rowwise_cpu_scale_inv_ptr<float>()[0];
       return scale_inv;
     } else {
       return 1;
@@ -190,10 +234,14 @@ class Tensor {
 
  private:
   TensorWrapper tensor_;
-  std::unique_ptr<unsigned char[]> cpu_data_;
+  std::unique_ptr<unsigned char[]> cpu_data_rowwise_;
+  std::unique_ptr<unsigned char[]> cpu_data_columnwise_;
   std::shared_ptr<float> amax_cpu_data_;
   std::shared_ptr<float> scale_cpu_data_;
-  std::unique_ptr<unsigned char[]> scale_inv_cpu_data_;
+  std::unique_ptr<unsigned char[]> rowwise_scale_inv_cpu_data_;
+  std::unique_ptr<unsigned char[]> columnwise_scale_inv_cpu_data_;
+  bool rowwise_;
+  bool columnwise_;
 };
 
 constexpr uint32_t FP32_EXPONENT_BIAS = 127;
@@ -313,7 +361,7 @@ size_t product(const NVTEShape &shape);
 bool areShapesEqual(const NVTEShape &s1, const NVTEShape &s2);
 
 void compareResults(const std::string &name, const Tensor &test, const void *ref,
-                    double atol = 1e-5, double rtol = 1e-8, bool if_on_gpus = true);
+                    bool rowwise, double atol = 1e-5, double rtol = 1e-8, bool if_on_gpus = true);
 void compareResults(const std::string &name, const float test, const float ref,
                     double atol = 1e-5, double rtol = 1e-8);
 void compareResults(const std::string &name, const uint8_t *test, const uint8_t *ref,

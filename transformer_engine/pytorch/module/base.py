@@ -849,9 +849,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 else:
                     grad_output_c = torch.empty_like(grad_output, dtype=torch.uint8)
                 if not isinstance(grad_output, Float8Tensor):
-                    # grad_output_mat = ctx.fp8_meta["scaling_bwd"].quantize(grad_output_mat,
-                    #                                                        tex.FP8BwdTensors.GRAD_OUTPUT1,
-                    #                                                        columnwise = False)
+                    # grad_output_mat = quantizer(grad_output_mat,columnwise = False)
                     cast_to_fp8(
                         grad_output,
                         ctx.fp8_meta["scaling_bwd"],

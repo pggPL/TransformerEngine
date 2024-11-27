@@ -76,7 +76,7 @@ void performTest(const size_t N, const size_t H) {
   std::unique_ptr<IType[]> ref_output_dbias = std::make_unique<IType[]>(H);
 
   CType ref_amax;
-  compute_ref_cast_dbias(input.cpu_dptr<IType>(),
+  compute_ref_cast_dbias(input.rowwise_cpu_dptr<IType>(),
                          output_c.scale(),
                          ref_output_c.get(),
                          &ref_amax,
@@ -85,19 +85,19 @@ void performTest(const size_t N, const size_t H) {
 
   Tensor workspace;
 
-  nvte_fp8_quantize_dbias(input.data(),
-                          output_c.data(),
-                          dbias.data(),
-                          workspace.data(),
-                          0);
+  nvte_quantize_dbias(input.data(),
+                      output_c.data(),
+                      dbias.data(),
+                      workspace.data(),
+                      0);
 
-  workspace = Tensor(workspace.shape(), workspace.dtype());
+  workspace = Tensor(workspace.rowwise_shape(), workspace.dtype());
 
-  nvte_fp8_quantize_dbias(input.data(),
-                          output_c.data(),
-                          dbias.data(),
-                          workspace.data(),
-                          0);
+  nvte_quantize_dbias(input.data(),
+                      output_c.data(),
+                      dbias.data(),
+                      workspace.data(),
+                      0);
 
   cudaDeviceSynchronize();
   auto err = cudaGetLastError();
@@ -107,14 +107,14 @@ void performTest(const size_t N, const size_t H) {
     auto [atol_amax, rtol_amax] = getTolerances(DType::kFloat32);
     compareResults("amax", output_c.amax(), ref_amax, atol_amax, rtol_amax);
     float ref_scale_inv = 1.f / output_c.scale();
-    compareResults("scale_inv", output_c.scale_inv(), ref_scale_inv, atol_amax, rtol_amax);
+    compareResults("scale_inv", output_c.rowwise_scale_inv(), ref_scale_inv, atol_amax, rtol_amax);
   }
   auto [atol, rtol] = getTolerances(otype);
-  compareResults("output_c", output_c, ref_output_c.get(), atol, rtol);
+  compareResults("output_c", output_c, ref_output_c.get(), true, atol, rtol);
 
   auto [atol_dbias, rtol_dbias] = getTolerances(itype);
   rtol_dbias *= 4;
-  compareResults("output_dbias", dbias, ref_output_dbias.get(), atol_dbias, rtol_dbias);
+  compareResults("output_dbias", dbias, ref_output_dbias.get(), true, atol_dbias, rtol_dbias);
 }
 
 std::vector<std::pair<size_t, size_t>> test_cases = {

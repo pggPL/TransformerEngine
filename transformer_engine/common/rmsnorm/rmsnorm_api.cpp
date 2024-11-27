@@ -21,7 +21,7 @@ void rmsnorm_fwd(const Tensor &x, const Tensor &gamma, const float epsilon, Tens
                  const int multiprocessorCount, Tensor *workspace, Tensor *barrier,
                  const bool zero_centered_gamma, const bool is_2x_output) {
   if (is_fp8_dtype(z->data.dtype) && !is_delayed_tensor_scaling(z->scaling_mode) &&
-      !is_rowwise_block_scaling(z->scaling_mode)) {
+      !is_block_scaling(z->scaling_mode)) {
     NVTE_ERROR("Not implemented scaling mode: " + to_string(z->scaling_mode) + ".");
   }
 

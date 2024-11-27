@@ -43,11 +43,11 @@ void dequantize(Tensor& input, Tensor& output)
   input.to_cpu();
   auto scaling_mode = input.scaling_mode();
   assert(input.shape().ndim == 2);
-  auto rows = input.shape().data[0];
-  auto cols = input.shape().data[1];
-  auto* output_ptr = output.cpu_dptr<float>();
-  const auto* input_ptr = input.cpu_dptr<OutputType>();
-  const auto* scale_ptr = input.cpu_scale_inv_ptr<ScaleType>();
+  auto rows = input.rowwise_shape().data[0];
+  auto cols = input.rowwise_shape().data[1];
+  auto* output_ptr = output.rowwise_cpu_dptr<float>();
+  const auto* input_ptr = input.rowwise_cpu_dptr<OutputType>();
+  const auto* scale_ptr = input.rowwise_cpu_scale_inv_ptr<ScaleType>();
 
   const size_t block_size_Y = scaling_mode.x;   // mind the mapping Y <-- x
   const size_t block_size_X = scaling_mode.y;   //              and X <-- y
@@ -172,8 +172,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
   const std::vector<int> col_mode = {32, 1, 0};
 
   Tensor input({ N, H }, itype);
-  Tensor z_rowwise({ N, H }, otype, row_mode);
-  Tensor z_colwise({ N, H }, otype, col_mode);
+  Tensor z({ N, H }, otype, true, true, NVTE_MXFP8_1D_SCALING);
   Tensor gamma({ H }, wtype);
   Tensor beta({ H }, wtype);
   Tensor mu({ N }, DType::kFloat32);

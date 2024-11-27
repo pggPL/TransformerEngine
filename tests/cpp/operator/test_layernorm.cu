@@ -174,8 +174,8 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma)
   fwd_function(input.data(), gamma.data(), beta.data(), epsilon,
                z.data(), mu.data(), rsigma.data(), 0, prop.multiProcessorCount,
                workspace_fwd.data(), barrier.data());
-  workspace_fwd = Tensor(workspace_fwd.shape(), workspace_fwd.dtype());
-  barrier = Tensor(barrier.shape(), barrier.dtype());
+  workspace_fwd = Tensor(workspace_fwd.rowwise_shape(), workspace_fwd.dtype());
+  barrier = Tensor(barrier.rowwise_shape(), barrier.dtype());
   fwd_function(input.data(), gamma.data(), beta.data(), epsilon,
                z.data(), mu.data(), rsigma.data(), 0, prop.multiProcessorCount,
                workspace_fwd.data(), barrier.data());
@@ -188,10 +188,10 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma)
                dgamma_part.data(), dbeta_part.data(),
                0, prop.multiProcessorCount,
                workspace_bwd.data(), barrier.data());
-  workspace_bwd = Tensor(workspace_bwd.shape(), workspace_bwd.dtype());
-  barrier = Tensor(barrier.shape(), barrier.dtype());
-  dgamma_part = Tensor(dgamma_part.shape(), dgamma_part.dtype());
-  dbeta_part = Tensor(dbeta_part.shape(), dbeta_part.dtype());
+  workspace_bwd = Tensor(workspace_bwd.rowwise_shape(), workspace_bwd.dtype());
+  barrier = Tensor(barrier.rowwise_shape(), barrier.dtype());
+  dgamma_part = Tensor(dgamma_part.rowwise_shape(), dgamma_part.dtype());
+  dbeta_part = Tensor(dbeta_part.rowwise_shape(), dbeta_part.dtype());
   bwd_function(dz.data(), input.data(),
                mu.data(), rsigma.data(), gamma.data(),
                dx.data(), dgamma.data(), dbeta.data(),
@@ -204,22 +204,22 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma)
   mu.to_cpu();
   rsigma.to_cpu();
   float ref_amax;
-  compute_ref_stats(input.cpu_dptr<InputType>(), ref_mu.get(),
+  compute_ref_stats(input.rowwise_cpu_dptr<InputType>(), ref_mu.get(),
                     ref_rsigma.get(), N, H, epsilon);
   float ref_scale = isFp8Type(otype) ? z.scale() : 1.f;
-  compute_ref_output(input.cpu_dptr<InputType>(),
-                     gamma.cpu_dptr<WeightType>(),
-                     beta.cpu_dptr<WeightType>(),
+  compute_ref_output(input.rowwise_cpu_dptr<InputType>(),
+                     gamma.rowwise_cpu_dptr<WeightType>(),
+                     beta.rowwise_cpu_dptr<WeightType>(),
                      ref_output.get(),
-                     mu.cpu_dptr<float>(),
-                     rsigma.cpu_dptr<float>(),
+                     mu.rowwise_cpu_dptr<float>(),
+                     rsigma.rowwise_cpu_dptr<float>(),
                      N, H,
                      &ref_amax,
                      ref_scale,
                      zero_centered_gamma);
-  compute_ref_backward(dz.cpu_dptr<WeightType>(), input.cpu_dptr<InputType>(),
-                       mu.cpu_dptr<float>(), rsigma.cpu_dptr<float>(),
-                       gamma.cpu_dptr<WeightType>(),
+  compute_ref_backward(dz.rowwise_cpu_dptr<WeightType>(), input.rowwise_cpu_dptr<InputType>(),
+                       mu.rowwise_cpu_dptr<float>(), rsigma.rowwise_cpu_dptr<float>(),
+                       gamma.rowwise_cpu_dptr<WeightType>(),
                        ref_dx.get(), ref_dgamma.get(), ref_dbeta.get(),
                        N, H, zero_centered_gamma);
 
@@ -231,19 +231,19 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma)
   if (isFp8Type(otype)) {
     compareResults("amax", z.amax(), ref_amax, atol_amax, rtol_amax);
     float ref_scale_inv = 1.f / z.scale();
-    compareResults("scale_inv", z.scale_inv(), ref_scale_inv, atol_amax, rtol_amax);
+    compareResults("scale_inv", z.rowwise_scale_inv(), ref_scale_inv, atol_amax, rtol_amax);
   }
 
   auto [atol_stats, rtol_stats] = getTolerances(DType::kFloat32);
   rtol_stats = 5e-5;
-  compareResults("mu", mu, ref_mu.get(), atol_stats, rtol_stats);
-  compareResults("rsigma", rsigma, ref_rsigma.get(), atol_stats, rtol_stats);
+  compareResults("mu", mu, ref_mu.get(), true, atol_stats, rtol_stats);
+  compareResults("rsigma", rsigma, ref_rsigma.get(), true, atol_stats, rtol_stats);
 
   auto [atol, rtol] = getTolerances(otype);
   if (otype == DType::kFloat32) {
     atol = 5e-7;
   }
-  compareResults("output", z, ref_output.get(), atol, rtol);
+  compareResults("output", z, ref_output.get(), true, atol, rtol);
 
   double atol_bwd = 1e-3;
   double rtol_bwd = 1e-3;
@@ -251,9 +251,9 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma)
     atol_bwd = 8e-3;
     rtol_bwd = 8e-3;
   }
-  compareResults("dx", dx, ref_dx.get(), atol_bwd, rtol_bwd);
-  compareResults("dgamma", dgamma, ref_dgamma.get(), atol_bwd, rtol_bwd);
-  compareResults("dbeta", dbeta, ref_dbeta.get(), atol_bwd, rtol_bwd);
+  compareResults("dx", dx, ref_dx.get(), true, atol_bwd, rtol_bwd);
+  compareResults("dgamma", dgamma, ref_dgamma.get(), true, atol_bwd, rtol_bwd);
+  compareResults("dbeta", dbeta, ref_dbeta.get(), true, atol_bwd, rtol_bwd);
 }
 
 std::vector<std::pair<size_t, size_t>> test_cases = {

@@ -43,7 +43,9 @@ void init_extension() {
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   NVTE_DECLARE_COMMON_PYBIND11_HANDLES(m)
-  m.def("quantize", transformer_engine::pytorch::quantize);
+  m.def("quantize", transformer_engine::pytorch::quantize,
+        py::arg("tensor"), py::arg("quantizer"),
+        py::arg("output") = py::none());
   m.def("dequantize", &transformer_engine::pytorch::dequantize, "Dequantize",
         py::arg("input"), py::arg("otype"));
   m.def("bgrad_quantize", transformer_engine::pytorch::bgrad_quantize);
@@ -62,6 +64,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("dswiglu", transformer_engine::pytorch::dswiglu, "Backward of SwiGLU");
   m.def("dqgelu", transformer_engine::pytorch::dqgelu, "Backward of QuickGELU");
   m.def("dsrelu", transformer_engine::pytorch::dsrelu, "Backward of Squared ReLU");
+  m.def("dbias_dgelu", transformer_engine::pytorch::dbias_dgelu, "DGeLU + DBias + Quantize");
+  m.def("dbias_dsilu", transformer_engine::pytorch::dbias_dsilu, "DSiLU + DBias + Quantize");
+  m.def("dbias_drelu", transformer_engine::pytorch::dbias_drelu, "DReLU + DBias + Quantize");
+  m.def("dbias_dqgelu", transformer_engine::pytorch::dbias_dqgelu, "DQGeLU + DBias + Quantize");
+  m.def("dbias_dsrelu", transformer_engine::pytorch::dbias_dsrelu, "DSquaredReLU + DBias + Quantize");
 
   // Permutation functions
   m.def("moe_permute_fwd", moe_permute_fwd);
@@ -102,8 +109,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), py::arg("otype"),
         py::arg("sm_margin"), py::arg("zero_centered_gamma"));
   m.def("rmsnorm_bwd", &rmsnorm_bwd, "RMSNorm BWD");
-  //m.def("fused_cast_transpose", &fused_cast_transpose, "Fused Cast + Transpose",
-  //      py::call_guard<py::gil_scoped_release>());
   m.def("fused_cast_transpose_noop", &fused_cast_transpose_noop,
         "Cast + Transpose with noop option", py::call_guard<py::gil_scoped_release>(),
         py::arg("input"), py::arg("noop"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
@@ -133,45 +138,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("fused_multi_cast_transpose_alloc", &fused_multi_cast_transpose_alloc,
         "Fused Multi-tensor Cast + Transpose with allocating output tensors",
         py::call_guard<py::gil_scoped_release>());
-  m.def("cast_to_fp8", &cast_to_fp8, "Cast to FP8", py::call_guard<py::gil_scoped_release>(),
-        py::arg("input"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("cast_to_fp8_noalloc", &cast_to_fp8_noalloc, "Cast to FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
-        py::arg("output"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias", &fp8_cast_dbias, "FP8 cast + dbias",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("scaling_mode"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_dgelu", &fp8_cast_dbias_dgelu, "Fused Cast + BGRAD + DGELU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_drelu", &fp8_cast_dbias_drelu, "Fused Cast + BGRAD + DRELU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_dsilu", &fp8_cast_dbias_dsilu, "Fused Cast + BGRAD + DSILU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_dqgelu", &fp8_cast_dbias_dqgelu, "Fused Cast + BGRAD + DQGELU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_dsrelu", &fp8_cast_dbias_dsrelu, "Fused Cast + BGRAD + DSRELU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("te_gemm", &te_gemm, "CublasLt GEMM");  /// TODO Think
   m.def("te_grouped_gemm", &te_grouped_gemm, "Grouped GEMM");
   m.def("te_grouped_gemm_single_output", &te_grouped_gemm_single_output,
         "Grouped GEMM with single output");

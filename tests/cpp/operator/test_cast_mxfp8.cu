@@ -18,6 +18,7 @@
 
 #include <transformer_engine/cast.h>
 #include "../test_common.h"
+#include "transformer_engine/transformer_engine.h"
 
 using namespace transformer_engine;
 using namespace test;
@@ -149,14 +150,16 @@ template <typename InputType, typename OutputType, float (*OP)(const float)>
 void performTest_x1(const ProcessingMethod processing_method,
                     const size_t rows,
                     const size_t cols,
-                    const size_t block_size_rows,
-                    const size_t block_size_cols,
+                    const bool rowwise,
+                    const bool colwise,
                     InputsFillCase fill_case) {
     using namespace test;
     using EncodingType = fp32;
     DType itype = TypeInfo<InputType>::dtype;
     DType otype = TypeInfo<OutputType>::dtype;
 
+    const size_t block_size_rows = rowwise ? 32 : 1;
+    const size_t block_size_cols = colwise ? 32 : 1;
     const size_t blocks_Y = (rows + block_size_rows - 1) / block_size_rows;
     const size_t blocks_X = (cols + block_size_cols - 1) / block_size_cols;
     const size_t blocks_num = blocks_Y * blocks_X;
@@ -167,7 +170,7 @@ void performTest_x1(const ProcessingMethod processing_method,
 
     Tensor input({ rows, cols }, itype);
     Tensor act_input({ rows, cols }, itype);
-    Tensor output_c({ rows, cols }, otype, { block_rows_dim, block_cols_dim, is_delayed_scaling});
+    Tensor output_c({ rows, cols }, otype, rowwise, colwise, NVTE_MXFP8_1D_SCALING);
     Tensor output_dbias({ cols }, itype);
 
     std::unique_ptr<OutputType[]> ref_output_c = std::make_unique<OutputType[]>(rows * cols);
@@ -180,42 +183,39 @@ void performTest_x1(const ProcessingMethod processing_method,
     Tensor workspace;
     switch (processing_method) {
         case ProcessingMethod::CAST_ONLY: {
-            nvte_fp8_quantize(input.data(), output_c.data(), 0);
-            workspace = Tensor(workspace.shape(), workspace.dtype());
-
-            nvte_fp8_quantize(input.data(), output_c.data(), 0);
+            nvte_quantize(input.data(), output_c.data(), 0);
             break;
         }
         case ProcessingMethod::CAST_DBIAS: {
-            nvte_fp8_quantize_dbias(input.data(),
-                                    output_c.data(),
-                                    output_dbias.data(),
-                                    workspace.data(),
-                                    0);
-            workspace = Tensor(workspace.shape(), workspace.dtype());
+            nvte_quantize_dbias(input.data(),
+                                output_c.data(),
+                                output_dbias.data(),
+                                workspace.data(),
+                                0);
+            workspace = Tensor(workspace.rowwise_shape(), workspace.dtype());
 
-            nvte_fp8_quantize_dbias(input.data(),
-                                    output_c.data(),
-                                    output_dbias.data(),
-                                    workspace.data(),
-                                    0);
+            nvte_quantize_dbias(input.data(),
+                                output_c.data(),
+                                output_dbias.data(),
+                                workspace.data(),
+                                0);
             break;
         }
         case ProcessingMethod::CAST_DBIAS_DACT: {
-            nvte_fp8_quantize_dbias_dgelu(input.data(),
-                                          act_input.data(),
-                                          output_c.data(),
-                                          output_dbias.data(),
-                                          workspace.data(),
-                                          0);
-            workspace = Tensor(workspace.shape(), workspace.dtype());
+            nvte_quantize_dbias_dgelu(input.data(),
+                                      act_input.data(),
+                                      output_c.data(),
+                                      output_dbias.data(),
+                                      workspace.data(),
+                                      0);
+            workspace = Tensor(workspace.rowwise_shape(), workspace.dtype());
 
-            nvte_fp8_quantize_dbias_dgelu(input.data(),
-                                          act_input.data(),
-                                          output_c.data(),
-                                          output_dbias.data(),
-                                          workspace.data(),
-                                          0);
+            nvte_quantize_dbias_dgelu(input.data(),
+                                      act_input.data(),
+                                      output_c.data(),
+                                      output_dbias.data(),
+                                      workspace.data(),
+                                      0);
             break;
         }
     }
@@ -225,8 +225,8 @@ void performTest_x1(const ProcessingMethod processing_method,
     ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
 
     compute_ref_x1<InputType, OutputType, OP>(processing_method,
-                                              input.cpu_dptr<InputType>(),
-                                              act_input.cpu_dptr<InputType>(),
+                                              input.rowwise_cpu_dptr<InputType>(),
+                                              act_input.rowwise_cpu_dptr<InputType>(),
                                               ref_output_c.get(),
                                               ref_output_scales.get(),
                                               ref_output_dbias.get(),
@@ -236,8 +236,13 @@ void performTest_x1(const ProcessingMethod processing_method,
                                               block_size_cols);
 
     auto [atol, rtol] = getTolerances(otype);
-    compareResults("output_c", output_c, ref_output_c.get(), atol, rtol);
-    compare_e8m0_scaling_factors("scales", output_c.cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+    compareResults("output_c", output_c, ref_output_c.get(), rowwise, atol, rtol);
+    if (rowwise) {
+      compare_e8m0_scaling_factors("scales", output_c.rowwise_cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+    }
+    if (colwise) {
+      compare_e8m0_scaling_factors("scales", output_c.columnwise_cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+    }
 
     if (processing_method == ProcessingMethod::CAST_DBIAS || processing_method == ProcessingMethod::CAST_DBIAS_DACT) {
         auto [atol_dbias, rtol_dbias] = getTolerances(itype);
@@ -245,7 +250,7 @@ void performTest_x1(const ProcessingMethod processing_method,
         if (itype == DType::kFloat32) {
             atol_dbias = 1e-4;
         }
-        compareResults("output_dbias", output_dbias, ref_output_dbias.get(), atol_dbias, rtol_dbias);
+        compareResults("output_dbias", output_dbias, ref_output_dbias.get(), true, atol_dbias, rtol_dbias);
     }
 }
 
@@ -279,8 +284,7 @@ void performTest_x2(const ProcessingMethod processing_method,
 
     Tensor input({ rows, cols }, itype);
     Tensor act_input({ rows, cols }, itype);
-    Tensor output_rowwise({ rows, cols }, otype, { 1, block_cols_dim, is_delayed_scaling});
-    Tensor output_colwise({ rows, cols }, otype, { block_rows_dim, 1, is_delayed_scaling});
+    Tensor output({ rows, cols }, otype, true, true);
     Tensor output_dbias({ cols }, itype);
 
     std::unique_ptr<OutputType[]> ref_output_c_rowwise = std::make_unique<OutputType[]>(rows * cols);
@@ -295,46 +299,39 @@ void performTest_x2(const ProcessingMethod processing_method,
     Tensor workspace;
     switch (processing_method) {
         case ProcessingMethod::CAST_ONLY: {
-            nvte_fp8_quantize_x2(input.data(), output_rowwise.data(), output_colwise.data(), 0);
-            workspace = Tensor(workspace.shape(), workspace.dtype());
-
-            nvte_fp8_quantize_x2(input.data(), output_rowwise.data(), output_colwise.data(), 0);
+            nvte_quantize(input.data(), output.data(), 0);
             break;
         }
         case ProcessingMethod::CAST_DBIAS: {
-            nvte_fp8_quantize_dbias_x2(input.data(),
-                                       output_rowwise.data(),
-                                       output_colwise.data(),
-                                       output_dbias.data(),
-                                       workspace.data(),
-                                       0);
-            workspace = Tensor(workspace.shape(), workspace.dtype());
+            nvte_quantize_dbias(input.data(),
+                                output.data(),
+                                output_dbias.data(),
+                                workspace.data(),
+                                0);
+            workspace = Tensor(workspace.rowwise_shape(), workspace.dtype());
 
-            nvte_fp8_quantize_dbias_x2(input.data(),
-                                       output_rowwise.data(),
-                                       output_colwise.data(),
-                                       output_dbias.data(),
-                                       workspace.data(),
-                                       0);
+            nvte_quantize_dbias(input.data(),
+                                output.data(),
+                                output_dbias.data(),
+                                workspace.data(),
+                                0);
             break;
         }
         case ProcessingMethod::CAST_DBIAS_DACT: {
-            nvte_fp8_quantize_dbias_dgelu_x2(input.data(),
-                                             act_input.data(),
-                                             output_rowwise.data(),
-                                             output_colwise.data(),
-                                             output_dbias.data(),
-                                             workspace.data(),
-                                             0);
-            workspace = Tensor(workspace.shape(), workspace.dtype());
+            nvte_quantize_dbias_dgelu(input.data(),
+                                      act_input.data(),
+                                      output.data(),
+                                      output_dbias.data(),
+                                      workspace.data(),
+                                      0);
+            workspace = Tensor(workspace.rowwise_shape(), workspace.dtype());
 
-            nvte_fp8_quantize_dbias_dgelu_x2(input.data(),
-                                             act_input.data(),
-                                             output_rowwise.data(),
-                                             output_colwise.data(),
-                                             output_dbias.data(),
-                                             workspace.data(),
-                                             0);
+            nvte_quantize_dbias_dgelu(input.data(),
+                                      act_input.data(),
+                                      output.data(),
+                                      output_dbias.data(),
+                                      workspace.data(),
+                                      0);
             break;
         }
     }
@@ -344,8 +341,8 @@ void performTest_x2(const ProcessingMethod processing_method,
     ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
 
     compute_ref_x2<InputType, OutputType, OP>(processing_method,
-                                              input.cpu_dptr<InputType>(),
-                                              act_input.cpu_dptr<InputType>(),
+                                              input.rowwise_cpu_dptr<InputType>(),
+                                              act_input.rowwise_cpu_dptr<InputType>(),
                                               ref_output_c_rowwise.get(),
                                               ref_output_c_colwise.get(),
                                               ref_scales_rowwise.get(),
@@ -357,11 +354,11 @@ void performTest_x2(const ProcessingMethod processing_method,
                                               block_size_cols);
 
     auto [atol, rtol] = getTolerances(otype);
-    compareResults("output_c_rowwise", output_rowwise, ref_output_c_rowwise.get(), atol, rtol);
-    compareResults("output_c_colwise", output_colwise, ref_output_c_colwise.get(), atol, rtol);
-    compare_e8m0_scaling_factors("scales_rowwise", output_rowwise.cpu_scale_inv_ptr<e8m0_t>(),
+    compareResults("output_c_rowwise", output, ref_output_c_rowwise.get(), true, atol, rtol);
+    compareResults("output_c_colwise", output, ref_output_c_colwise.get(), false, atol, rtol);
+    compare_e8m0_scaling_factors("scales_rowwise", output.rowwise_cpu_scale_inv_ptr<e8m0_t>(),
                                  ref_scales_rowwise.get(), blocks_num_rowwise);
-    compare_e8m0_scaling_factors("scales_colwise", output_colwise.cpu_scale_inv_ptr<e8m0_t>(),
+    compare_e8m0_scaling_factors("scales_colwise", output.columnwise_cpu_scale_inv_ptr<e8m0_t>(),
                                  ref_scales_colwise.get(), blocks_num_colwise);
 
     if (processing_method == ProcessingMethod::CAST_DBIAS || processing_method == ProcessingMethod::CAST_DBIAS_DACT) {
@@ -370,7 +367,7 @@ void performTest_x2(const ProcessingMethod processing_method,
         if (itype == DType::kFloat32) {
             atol_dbias = 1e-4;
         }
-        compareResults("output_dbias", output_dbias, ref_output_dbias.get(), atol_dbias, rtol_dbias);
+        compareResults("output_dbias", output_dbias, ref_output_dbias.get(), true, atol_dbias, rtol_dbias);
     }
 }
 

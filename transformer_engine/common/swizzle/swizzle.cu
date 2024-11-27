@@ -13,6 +13,7 @@
 
 #include "../common.h"
 #include "../util/logging.h"
+#include "transformer_engine/transformer_engine.h"
 
 namespace {
 
@@ -210,10 +211,9 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
   auto& scaling_mode = input->scaling_mode;
 
   // 1D block scaling, row-wise or colum-wise
-  if ((scaling_mode.x == 1 && scaling_mode.y == 32) ||
-      (scaling_mode.x == 32 && scaling_mode.y == 1)) {
-    const int m = input->scale_inv.shape[scaling_mode.x > scaling_mode.y];
-    const int k = input->scale_inv.shape[scaling_mode.x < scaling_mode.y];
+  if (scaling_mode == NVTE_MXFP8_1D_SCALING) {
+    const int m = input->scale_inv.shape[0];
+    const int k = input->scale_inv.shape[1];
 
     constexpr int SF_TILE_DIM_M = 128;
     constexpr int SF_TILE_DIM_K = 4;
@@ -228,7 +228,7 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
     int num_tiles_k = k / SF_TILE_DIM_K;
 
     dim3 block_size(TB_DIM, TB_DIM);
-    if (scaling_mode.x == 1 && scaling_mode.y == 32) {
+    if (input->has_data()) {
       int vec_load_size = (num_tiles_k - 1) % 4 + 1;
       /* there is no int3 and misaligned if using int4/int2 */
       if (vec_load_size == 3) vec_load_size = 1;
@@ -262,7 +262,8 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
           break;
       }
 
-    } else {
+    }
+    if (input->has_columnwise_data()) {
       int vec_load_size = (num_tiles_m - 1) % 4 + 1;
       if (vec_load_size == 3) vec_load_size = 1; /* no int3 and misaligned if using int4/int2 */
       int n_tiles_in_tb = TB_DIM * vec_load_size;
@@ -273,22 +274,25 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
           cudaFuncSetAttribute(swizzle_col_scaling_kernel<int4, SF_TILE_DIM_M, SF_TILE_DIM_K>,
                                cudaFuncAttributeMaxDynamicSharedMemorySize, slm_size);
           swizzle_col_scaling_kernel<int4, SF_TILE_DIM_M, SF_TILE_DIM_K>
-              <<<num_blocks, block_size, slm_size, stream>>>(input->scale_inv.dptr,
-                                                             output->scale_inv.dptr, m, k);
+              <<<num_blocks, block_size, slm_size, stream>>>(input->columnwise_scale_inv.dptr,
+                                                             output->columnwise_scale_inv.dptr,
+                                                             m, k);
           break;
         case 2:
           cudaFuncSetAttribute(swizzle_col_scaling_kernel<int2, SF_TILE_DIM_M, SF_TILE_DIM_K>,
                                cudaFuncAttributeMaxDynamicSharedMemorySize, slm_size);
           swizzle_col_scaling_kernel<int2, SF_TILE_DIM_M, SF_TILE_DIM_K>
-              <<<num_blocks, block_size, slm_size, stream>>>(input->scale_inv.dptr,
-                                                             output->scale_inv.dptr, m, k);
+              <<<num_blocks, block_size, slm_size, stream>>>(input->columnwise_scale_inv.dptr,
+                                                             output->columnwise_scale_inv.dptr,
+                                                             m, k);
           break;
         case 1:
           cudaFuncSetAttribute(swizzle_col_scaling_kernel<int, SF_TILE_DIM_M, SF_TILE_DIM_K>,
                                cudaFuncAttributeMaxDynamicSharedMemorySize, slm_size);
           swizzle_col_scaling_kernel<int, SF_TILE_DIM_M, SF_TILE_DIM_K>
-              <<<num_blocks, block_size, slm_size, stream>>>(input->scale_inv.dptr,
-                                                             output->scale_inv.dptr, m, k);
+              <<<num_blocks, block_size, slm_size, stream>>>(input->columnwise_scale_inv.dptr,
+                                                             output->columnwise_scale_inv.dptr,
+                                                             m, k);
           break;
         default:
           NVTE_ERROR("Not valid vec_load_size.");
@@ -297,8 +301,6 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
     }
 
     // 2D block scaling
-  } else if (scaling_mode.x == 32 && scaling_mode.y == 32) {
-    NVTE_ERROR("WIP: Interleaving 2D scaling factors kernel.");
   } else {
     NVTE_ERROR("Not implemented for scaling_mode " + to_string(input->scaling_mode) + ", trans.");
   }

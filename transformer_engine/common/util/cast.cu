@@ -971,8 +971,9 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input, Tensor *output
   const auto& input_shape = input.data.shape;
   NVTE_CHECK(input_shape.size() >= 2, "Input must have at least 2 dimensions.");
 
-  const size_t scale_dim_X_rowwise = use_rowwise_scaling ? output->scaling_mode.y : 1;
-  const size_t scale_dim_Y_colwise = use_colwise_scaling ? output->scaling_mode.x : 1;
+  // TODO: Make more general
+  const size_t scale_dim_X_rowwise = use_rowwise_scaling ? 32 : 1;
+  const size_t scale_dim_Y_colwise = use_colwise_scaling ? 32 : 1;
 
   const size_t rows = input.flat_first_dim();
   const size_t cols = input.flat_last_dim();

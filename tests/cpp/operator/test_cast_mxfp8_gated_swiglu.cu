@@ -15,8 +15,9 @@
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
-#include <transformer_engine/cast.h>
+#include <transformer_engine/activation.h>
 #include "../test_common.h"
+#include "transformer_engine/transformer_engine.h"
 
 using namespace transformer_engine;
 using namespace test;
@@ -167,6 +168,11 @@ void performTest_x1(const size_t rows,
     DType itype = TypeInfo<IType>::dtype;
     DType otype = TypeInfo<OType>::dtype;
 
+    bool rowwise = false, colwise = false;
+    if (block_size_rows == 32 && block_size_cols == 1) rowwise = true;
+    if (block_size_rows == 1 && block_size_cols == 32) colwise = true;
+    NVTE_CHECK(rowwise || colwise);
+
     const size_t blocks_Y = (rows + block_size_rows - 1) / block_size_rows;
     const size_t blocks_X = (cols + block_size_cols - 1) / block_size_cols;
     const size_t blocks_num = blocks_Y * blocks_X;
@@ -177,7 +183,7 @@ void performTest_x1(const size_t rows,
 
     Tensor grad({ rows, cols }, itype);
     Tensor input({ rows, cols * 2 }, itype);
-    Tensor output({ rows, cols * 2 }, otype, { block_rows_dim, block_cols_dim, is_delayed_scaling});
+    Tensor output({ rows, cols * 2 }, otype, rowwise, colwise, NVTE_MXFP8_1D_SCALING);
 
     std::unique_ptr<OType[]> ref_output = std::make_unique<OType[]>(rows * cols * 2);
     std::unique_ptr<e8m0_t[]> ref_output_scales = std::make_unique<e8m0_t[]>(blocks_Y * blocks_X);
@@ -186,15 +192,15 @@ void performTest_x1(const size_t rows,
     fillUniform(&grad);
     fillUniform(&input);
 
-    nvte_fp8_quantize_swiglu(grad.data(), input.data(), output.data(), 0);
+    nvte_quantize_dswiglu(grad.data(), input.data(), output.data(), 0);
     cudaDeviceSynchronize();
 
     auto err = cudaGetLastError();
     ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
 
     float ref_amax = 0;
-    compute_ref_x1<IType, OType>(grad.cpu_dptr<IType>(),
-                                 input.cpu_dptr<IType>(),
+    compute_ref_x1<IType, OType>(grad.rowwise_cpu_dptr<IType>(),
+                                 input.rowwise_cpu_dptr<IType>(),
                                  ref_output.get(),
                                  ref_output_scales.get(),
                                  ref_amax,
@@ -204,8 +210,12 @@ void performTest_x1(const size_t rows,
                                  block_size_cols);
 
     auto [atol, rtol] = getTolerances(otype);
-    compareResults("output", output, ref_output.get(), atol, rtol);
-    compare_e8m0_scaling_factors("scales", output.cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+    compareResults("output", output, ref_output.get(), rowwise, atol, rtol);
+    if (rowwise) {
+      compare_e8m0_scaling_factors("scales", output.rowwise_cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+    } else {
+      compare_e8m0_scaling_factors("scales", output.columnwise_cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+    }
 }
 
 /**
@@ -237,8 +247,7 @@ void performTest_x2(const size_t rows,
 
     Tensor grad({ rows, cols }, itype);
     Tensor input({ rows, cols * 2 }, itype);
-    Tensor output_rowwise({ rows, cols * 2 }, otype, { 1, block_cols_dim, is_delayed_scaling});
-    Tensor output_colwise({ rows, cols * 2 }, otype, { block_rows_dim, 1, is_delayed_scaling});
+    Tensor output({ rows, cols * 2 }, otype, true, true, NVTE_MXFP8_1D_SCALING);
 
     std::unique_ptr<OType[]> ref_output_rowwise = std::make_unique<OType[]>(rows * cols * 2);
     std::unique_ptr<OType[]> ref_output_colwise = std::make_unique<OType[]>(rows * cols * 2);
@@ -249,15 +258,15 @@ void performTest_x2(const size_t rows,
     fillUniform(&grad);
     fillUniform(&input);
 
-    nvte_fp8_quantize_swiglu_x2(grad.data(), input.data(), output_rowwise.data(), output_colwise.data(), 0);
+    nvte_quantize_dswiglu(grad.data(), input.data(), output.data(), 0);
     cudaDeviceSynchronize();
 
     auto err = cudaGetLastError();
     ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
 
     float ref_amax = 0;
-    compute_ref_x2<IType, OType>(grad.cpu_dptr<IType>(),
-                                 input.cpu_dptr<IType>(),
+    compute_ref_x2<IType, OType>(grad.rowwise_cpu_dptr<IType>(),
+                                 input.rowwise_cpu_dptr<IType>(),
                                  ref_output_rowwise.get(),
                                  ref_output_colwise.get(),
                                  ref_scales_rowwise.get(),
@@ -270,11 +279,11 @@ void performTest_x2(const size_t rows,
 
     auto [atol, rtol] = getTolerances(otype);
     auto [atol_amax, rtol_amax] = getTolerances(DType::kFloat32);
-    compareResults("output_c_rowwise", output_rowwise, ref_output_rowwise.get(), atol, rtol);
-    compareResults("output_c_colwise", output_colwise, ref_output_colwise.get(), atol, rtol);
-    compare_e8m0_scaling_factors("scales_rowwise", output_rowwise.cpu_scale_inv_ptr<e8m0_t>(),
+    compareResults("output_c_rowwise", output, ref_output_rowwise.get(), true, atol, rtol);
+    compareResults("output_c_colwise", output, ref_output_colwise.get(), false, atol, rtol);
+    compare_e8m0_scaling_factors("scales_rowwise", output.rowwise_cpu_scale_inv_ptr<e8m0_t>(),
                                  ref_scales_rowwise.get(), blocks_num_rowwise);
-    compare_e8m0_scaling_factors("scales_colwise", output_colwise.cpu_scale_inv_ptr<e8m0_t>(),
+    compare_e8m0_scaling_factors("scales_colwise", output.columnwise_cpu_scale_inv_ptr<e8m0_t>(),
                                  ref_scales_colwise.get(), blocks_num_colwise);
 }
 

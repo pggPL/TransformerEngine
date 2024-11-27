@@ -8,6 +8,7 @@
 #include <cudaTypedefs.h>
 #include <cuda_runtime.h>
 #include <transformer_engine/cast.h>
+#include <transformer_engine/activation.h>
 
 #include <cfloat>
 
@@ -707,8 +708,9 @@ void cast_mxfp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *ou
   const bool USE_ROWWISE_SCALING = output->has_data();
   const bool USE_COLWISE_SCALING = output->has_columnwise_data();
 
-  const size_t scale_dim_X_rowwise = USE_ROWWISE_SCALING ? output->scaling_mode.y : 1;
-  const size_t scale_dim_Y_colwise = USE_COLWISE_SCALING ? output->scaling_mode.x : 1;
+  // TODO: Make more general
+  const size_t scale_dim_X_rowwise = USE_ROWWISE_SCALING ? 32 : 1;
+  const size_t scale_dim_Y_colwise = USE_COLWISE_SCALING ? 32 : 1;
 
   const size_t rows = grad.data.shape[0];
   const size_t cols = grad.data.shape[1];
@@ -846,10 +848,9 @@ void fp8_quantize_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *
 
 }  // namespace transformer_engine
 
-// TODO: changed into nvte_quantize_dswiglu
-void nvte_fp8_quantize_swiglu(const NVTETensor grad, const NVTETensor gated_input,
-                              NVTETensor output, cudaStream_t stream) {
-  NVTE_API_CALL(nvte_fp8_quantize_swiglu);
+void nvte_quantize_dswiglu(const NVTETensor grad, const NVTETensor gated_input,
+                           NVTETensor output, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_quantize_dswiglu);
   using namespace transformer_engine;
 
   fp8_quantize_dgated<Empty, silu<fp32, fp32>, dsilu<fp32, fp32>>(

@@ -78,27 +78,6 @@ struct SimpleTensor {
   }
 };
 
-class ScalingMode : public NVTEScalingMode {
- public:
-  ScalingMode() {
-    x = -1;
-    y = -1;
-    delayed_scaling = true;
-  }
-
-  ScalingMode(const NVTEScalingMode &other) {  // NOLINT(runtime/explicit)
-    x = other.x;
-    y = other.y;
-    delayed_scaling = other.delayed_scaling;
-  }
-
-  bool operator==(const ScalingMode& other) const noexcept {
-    return x == other.x &&
-           y == other.y &&
-           delayed_scaling == other.delayed_scaling;
-  }
-};
-
 struct Tensor {
   SimpleTensor data;
   SimpleTensor columnwise_data;
@@ -107,7 +86,7 @@ struct Tensor {
   SimpleTensor scale_inv;
   SimpleTensor columnwise_scale_inv;
 
-  ScalingMode scaling_mode;
+  NVTEScalingMode scaling_mode;
 
   Tensor()
       : data(),
@@ -116,7 +95,7 @@ struct Tensor {
         scale(nullptr, {1}, DType::kFloat32),
         scale_inv(nullptr, {1}, DType::kFloat32),
         columnwise_scale_inv(nullptr, {1}, DType::kFloat32),
-        scaling_mode() {}
+        scaling_mode(NVTE_DELAYED_TENSOR_SCALING) {}
 
   int numel() const {
     NVTE_CHECK(data.dptr != nullptr || columnwise_data.dptr != nullptr,
@@ -445,34 +424,24 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
 bool is_fp8_dtype(const DType t);
 
 std::string to_string(const DType type);
-std::string to_string(const ScalingMode &type);
+std::string to_string(const NVTEScalingMode &type);
 
-inline bool is_tensor_scaling(const ScalingMode &mode) { return (mode.x == -1) && (mode.y == -1); }
-
-inline bool is_block_scaling(const ScalingMode &mode) {
-  return (mode.x > 0) && (mode.y > 0) && (mode.delayed_scaling == 0);
+inline bool is_tensor_scaling(const NVTEScalingMode &mode) {
+  return mode == NVTE_DELAYED_TENSOR_SCALING;
 }
 
-inline bool is_rowwise_block_scaling(const ScalingMode &mode) {
-  return (mode.x < mode.y) && (mode.x == 1) && (mode.delayed_scaling == 0);
+inline bool is_block_scaling(const NVTEScalingMode &mode) {
+  return mode != NVTE_DELAYED_TENSOR_SCALING;
 }
 
-inline bool is_columnwise_block_scaling(const ScalingMode &mode) {
-  return (mode.x > mode.y) && (mode.y == 1) && (mode.delayed_scaling == 0);
+inline bool is_delayed_tensor_scaling(const NVTEScalingMode &mode) {
+  return is_tensor_scaling(mode);
 }
 
-inline bool is_delayed_tensor_scaling(const ScalingMode &mode) {
-  return is_tensor_scaling(mode) && mode.delayed_scaling;
+inline bool is_mxfp_scaling(const NVTEScalingMode &mode) {
+  return mode == NVTE_MXFP8_1D_SCALING;
 }
 
-inline bool is_mxfp_scaling(const ScalingMode &mode) {
-  return (mode.delayed_scaling == 0) &&
-         (mode.x == 1 || mode.x == 32) &&
-         (mode.y == 1 || mode.y == 32);
-}
-
-
-bool is_block_scaling(const Tensor *t);
 
 /*! \brief Update a tensor's FP8 scale-inverse
  *

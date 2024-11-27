@@ -16,7 +16,7 @@
 #include <gtest/gtest.h>
 #include <omp.h>
 
-#include <transformer_engine/cast.h>
+#include <transformer_engine/activation.h>
 #include <transformer_engine/transpose.h>
 #include "../test_common.h"
 
@@ -74,15 +74,15 @@ void performTest(const size_t rows, const size_t cols) {
 
   std::unique_ptr<OType[]> ref_output_c = std::make_unique<OType[]>(rows * cols * 2);
 
-  nvte_fp8_quantize_swiglu(grad.data(), input.data(), output_c.data(), 0);
+  nvte_quantize_dswiglu(grad.data(), input.data(), output_c.data(), 0);
   cudaDeviceSynchronize();
 
   auto err = cudaGetLastError();
   ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
 
   float ref_amax;
-  compute_ref_cast_dgated_swiglu(grad.cpu_dptr<IType>(),
-                                 input.cpu_dptr<IType>(),
+  compute_ref_cast_dgated_swiglu(grad.rowwise_cpu_dptr<IType>(),
+                                 input.rowwise_cpu_dptr<IType>(),
                                  output_c.scale(),
                                  ref_output_c.get(),
                                  &ref_amax,
@@ -93,11 +93,11 @@ void performTest(const size_t rows, const size_t cols) {
     auto [atol_amax, rtol_amax] = getTolerances(DType::kFloat32);
     compareResults("amax", output_c.amax(), ref_amax, atol_amax, rtol_amax);
     float ref_scale_inv = 1.f / output_c.scale();
-    compareResults("scale_inv", output_c.scale_inv(), ref_scale_inv, atol_amax, rtol_amax);
+    compareResults("scale_inv", output_c.rowwise_scale_inv(), ref_scale_inv, atol_amax, rtol_amax);
   }
 
   auto [atol, rtol] = getTolerances(otype);
-  compareResults("output_c", output_c, ref_output_c.get(), atol, rtol);
+  compareResults("output_c", output_c, ref_output_c.get(), true, atol, rtol);
 }
 
 std::vector<std::pair<size_t, size_t>> test_cases = {

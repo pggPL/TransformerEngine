@@ -131,7 +131,7 @@ void performTest(const size_t N, const size_t H) {
   nvte_act(input.data(), output.data(), 0);
 
   float ref_amax;
-  compute_ref_act_cast<ref_act>(input.cpu_dptr<IType>(), ref_output.get(),
+  compute_ref_act_cast<ref_act>(input.rowwise_cpu_dptr<IType>(), ref_output.get(),
                                 output.scale(), &ref_amax, N, H);
 
   cudaDeviceSynchronize();
@@ -147,7 +147,7 @@ void performTest(const size_t N, const size_t H) {
 
   nvte_dact(ograd.data(), input.data(), igrad.data(), 0);
 
-  compute_ref_dact_cast<ref_dact>(input.cpu_dptr<IType>(), ograd.cpu_dptr<IType>(),
+  compute_ref_dact_cast<ref_dact>(input.rowwise_cpu_dptr<IType>(), ograd.rowwise_cpu_dptr<IType>(),
                                   ref_igrad.get(), N, H);
 
   cudaDeviceSynchronize();
@@ -186,7 +186,7 @@ void performTestGLU(const size_t N, const size_t H) {
   nvte_act(input.data(), output.data(), 0);
 
   float ref_amax;
-  compute_ref_glu_act_cast<ref_act>(input.cpu_dptr<IType>(), ref_output.get(),
+  compute_ref_glu_act_cast<ref_act>(input.rowwise_cpu_dptr<IType>(), ref_output.get(),
                                     output.scale(), &ref_amax, N, H);
 
   cudaDeviceSynchronize();
@@ -202,7 +202,7 @@ void performTestGLU(const size_t N, const size_t H) {
 
   nvte_dact(ograd.data(), input.data(), igrad.data(), 0);
 
-  compute_ref_dglu_act_cast<ref_dact, ref_act>(input.cpu_dptr<IType>(), ograd.cpu_dptr<IType>(),
+  compute_ref_dglu_act_cast<ref_dact, ref_act>(input.rowwise_cpu_dptr<IType>(), ograd.rowwise_cpu_dptr<IType>(),
                                                ref_igrad.get(), N, H);
 
   cudaDeviceSynchronize();

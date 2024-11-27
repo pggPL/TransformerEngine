@@ -20,6 +20,7 @@
 #include <transformer_engine/swizzle.h>
 
 #include "../test_common.h"
+#include "transformer_engine/transformer_engine.h"
 
 using namespace transformer_engine;
 
@@ -55,10 +56,20 @@ void compute_ref_swizzle(const uint8_t *h_input, uint8_t *h_output,
   }
 }
 
-void performTestSwizzle1D(const int num_tiles_M, const int num_tiles_K, int SF_MODE_X, int SF_MODE_Y, const bool transa) {
+void performTestSwizzle1D(const int num_tiles_M, const int num_tiles_K, bool rowwise, bool columnwise, const bool transa) {
   using namespace test;
 
-  if (!(SF_MODE_X == 1 && SF_MODE_Y == 32) && !(SF_MODE_X == 32 && SF_MODE_Y == 1)){
+  int SF_MODE_X, SF_MODE_Y;
+  if (rowwise) {
+    SF_MODE_X = 1;
+    SF_MODE_Y = 32;
+  }
+  if (columnwise) {
+    SF_MODE_X = 32;
+    SF_MODE_Y = 1;
+  }
+
+  if ((rowwise && columnwise) || !(rowwise || columnwise)){
     GTEST_SKIP() << "TEST SKIPPED, The scaling mode " + std::to_string(SF_MODE_X) + "x" +
       std::to_string(SF_MODE_Y) + "is not implemented.";
   }
@@ -72,8 +83,8 @@ void performTestSwizzle1D(const int num_tiles_M, const int num_tiles_K, int SF_M
   const auto scale_shape = std::vector<size_t>{data_shape[0] / SF_MODE_X, data_shape[1] /SF_MODE_Y};
 
   std::vector<int> scaling_mode = {SF_MODE_X, SF_MODE_Y, 0};
-  Tensor input(data_shape, dtype, scaling_mode);
-  Tensor output(data_shape, dtype, scaling_mode);
+  Tensor input(data_shape, dtype, rowwise, columnwise, NVTE_MXFP8_1D_SCALING);
+  Tensor output(data_shape, dtype, rowwise, columnwise, NVTE_MXFP8_1D_SCALING);
 
   fillUniform(&input);
 
@@ -81,20 +92,24 @@ void performTestSwizzle1D(const int num_tiles_M, const int num_tiles_K, int SF_M
 
   nvte_swizzle_scaling_factors(input.data(), output.data(), 0);
 
-  if (SF_MODE_X < SF_MODE_Y)
-    compute_ref_swizzle<128, 4, true>(input.cpu_scale_inv_ptr<uint8_t>(), ref_output.get(), scale_shape[0], scale_shape[1]);
+  if (rowwise)
+    compute_ref_swizzle<128, 4, true>(input.rowwise_cpu_scale_inv_ptr<uint8_t>(), ref_output.get(), scale_shape[0], scale_shape[1]);
   else
-    compute_ref_swizzle<128, 4, false>(input.cpu_scale_inv_ptr<uint8_t>(), ref_output.get(), scale_shape[1], scale_shape[0]);
+    compute_ref_swizzle<128, 4, false>(input.columnwise_cpu_scale_inv_ptr<uint8_t>(), ref_output.get(), scale_shape[1], scale_shape[0]);
 
   cudaDeviceSynchronize();
   auto err = cudaGetLastError();
   ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
 
   output.to_cpu();
-  compareResults("output_swizzle", output.cpu_scale_inv_ptr<uint8_t>(), ref_output.get(), scale_shape[0] * scale_shape[1]);
+  if (rowwise) {
+    compareResults("output_swizzle", output.rowwise_cpu_scale_inv_ptr<uint8_t>(), ref_output.get(), scale_shape[0] * scale_shape[1]);
+  } else {
+    compareResults("output_swizzle", output.columnwise_cpu_scale_inv_ptr<uint8_t>(), ref_output.get(), scale_shape[0] * scale_shape[1]);
+  }
 }
 
-class SwizzleTestSuite : public ::testing::TestWithParam<std::tuple<std::pair<int, int>, std::pair<int, int>, bool>> {};
+class SwizzleTestSuite : public ::testing::TestWithParam<std::tuple<std::pair<int, int>, std::pair<bool, bool>, bool>> {};
 
 
 TEST_P(SwizzleTestSuite, TestSwizzle) {
@@ -122,9 +137,9 @@ std::vector<std::pair<int, int>> num_tiles = {
   {65, 259},
 };
 
-std::vector<std::pair<int, int>> scaling_mode = {
-  {1, 32},
-  {32, 1}
+std::vector<std::pair<bool, bool>> scaling_mode = {
+  {true, false},
+  {false, true}
 };
 
 std::vector<bool> transa = {true, false};

@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "extensions.h"
+#include "transformer_engine/transformer_engine.h"
 
 at::Tensor swizzle_scaling_factors(at::Tensor input, at::Tensor scale_inv,
                                    std::vector<int64_t> scaling_mode) {
@@ -18,9 +19,13 @@ at::Tensor swizzle_scaling_factors(at::Tensor input, at::Tensor scale_inv,
   void* scale_inv_dptr = getDataPtr(scale_inv, 0);
   void* swizzled_scale_inv_dptr = getDataPtr(swizzled_scale_inv, 0);
 
-  NVTEScalingMode nvte_scaling_mode = {static_cast<int>(scaling_mode[0]),
-                                       static_cast<int>(scaling_mode[1]),
-                                       static_cast<int>(scaling_mode[2])};
+  NVTEScalingMode nvte_scaling_mode;
+  if (scaling_mode[0] == -1 && scaling_mode[1] == -1) {
+    nvte_scaling_mode = NVTE_DELAYED_TENSOR_SCALING;
+  } else {
+    // TODO: error checking
+    nvte_scaling_mode = NVTE_MXFP8_1D_SCALING;
+  }
 
   // Construct Transformer Engine tensors
   DType dtype = DType::kFloat8E4M3;  // Use any 8 bit dummy type.

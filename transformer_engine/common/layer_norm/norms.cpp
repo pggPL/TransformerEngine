@@ -364,8 +364,7 @@ NormalizationPlan::NormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage No
   if (is_tensor_scaling(mode)) {
     _ndim_scale_block = 0;
   } else {
-    NVTE_CHECK(mode.x < mode.y, "Scaling mode should be with 1D-rowwise block scaling.");
-    _ndim_scale_block = 1 + (mode.x == mode.y);
+    _ndim_scale_block = 1;
   }
 
   _scalar_dptr = std::make_unique<char[]>(typeToSize(wtype));
@@ -470,7 +469,7 @@ NormalizationPlan::NormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage No
         z_2d->set_dim({batch_dim, hidden_dim});
 
         auto mx_quantize_row_opts = fe::graph::Block_scale_quantize_attributes()
-                                        .set_block_size(mode.y)
+                                        .set_block_size(32)
                                         .set_axis(1)
                                         .set_transpose(false);
         auto bs_row_ret = _graph.block_scale_quantize(z_2d, mx_quantize_row_opts);
@@ -479,7 +478,7 @@ NormalizationPlan::NormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage No
         _sf_row->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);  //TODO
 
         auto mx_quantize_col_opts = fe::graph::Block_scale_quantize_attributes()
-                                        .set_block_size(mode.y)
+                                        .set_block_size(32)
                                         .set_axis(0)
                                         .set_transpose(false);
         auto bs_col_ret = _graph.block_scale_quantize(z_2d, mx_quantize_col_opts);

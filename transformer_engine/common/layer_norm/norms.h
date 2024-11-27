@@ -352,7 +352,7 @@ class NormalizationPlan {
   NormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype, DType itype,
                     DType otype, DType ctype, const size_t batch_size, const size_t hidden_size,
                     const bool zero_centered_gamma, const size_t sm_count,
-                    const NVTEScalingMode& mode = {-1, -1, 1});
+                    const NVTEScalingMode& mode = NVTE_DELAYED_TENSOR_SCALING);
 
   void build();
 
@@ -392,11 +392,12 @@ class NormalizationPlanRegistry {
     return instance;
   }
 
-  NormalizationPlan* getNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
-                                          DType wtype, DType itype, DType otype,
-                                          const size_t batch_size, const size_t hidden_size,
-                                          const bool zero_centered_gamma, const size_t sm_count,
-                                          const NVTEScalingMode& mode = {-1, -1, 1});
+  NormalizationPlan* getNormalizationPlan(
+      NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
+      DType wtype, DType itype, DType otype,
+      const size_t batch_size, const size_t hidden_size,
+      const bool zero_centered_gamma, const size_t sm_count,
+      const NVTEScalingMode& mode = NVTE_DELAYED_TENSOR_SCALING);
 
  private:
   NormalizationPlanRegistry() {}

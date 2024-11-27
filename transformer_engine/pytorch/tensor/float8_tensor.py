@@ -4,15 +4,12 @@
 
 """Tensor class with FP8 data"""
 from __future__ import annotations
-from typing import Any, Dict, Optional, Tuple, Iterable
+from typing import Optional, Tuple, Iterable
 
 import torch
 import transformer_engine_torch as tex
 
 from transformer_engine_torch import DType as TE_DType
-from ..cpp_extensions.transpose import fp8_cast_transpose_fused
-from ..cpp_extensions.cast import cast_to_fp8
-from ..fp8 import DelayedScalingRecipeState, FP8GlobalStateManager
 from ..utils import devices_match, non_tn_fp8_gemm_supported
 
 from ._internal.float8_tensor_base import Float8TensorBase, _FromFloat8Func
@@ -49,36 +46,7 @@ class Float8Quantizer(Quantizer):
 
         assert isinstance(dst, Float8Tensor)
         # Launch cast kernel
-        if dst._transpose is None:
-            dst_data = dst._data
-            if src.dim() != 2:
-                src = src.view(1, -1)
-                dst_data = dst_data.view(1, -1)
-            cast_to_fp8(
-                src,
-                None,
-                None,
-                self.dtype,
-                out=dst_data,
-                scale=self.scale,
-                amax=self.amax,
-                scale_inv=dst._scale_inv,
-            )
-            dst._transpose_invalid = True
-        else:
-            fp8_cast_transpose_fused(
-                src.view(-1, src.size(-1)),
-                None,
-                None,
-                self.dtype,
-                cast_out=dst._data,
-                transpose_out=dst._transpose,
-                scale=self.scale,
-                amax=self.amax,
-                scale_inv=dst._scale_inv,
-                # noop_flag=noop_flag,  ### TODO How to handle?
-            )
-            dst._transpose_invalid = False
+        tex.quantize(src, self, dst);
 
         # Update FP8 dtype
         dst._fp8_dtype = self.dtype

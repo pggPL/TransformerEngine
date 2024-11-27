@@ -77,11 +77,10 @@ enum NVTETensorParam {
  *  - {32, 1, 0} - 1D blockwise scaling (columnwise)
  *  - {32, 32, 0} - 2D blockwise scaling
  */
-struct NVTEScalingMode {
-  int x;
-  int y;
-
-  int delayed_scaling;
+enum NVTEScalingMode {
+  NVTE_DELAYED_TENSOR_SCALING = 0,
+  NVTE_MXFP8_1D_SCALING = 1,
+  NVTE_INVALID_SCALING
 };
 
 /*! \brief TE Tensor type
@@ -296,7 +295,7 @@ class TensorWrapper {
   TensorWrapper(void *dptr, const NVTEShape &shape, const DType dtype, float *amax_dptr = nullptr,
                 float *scale_dptr = nullptr, float *scale_inv_dptr = nullptr,
                 const NVTEShape scale_inv_shape = defaultShape,
-                const NVTEScalingMode scaling_mode = {-1, -1, 1}) {
+                const NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING) {
     tensor_ = nvte_create_tensor(scaling_mode);
     NVTEBasicTensor data = {dptr, static_cast<NVTEDType>(dtype), shape};
     nvte_set_tensor_param(&tensor_, kNVTERowwiseData, &data);
@@ -325,7 +324,7 @@ class TensorWrapper {
   TensorWrapper(void *dptr, const std::vector<size_t> &shape, const DType dtype,
                 float *amax_dptr = nullptr, float *scale_dptr = nullptr,
                 float *scale_inv_dptr = nullptr, const std::vector<size_t> &scale_inv_shape = {1},
-                const NVTEScalingMode scaling_mode = {-1, -1, 1})
+                const NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING)
       : TensorWrapper(dptr, NVTEShape{shape.data(), shape.size()}, dtype, amax_dptr, scale_dptr,
                       scale_inv_dptr, NVTEShape{scale_inv_shape.data(), scale_inv_shape.size()},
                       scaling_mode) {}
@@ -334,7 +333,7 @@ class TensorWrapper {
    *
    * Create a new empty TE tensor which holds nothing.
    */
-  TensorWrapper(const NVTEScalingMode scaling_mode = {-1, -1, 1})
+  TensorWrapper(const NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING)
     : tensor_(nvte_create_tensor(scaling_mode)) {}
 
   /*! \brief TensorWrapper destructor. */
@@ -562,7 +561,7 @@ class TensorWrapper {
    *  \return Scaling mode of the tensor.
    */
   NVTEScalingMode scaling_mode() const noexcept {
-    if (tensor_ == nullptr) return {-1, -1, 1};
+    if (tensor_ == nullptr) return NVTE_DELAYED_TENSOR_SCALING;
     return nvte_tensor_scaling_mode(tensor_);
   }
 

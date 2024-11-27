@@ -52,10 +52,10 @@ void performTest(const size_t N, const size_t H) {
   fillUniform(&input);
   setRandomScale(&output_c);
 
-  nvte_fp8_quantize(input.data(), output_c.data(), 0);
+  nvte_quantize(input.data(), output_c.data(), 0);
 
   float ref_amax;
-  compute_ref<InputType, OutputType>(input.cpu_dptr<InputType>(), ref_output_c.get(),
+  compute_ref<InputType, OutputType>(input.rowwise_cpu_dptr<InputType>(), ref_output_c.get(),
                                      N, H, &ref_amax, output_c.scale());
 
   cudaDeviceSynchronize();
@@ -65,10 +65,10 @@ void performTest(const size_t N, const size_t H) {
     auto [atol_amax, rtol_amax] = getTolerances(DType::kFloat32);
     compareResults("amax", output_c.amax(), ref_amax, atol_amax, rtol_amax);
     float ref_scale_inv = 1.f / output_c.scale();
-    compareResults("scale_inv", output_c.scale_inv(), ref_scale_inv, atol_amax, rtol_amax);
+    compareResults("scale_inv", output_c.rowwise_scale_inv(), ref_scale_inv, atol_amax, rtol_amax);
   }
   auto [atol, rtol] = getTolerances(otype);
-  compareResults("output_c", output_c, ref_output_c.get(), atol, rtol);
+  compareResults("output_c", output_c, ref_output_c.get(), true, atol, rtol);
 }
 
 std::vector<std::pair<size_t, size_t>> test_cases = {

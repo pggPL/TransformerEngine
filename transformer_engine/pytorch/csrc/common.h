@@ -120,7 +120,7 @@ class NoneQuantizer : public Quantizer {
  public:
   NoneQuantizer(const py::handle& quantizer) : Quantizer(quantizer) {}
   virtual NVTEScalingMode get_scaling_mode() const override {
-    return {-1, -1, 1};
+    return NVTE_DELAYED_TENSOR_SCALING;
   }
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override {}
@@ -138,7 +138,7 @@ class Float8Quantizer : public Quantizer {
   Float8Quantizer(const py::handle& quantizer);
 
   virtual NVTEScalingMode get_scaling_mode() const override {
-    return {-1, -1, 1};
+    return NVTE_DELAYED_TENSOR_SCALING;
   }
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;
@@ -208,7 +208,7 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(void* data_ptr,
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
     void* data_ptr, const std::vector<size_t>& shape, const transformer_engine::DType type,
     void* amax_ptr, void* scale_ptr, void* scale_inv_ptr, std::vector<size_t> scale_inv_shape = {1},
-    NVTEScalingMode scaling_mode = {-1, -1, 1});
+    NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING);
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
     void* data_ptr, void* columnwise_data_ptr,
@@ -221,7 +221,7 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
     void* columnwise_scale_inv_ptr,
     const std::vector<size_t>& scale_inv_shape = {1},
     const std::vector<size_t>& columnwise_scale_inv_shape = {1},
-    NVTEScalingMode scaling_mode = {-1, -1, 1});
+    NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING);
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(void* data_ptr,
                                                               const NVTEShape& shape,
@@ -233,7 +233,7 @@ TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantize
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
     at::Tensor tensor, at::Tensor amax, const at::Tensor scale, at::Tensor scale_inv,
-    NVTEScalingMode scaling_mode = {-1, -1, 1});
+    NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING);
 
 size_t product(const std::vector<size_t>& shape);
 
