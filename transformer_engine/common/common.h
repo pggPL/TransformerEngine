@@ -125,7 +125,8 @@ struct Tensor {
   DType dtype() const {
     if (has_data()) return data.dtype;
     if (has_columnwise_data()) return columnwise_data.dtype;
-    return DType::kNumTypes;
+    // Fallback, used e.g. in workspace
+    return data.dtype;
   }
 
   /*! Matrix height after tensor is flattened to 2D
