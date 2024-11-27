@@ -318,6 +318,7 @@ class _LayerNormMLP(torch.autograd.Function):
             dim_size = list(fc1_out.size())
             dim_size[1] = fc2_weight.size(0)
             fc2_out = torch.empty(dim_size, dtype=activation_dtype, device=fc1_out.device)
+        fc2_bias = fc2_bias.to(torch.bfloat16)
         _ = general_gemm(
             fc2_weight_fp8,
             gelu_out,
@@ -603,7 +604,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     grad_output,
                     get_workspace(),
                     out_dtype=ctx.activation_dtype,
-                    #bias=fc2_bias,
+                    bias=fc2_bias,
                     quantization_params = None, # wgrad in high precision
                     layout="NT",
                     grad=True,
