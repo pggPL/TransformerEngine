@@ -396,8 +396,6 @@ class _Linear(torch.autograd.Function):
                 # Perform wgrad GEMM
                 # Note: Fuse with bgrad computation if not already
                 # computed
-                import pdb 
-                pdb.set_trace()
                 wgrad, grad_bias_, _ = general_gemm(
                     inputmat_total,
                     grad_output,
@@ -871,7 +869,6 @@ class Linear(TransformerEngineBaseModule):
                 skip_fp8_weight_update,
             )
             out = linear_fn(*args)
-
         if self.gemm_bias_unfused_add:
             out = out + cast_if_needed(bias_tensor, self.activation_dtype)
 

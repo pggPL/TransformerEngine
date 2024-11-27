@@ -168,7 +168,7 @@ class _LayerNormLinear(torch.autograd.Function):
 
         quantize = fp8 and not return_layernorm_output
         # Launch normalization kernel
-        ln_out = None
+        ln_out = None # #TODO
         ln_out, mu, rsigma = _apply_normalization(
             inputmat,
             ln_out,
