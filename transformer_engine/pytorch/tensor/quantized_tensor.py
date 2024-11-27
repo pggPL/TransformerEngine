@@ -16,6 +16,8 @@ import transformer_engine_torch as tex
 from ...common.recipe import Recipe
 
 def prepare_for_saving(tensor) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
+    if tensor is None:
+        return [None], None
     if isinstance(tensor, torch.Tensor):
         return [tensor], None
     return tensor.prepare_for_saving()

@@ -396,6 +396,8 @@ class _Linear(torch.autograd.Function):
                 # Perform wgrad GEMM
                 # Note: Fuse with bgrad computation if not already
                 # computed
+                import pdb 
+                pdb.set_trace()
                 wgrad, grad_bias_, _ = general_gemm(
                     inputmat_total,
                     grad_output,
@@ -460,7 +462,7 @@ class _Linear(torch.autograd.Function):
 
         return (
             wgrad,
-            dgrad if ctx.requires_dgrad else None,
+            dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
             grad_bias,
             None,  # is_first_microbatch
             None,  # fp8

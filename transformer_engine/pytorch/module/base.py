@@ -822,6 +822,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             R4: bias gradient on R1.
 
         """
+        grad_output = grad_output.reshape((-1, grad_output.shape[-1]))
         grad_output = grad_output.contiguous()
         gather_grad_output = row_parallel_mode and ctx.sequence_parallel
 
