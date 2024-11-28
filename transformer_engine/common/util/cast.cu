@@ -485,9 +485,9 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   const float scale = (scale_ptr != nullptr) ? *scale_ptr : 1;
 
   // The destination shared memory buffer of a bulk tensor operation should be 128-byte aligned
-  __shared__ alignas(16) IType in_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
-  __shared__ alignas(16) IType act_in_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
-  __shared__ alignas(16) OType out_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
+  __shared__ alignas(128) IType in_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
+  __shared__ alignas(128) IType act_in_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
+  __shared__ alignas(128) OType out_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
 
   constexpr int shmem_buff_size = sizeof(in_sh) / FP8_BUFFERS_NUM;
   constexpr int transaction_size = shmem_buff_size * (IS_DACT ? 2 : 1);
@@ -1216,7 +1216,7 @@ void quantize_helper(const NVTETensor input,
              "Quantizing in only the columnwise direction not supported yet!");
   if (is_tensor_scaling(output_tensor->scaling_mode)) {
     if (!output_tensor->has_columnwise_data()) {
-      fp8_quantize<IS_DBIAS, IS_DACT, Empty, nullptr>(
+      fp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(
           input_tensor,
           activation_tensor,
           output_tensor,
