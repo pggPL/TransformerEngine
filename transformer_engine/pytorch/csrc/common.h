@@ -132,6 +132,7 @@ class NoneQuantizer : public Quantizer {
 class Float8Quantizer : public Quantizer {
  public:
   at::Tensor scale;
+  at::Tensor scale_inv;
   at::Tensor amax;
   DType dtype;
 

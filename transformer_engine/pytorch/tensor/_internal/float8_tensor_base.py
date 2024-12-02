@@ -85,8 +85,8 @@ class Float8TensorBase:
         """Prepare the tensor base for saving for backward.
         After calling this, this tensor base does not hold any data."""
         tensors = [self._data, self._transpose]
-        self._data = None
-        self._transpose = None
+        #self._data = None
+        #self._transpose = None # TODO - why
         return tensors, self
 
     def restore_from_saved(self,
@@ -100,6 +100,9 @@ class Float8TensorBase:
                    *,
                    dtype: torch.dtype = torch.float32) -> torch.Tensor:
         return _FromFloat8Func.forward(None, self, dtype)
+    
+    def size(self, *args, **kwargs):
+        return self._data.size(*args, **kwargs)
 
     def __repr__(self):
         return (
