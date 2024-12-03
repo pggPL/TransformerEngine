@@ -180,7 +180,7 @@ class _ParameterInitMeta:
     init_fn: Optional[Callable] = get_default_init_method()
     get_rng_state_tracker: Optional[Callable] = None
     fp8_meta_index: Optional[int] = None
-
+    
     def __post_init__(self):
         """Safeguard reference to the parameter's parent module and initialization function."""
         if self.init_fn is None:

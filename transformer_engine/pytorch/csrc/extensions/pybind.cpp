@@ -198,9 +198,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
         py::arg("scale_inv_offset") = 0);
   m.def("te_gemm", &te_gemm, "CublasLt GEMM");  /// TODO Think
-  m.def("te_grouped_gemm", &te_grouped_gemm, "Grouped GEMM");
-  m.def("te_grouped_gemm_single_output", &te_grouped_gemm_single_output,
-        "Grouped GEMM with single output");
+  m.def("te_general_grouped_gemm", &te_general_grouped_gemm, "Grouped GEMM");
   m.def("fused_attn_fwd_qkvpacked", &fused_attn_fwd_qkvpacked,
         "Fused Attention FP8/BF16/FP16 FWD with packed QKV",
         py::call_guard<py::gil_scoped_release>());

@@ -150,18 +150,20 @@ class _LayerNormLinear(torch.autograd.Function):
         backward_needs_input = is_grad_enabled and weight_requires_grad
 
         # Configure quantizers
+
         if input_quantizer is not None:
             input_quantizer.set_usage(
                 rowwise=True,
                 columnwise=(is_grad_enabled and weight_requires_grad),
             )
         if weight_quantizer is not None:
-            columnwise_usage = is_grad_enabled and inp.requires_grad
-            if not columnwise_usage:
-                columnwise_usage = (
-                    is_fp8_activation_recompute_enabled()
-                    and not in_fp8_activation_recompute_phase()
-                )
+            columnwise_usage = is_grad_enabled # and inp.requires_grad #TODO look at this
+            # TODO: why it is needed
+            # if not columnwise_usage:
+            #    columnwise_usage = (
+            #        is_fp8_activation_recompute_enabled()
+            #        and not in_fp8_activation_recompute_phase()
+            #    )
             weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
         if output_quantizer is not None:
             output_quantizer.set_usage(rowwise=True, columnwise=False)
@@ -176,7 +178,7 @@ class _LayerNormLinear(torch.autograd.Function):
             ln_bias,
             eps,
             input_quantizer if quantize else None,
-            input_quantizer.dtype if input_quantizer else inp.dtype,
+            inp.dtype,
             normalization,
             fwd_ln_sm_margin,
             zero_centered_gamma,
@@ -232,7 +234,7 @@ class _LayerNormLinear(torch.autograd.Function):
                         ln_out = ln_out_total[slice_start:slice_end, ...]
                     else:
                         ln_out = ln_out_total
-
+        weight_fp8 = weight
         if fp8:
             if not isinstance(weight, QuantizedTensor):
                 # FP8 cast to workspace buffer
@@ -291,6 +293,7 @@ class _LayerNormLinear(torch.autograd.Function):
             )
 
             saved_input_tensors, saved_input = prepare_for_saving(inputmat)
+
             saved_weight_tensors, saved_weight = prepare_for_saving(weight_fp8)
             saved_bias_tensors, saved_bias = prepare_for_saving(bias)
             saved_ln_weight_tensors, saved_ln_weight = prepare_for_saving(ln_weight)
@@ -323,6 +326,7 @@ class _LayerNormLinear(torch.autograd.Function):
 
             ctx.grad_input_quantizer = grad_input_quantizer
             ctx.grad_output_quantizer = grad_output_quantizer
+            ctx.input_quantizer = input_quantizer
 
             ctx.owns_input = inputmat is not inp
 
@@ -393,7 +397,7 @@ class _LayerNormLinear(torch.autograd.Function):
 
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(
-                    rowwise=ctx.requires_dgrad,
+                    rowwise=ctx.requires_dgrad or ctx.requires_wgrad, # TODO: look at this, it may be optimied, but casting to transpose only is not implemented
                     columnwise=ctx.requires_wgrad,
                 )
             if ctx.grad_input_quantizer is not None:
@@ -504,8 +508,7 @@ class _LayerNormLinear(torch.autograd.Function):
             )
 
             # DGRAD
-            if ctx.requires_dgrad:
-                _, _, _ = general_gemm(
+            _, _, _ = general_gemm(
                     weight,
                     grad_output,
                     get_workspace(),
@@ -518,6 +521,8 @@ class _LayerNormLinear(torch.autograd.Function):
                     ub_algo=ub_algo,
                     ub=ub_obj,
                 )
+
+
             if ctx.ub_bulk_dgrad:
                 ln_out_total = ub_obj_lnout.get_ubuf_output(1)
 
@@ -537,6 +542,8 @@ class _LayerNormLinear(torch.autograd.Function):
             wgrad = None
             if ctx.requires_wgrad:
                 # WGRAD
+                if ctx.input_quantizer is not None:
+                    ln_out_total._create_transpose()
                 wgrad, grad_bias_, _ = general_gemm(
                     ln_out_total,
                     grad_output,
@@ -550,6 +557,7 @@ class _LayerNormLinear(torch.autograd.Function):
                     ub=ub_obj_dgrad if ctx.ub_bulk_wgrad else None,
                     accumulate=accumulate_wgrad_into_param_main_grad,
                 )
+
                 clear_tensor_data(ln_out_total)
                 if ctx.ub_bulk_wgrad:
                     dgrad = ub_obj_dgrad.get_ubuf_output(0)  # Reduce-scatter output
@@ -1086,7 +1094,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
             grad_output_quantizer, grad_input_quantizer = None, None
             if self.fp8:
                 input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_INPUT]
-                input_quantizer.internal = True
+                input_quantizer.internal = False
                 weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
                 weight_quantizer.internal = True
                 if fp8_output:

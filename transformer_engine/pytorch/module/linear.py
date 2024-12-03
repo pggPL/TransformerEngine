@@ -183,6 +183,7 @@ class _Linear(torch.autograd.Function):
                 ub_obj_projout.set_ubuf_scale_inv(
                     torch.reciprocal(output_quantizer.scale)
                 )
+
         out, _, _ = general_gemm(
             weight_fp8,
             inputmat_total,

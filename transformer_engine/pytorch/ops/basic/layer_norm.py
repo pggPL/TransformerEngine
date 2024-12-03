@@ -13,8 +13,8 @@ from typing import Optional
 import torch
 
 from transformer_engine_torch import layernorm_bwd, layernorm_fwd
-from ...cpp_extensions import *
 from ...fp8 import FP8GlobalStateManager, get_fp8_te_dtype
+from ...constants import TE_DType
 from ...tensor import Float8Tensor, QuantizedTensor
 from ...utils import (
     canonicalize_device,
@@ -232,16 +232,12 @@ class LayerNorm(BasicOperation):
                 w,
                 b,
                 self.eps,
-                output_fp8_meta[fp8_meta_key],
-                0,  # fp8_meta_index
-                fp8_dtype,
+                quantizer,
+                x.dtype, # #TODO - think about it
                 sm_margin,
                 self.zero_centered_gamma,
             )
-            if requires_grad:
-                data, means, rstdevs = layernorm_fwd_fp8(*args)
-            else:
-                data = layernorm_fwd_fp8_inf(*args)
+            data, means, rstdevs = layernorm_fwd(*args)
             y = Float8Tensor(
                 data=data,
                 fp8_meta=output_fp8_meta,
@@ -256,13 +252,13 @@ class LayerNorm(BasicOperation):
                 w,
                 b,
                 self.eps,
+                None,
+                None,
+                TE_DType[x.dtype] if x.dtype in TE_DType.keys() else x.dtype,
                 sm_margin,
                 self.zero_centered_gamma,
             )
-            if requires_grad:
-                y, means, rstdevs = layernorm_fwd(*args)
-            else:
-                y = layernorm_fwd_inf(*args)
+            y, means, rstdevs = layernorm_fwd(*args)
 
         # Save state for backward pass
         if requires_grad:

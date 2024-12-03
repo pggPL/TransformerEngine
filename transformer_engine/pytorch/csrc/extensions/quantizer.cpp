@@ -56,8 +56,18 @@ void Float8Quantizer::set_quantization_params(TensorWrapper* tensor) const {
   tensor->set_scale(scale.data_ptr(),
                     GetTransformerEngineDType(scale.scalar_type()),
                     getTensorShape(scale));
-  // what with scale_inv??? 
-  // it is needed in tenor, so i think it is needed in quantizer also
+  at::TensorOptions opts = opts.dtype(torch::kFloat32).device(torch::kCUDA);
+  at::Tensor scale_inv = at::empty({1}, opts);
+  if(tensor->get_rowwise_scale_inv().data_ptr == nullptr) {
+    tensor->set_rowwise_scale_inv(scale_inv.data_ptr(),
+                    GetTransformerEngineDType(scale_inv.scalar_type()),
+                    getTensorShape(scale_inv));
+  }
+  if(tensor->get_columnwise_scale_inv().data_ptr == nullptr) {
+    tensor->set_columnwise_scale_inv(scale_inv.data_ptr(),
+                    GetTransformerEngineDType(scale_inv.scalar_type()),
+                    getTensorShape(scale_inv));
+  }
   tensor->set_amax(amax.data_ptr(),
                    GetTransformerEngineDType(amax.scalar_type()),
                    getTensorShape(amax));
