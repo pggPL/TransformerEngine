@@ -95,10 +95,10 @@ struct TypeInfo{
 
 class Tensor {
  public:
-  Tensor(const NVTEShape &shape, const DType type, const NVTEScalingMode &mode = {-1, -1, 1});
+  Tensor(const NVTEShape &shape, const DType type, const NVTEScalingMode &mode = {-1, -1, 1}, const bool is_tensor_2x = false);
 
-  Tensor(const std::vector<size_t> &shape, const DType type, const std::vector<int> &mode = {-1, -1, 1}) :
-    Tensor(NVTEShape{shape.data(), shape.size()}, type, NVTEScalingMode{mode[0], mode[1], mode[2]}) {}
+  Tensor(const std::vector<size_t> &shape, const DType type, const std::vector<int> &mode = {-1, -1, 1}, const bool is_tensor_2x = false) :
+    Tensor(NVTEShape{shape.data(), shape.size()}, type, NVTEScalingMode{mode[0], mode[1], mode[2]}, is_tensor_2x) {}
 
   Tensor() {}
 
@@ -112,6 +112,11 @@ class Tensor {
     if (tensor_.dptr() != nullptr) {
       cudaFree(tensor_.dptr());
     }
+    if (tensor_.scale_inv()){cudaFree(tensor_.scale_inv());}
+    if (is_tensor_2x){
+      if (tensor_.columnwise_dptr()){ cudaFree(tensor_.columnwise_dptr());}
+      if (tensor_.columnwise_scale_inv()){ cudaFree(tensor_.columnwise_scale_inv());}
+    }
   }
   NVTETensor data() const noexcept {
     return tensor_.data();
@@ -121,8 +126,8 @@ class Tensor {
     return tensor_.shape();
   }
 
-  const NVTEShape scale_inv_shape() const noexcept {
-    return tensor_.scale_inv_shape();
+  const NVTEShape columnwise_shape() const noexcept {
+    return tensor_.columnwise_shape();
   }
 
   const NVTEScalingMode scaling_mode() const noexcept {
@@ -137,10 +142,20 @@ class Tensor {
     return tensor_.dptr();
   }
 
+  bool tensor_2x() const {
+    return is_tensor_2x;
+  }
+
   template <typename T>
   T *cpu_dptr() const {
     NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
     return reinterpret_cast<T *>(cpu_data_.get());
+  }
+
+  template <typename T>
+  T *columnwise_cpu_dptr() const {
+    NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
+    return reinterpret_cast<T *>(columnwise_cpu_data_.get());
   }
 
   float amax() const {
@@ -173,6 +188,13 @@ class Tensor {
     return reinterpret_cast<T*>(scale_inv_cpu_data_.get());
   }
 
+  template <typename T>
+  T *columnwise_cpu_scale_inv_ptr(){
+    NVTE_CHECK(TypeInfo<T>::dtype == DType::kByte, "Invalid type!");
+    to_cpu();
+    return reinterpret_cast<T*>(columnwise_scale_inv_cpu_data_.get());
+  }
+
   float scale_inv(){
     if(scale_inv_cpu_data_) {
       float scale_inv = cpu_scale_inv_ptr<float>()[0];
@@ -185,15 +207,18 @@ class Tensor {
   void to_cpu() const;
   void from_cpu() const;
   void set_scale(float scale);
-  void set_scale_inv(float scale_inv);
+  void set_scale_inv();
   void shareFP8Meta(const Tensor &other);
 
  private:
   TensorWrapper tensor_;
   std::unique_ptr<unsigned char[]> cpu_data_;
+  std::unique_ptr<unsigned char[]> columnwise_cpu_data_;
   std::shared_ptr<float> amax_cpu_data_;
   std::shared_ptr<float> scale_cpu_data_;
   std::unique_ptr<unsigned char[]> scale_inv_cpu_data_;
+  std::unique_ptr<unsigned char[]> columnwise_scale_inv_cpu_data_;
+  bool is_tensor_2x;
 };
 
 constexpr uint32_t FP32_EXPONENT_BIAS = 127;

@@ -63,17 +63,21 @@ class ScalingMode : public NVTEScalingMode {
 
 struct Tensor {
   SimpleTensor data;
+  SimpleTensor columnwise_data;
   SimpleTensor amax;
   SimpleTensor scale;
   SimpleTensor scale_inv;
+  SimpleTensor columnwise_scale_inv;
 
   ScalingMode scaling_mode;
 
   Tensor()
       : data(),
+        columnwise_data(),
         amax(nullptr, {1}, DType::kFloat32),
         scale(nullptr, {1}, DType::kFloat32),
         scale_inv(nullptr, {1}, DType::kFloat32),
+        columnwise_scale_inv(nullptr, {1}, DType::kFloat32),
         scaling_mode() {}
 
   int numel() const {
