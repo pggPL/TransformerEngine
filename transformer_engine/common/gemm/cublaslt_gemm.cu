@@ -56,19 +56,23 @@ struct GemmParam {
   transformer_engine::DType Btype;
   void* A_scale_inv;
   void* B_scale_inv;
+  int lda;
+  int ldb;
 
   GemmParam(cublasOperation_t transA, cublasOperation_t transB) :
   A(nullptr), B(nullptr), transA(transA), transB(transB),
   Atype(transformer_engine::DType::kNumTypes),
   Btype(transformer_engine::DType::kNumTypes),
-  A_scale_inv(nullptr), B_scale_inv(nullptr) {}
+  A_scale_inv(nullptr), B_scale_inv(nullptr),
+  lda(0), ldb(0) {}
 };
 
 GemmParam CanonicalizeGemmInput(
     const transformer_engine::Tensor& A,
     const cublasOperation_t transA,
     const transformer_engine::Tensor& B,
-    const cublasOperation_t transB) {
+    const cublasOperation_t transB,
+    const int k, const int lda, const int ldb) {
   using namespace transformer_engine;
   NVTE_CHECK(A.scaling_mode == B.scaling_mode,
              "Inputs A and B to GEMM need to have the same scaling mode!");
@@ -81,6 +85,8 @@ GemmParam CanonicalizeGemmInput(
   if (is_tensor_scaling(A.scaling_mode)) {
     ret.A = A.data.dptr;
     ret.A_scale_inv = A.scale_inv.dptr;
+    ret.lda = lda;
+    ret.ldb = ldb;
     if (transA == CUBLAS_OP_T) {
       ret.Atype = A.data.dtype;
     } else {
@@ -94,6 +100,7 @@ GemmParam CanonicalizeGemmInput(
           ret.A = A.columnwise_data.dptr;
           ret.transA = CUBLAS_OP_T;
           ret.A_scale_inv = A.columnwise_scale_inv.dptr;
+          ret.lda = k;
         }
       }
     }
@@ -109,7 +116,8 @@ GemmParam CanonicalizeGemmInput(
                      "Input B is not suitable for columnwise usage!");
           ret.B = B.columnwise_data.dptr;
           ret.transB = CUBLAS_OP_N;
-          ret.B = B.columnwise_scale_inv.dptr;
+          ret.B_scale_inv = B.columnwise_scale_inv.dptr;
+          ret.ldb = k;
         }
       }
     } else {
@@ -139,7 +147,8 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
                  void *workspace, size_t workspaceSize, bool accumulate, bool use_split_accumulator,
                  int math_sm_count, int m_split, int n_split, bool gemm_producer,
                  const Tensor *inputCounter, cudaStream_t stream) {
-  const GemmParam& param = CanonicalizeGemmInput(*inputA, transa, *inputB, transb);
+  const GemmParam& param = CanonicalizeGemmInput(*inputA, transa, *inputB, transb,
+                                                  k, lda, ldb);
   void *C = outputD->data.dptr;
   void *D = outputD->data.dptr;
   void *D_scale = outputD->scale.dptr;
@@ -199,9 +208,9 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
 
   // Create matrix descriptors. Not setting any extra attributes.
   NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Adesc, A_type, param.transA == CUBLAS_OP_N ? m : k,
-                                               param.transA == CUBLAS_OP_N ? k : m, lda));
+                                               param.transA == CUBLAS_OP_N ? k : m, param.lda));
   NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Bdesc, B_type, param.transB == CUBLAS_OP_N ? k : n,
-                                               param.transB == CUBLAS_OP_N ? n : k, ldb));
+                                               param.transB == CUBLAS_OP_N ? n : k, param.ldb));
   NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Ddesc, D_type, m, n, ldd));
 
   NVTE_CHECK_CUBLAS(cublasLtMatmulDescCreate(&operationDesc, gemm_compute_type, CUDA_R_32F));
@@ -420,12 +429,10 @@ void nvte_cublas_gemm(const NVTETensor A, const NVTETensor B, NVTETensor D, cons
   Tensor *outputGelu = reinterpret_cast<Tensor *>(pre_gelu_out);
   Tensor *wspace = reinterpret_cast<Tensor *>(workspace);
 
-  const auto& A_shape = inputA->data.shape;
-  const auto& B_shape = inputB->data.shape;
-  const size_t A0 = product(A_shape, 0, A_shape.size() - 1);
-  const size_t A1 = A_shape[A_shape.size() - 1];
-  const size_t B0 = product(B_shape, 0, B_shape.size() - 1);
-  const size_t B1 = B_shape[B_shape.size() - 1];
+  const size_t A0 = inputA->flat_first_dim();
+  const size_t A1 = inputA->flat_last_dim();
+  const size_t B0 = inputB->flat_first_dim();
+  const size_t B1 = inputB->flat_last_dim();
 
   const int m = transa ? A0 : A1;
   const int k = transa ? A1 : A0;

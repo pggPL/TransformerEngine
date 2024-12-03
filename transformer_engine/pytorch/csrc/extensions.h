@@ -185,9 +185,9 @@ void te_grouped_gemm_single_output(
  * Transpose
  **************************************************************************************************/
 
-void fused_cast_transpose(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                          at::Tensor input_cast, at::Tensor input_transpose,
-                          transformer_engine::DType otype);
+//void fused_cast_transpose(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
+//                          at::Tensor input_cast, at::Tensor input_transpose,
+//                          transformer_engine::DType otype);
 
 void fused_cast_transpose_noop(at::Tensor input, at::Tensor noop, at::Tensor scale, at::Tensor amax,
                                at::Tensor scale_inv, at::Tensor input_cast,
@@ -214,6 +214,12 @@ std::vector<at::Tensor> fused_cast_transpose_bgrad_dgelu(at::Tensor grad_output,
                                                          int scale_offset = 0, int amax_offset = 0,
                                                          int scale_inv_offset = 0);
 
+void fused_dswiglu_cast_transpose(at::Tensor grad_output, at::Tensor input, at::Tensor grad_input,
+                                  at::Tensor grad_input_transpose, at::Tensor scale,
+                                  at::Tensor amax, at::Tensor scale_inv,
+                                  transformer_engine::DType otype, int scale_offset = 0,
+                                  int amax_offset = 0, int scale_inv_offset = 0);
+
 void fused_multi_cast_transpose(std::vector<at::Tensor> input_list,
                                 std::vector<at::Tensor> scale_list,
                                 std::vector<at::Tensor> cast_output_list,
@@ -232,123 +238,68 @@ at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype, std:
 void fp8_transpose_noalloc_noop(at::Tensor input, at::Tensor output, at::Tensor noop,
                                 transformer_engine::DType otype);
 
+namespace transformer_engine::pytorch {
+
 /***************************************************************************************************
  * Activations
  **************************************************************************************************/
 
-at::Tensor gelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                transformer_engine::DType otype);
+py::object gelu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor relu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                transformer_engine::DType otype);
+py::object relu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor geglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                 transformer_engine::DType otype);
+py::object geglu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor reglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                 transformer_engine::DType otype);
+py::object reglu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor swiglu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                  transformer_engine::DType otype);
+py::object swiglu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor qgelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                 transformer_engine::DType otype);
+py::object qgelu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor srelu(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                 transformer_engine::DType otype);
+py::object srelu(const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dgelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dgelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor drelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object drelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dgeglu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dgeglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dreglu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dreglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dswiglu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dswiglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dqgelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dqgelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
 
-at::Tensor dsrelu(at::Tensor grad, at::Tensor input, transformer_engine::DType otype);
+py::object dsrelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
+
+}  // namespace transformer_engine::pytorch
 
 /***************************************************************************************************
  * LayerNorm
  **************************************************************************************************/
 
-std::vector<at::Tensor> layernorm_bwd(const at::Tensor &dz, const at::Tensor &x,
+std::vector<py::object> layernorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                       const at::Tensor &mu, const at::Tensor &rsigma,
                                       const at::Tensor &gamma, const int sm_margin,
                                       const bool zero_centered_gamma);
 
-std::vector<at::Tensor> layernorm_fwd_fp8(const at::Tensor &input, const at::Tensor &weight,
-                                          const at::Tensor &bias, float eps, at::Tensor scale,
-                                          at::Tensor amax, at::Tensor scale_inv,
-                                          transformer_engine::DType otype, const int sm_margin,
-                                          const bool zero_centered_gamma,
-                                          const int scale_offset = 0, const int amax_offset = 0,
-                                          const int scale_inv_offset = 0);
+std::vector<py::object> layernorm_fwd(py::handle input, py::handle weight,
+                                      MaybeTensor bias, float eps, py::object ln_out,
+                                      py::handle quantizer, transformer_engine::DType out_dtype,
+                                      const int sm_margin, const bool zero_centered_gamma);
 
-std::vector<at::Tensor> layernorm_fwd_fp8_noalloc(
-    const at::Tensor &input, const at::Tensor &weight, const at::Tensor &bias, float eps,
-    at::Tensor scale, at::Tensor ln_out, at::Tensor amax, at::Tensor scale_inv,
-    transformer_engine::DType otype, const int sm_margin, const bool zero_centered_gamma,
-    const int scale_offset = 0, const int amax_offset = 0, const int scale_inv_offset = 0);
-
-at::Tensor layernorm_fwd_fp8_inf(const at::Tensor &input, const at::Tensor &weight,
-                                 const at::Tensor &bias, float eps, at::Tensor scale,
-                                 at::Tensor amax, at::Tensor scale_inv,
-                                 transformer_engine::DType otype, const int sm_margin,
-                                 const bool zero_centered_gamma, const int scale_offset = 0,
-                                 const int amax_offset = 0, const int scale_inv_offset = 0);
-
-std::vector<at::Tensor> layernorm_fwd(const at::Tensor &input, const at::Tensor &weight,
-                                      const at::Tensor &bias, float eps, const int sm_margin,
-                                      const bool zero_centered_gamma);
-
-std::vector<at::Tensor> layernorm_fwd_noalloc(const at::Tensor &input, const at::Tensor &weight,
-                                              const at::Tensor &bias, at::Tensor ln_out, float eps,
-                                              const int sm_margin, const bool zero_centered_gamma);
-
-at::Tensor layernorm_fwd_inf(const at::Tensor &input, const at::Tensor &weight,
-                             const at::Tensor &bias, float eps, const int sm_margin,
-                             const bool zero_centered_gamma);
 
 /***************************************************************************************************
  * RMSNorm
  **************************************************************************************************/
 
-std::vector<at::Tensor> rmsnorm_bwd(const at::Tensor &dz, const at::Tensor &x,
+std::vector<py::object> rmsnorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                     const at::Tensor &rsigma, const at::Tensor &gamma,
                                     const int sm_margin, const bool zero_centered_gamma);
 
-std::vector<at::Tensor> rmsnorm_fwd_fp8(const at::Tensor &input, const at::Tensor &weight,
-                                        float eps, at::Tensor scale, at::Tensor amax,
-                                        at::Tensor scale_inv, transformer_engine::DType otype,
-                                        const int sm_margin, const bool zero_centered_gamma,
-                                        const int scale_offset = 0, const int amax_offset = 0,
-                                        const int scale_inv_offset = 0);
-
-std::vector<at::Tensor> rmsnorm_fwd_fp8_noalloc(
-    const at::Tensor &input, const at::Tensor &weight, float eps, at::Tensor scale,
-    at::Tensor ln_out, at::Tensor amax, at::Tensor scale_inv, transformer_engine::DType otype,
-    const int sm_margin, const bool zero_centered_gamma, const int scale_offset = 0,
-    const int amax_offset = 0, const int scale_inv_offset = 0);
-
-at::Tensor rmsnorm_fwd_fp8_inf(const at::Tensor &input, const at::Tensor &weight, float eps,
-                               at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-                               transformer_engine::DType otype, const int sm_margin,
-                               const bool zero_centered_gamma, const int scale_offset = 0,
-                               const int amax_offset = 0, const int scale_inv_offset = 0);
-
-std::vector<at::Tensor> rmsnorm_fwd(const at::Tensor &input, const at::Tensor &weight, float eps,
+std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &weight, float eps,
+                                    py::object ln_out, py::handle quantizer, transformer_engine::DType otype,
                                     const int sm_margin, const bool zero_centered_gamma);
-
-std::vector<at::Tensor> rmsnorm_fwd_noalloc(const at::Tensor &input, const at::Tensor &weight,
-                                            at::Tensor ln_out, float eps, const int sm_margin,
-                                            const bool zero_centered_gamma);
-
-at::Tensor rmsnorm_fwd_inf(const at::Tensor &input, const at::Tensor &weight, float eps,
-                           const int sm_margin, const bool zero_centered_gamma);
 
 /***************************************************************************************************
  * Cast
@@ -358,6 +309,10 @@ namespace transformer_engine::pytorch {
 
 py::object quantize(const at::Tensor& tensor,
                     py::handle quantizer);
+
+py::object dequantize(const py::handle& input, transformer_engine::DType otype);
+
+std::vector<py::object> bgrad_quantize(const at::Tensor& input, py::handle py_quantizer);
 
 std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb,
                              py::object D, py::handle quantizer,
@@ -377,13 +332,6 @@ void cast_to_fp8_noalloc(const at::Tensor &input, const at::Tensor &scale, at::T
                          at::Tensor amax, at::Tensor scale_inv, transformer_engine::DType otype,
                          std::vector<int64_t> scaling_mode, const int scale_offset = 0,
                          const int amax_offset = 0, const int scale_inv_offset = 0);
-
-at::Tensor cast_from_fp8(const at::Tensor &input, const at::Tensor &scale_inv,
-                         transformer_engine::DType itype, transformer_engine::DType otype,
-                         const int scale_inv_offset = 0);
-
-std::vector<at::Tensor> cast_to_fp8_x2(const at::Tensor& input, const at::Tensor& scale_inv_rowwise,
-                         at::Tensor scale_inv_colwise, transformer_engine::DType otype);
 
 /***************************************************************************************************
  * Cast fusions
@@ -429,29 +377,6 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
                                               std::vector<int64_t> scaling_mode,
                                               int scale_offset = 0, int amax_offset = 0,
                                               int scale_inv_offset = 0);
-
-std::vector<at::Tensor> fp8_cast_dbias_x2(const at::Tensor& input, at::Tensor scale_inv_rowwise,
-                                          at::Tensor scale_inv_colwise, transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_dgelu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_dsilu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_drelu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_dqgelu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
-
-std::vector<at::Tensor> fp8_cast_dbias_dsrelu_x2(at::Tensor grad_output, at::Tensor act_input,
-                                                at::Tensor scale_inv_rowwise, at::Tensor scale_inv_colwise,
-                                                transformer_engine::DType otype);
 
 /***************************************************************************************************
  * Softmax

@@ -43,12 +43,12 @@ from ..cpp_extensions import (
 from ..constants import GemmParallelModes, dist_group_type
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
-from ..float8_tensor import Float8Tensor
+from ..tensor.float8_tensor import Float8Tensor
 from ..tensor.quantized_tensor import (
     QuantizedTensor,
     Quantizer,
     prepare_for_saving,
-    restore_from_saved
+    restore_from_saved,
 )
 
 from ..cpu_offload import is_cpu_offload_enabled
@@ -129,7 +129,7 @@ class _Linear(torch.autograd.Function):
 
         own_quantized_input = not isinstance(inputmat, QuantizedTensor)
         if fp8 and own_quantized_input:
-            inputmat = input_quantizer.quantize(inputmat)
+            inputmat = input_quantizer(inputmat)
 
         # Column Parallel Linear
         if parallel_mode == "column" and sequence_parallel:
@@ -183,7 +183,6 @@ class _Linear(torch.autograd.Function):
                 ub_obj_projout.set_ubuf_scale_inv(
                     torch.reciprocal(output_quantizer.scale)
                 )
-
         out, _, _ = general_gemm(
             weight_fp8,
             inputmat_total,
@@ -394,18 +393,24 @@ class _Linear(torch.autograd.Function):
                     #             inputmat_total, fp8_dtype_backward
                     #         )
                     pass
-                wgrad, grad_bias, _ = general_gemm(
+                # Perform wgrad GEMM
+                # Note: Fuse with bgrad computation if not already
+                # computed
+                wgrad, grad_bias_, _ = general_gemm(
                     inputmat_total,
                     grad_output,
                     get_workspace(),
                     layout="NT",
                     grad=True,
-                    bias=bias,
+                    bias=(bias if grad_bias is None else None),
                     out_dtype=ctx.activation_dtype,  # TODO: not sure about that
                     out=main_grad if ctx.fuse_wgrad_accumulation else None,
                     use_split_accumulator=_2X_ACC_WGRAD,
                     accumulate=accumulate_wgrad_into_param_main_grad,
                 )
+                if grad_bias is None:
+                    grad_bias = grad_bias_
+                del grad_bias_
 
                 # Deallocate input tensor
                 if ctx.owns_input:
@@ -455,7 +460,7 @@ class _Linear(torch.autograd.Function):
 
         return (
             wgrad,
-            dgrad if ctx.requires_dgrad else None,
+            dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
             grad_bias,
             None,  # is_first_microbatch
             None,  # fp8
@@ -780,8 +785,10 @@ class Linear(TransformerEngineBaseModule):
                                first microbatch (since it is the first gradient being
                                produced)
         """
-
-        skip_fp8_weight_update = FP8GlobalStateManager.get_skip_fp8_weight_update_tensor()
+        if FP8GlobalStateManager.fp8_graph_capturing():
+            skip_fp8_weight_update = FP8GlobalStateManager.get_skip_fp8_weight_update_tensor()
+        else:
+            skip_fp8_weight_update = None
         if skip_fp8_weight_update is not None:
             is_first_microbatch = False
 
@@ -820,6 +827,12 @@ class Linear(TransformerEngineBaseModule):
                     grad_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
                     grad_output_quantizer.internal = True
 
+            # Make sure weight tensor has correct quantizer
+            # Note: Quantizer might have changed if quantization
+            # recipe changed
+            if weight_quantizer is not None and isinstance(weight_tensor, Float8Tensor):
+                weight_tensor._quantizer = weight_quantizer
+
             if torch.is_grad_enabled():
                 linear_fn = _Linear.apply
                 args = []
@@ -856,7 +869,6 @@ class Linear(TransformerEngineBaseModule):
                 skip_fp8_weight_update,
             )
             out = linear_fn(*args)
-
         if self.gemm_bias_unfused_add:
             out = out + cast_if_needed(bias_tensor, self.activation_dtype)
 

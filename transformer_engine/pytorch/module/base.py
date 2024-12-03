@@ -378,6 +378,8 @@ def initialize_ub(
                 atomic_gemm=atomic_gemm,
                 use_ce=use_ce,
                 aggregate=aggregate,
+                gemm_priority=gemm_priority,
+                comm_priority=comm_priority,
             )
         else:
             ub_obj = tex.CommOverlap(
@@ -391,6 +393,8 @@ def initialize_ub(
                 num_comm_sm=num_sm,
                 set_sm_margin=set_sm_margin,
                 atomic_gemm=atomic_gemm,
+                gemm_priority=gemm_priority,
+                comm_priority=comm_priority,
             )
         _ub_communicators[name] = ub_obj
 
@@ -772,9 +776,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 )
 
             if self.fp8 and not FP8GlobalStateManager.fp8_graph_capturing():
-                FP8GlobalStateManager.add_fp8_tensors_to_global_buffer(
-                    self.fp8_meta, fp8_weights=self._get_fp8_params()
-                )
+                FP8GlobalStateManager.add_fp8_tensors_to_global_buffer(self.fp8_meta)
 
             # Activation recomputation is used and this is the first forward phase.
             if self.fp8 and self.training and is_fp8_activation_recompute_enabled():
@@ -820,6 +822,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             R4: bias gradient on R1.
 
         """
+        grad_output = grad_output.reshape((-1, grad_output.shape[-1]))
         grad_output = grad_output.contiguous()
         gather_grad_output = row_parallel_mode and ctx.sequence_parallel
 
@@ -883,7 +886,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 grad_output_mat_no_fp8 = grad_output.dequantize()
             # TODO: Should check whether we do wgrad/dgrad or both to properly set
             # rowwise/columnwise
-            grad_bias, grad_output = tex.bgrad_cast(
+            grad_bias, grad_output = tex.bgrad_quantize(
                 grad_output_mat_no_fp8,
                 quantizer,
             )
@@ -894,7 +897,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             else:
                 # TODO: Should check whether we do wgrad/dgrad or both to properly set
                 # rowwise/columnwise
-                grad_output = quantizer.quantize(grad_output)
+                grad_output = quantizer(grad_output)
             return grad_output, None
 
     def register_parameter(self, name, param, **kwargs):
@@ -1015,7 +1018,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     "tensor and quantizer kwargs "
                     "must be provided to construct FP8 workspace"
                 )
-            out = quantizer.quantize(tensor)
+            out = quantizer(tensor)
 
             # Update cache
             if cache_name is not None:

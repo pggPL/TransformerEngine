@@ -16,6 +16,8 @@ import transformer_engine_torch as tex
 from ...common.recipe import Recipe
 
 def prepare_for_saving(tensor) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
+    if tensor is None:
+        return [None], None
     if isinstance(tensor, torch.Tensor):
         return [tensor], None
     return tensor.prepare_for_saving()
@@ -60,6 +62,9 @@ class Quantizer(abc.ABC):
             return _QuantizeFunc.apply(tensor, self)
         return _QuantizeFunc.forward(None, tensor, self)
 
+    def __call__(self, tensor: torch.Tensor) -> QuantizedTensor:
+        return self.quantize(tensor)
+
     @abc.abstractmethod
     def make_empty(
         self,
@@ -71,7 +76,7 @@ class Quantizer(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def calibrate(self, recipe: Recipe, tensor: torch.Tensor) -> None:
+    def calibrate(self, tensor: torch.Tensor) -> None:
         ...
 
     def set_usage(

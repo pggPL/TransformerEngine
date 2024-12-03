@@ -19,16 +19,9 @@
 #include "../test_common.h"
 
 using namespace transformer_engine;
+using namespace test;
 
 namespace {
-
-template <typename CType>
-CType dgelu(const CType cval) {
-    const CType tanh_out = tanhf(0.79788456f * cval * (1.f + 0.044715f * cval * cval));
-    return 0.5f * cval * ((1.f - tanh_out * tanh_out) *
-                          (0.79788456f + 0.1070322243f * cval * cval)) +
-           0.5f * (1.f + tanh_out);
-}
 
 template <typename IT, typename OT, typename CT>
 void compute_ref_cast_dbias_dgelu(const IT *input,
@@ -43,14 +36,19 @@ void compute_ref_cast_dbias_dgelu(const IT *input,
 
   std::vector<CT> acc_dbias(H, 0.);
 
+  #pragma omp parallel for reduction(max: amax) proc_bind(spread)
   for (size_t i = 0; i < N; i++) {
     for (size_t j = 0; j < H; j++) {
-      CT elt = static_cast<CT>(input[i * H + j]);
+      CT in_elt = static_cast<CT>(input[i * H + j]);
       const CT gelu_in = static_cast<CT>(gelu_input[i * H + j]);
-      elt = dgelu(gelu_in) * elt;
+
+      const CT elt = in_elt * static_cast<float>(dgelu(static_cast<float>(gelu_in)));
+      const CT elt_abs = std::abs(elt);
 
       // update amax
-      amax = std::abs(elt) > amax ? std::abs(elt) : amax;
+      if (elt_abs > amax) {
+        amax = elt_abs;
+      }
 
       output_c[i * H + j] = static_cast<OT>(scale * elt);
 
@@ -139,7 +137,7 @@ std::vector<std::pair<size_t, size_t>> test_cases = {
   {128, 128},
   {256, 256},
   {768, 1024},
-  // {256, 65536},
+  {256, 65536},
   // {2048, 12288},
   // {65536, 128},
   // {16384, 6144},

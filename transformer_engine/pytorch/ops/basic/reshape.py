@@ -42,11 +42,11 @@ class Reshape(BasicOperation):
         next_op: Optional[BasicOperation] = None,
     ) -> torch.Tensor:
         ctx.input_shape = input_.size()
-        return reshape(input_, self._shape)
+        return input_.reshape(*self._shape)
 
     def op_backward(
         self,
         ctx: OperationContext,
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor, tuple[()]]:
-        return reshape(grad_output, ctx.input_shape), ()
+        return grad_output.reshape(*ctx.input_shape), ()

@@ -9,7 +9,6 @@
 
 #include "transformer_engine/transformer_engine.h"
 #include "pybind.h"
-
 namespace transformer_engine::pytorch {
 
 std::vector<size_t> getTensorShape(at::Tensor t) {
@@ -20,18 +19,19 @@ std::vector<size_t> getTensorShape(at::Tensor t) {
   return shape;
 }
 
-std::unique_ptr<QuantizationParams> convert_quantization_params(py::handle params) {
-  if (params.is_none()) {
-    return std::make_unique<NoneQuantizationParams>();
+std::unique_ptr<Quantizer> convert_quantizer(py::handle quantizer) {
+  init_extension();
+  if (quantizer.is_none()) {
+    return std::make_unique<NoneQuantizer>(quantizer);
   }
-  for (auto [_, check_params_type, __, create_params]:
+  for (auto [_check_type, check_quantizer_type, _create_tensor, create_quantizer]:
       detail::custom_types_converters) {
-    if (check_params_type(params.ptr())) {
-      return create_params(params);
+    if (check_quantizer_type(quantizer.ptr())) {
+      return create_quantizer(quantizer);
     }
   }
 
-  NVTE_ERROR("Unexpected type of quantization params");
+  NVTE_ERROR("Unexpected type for quantizer");
 }
 
 transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
@@ -43,15 +43,16 @@ transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
   return transformer_engine::DType::kFloat8E5M2;
 }
 
-TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantization_params) {
+TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantizer) {
   NVTE_CHECK(!tensor.is_none(), "Tensor is not allocated!");
-  std::unique_ptr<QuantizationParams> qparams = convert_quantization_params(quantization_params);
-  for (auto [check_type, check_param_type, create_nvte_tensor, _]: detail::custom_types_converters) {
+  std::unique_ptr<Quantizer> my_quantizer = convert_quantizer(quantizer);
+  for (auto [check_type, check_quantizer_type, create_tensor, _]: detail::custom_types_converters) {
     if (check_type(tensor.ptr())) {
-      NVTE_CHECK(quantization_params.is_none() ||
-                 check_param_type(quantization_params.ptr()),
+      NVTE_CHECK(quantizer.is_none() ||
+                 check_quantizer_type(quantizer.ptr()),
                  "Unexpected quantization params type.");
-      return create_nvte_tensor(tensor, qparams.get());
+      auto x = create_tensor(tensor, my_quantizer.get());
+      return x;
     }
   }
 
@@ -61,11 +62,11 @@ TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantiza
   if (!torch_tensor.is_contiguous()) {
     torch_tensor = torch_tensor.contiguous();
   }
-  auto ret = TensorWrapper();
+  auto ret = TensorWrapper(my_quantizer->get_scaling_mode());
   ret.set_rowwise_data(torch_tensor.data_ptr(),
                        GetTransformerEngineDType(torch_tensor.scalar_type()),
                        getTensorShape(torch_tensor));
-  qparams->set_quantization_params(&ret);
+  my_quantizer->set_quantization_params(&ret);
   return ret;
 }
 
@@ -82,7 +83,6 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
 transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor) {
   transformer_engine::DType dtype = GetTransformerEngineDType(tensor.scalar_type());
   std::vector<size_t> shape;
-
   for (auto s : tensor.sizes()) {
     shape.push_back(s);
   }
@@ -97,6 +97,30 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
       data_ptr, shape, type, reinterpret_cast<float*>(amax_ptr),
       reinterpret_cast<float*>(scale_ptr), reinterpret_cast<float*>(scale_inv_ptr), scale_inv_shape,
       scaling_mode);
+}
+
+transformer_engine::TensorWrapper makeTransformerEngineTensor(
+    void* data_ptr, void* columnwise_data_ptr,
+    const std::vector<size_t>& shape,
+    const std::vector<size_t>& columnwise_shape,
+    const transformer_engine::DType type,
+    void* amax_ptr,
+    void* scale_ptr,
+    void* scale_inv_ptr,
+    void* columnwise_scale_inv_ptr,
+    const std::vector<size_t>& scale_inv_shape,
+    const std::vector<size_t>& columnwise_scale_inv_shape,
+    NVTEScalingMode scaling_mode) {
+  TensorWrapper ret(scaling_mode);
+  ret.set_rowwise_data(data_ptr, type, shape);
+  ret.set_columnwise_data(columnwise_data_ptr, type, columnwise_shape);
+  const std::vector<size_t> meta_shape{1};
+  ret.set_amax(amax_ptr, DType::kFloat32, meta_shape);
+  ret.set_scale(scale_ptr, DType::kFloat32, meta_shape);
+  ret.set_rowwise_scale_inv(scale_inv_ptr, DType::kFloat32, scale_inv_shape);
+  ret.set_columnwise_scale_inv(columnwise_scale_inv_ptr, DType::kFloat32,
+                               columnwise_scale_inv_shape);
+  return ret;
 }
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor, at::Tensor amax,
@@ -126,9 +150,9 @@ size_t product(const std::vector<size_t>& shape) {
 }
 
 size_t product(const NVTEShape& shape, size_t begin, size_t end) {
-  NVTE_CHECK(begin < shape.ndim &&
-             end < shape.ndim);
-  if (begin >= end) return 0;
+  NVTE_CHECK(begin <= end && end <= shape.ndim,
+             "Attempted to access entries ", begin, " to ", end,
+             " in a shape with ", shape.ndim, " entries");
   size_t ret = 1;
   for (size_t i = begin; i < end; ++i) {
     ret *= shape.data[i];
@@ -184,6 +208,10 @@ void* getDataPtr(at::Tensor tensor, int offset) {
     dptr = reinterpret_cast<void*>(char_ptr);
   }
   return dptr;
+}
+
+std::vector<size_t> convertShape(const NVTEShape& shape) {
+  return std::vector<size_t>(shape.data, shape.data + shape.ndim);
 }
 
 }  // namespace transformer_engine::pytorch

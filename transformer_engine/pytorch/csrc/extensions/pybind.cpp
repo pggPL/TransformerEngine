@@ -16,7 +16,6 @@
 #include "pytorch/csrc/common.h"
 #include "pybind.h"
 #include "common.h"
-
 namespace transformer_engine::pytorch {
 
 PyTypeObject *Float8TensorPythonClass = nullptr;  /// TODO Remove
@@ -58,6 +57,12 @@ void init_mxfp8_extension() {
              "Internal error: could not initialize pyTorch MXFP8 extension.");
 }
 
+void init_extension() {
+  init_float8_extension();
+  init_mxfp8_extension();
+}
+
+
 }  // namespace transformer_engine::pytorch
 
 #include "common/util/pybind_helper.h"
@@ -65,7 +70,24 @@ void init_mxfp8_extension() {
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   NVTE_DECLARE_COMMON_PYBIND11_HANDLES(m)
   m.def("quantize", transformer_engine::pytorch::quantize);
+  m.def("dequantize", &transformer_engine::pytorch::dequantize, "Dequantize",
+        py::arg("input"), py::arg("otype"));
+  m.def("bgrad_quantize", transformer_engine::pytorch::bgrad_quantize);
   m.def("generic_gemm", transformer_engine::pytorch::gemm);
+  m.def("gelu", transformer_engine::pytorch::gelu, "GeLU activation");
+  m.def("relu", transformer_engine::pytorch::relu, "ReLU activation");
+  m.def("geglu", transformer_engine::pytorch::geglu, "GeGLU activation");
+  m.def("reglu", transformer_engine::pytorch::reglu, "ReGLU activation");
+  m.def("swiglu", transformer_engine::pytorch::swiglu, "SwiGLU activation");
+  m.def("qgelu", transformer_engine::pytorch::qgelu, "QuickGELU activation");
+  m.def("srelu", transformer_engine::pytorch::srelu, "Squared ReLU activation");
+  m.def("dgelu", transformer_engine::pytorch::dgelu, "Backward of GeLU");
+  m.def("drelu", transformer_engine::pytorch::drelu, "Backward of ReLU");
+  m.def("dgeglu", transformer_engine::pytorch::dgeglu, "Backward of GeGLU");
+  m.def("dreglu", transformer_engine::pytorch::dreglu, "Backward of ReGLU");
+  m.def("dswiglu", transformer_engine::pytorch::dswiglu, "Backward of SwiGLU");
+  m.def("dqgelu", transformer_engine::pytorch::dqgelu, "Backward of QuickGELU");
+  m.def("dsrelu", transformer_engine::pytorch::dsrelu, "Backward of Squared ReLU");
 
   // Permutation functions
   m.def("moe_permute_fwd", moe_permute_fwd);
@@ -96,67 +118,40 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
 
   // Other granular functions
-  m.def("layernorm_fwd_fp8", &layernorm_fwd_fp8, "LN FWD FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("bias"), py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("layernorm_fwd_fp8_inf", &layernorm_fwd_fp8_inf, "LN FWD FP8 for inference",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("bias"), py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("layernorm_fwd_fp8_noalloc", &layernorm_fwd_fp8_noalloc, "LN FWD FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("bias"), py::arg("eps"), py::arg("scale"), py::arg("ln_out"), py::arg("amax"),
-        py::arg("scale_inv"), py::arg("otype"), py::arg("sm_margin"),
-        py::arg("zero_centered_gamma"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("layernorm_bwd", &layernorm_bwd, "LN BWD", py::call_guard<py::gil_scoped_release>());
-  m.def("layernorm_fwd", &layernorm_fwd, "LN FWD", py::call_guard<py::gil_scoped_release>());
-  m.def("layernorm_fwd_inf", &layernorm_fwd_inf, "LN FWD for inference",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("layernorm_fwd_noalloc", &layernorm_fwd_noalloc, "LN FWD",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("rmsnorm_fwd_fp8", &rmsnorm_fwd_fp8, "RMSNorm FWD FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("sm_margin"), py::arg("zero_centered_gamma"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("rmsnorm_fwd_fp8_inf", &rmsnorm_fwd_fp8_inf, "RMSNorm FWD FP8 for inference",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("eps"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("sm_margin"), py::arg("zero_centered_gamma"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("rmsnorm_fwd_fp8_noalloc", &rmsnorm_fwd_fp8_noalloc, "RMSNorm FWD FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("weight"),
-        py::arg("eps"), py::arg("scale"), py::arg("ln_out"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("rmsnorm_bwd", &rmsnorm_bwd, "RMSNorm BWD", py::call_guard<py::gil_scoped_release>());
-  m.def("rmsnorm_fwd", &rmsnorm_fwd, "RMSNorm FWD", py::call_guard<py::gil_scoped_release>());
-  m.def("rmsnorm_fwd_inf", &rmsnorm_fwd_inf, "RMSNorm FWD for inference",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("rmsnorm_fwd_noalloc", &rmsnorm_fwd_noalloc, "RMSNorm FWD",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("fused_cast_transpose", &fused_cast_transpose, "Fused Cast + Transpose",
-        py::call_guard<py::gil_scoped_release>());
+  m.def("layernorm_fwd", &layernorm_fwd, "LN FWD FP8",
+        py::arg("input"), py::arg("weight"),
+        py::arg("bias"), py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), 
+        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"));
+  m.def("layernorm_bwd", &layernorm_bwd, "LN BWD");
+  m.def("rmsnorm_fwd", &rmsnorm_fwd, "RMSNorm FWD FP8",
+        py::arg("input"), py::arg("weight"),
+        py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), py::arg("otype"),
+        py::arg("sm_margin"), py::arg("zero_centered_gamma"));
+  m.def("rmsnorm_bwd", &rmsnorm_bwd, "RMSNorm BWD");
+  //m.def("fused_cast_transpose", &fused_cast_transpose, "Fused Cast + Transpose",
+  //      py::call_guard<py::gil_scoped_release>());
   m.def("fused_cast_transpose_noop", &fused_cast_transpose_noop,
         "Cast + Transpose with noop option", py::call_guard<py::gil_scoped_release>(),
         py::arg("input"), py::arg("noop"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("input_cast"), py::arg("input_transpose"), py::arg("otype"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("input_cast"), py::arg("input_transpose"), py::arg("otype"), py::arg("scale_offset") = 0,
+        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_cast_transpose_bgrad", &fused_cast_transpose_bgrad, "Fused Cast + Transpose + BGRAD",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("scale"),
         py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
         py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_fp8_transpose_bgrad", &fused_fp8_transpose_bgrad, "Fused FP8 Transpose + BGRAD",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("grad_bias_type"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("grad_bias_type"), py::arg("scale_offset") = 0,
+        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_cast_transpose_bgrad_dgelu", &fused_cast_transpose_bgrad_dgelu,
         "Fused Cast + Transpose + BGRAD + DGELU", py::call_guard<py::gil_scoped_release>(),
         py::arg("grad_output"), py::arg("gelu_input"), py::arg("scale"), py::arg("amax"),
+        py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
+        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+  m.def("fused_dswiglu_cast_transpose", &fused_dswiglu_cast_transpose,
+        "Fused SwiGLU backward + FP8 cast + FP8 transpose",
+        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("input"),
+        py::arg("grad_input"), py::arg("grad_input_transpose"), py::arg("scale"), py::arg("amax"),
         py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
         py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_multi_cast_transpose", &fused_multi_cast_transpose,
@@ -168,16 +163,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("input"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
         py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
         py::arg("scale_inv_offset") = 0);
-  m.def("cast_to_fp8_x2", &cast_to_fp8_x2, "Cast to FP8", py::call_guard<py::gil_scoped_release>(),
-        py::arg("input"), py::arg("scale_inv_rowwise"),
-        py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("cast_to_fp8_noalloc", &cast_to_fp8_noalloc, "Cast to FP8",
         py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
         py::arg("output"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
         py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("cast_from_fp8", &cast_from_fp8, "Cast from FP8", py::call_guard<py::gil_scoped_release>(),
-        py::arg("input"), py::arg("scale_inv"), py::arg("itype"), py::arg("otype"),
         py::arg("scale_inv_offset") = 0);
   m.def("fp8_cast_dbias", &fp8_cast_dbias, "FP8 cast + dbias",
         py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
@@ -208,29 +197,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
         py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
         py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_x2", &fp8_cast_dbias_x2, "FP8 cast + dbias",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_dgelu_x2", &fp8_cast_dbias_dgelu_x2,
-        "Fused Cast + BGRAD + DGELU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_drelu_x2", &fp8_cast_dbias_drelu_x2,
-        "Fused Cast + BGRAD + DRELU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_dsilu_x2", &fp8_cast_dbias_dsilu_x2,
-        "Fused Cast + BGRAD + DSILU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_dqgelu_x2", &fp8_cast_dbias_dqgelu_x2,
-        "Fused Cast + BGRAD + DQGELU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
-  m.def("fp8_cast_dbias_dsrelu_x2", &fp8_cast_dbias_dsrelu_x2,
-        "Fused Cast + BGRAD + DSRELU with rowwise and columnwise scaled outputs",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale_inv_rowwise"), py::arg("scale_inv_colwise"), py::arg("otype"));
   m.def("te_gemm", &te_gemm, "CublasLt GEMM");  /// TODO Think
   m.def("te_grouped_gemm", &te_grouped_gemm, "Grouped GEMM");
   m.def("te_grouped_gemm_single_output", &te_grouped_gemm_single_output,
@@ -259,20 +225,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
   m.def("fp8_transpose_noalloc_noop", &fp8_transpose_noalloc_noop,
         "Transpose with FP8 I/O with noop option.", py::call_guard<py::gil_scoped_release>());
-  m.def("gelu", &gelu, "GeLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("relu", &relu, "ReLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("geglu", &geglu, "GeGLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("reglu", &reglu, "ReGLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("swiglu", &swiglu, "SwiGLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("qgelu", &qgelu, "QuickGELU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("srelu", &srelu, "Squared ReLU with FP8 output", py::call_guard<py::gil_scoped_release>());
-  m.def("dgelu", &dgelu, "Backward of GeLU", py::call_guard<py::gil_scoped_release>());
-  m.def("drelu", &drelu, "Backward of ReLU", py::call_guard<py::gil_scoped_release>());
-  m.def("dgeglu", &dgeglu, "Backward of GeGLU", py::call_guard<py::gil_scoped_release>());
-  m.def("dreglu", &dreglu, "Backward of ReGLU", py::call_guard<py::gil_scoped_release>());
-  m.def("dswiglu", &dswiglu, "Backward of SwiGLU", py::call_guard<py::gil_scoped_release>());
-  m.def("dqgelu", &dqgelu, "Backward of QuickGELU", py::call_guard<py::gil_scoped_release>());
-  m.def("dsrelu", &dsrelu, "Backward of Squared ReLU", py::call_guard<py::gil_scoped_release>());
   m.def("fa_prepare_fwd", &fa_prepare_fwd, "Prepare QKV for Flash Attention",
         py::call_guard<py::gil_scoped_release>());
   m.def("fa_prepare_bwd", &fa_prepare_bwd, "Backward of QKV preparation for Flash Attention",
@@ -392,12 +344,13 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
   py::class_<CommOverlap>(m, "CommOverlap")
       .def(py::init<const std::vector<size_t> &, at::ScalarType, CommOverlapHelper *, int, int, int,
-                    int, int, bool, bool>(),
+                    int, int, int, int, bool, bool>(),
            py::call_guard<py::gil_scoped_release>(), py::arg("buffer_shape"),
            py::arg("buffer_dtype"), py::arg("helper"), py::arg("tp_size"),
            py::arg("num_splits") = 3, py::arg("num_max_streams") = NVTE_COMM_OVERLAP_MAX_STREAMS,
-           py::arg("comm_cga_size") = 2, py::arg("num_comm_sm") = 16,
-           py::arg("set_sm_margin") = true, py::arg("atomic_gemm") = false)
+           py::arg("comm_cga_size") = 2, py::arg("gemm_priority") = 0, py::arg("comm_priority") = 0,
+           py::arg("num_comm_sm") = 16, py::arg("set_sm_margin") = true,
+           py::arg("atomic_gemm") = false)
       .def("bulk_overlap", &CommOverlap::bulk_overlap, py::call_guard<py::gil_scoped_release>())
       .def("split_overlap_rs", &CommOverlap::split_overlap_rs,
            py::call_guard<py::gil_scoped_release>())
@@ -415,12 +368,14 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
   py::class_<CommOverlapP2P>(m, "CommOverlapP2P")
       .def(py::init<const std::vector<size_t> &, at::ScalarType, CommOverlapHelper *, int,
-                    transformer_engine::CommOverlapType, int, int, int, bool, bool, bool, bool>(),
+                    transformer_engine::CommOverlapType, int, int, int, int, int, bool, bool, bool,
+                    bool>(),
            py::call_guard<py::gil_scoped_release>(), py::arg("buffer_shape"),
            py::arg("buffer_dtype"), py::arg("helper"), py::arg("tp_size"), py::arg("comm_type"),
            py::arg("num_max_streams") = NVTE_COMM_OVERLAP_MAX_STREAMS, py::arg("comm_cga_size") = 1,
-           py::arg("num_comm_sm") = 1, py::arg("set_sm_margin") = false,
-           py::arg("atomic_gemm") = false, py::arg("use_ce") = true, py::arg("aggregate") = false)
+           py::arg("gemm_priority") = 0, py::arg("comm_priority") = 0, py::arg("num_comm_sm") = 1,
+           py::arg("set_sm_margin") = false, py::arg("atomic_gemm") = false,
+           py::arg("use_ce") = true, py::arg("aggregate") = false)
       .def("split_overlap_ag_p2p", &CommOverlapP2P::split_overlap_ag,
            py::call_guard<py::gil_scoped_release>())
       .def("split_overlap_rs_p2p", &CommOverlapP2P::split_overlap_rs,

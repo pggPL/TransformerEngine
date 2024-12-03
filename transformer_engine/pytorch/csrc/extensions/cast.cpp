@@ -4,90 +4,56 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#include "c10/core/ScalarType.h"
+#include "common.h"
 #include "extensions.h"
 #include "pybind.h"
-#include "object.h"
-#include "torch/types.h"
-#include "util.h"
 
 namespace transformer_engine::pytorch {
 
 py::object quantize(const at::Tensor& tensor, py::handle quantizer) {
-  using namespace pybind11::literals;
-  init_float8_extension();
-  init_mxfp8_extension();
+  init_extension();
+  auto my_quantizer = convert_quantizer(quantizer);
   auto input_tensor = tensor.contiguous();
-  if (detail::IsFloat8QParams(quantizer.ptr())) {
-    auto rowwise_usage = quantizer.attr("rowwise_usage").cast<bool>();
-    auto columnwise_usage = quantizer.attr("columnwise_usage").cast<bool>();
-    NVTE_CHECK(rowwise_usage || columnwise_usage,
-               "Could not create a QuantizedTensor with no usage.");
-    auto py_scale = quantizer.attr("scale");
-    auto py_amax = quantizer.attr("amax");
-    DType type = quantizer.attr("dtype").cast<DType>();
-    bool internal = quantizer.attr("internal").cast<bool>();
-    const at::Tensor& scale = py_scale.cast<at::Tensor>();
-    at::Tensor amax = py_amax.cast<at::Tensor>();
-    auto opts = input_tensor.options().dtype(torch::kFloat32);
-    at::Tensor scale_inv = at::empty({1}, opts);
-    at::Tensor data, data_transpose;
-    bool create_transpose = columnwise_usage && !non_tn_fp8_gemm_supported();
-    if (create_transpose) {
-      const auto dim = tensor.dim();
-      NVTE_CHECK(dim >= 2, "Tensor needs to be at least 2D for columnwise usage");
-      auto reshaped_input = input_tensor.view({-1, tensor.size(dim - 1)});
-      auto data_opts = input_tensor.options().dtype(torch::kUInt8);
-      data = at::empty_like(input_tensor, data_opts);
-      data_transpose = at::empty({reshaped_input.size(1),
-                                  reshaped_input.size(0)},
-                                 data_opts);
-      fused_cast_transpose(reshaped_input,
-                           scale,
-                           amax,
-                           scale_inv,
-                           data,
-                           data_transpose,
-                           type);
-    } else {
-      data = cast_to_fp8(input_tensor,
-                         scale,
-                         amax,
-                         scale_inv,
-                         type,
-                         {-1, -1, 1});
-    }
-    auto fake_tensor_type = tensor.scalar_type();
-    if (!detail::IsFloatingPointType(fake_tensor_type)) {
-      fake_tensor_type = at::kFloat;
-    }
-    PyObject* tensor_class = internal ? reinterpret_cast<PyObject*>(Float8TensorBasePythonClass)
-                                      : reinterpret_cast<PyObject*>(Float8TensorPythonClass);
-    py::handle Float8TensorClass(tensor_class);
-    if (internal) {
-      auto ret = Float8TensorClass("data"_a=data,
-                                   "data_transpose"_a= create_transpose ? py::cast(data_transpose) : py::none(),
-                                   "fp8_scale_inv"_a=scale_inv,
-                                   "fp8_dtype"_a=type,
-                                   "quantizer"_a=quantizer);
-      return ret;
-    } else {
-      auto ret = Float8TensorClass("shape"_a=data.sizes(),
-                                   "dtype"_a=fake_tensor_type,
-                                   "data"_a=data,
-                                   "data_transpose"_a= create_transpose ? py::cast(data_transpose) : py::none(),
-                                   "fp8_scale_inv"_a=scale_inv,
-                                   "fp8_dtype"_a=type,
-                                   "quantizer"_a=quantizer);
-      return ret;
-    }
+
+  const TensorWrapper& te_input = makeTransformerEngineTensor(input_tensor);
+  const auto& te_input_shape = te_input.shape();
+  std::vector<size_t> input_shape(te_input_shape.data,
+                                  te_input_shape.data + te_input_shape.ndim);
+  auto fake_tensor_type = tensor.scalar_type();
+  if (!detail::IsFloatingPointType(fake_tensor_type)) {
+    fake_tensor_type = at::kFloat;
   }
-  NVTE_ERROR("Invalid type of the quantization params");
+
+  auto [te_output, out] = my_quantizer->create_tensor(input_shape,
+                                                      GetTransformerEngineDType(fake_tensor_type));
+
+  nvte_quantize(te_input.data(), te_output.data(), at::cuda::getCurrentCUDAStream());
+
+  return out;
+}
+
+py::object dequantize(const py::handle& input, transformer_engine::DType otype) {
+  using namespace transformer_engine::pytorch;
+
+  const auto none = py::none();
+
+  const auto& input_tensor = makeTransformerEngineTensor(input, none);
+
+  NoneQuantizer q(none);
+
+  const auto& shape = convertShape(input_tensor.shape());
+
+  auto [out_tensor, out] = q.create_tensor(shape, otype);
+
+  nvte_dequantize(input_tensor.data(), out_tensor.data(), at::cuda::getCurrentCUDAStream());
+
+  return out;
 }
 
 }  // transformer_engine::pytorch
 
-
+// TODO: remove once the MXFP8 quantizer and tensor are there
+#if 0
 std::vector<at::Tensor> cast_to_fp8_x2(const at::Tensor& input, const at::Tensor& scale_inv_rowwise,
                          at::Tensor scale_inv_colwise, transformer_engine::DType otype) {
   using namespace transformer_engine::pytorch;
@@ -113,12 +79,14 @@ std::vector<at::Tensor> cast_to_fp8_x2(const at::Tensor& input, const at::Tensor
                                   nullptr, scale_inv_colwise_dptr, getTensorShape(scale_inv_colwise),
                                   {32, 1, 0});
 
-  nvte_fp8_quantize_x2(input_cu.data(), output_rowwise_cu.data(), output_colwise_cu.data(),
+  nvte_quantize_x2(input_cu.data(), output_rowwise_cu.data(), output_colwise_cu.data(),
                        at::cuda::getCurrentCUDAStream());
 
   return {output_rowwise, output_colwise};
 }
+#endif
 
+// TODO: REMOVE
 at::Tensor cast_to_fp8(const at::Tensor& input, const at::Tensor& scale, at::Tensor amax,
                        at::Tensor scale_inv, transformer_engine::DType otype,
                        std::vector<int64_t> scaling_mode, const int scale_offset,
@@ -142,11 +110,12 @@ at::Tensor cast_to_fp8(const at::Tensor& input, const at::Tensor& scale, at::Ten
       makeTransformerEngineTensor(output.data_ptr(), shape, otype, amax_dptr, scale_dptr,
                                   scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
 
-  nvte_fp8_quantize(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
+  nvte_quantize(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
 
   return output;
 }
 
+// TODO: REMOVE
 void cast_to_fp8_noalloc(const at::Tensor& input, const at::Tensor& scale, at::Tensor output,
                          at::Tensor amax, at::Tensor scale_inv, transformer_engine::DType otype,
                          std::vector<int64_t> scaling_mode, const int scale_offset,
@@ -166,28 +135,11 @@ void cast_to_fp8_noalloc(const at::Tensor& input, const at::Tensor& scale, at::T
       makeTransformerEngineTensor(output.data_ptr(), shape, otype, amax_dptr, scale_dptr,
                                   scale_inv_dptr, getTensorShape(scale_inv), nvte_scaling_mode);
 
-  nvte_fp8_quantize(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
+  nvte_quantize(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
 
   return;
 }
 
-at::Tensor cast_from_fp8(const at::Tensor& input, const at::Tensor& scale_inv,
-                         transformer_engine::DType itype, transformer_engine::DType otype,
-                         const int scale_inv_offset) {
-  using namespace transformer_engine::pytorch;
-  auto input_shape = input.sizes().vec();
-  std::vector<size_t> shape{input_shape.begin(), input_shape.end()};
-
-  auto output = at::empty_like(input, at::CUDA(GetATenDType(otype)));
-
-  auto input_cu = makeTransformerEngineTensor(input.data_ptr(), shape, itype, nullptr, nullptr,
-                                              getDataPtr(scale_inv, scale_inv_offset));
-  auto output_cu = makeTransformerEngineTensor(output);
-
-  nvte_fp8_dequantize(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
-
-  return output;
-}
 
 std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor& input, const at::Tensor& scale,
                                        at::Tensor amax, at::Tensor scale_inv,
@@ -220,15 +172,15 @@ std::vector<at::Tensor> fp8_cast_dbias(const at::Tensor& input, const at::Tensor
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias(input_cu.data(), output_cu.data(), dbias_cu.data(), workspace.data(),
-                          at::cuda::getCurrentCUDAStream());
+  nvte_quantize_dbias(input_cu.data(), output_cu.data(), dbias_cu.data(), workspace.data(),
+                      at::cuda::getCurrentCUDAStream());
 
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
   workspace =
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
-  nvte_fp8_quantize_dbias(input_cu.data(), output_cu.data(), dbias_cu.data(), workspace.data(),
-                          at::cuda::getCurrentCUDAStream());
+  nvte_quantize_dbias(input_cu.data(), output_cu.data(), dbias_cu.data(), workspace.data(),
+                      at::cuda::getCurrentCUDAStream());
 
   return {grad_bias, output};
 }
@@ -265,17 +217,17 @@ std::vector<at::Tensor> fp8_cast_dbias_dgelu(at::Tensor grad_output, at::Tensor 
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_dgelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
-                                dbias_cu.data(), workspace.data(),
-                                at::cuda::getCurrentCUDAStream());
+  nvte_quantize_dbias_dgelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+                            dbias_cu.data(), workspace.data(),
+                            at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
   workspace =
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_dgelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
-                                dbias_cu.data(), workspace.data(),
-                                at::cuda::getCurrentCUDAStream());
+  nvte_quantize_dbias_dgelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+                            dbias_cu.data(), workspace.data(),
+                            at::cuda::getCurrentCUDAStream());
 
   return {grad_bias, dact};
 }
@@ -312,7 +264,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor 
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_dsilu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+  nvte_quantize_dbias_dsilu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
                                 dbias_cu.data(), workspace.data(),
                                 at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
@@ -320,7 +272,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu(at::Tensor grad_output, at::Tensor 
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_dsilu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+  nvte_quantize_dbias_dsilu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
                                 dbias_cu.data(), workspace.data(),
                                 at::cuda::getCurrentCUDAStream());
 
@@ -359,7 +311,7 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor 
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_drelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+  nvte_quantize_dbias_drelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
                                 dbias_cu.data(), workspace.data(),
                                 at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
@@ -367,7 +319,7 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu(at::Tensor grad_output, at::Tensor 
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_drelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+  nvte_quantize_dbias_drelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
                                 dbias_cu.data(), workspace.data(),
                                 at::cuda::getCurrentCUDAStream());
 
@@ -406,7 +358,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_dqgelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+  nvte_quantize_dbias_dqgelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
                                  dbias_cu.data(), workspace.data(),
                                  at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
@@ -414,7 +366,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu(at::Tensor grad_output, at::Tensor
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_dqgelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+  nvte_quantize_dbias_dqgelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
                                  dbias_cu.data(), workspace.data(),
                                  at::cuda::getCurrentCUDAStream());
 
@@ -453,7 +405,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_dsrelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+  nvte_quantize_dbias_dsrelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
                                  dbias_cu.data(), workspace.data(),
                                  at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
@@ -461,13 +413,15 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu(at::Tensor grad_output, at::Tensor
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_dsrelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
+  nvte_quantize_dbias_dsrelu(input_cu.data(), act_input_cu.data(), cast_output_cu.data(),
                                  dbias_cu.data(), workspace.data(),
                                  at::cuda::getCurrentCUDAStream());
 
   return {grad_bias, dact};
 }
 
+// TODO: remove
+#if 0
 std::vector<at::Tensor> fp8_cast_dbias_x2(const at::Tensor& input, at::Tensor scale_inv_rowwise,
                                           at::Tensor scale_inv_colwise, transformer_engine::DType otype) {
   using namespace transformer_engine::pytorch;
@@ -498,14 +452,14 @@ std::vector<at::Tensor> fp8_cast_dbias_x2(const at::Tensor& input, at::Tensor sc
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_x2(input_cu.data(), rowwise_output_cu.data(), columnwise_output_cu.data(),
+  nvte_quantize_dbias_x2(input_cu.data(), rowwise_output_cu.data(), columnwise_output_cu.data(),
                              dbias_cu.data(), workspace.data(), at::cuda::getCurrentCUDAStream());
 
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
   workspace =
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
-  nvte_fp8_quantize_dbias_x2(input_cu.data(), rowwise_output_cu.data(), columnwise_output_cu.data(),
+  nvte_quantize_dbias_x2(input_cu.data(), rowwise_output_cu.data(), columnwise_output_cu.data(),
                              dbias_cu.data(), workspace.data(), at::cuda::getCurrentCUDAStream());
 
   return {grad_bias, output_rowwise, output_columnwise};
@@ -544,7 +498,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dgelu_x2(at::Tensor grad_output, at::Tens
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_dgelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_dgelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                    columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                    at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
@@ -552,7 +506,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dgelu_x2(at::Tensor grad_output, at::Tens
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_dgelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_dgelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                    columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                    at::cuda::getCurrentCUDAStream());
 
@@ -592,7 +546,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu_x2(at::Tensor grad_output, at::Tens
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_dsilu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_dsilu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                    columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                    at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
@@ -600,7 +554,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsilu_x2(at::Tensor grad_output, at::Tens
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_dsilu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_dsilu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                    columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                    at::cuda::getCurrentCUDAStream());
 
@@ -640,7 +594,7 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu_x2(at::Tensor grad_output, at::Tens
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_drelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_drelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                    columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                    at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
@@ -648,7 +602,7 @@ std::vector<at::Tensor> fp8_cast_dbias_drelu_x2(at::Tensor grad_output, at::Tens
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_drelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_drelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                    columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                    at::cuda::getCurrentCUDAStream());
 
@@ -688,7 +642,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu_x2(at::Tensor grad_output, at::Ten
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_dqgelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_dqgelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                     columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                     at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
@@ -696,7 +650,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dqgelu_x2(at::Tensor grad_output, at::Ten
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_dqgelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_dqgelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                     columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                     at::cuda::getCurrentCUDAStream());
 
@@ -736,7 +690,7 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu_x2(at::Tensor grad_output, at::Ten
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_fp8_quantize_dbias_dsrelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_dsrelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                     columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                     at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
@@ -744,9 +698,10 @@ std::vector<at::Tensor> fp8_cast_dbias_dsrelu_x2(at::Tensor grad_output, at::Ten
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_fp8_quantize_dbias_dsrelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
+  nvte_quantize_dbias_dsrelu_x2(input_cu.data(), act_input_cu.data(), rowwise_output_cu.data(),
                                     columnwise_output_cu.data(), dbias_cu.data(), workspace.data(),
                                     at::cuda::getCurrentCUDAStream());
 
   return {grad_bias, dact_rowwise, dact_columnwise};
 }
+#endif

@@ -30,15 +30,8 @@ class _FromFloat8Func(torch.autograd.Function):
 
         # Make sure FP8 data is in expected format
         if tensor._data is not None:
-            data = tensor._data
-
             # Cast from FP8
-            return tex.cast_from_fp8(data,
-                                     tensor._scale_inv,
-                                     tensor._fp8_dtype,
-                                     dtype,
-                                     0
-            )
+            return tex.dequantize(tensor, dtype)
         else:
             raise NotImplementedError("Casting back from the transpose not implemented yet!")
 
