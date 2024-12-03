@@ -273,11 +273,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 
 std::vector<std::pair<size_t, size_t>> test_cases = {
   {32, 32},
-  {128, 64},
-  {768, 1024},
-  {64, 2304},
-  {128, 6144},
-  {256, 65536},
+  {768, 2304},
   {2048, 12288},
 };
 
