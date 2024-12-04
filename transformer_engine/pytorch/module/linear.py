@@ -183,6 +183,7 @@ class _Linear(torch.autograd.Function):
                 ub_obj_projout.set_ubuf_scale_inv(
                     torch.reciprocal(output_quantizer.scale)
                 )
+
         out, _, _ = general_gemm(
             weight_fp8,
             inputmat_total,
@@ -460,7 +461,7 @@ class _Linear(torch.autograd.Function):
 
         return (
             wgrad,
-            dgrad if ctx.requires_dgrad else None,
+            dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
             grad_bias,
             None,  # is_first_microbatch
             None,  # fp8
@@ -869,7 +870,6 @@ class Linear(TransformerEngineBaseModule):
                 skip_fp8_weight_update,
             )
             out = linear_fn(*args)
-
         if self.gemm_bias_unfused_add:
             out = out + cast_if_needed(bias_tensor, self.activation_dtype)
 

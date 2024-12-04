@@ -6,7 +6,6 @@
 
 #include "common.h"
 #include "pybind.h"
-#include <transformer_engine/transformer_engine.h>
 
 namespace transformer_engine::pytorch {
 namespace detail {
@@ -26,6 +25,7 @@ TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, Quantizer* quantizer
   }
 
   auto ret = TensorWrapper(quantizer->get_scaling_mode());
+
   ret.set_rowwise_data(data.data_ptr(), dtype, shape);
   if (transpose_valid && transpose != std::nullopt) {
     const auto& transpose_shape = getTensorShape(*transpose);
@@ -40,6 +40,42 @@ TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, Quantizer* quantizer
   ret.set_columnwise_scale_inv(scale_inv_dptr,
                                scale_inv_dtype,
                                scale_inv_shape);
+  quantizer->set_quantization_params(&ret);
+  return ret;
+}
+
+TensorWrapper NVTETensorFromMXFP8Tensor(py::handle tensor, Quantizer* quantizer) {
+  const DType dtype = tensor.attr("_fp8_dtype").cast<DType>();
+  auto ret = TensorWrapper();
+
+  if (quantizer->rowwise_usage) {
+    const at::Tensor &data_rowwise = tensor.attr("_data_rowwise").cast<at::Tensor>();
+    const at::Tensor &scale_inv_rowwise = tensor.attr("_scale_inv_rowwise").cast<at::Tensor>();
+    float *scale_inv_rowwise_dptr = reinterpret_cast<float*>(scale_inv_rowwise.data_ptr());
+    const auto& shape = getTensorShape(data_rowwise);
+    ret.set_rowwise_data(data_rowwise.data_ptr(), dtype, shape);
+
+    const auto scale_inv_rowwise_dtype = GetTransformerEngineDType(scale_inv_rowwise.scalar_type());
+    const auto scale_inv_rowwise_shape = getTensorShape(scale_inv_rowwise);
+    ret.set_rowwise_scale_inv(scale_inv_rowwise_dptr,
+                              scale_inv_rowwise_dtype,
+                              scale_inv_rowwise_shape);
+  }
+
+  if (quantizer->columnwise_usage) {
+    const at::Tensor &data_colwise = tensor.attr("_data_colwise").cast<at::Tensor>();
+    const at::Tensor &scale_inv_colwise = tensor.attr("_scale_inv_colwise").cast<at::Tensor>();
+    float *scale_inv_colwise_dptr = reinterpret_cast<float*>(scale_inv_colwise.data_ptr());
+    const auto& shape = getTensorShape(data_colwise);
+    ret.set_columnwise_data(data_colwise.data_ptr(), dtype, shape);
+
+    const auto scale_inv_colwise_dtype = GetTransformerEngineDType(scale_inv_colwise.scalar_type());
+    const auto scale_inv_colwise_shape = getTensorShape(scale_inv_colwise);
+    ret.set_columnwise_scale_inv(scale_inv_colwise_dptr,
+                                 scale_inv_colwise_dtype,
+                                 scale_inv_colwise_shape);
+  }
+
   quantizer->set_quantization_params(&ret);
   return ret;
 }

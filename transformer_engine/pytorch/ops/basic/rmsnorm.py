@@ -16,6 +16,7 @@ from transformer_engine_torch import rmsnorm_bwd, rmsnorm_fwd
 from ...cpp_extensions import *
 from ...fp8 import FP8GlobalStateManager, get_fp8_te_dtype
 from ...tensor import Float8Tensor, QuantizedTensor
+from ...constants import TE_DType
 from ...utils import (
     canonicalize_device,
     canonicalize_dtype,
@@ -210,16 +211,12 @@ class RMSNorm(BasicOperation):
                 x,
                 w,
                 self.eps,
-                output_fp8_meta[fp8_meta_key],
-                0,  # fp8_meta_index
-                fp8_dtype,
+                quantizer,
+                x.dtype, # #TODO - think about it
                 sm_margin,
                 self.zero_centered_gamma,
             )
-            if requires_grad:
-                data, rstdevs = rmsnorm_fwd_fp8(*args)
-            else:
-                data = rmsnorm_fwd_fp8_inf(*args)
+            data, _, rstdevs = rmsnorm_fwd(*args)
             y = Float8Tensor(
                 data=data,
                 fp8_meta=output_fp8_meta,
@@ -233,13 +230,13 @@ class RMSNorm(BasicOperation):
                 x,
                 w,
                 self.eps,
+                None,
+                None,
+                TE_DType[x.dtype] if x.dtype in TE_DType.keys() else x.dtype,
                 sm_margin,
                 self.zero_centered_gamma,
             )
-            if requires_grad:
-                y, rstdevs = rmsnorm_fwd(*args)
-            else:
-                y = rmsnorm_fwd_inf(*args)
+            y, _, rstdevs = rmsnorm_fwd(*args)
 
         # Save state for backward pass
         if requires_grad:

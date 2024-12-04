@@ -56,8 +56,18 @@ void Float8Quantizer::set_quantization_params(TensorWrapper* tensor) const {
   tensor->set_scale(scale.data_ptr(),
                     GetTransformerEngineDType(scale.scalar_type()),
                     getTensorShape(scale));
-  // what with scale_inv??? 
-  // it is needed in tenor, so i think it is needed in quantizer also
+  at::TensorOptions opts = opts.dtype(torch::kFloat32).device(torch::kCUDA);
+  at::Tensor scale_inv = at::empty({1}, opts);
+  if(tensor->get_rowwise_scale_inv().data_ptr == nullptr) {
+    tensor->set_rowwise_scale_inv(scale_inv.data_ptr(),
+                    GetTransformerEngineDType(scale_inv.scalar_type()),
+                    getTensorShape(scale_inv));
+  }
+  if(tensor->get_columnwise_scale_inv().data_ptr == nullptr) {
+    tensor->set_columnwise_scale_inv(scale_inv.data_ptr(),
+                    GetTransformerEngineDType(scale_inv.scalar_type()),
+                    getTensorShape(scale_inv));
+  }
   tensor->set_amax(amax.data_ptr(),
                    GetTransformerEngineDType(amax.scalar_type()),
                    getTensorShape(amax));
@@ -142,6 +152,73 @@ std::pair<TensorWrapper, py::object> Float8Quantizer::create_tensor(
                                     std::vector<size_t>{1});
   }
   this->set_quantization_params(&tensor);
+  return {std::move(tensor), std::move(ret)};
+}
+
+
+void MXFP8Quantizer::set_quantization_params(TensorWrapper* tensor) const {
+  auto rowwise_data = tensor->get_rowwise_data();
+  rowwise_data.dtype = static_cast<NVTEDType>(dtype);
+
+  auto columnwise_data = tensor->get_columnwise_data();
+  columnwise_data.dtype = static_cast<NVTEDType>(dtype);
+
+  tensor->set_rowwise_data(rowwise_data.data_ptr,
+                           static_cast<DType>(rowwise_data.dtype),
+                           rowwise_data.shape);
+  tensor->set_columnwise_data(columnwise_data.data_ptr,
+                              static_cast<DType>(columnwise_data.dtype),
+                              columnwise_data.shape);
+}
+
+
+std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(const std::vector<size_t>& shape,
+                                                                   DType dtype) const {
+  using namespace pybind11::literals;
+  std::vector<int64_t> torch_shape;
+  size_t numel = 1;
+  for (auto s : shape) {
+    torch_shape.emplace_back(static_cast<int64_t>(s));
+    numel *= s;
+  }
+
+  TensorWrapper tensor(this->get_scaling_mode());
+  at::TensorOptions opts;
+  at::Tensor rowwise_data, columnwise_data, rowwise_scale_inv, columnwise_scale_inv;
+  opts = opts.dtype(torch::kUInt8).device(torch::kCUDA);
+
+  if (rowwise_usage) {
+    rowwise_data = at::empty(torch_shape, opts);
+    rowwise_scale_inv = at::empty({numel / 32}, opts);  // TODO (fix size)
+
+    tensor.set_rowwise_data(rowwise_data.data_ptr(),
+                            this->dtype,
+                            shape);
+    tensor.set_rowwise_scale_inv(rowwise_scale_inv.data_ptr(),
+                                 DType::kFloat8E8M0,
+                                 std::vector<size_t>{numel / 32});
+  }
+  if (columnwise_usage) {
+    columnwise_data = at::empty(torch_shape, opts);
+    columnwise_scale_inv = at::empty({numel / 32}, opts);  // TODO (fix size)
+
+    tensor.set_columnwise_data(columnwise_data.data_ptr(),
+                               this->dtype,
+                               shape);
+    tensor.set_columnwise_scale_inv(columnwise_scale_inv.data_ptr(),
+                                    DType::kFloat8E8M0,
+                                    std::vector<size_t>{numel / 32});
+  }
+  this->set_quantization_params(&tensor);
+
+  py::handle MXFP8TensorClass(reinterpret_cast<PyObject*>(MXFP8TensorPythonClass));
+  auto ret = MXFP8TensorClass("rowwise_data"_a=rowwise_data,
+                              "columnwise_data"_a=columnwise_data,
+                              "rowwise_scale_inv"_a=rowwise_scale_inv,
+                              "columnwise_scale_inv"_a=columnwise_scale_inv,
+                              "fp8_dtype"_a=this->dtype,
+                              "dtype"_a=dtype);
+
   return {std::move(tensor), std::move(ret)};
 }
 

@@ -16,6 +16,8 @@ import transformer_engine_torch as tex
 from ...common.recipe import Recipe
 
 def prepare_for_saving(tensor) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
+    if tensor is None:
+        return [None], None
     if isinstance(tensor, torch.Tensor):
         return [tensor], None
     return tensor.prepare_for_saving()
@@ -59,6 +61,13 @@ class Quantizer(abc.ABC):
         if (not self.internal) and torch.is_grad_enabled():
             return _QuantizeFunc.apply(tensor, self)
         return _QuantizeFunc.forward(None, tensor, self)
+
+
+    def multi_quantize(self, list_of_tensors):
+        list_of_output_tensors = []
+        for tensor in list_of_tensors:
+            list_of_output_tensors.append(self.quantize(tensor))
+        return list_of_output_tensors
 
     def __call__(self, tensor: torch.Tensor) -> QuantizedTensor:
         return self.quantize(tensor)

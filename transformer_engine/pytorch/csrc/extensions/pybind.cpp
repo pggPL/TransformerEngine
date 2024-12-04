@@ -20,22 +20,48 @@ namespace transformer_engine::pytorch {
 
 PyTypeObject *Float8TensorPythonClass = nullptr;  /// TODO Remove
 PyTypeObject *Float8TensorBasePythonClass = nullptr;
-PyTypeObject *Float8QuantizerClass = nullptr;  /// TODO Rename to Float8QuantizerClass
+PyTypeObject *Float8QuantizerClass = nullptr;
+PyTypeObject *MXFP8TensorPythonClass = nullptr;  /// TODO Remove
+PyTypeObject *MXFP8TensorBasePythonClass = nullptr;
+PyTypeObject *MXFP8QuantizerClass = nullptr;
 
-void init_extension() {
+void init_float8_extension() {
   if (Float8TensorPythonClass) return;
-  auto float8tensor_module = py::module_::import("transformer_engine.pytorch.tensor.float8_tensor");
-  Float8QuantizerClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(),
+  auto fp8_module = py::module_::import("transformer_engine.pytorch.tensor.float8_tensor");
+  Float8QuantizerClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
                                                                               "Float8Quantizer"));
-  Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(float8tensor_module.ptr(), "Float8Tensor"));
-  auto float8tensorbase_module =
+  Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
+                                                                                   "Float8Tensor"));
+  auto fp8_base_module =
     py::module_::import("transformer_engine.pytorch.tensor._internal.float8_tensor_base");
   Float8TensorBasePythonClass = reinterpret_cast<PyTypeObject*>(
-      PyObject_GetAttrString(float8tensorbase_module.ptr(),
+      PyObject_GetAttrString(fp8_base_module.ptr(),
                              "Float8TensorBase"));
   NVTE_CHECK(Float8TensorPythonClass != nullptr,
-             "Internal error: could not initialize pyTorch extension.");
+             "Internal error: could not initialize pyTorch Float8 extension.");
 }
+
+void init_mxfp8_extension() {
+  if (MXFP8TensorPythonClass) return;
+  auto fp8_module = py::module_::import("transformer_engine.pytorch.tensor.mxfp8_tensor");
+  MXFP8QuantizerClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
+                                                                              "MXFP8Quantizer"));
+  MXFP8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
+                                                                                  "MXFP8Tensor"));
+  auto fp8_base_module =
+    py::module_::import("transformer_engine.pytorch.tensor._internal.mxfp8_tensor_base");
+  MXFP8TensorBasePythonClass = reinterpret_cast<PyTypeObject*>(
+      PyObject_GetAttrString(fp8_base_module.ptr(),
+                             "MXFP8TensorBase"));
+  NVTE_CHECK(MXFP8TensorPythonClass != nullptr,
+             "Internal error: could not initialize pyTorch MXFP8 extension.");
+}
+
+void init_extension() {
+  init_float8_extension();
+  init_mxfp8_extension();
+}
+
 
 }  // namespace transformer_engine::pytorch
 
@@ -68,7 +94,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("dbias_dsilu", transformer_engine::pytorch::dbias_dsilu, "DSiLU + DBias + Quantize");
   m.def("dbias_drelu", transformer_engine::pytorch::dbias_drelu, "DReLU + DBias + Quantize");
   m.def("dbias_dqgelu", transformer_engine::pytorch::dbias_dqgelu, "DQGeLU + DBias + Quantize");
-  m.def("dbias_dsrelu", transformer_engine::pytorch::dbias_dsrelu, "DSquaredReLU + DBias + Quantize");
+  m.def("dbias_dsrelu", transformer_engine::pytorch::dbias_dsrelu,
+        "DSquaredReLU + DBias + Quantize");
 
   // Permutation functions
   m.def("moe_permute_fwd", moe_permute_fwd);
@@ -138,9 +165,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("fused_multi_cast_transpose_alloc", &fused_multi_cast_transpose_alloc,
         "Fused Multi-tensor Cast + Transpose with allocating output tensors",
         py::call_guard<py::gil_scoped_release>());
-  m.def("te_grouped_gemm", &te_grouped_gemm, "Grouped GEMM");
-  m.def("te_grouped_gemm_single_output", &te_grouped_gemm_single_output,
-        "Grouped GEMM with single output");
+  m.def("te_general_grouped_gemm", &te_general_grouped_gemm, "Grouped GEMM");
   m.def("fused_attn_fwd_qkvpacked", &fused_attn_fwd_qkvpacked,
         "Fused Attention FP8/BF16/FP16 FWD with packed QKV",
         py::call_guard<py::gil_scoped_release>());

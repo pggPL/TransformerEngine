@@ -119,6 +119,7 @@ class Quantizer {
 class NoneQuantizer : public Quantizer {
  public:
   NoneQuantizer(const py::handle& quantizer) : Quantizer(quantizer) {}
+
   virtual NVTEScalingMode get_scaling_mode() const override {
     return NVTE_DELAYED_TENSOR_SCALING;
   }
@@ -132,6 +133,7 @@ class NoneQuantizer : public Quantizer {
 class Float8Quantizer : public Quantizer {
  public:
   at::Tensor scale;
+  at::Tensor scale_inv;
   at::Tensor amax;
   DType dtype;
 
@@ -139,6 +141,22 @@ class Float8Quantizer : public Quantizer {
 
   virtual NVTEScalingMode get_scaling_mode() const override {
     return NVTE_DELAYED_TENSOR_SCALING;
+  }
+
+  virtual void set_quantization_params(TensorWrapper* tensor) const override;
+
+  virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
+                                                             DType dtype) const override;
+};
+
+class MXFP8Quantizer : public Quantizer {
+ public:
+  DType dtype;
+
+  MXFP8Quantizer(const py::handle& quantizer);
+
+  virtual NVTEScalingMode get_scaling_mode() const override {
+    return NVTE_MXFP8_1D_SCALING;
   }
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;

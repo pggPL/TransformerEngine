@@ -5,7 +5,6 @@
  ************************************************************************/
 
 #include "extensions.h"
-#include <iostream>
 
 namespace transformer_engine::pytorch {
   std::pair<TensorWrapper, py::object> createOutputTensor(const NVTEShape& shape,
@@ -230,9 +229,7 @@ std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &w
   if (ln_out.is_none()) {
     std::tie(ln_out_tensor, ln_out) = createOutputTensor(size, otype, quantizer);
   } else {
-    std::cout << "aaa" << std::endl;
     ln_out_tensor = makeTransformerEngineTensor(ln_out, quantizer);
-    std::cout << "bbb" << std::endl;
   }
   auto rsigma_cu = makeTransformerEngineTensor(rsigma);
 

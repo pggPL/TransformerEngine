@@ -499,6 +499,7 @@ class _checkpoint_hook(
                 # Set RNG states to what we saved before the forward pass
                 frame.restore_rng_states(forward=True)
 
+
                 # Recompute the forward pass
                 with _recomputation_hook(frame):
                     frame.recompute_fn(*args, **kwargs)

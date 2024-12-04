@@ -822,6 +822,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             R4: bias gradient on R1.
 
         """
+        grad_output = grad_output.reshape((-1, grad_output.shape[-1]))
         grad_output = grad_output.contiguous()
         gather_grad_output = row_parallel_mode and ctx.sequence_parallel
 
@@ -935,18 +936,9 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             # If primary weights are in fp8, wrap the parameter as Float8Tensor
             fp8_meta_index = self.param_init_meta[name].fp8_meta_index
             if self.primary_weights_in_fp8 and fp8_meta_index is not None:
-                dummy_amax = torch.empty(
-                    (1, 1),
-                    dtype=torch.float32,
-                    device=param.device,
-                )  # Dummy buffer to avoid overwriting amax history
-                param = Float8Tensor.to_float8(
-                    param,
-                    fp8_meta=self.fp8_meta,
-                    fp8_meta_index=fp8_meta_index,
-                    amax=dummy_amax,
-                    with_transpose_cache=torch.is_grad_enabled(),
-                )
+                quantizer = self.quantizers["scaling_fwd"][fp8_meta_index]
+                assert quantizer is not None # to use primary fp8 weight one needs to use FP8 autocast with specific recipe.
+                param = quantizer(param)
 
             # Redo parameter wrap in case we broke it above
             # NOTE: Currently this can only be broken when primary weights are in Fp8 but
