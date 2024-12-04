@@ -158,8 +158,8 @@ void performTest_x1(const ProcessingMethod processing_method,
     DType itype = TypeInfo<InputType>::dtype;
     DType otype = TypeInfo<OutputType>::dtype;
 
-    const size_t block_size_rows = rowwise ? 32 : 1;
-    const size_t block_size_cols = colwise ? 32 : 1;
+    const size_t block_size_rows = rowwise ? 1 : 32;
+    const size_t block_size_cols = colwise ? 1 : 32;
     const size_t blocks_Y = (rows + block_size_rows - 1) / block_size_rows;
     const size_t blocks_X = (cols + block_size_cols - 1) / block_size_cols;
     const size_t blocks_num = blocks_Y * blocks_X;
@@ -284,7 +284,7 @@ void performTest_x2(const ProcessingMethod processing_method,
 
     Tensor input({ rows, cols }, itype);
     Tensor act_input({ rows, cols }, itype);
-    Tensor output({ rows, cols }, otype, true, true);
+    Tensor output({ rows, cols }, otype, true, true, NVTE_MXFP8_1D_SCALING);
     Tensor output_dbias({ cols }, itype);
 
     std::unique_ptr<OutputType[]> ref_output_c_rowwise = std::make_unique<OutputType[]>(rows * cols);
@@ -469,13 +469,15 @@ TEST_P(FusedCastMXFP8TestSuite, TestFusedCastMXFP8) {
         GTEST_SKIP();
     }
 
+    const bool rowwise = block_size.second != 1;
+    const bool colwise = block_size.first != 1;
     DACT_FUNC_SWITCH(dAct_type, OP,
         TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(input_type, InputType,
             TRANSFORMER_ENGINE_TYPE_SWITCH_FP8_ONLY(output_type, OutputType,
                 if (block_size.first == 1 || block_size.second == 1) {
                     performTest_x1<InputType, OutputType, OP>(
                         processing_method, matrix_size.first, matrix_size.second,
-                        block_size.first, block_size.second, fill_case);
+                        rowwise, colwise, fill_case);
                 } else {
                     performTest_x2<InputType, OutputType, OP>(
                         processing_method, matrix_size.first, matrix_size.second,

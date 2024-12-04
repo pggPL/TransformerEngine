@@ -204,16 +204,16 @@ Tensor::Tensor(const NVTEShape &shape, const DType type,
       cudaMemset(dptr_rowwise, 0, total_size);
       cpu_data_rowwise_ = std::make_unique<unsigned char[]>(total_size);
       std::fill_n(cpu_data_rowwise_.get(), total_size, 0);
-      tensor_.set_rowwise_data(dptr_rowwise, type, shape);
     }
     if (columnwise) {
       cudaMalloc((void**)&dptr_columnwise, total_size);  // NOLINT(*)
       cudaMemset(dptr_columnwise, 0, total_size);
       cpu_data_columnwise_ = std::make_unique<unsigned char[]>(total_size);
       std::fill_n(cpu_data_columnwise_.get(), total_size, 0);
-      tensor_.set_columnwise_data(dptr_columnwise, type, columnwise_shape);
     }
   }
+  tensor_.set_rowwise_data(dptr_rowwise, type, shape);
+  tensor_.set_columnwise_data(dptr_columnwise, type, columnwise_shape);
 
   if (isFp8Type(type)) {
     if (is_tensor_scaling(scaling_mode)) {

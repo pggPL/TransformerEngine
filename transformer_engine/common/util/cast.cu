@@ -123,11 +123,11 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
   }
 
   // The destination shared memory buffer of a bulk tensor operation should be 128 e8m0_t aligned
-  __shared__ alignas(16) IType in_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
-  __shared__ alignas(16) IType act_in_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
-  __shared__ alignas(16)
+  __shared__ alignas(128) IType in_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
+  __shared__ alignas(128) IType act_in_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
+  __shared__ alignas(128)
       OType out_rowwise_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
-  __shared__ alignas(16)
+  __shared__ alignas(128)
       OType out_colwise_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
 
   constexpr int shmem_buff_size = sizeof(in_sh) / MXFP8_BUFFERS_NUM;
@@ -687,8 +687,8 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
   const float scale = (scale_ptr != nullptr) ? *scale_ptr : 1;
 
   // The destination shared memory buffer of a bulk tensor operation should be 128-byte aligned
-  __shared__ alignas(16) IType in_sh[SHMEM_BUFFERS][SHMEM_DIM];
-  __shared__ alignas(16) OType out_sh[SHMEM_BUFFERS][SHMEM_DIM];
+  __shared__ alignas(128) IType in_sh[SHMEM_BUFFERS][SHMEM_DIM];
+  __shared__ alignas(128) OType out_sh[SHMEM_BUFFERS][SHMEM_DIM];
 
   constexpr int transaction_size_IN = sizeof(in_sh) / SHMEM_BUFFERS;
   constexpr int transaction_size_OUT = sizeof(out_sh) / SHMEM_BUFFERS;
@@ -1212,9 +1212,9 @@ void quantize_helper(const NVTETensor input,
   auto dbias_tensor = reinterpret_cast<Tensor*>(dbias);
   auto workspace_tensor = reinterpret_cast<Tensor*>(workspace);
 
-  NVTE_CHECK(output_tensor->has_data(),
-             "Quantizing in only the columnwise direction not supported yet!");
   if (is_tensor_scaling(output_tensor->scaling_mode)) {
+    NVTE_CHECK(output_tensor->has_data(),
+               "Quantizing in only the columnwise direction not supported yet!");
     if (!output_tensor->has_columnwise_data()) {
       fp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(
           input_tensor,

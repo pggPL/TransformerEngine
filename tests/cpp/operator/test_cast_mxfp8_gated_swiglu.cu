@@ -169,8 +169,8 @@ void performTest_x1(const size_t rows,
     DType otype = TypeInfo<OType>::dtype;
 
     bool rowwise = false, colwise = false;
-    if (block_size_rows == 32 && block_size_cols == 1) rowwise = true;
-    if (block_size_rows == 1 && block_size_cols == 32) colwise = true;
+    if (block_size_rows == 1 && block_size_cols == 32) rowwise = true;
+    if (block_size_rows == 32 && block_size_cols == 1) colwise = true;
     NVTE_CHECK(rowwise || colwise);
 
     const size_t blocks_Y = (rows + block_size_rows - 1) / block_size_rows;
