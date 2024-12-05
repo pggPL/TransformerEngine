@@ -246,7 +246,7 @@ class Tensor {
   void to_cpu() const;
   void from_cpu() const;
   void set_scale(float scale);
-  void set_scale_inv();
+  void set_scale_inv(float scale_inv);
   void shareFP8Meta(const Tensor &other);
 
  private:
