@@ -15,7 +15,7 @@ from ..cpp_extensions.cast import cast_to_fp8
 from ..fp8 import DelayedScalingRecipeState, FP8GlobalStateManager
 from ..utils import devices_match, non_tn_fp8_gemm_supported
 
-from ._internal.float8_tensor_base import MXFP8TensorBase, _FromMXFP8Func
+from ._internal.mxfp8_tensor_base import MXFP8TensorBase, _FromMXFP8Func
 from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
 
 aten = torch.ops.aten

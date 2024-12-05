@@ -155,6 +155,9 @@ std::pair<TensorWrapper, py::object> Float8Quantizer::create_tensor(
   return {std::move(tensor), std::move(ret)};
 }
 
+MXFP8Quantizer::MXFP8Quantizer(const py::handle& quantizer) : Quantizer(quantizer) {
+  this->dtype = quantizer.attr("dtype").cast<DType>();
+}
 
 void MXFP8Quantizer::set_quantization_params(TensorWrapper* tensor) const {
   auto rowwise_data = tensor->get_rowwise_data();
