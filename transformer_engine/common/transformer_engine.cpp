@@ -279,26 +279,17 @@ float *nvte_tensor_scale(const NVTETensor tensor) {
 float *nvte_tensor_scale_inv(const NVTETensor tensor) {
   if (tensor == nullptr) return nullptr;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
-  if (transformer_engine::is_tensor_scaling(t.scaling_mode))
-    NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kFloat32,
-               "Tensor's inverse of scale must have Float32 type!");
-  else
-    NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kByte ||
-               t.scale_inv.dtype == transformer_engine::DType::kFloat8E8M0,
-               "Tensor's inverse of scale must have Byte type!");
   return reinterpret_cast<float *>(t.scale_inv.dptr);
 }
 
 void *nvte_tensor_columnwise_scale_inv(const NVTETensor tensor) {
   if (tensor == nullptr) return nullptr;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
-  NVTE_CHECK(t.columnwise_scale_inv.dtype == transformer_engine::DType::kByte ||
-             t.columnwise_scale_inv.dtype == transformer_engine::DType::kFloat8E8M0,
-             "Tensor's inverse of scale must have Byte type!");
   return t.columnwise_scale_inv.dptr;
 }
 
 NVTEShape nvte_tensor_scale_inv_shape(const NVTETensor tensor) {
+  if (tensor == nullptr) return { nullptr, 0 };
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   NVTEShape ret;
   ret.data = t.scale_inv.shape.data();
