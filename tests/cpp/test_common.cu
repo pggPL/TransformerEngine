@@ -687,7 +687,7 @@ void fillCase_special(Tensor *t) {
       }
     });
   }
-  t->set_scale_inv();
+  t->set_scale_inv(1.0);
   t->from_cpu();
 }
 
@@ -719,7 +719,10 @@ void setRandomScale(Tensor *t) {
 }
 
 void setRandomScaleInv(Tensor *t) {
-  t->set_scale_inv();
+  static std::mt19937 gen(12345);
+  std::uniform_real_distribution<> dis(-2.0, 1.0);
+  const float scale_inv = dis(gen);
+  t->set_scale_inv(scale_inv);
 }
 
 bool isFp8Type(DType type) {
