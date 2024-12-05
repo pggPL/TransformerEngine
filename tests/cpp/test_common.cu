@@ -351,7 +351,7 @@ void Tensor::set_scale(float scale) {
   }
 }
 
-void Tensor::set_scale_inv() {
+void Tensor::set_scale_inv(float scale_inv) {
   if (isFp8Type(dtype())) {
     if (rowwise_) {
       NVTE_CHECK(rowwise_scale_inv_cpu_data_);

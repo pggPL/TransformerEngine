@@ -126,8 +126,8 @@ class Tensor {
     if (tensor_.columnwise_dptr()){
       cudaFree(tensor_.columnwise_dptr());
     }
-    if (tensor_.columnwise_scale_inv()){
-      cudaFree(tensor_.columnwise_scale_inv());
+    if (tensor_.get_columnwise_scale_inv().data_ptr != nullptr){
+      cudaFree(tensor_.get_columnwise_scale_inv().data_ptr);
     }
   }
 
@@ -183,12 +183,6 @@ class Tensor {
     NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
     NVTE_CHECK(columnwise_, "Tensor does not have columnwise data!");
     return reinterpret_cast<T *>(cpu_data_columnwise_.get());
-  }
-
-  template <typename T>
-  T *columnwise_cpu_dptr() const {
-    NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
-    return reinterpret_cast<T *>(columnwise_cpu_data_.get());
   }
 
   float amax() const {
