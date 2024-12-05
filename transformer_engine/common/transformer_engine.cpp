@@ -32,6 +32,8 @@ std::string to_string(const DType type) {
       return "Float8E4M3";
     case DType::kFloat8E5M2:
       return "Float8E5M2";
+    case DType::kFloat8E8M0:
+      return "Float8E8M0";
     case DType::kInt32:
       return "Int32";
     case DType::kInt64:
@@ -281,7 +283,8 @@ float *nvte_tensor_scale_inv(const NVTETensor tensor) {
     NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kFloat32,
                "Tensor's inverse of scale must have Float32 type!");
   else
-    NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kByte,
+    NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kByte ||
+               t.scale_inv.dtype == transformer_engine::DType::kFloat8E8M0,
                "Tensor's inverse of scale must have Byte type!");
   return reinterpret_cast<float *>(t.scale_inv.dptr);
 }
@@ -289,7 +292,8 @@ float *nvte_tensor_scale_inv(const NVTETensor tensor) {
 void *nvte_tensor_columnwise_scale_inv(const NVTETensor tensor) {
   if (tensor == nullptr) return nullptr;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
-  NVTE_CHECK(t.columnwise_scale_inv.dtype == transformer_engine::DType::kByte,
+  NVTE_CHECK(t.columnwise_scale_inv.dtype == transformer_engine::DType::kByte ||
+             t.columnwise_scale_inv.dtype == transformer_engine::DType::kFloat8E8M0,
              "Tensor's inverse of scale must have Byte type!");
   return t.columnwise_scale_inv.dptr;
 }
