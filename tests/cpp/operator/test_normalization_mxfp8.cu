@@ -90,7 +90,7 @@ void dequantize_2x(Tensor& input, Tensor& output)
 {
   input.to_cpu();
   auto scaling_mode = input.scaling_mode();
-  assert(input.shape().ndim == 2);
+  assert(input.rowwise_shape().ndim == 2);
   assert(input.columnwise_shape().ndim == 2);
 
   dequantize_1x_kernel(input.rowwise_cpu_dptr<InputType>(),
