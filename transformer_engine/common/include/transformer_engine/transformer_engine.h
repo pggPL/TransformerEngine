@@ -120,6 +120,14 @@ void nvte_destroy_tensor(NVTETensor tensor);
  */
 void *nvte_tensor_data(const NVTETensor tensor);
 
+/*! \brief Get a raw pointer to the tensor's data.
+ *
+ *  \param[in] tensor Tensor.
+ *
+ *  \return A raw pointer to tensor's data.
+ */
+void *nvte_tensor_columnwise_data(const NVTETensor tensor);
+
 /*! \brief Get a tensor's data shape.
  *
  *  \param[in] tensor Tensor.
@@ -127,6 +135,14 @@ void *nvte_tensor_data(const NVTETensor tensor);
  *  \return A shape of the input tensor.
  */
 NVTEShape nvte_tensor_shape(const NVTETensor tensor);
+
+/*! \brief Get a tensor's data shape.
+ *
+ *  \param[in] tensor Tensor.
+ *
+ *  \return A shape of the input tensor.
+ */
+NVTEShape nvte_tensor_columnwise_shape(const NVTETensor tensor);
 
 /*! \brief Get a tensor's number of dimensions.
  *
@@ -452,6 +468,15 @@ class TensorWrapper {
     return nvte_tensor_shape(tensor_);
   }
 
+  /*! \brief Get the shape of this TensorWrapper.
+   *
+   *  \return Shape of this TensorWrapper.
+   */
+  const NVTEShape columnwise_shape() const noexcept {
+    if (tensor_ == nullptr) return NVTEShape{nullptr, 0};
+    return nvte_tensor_columnwise_shape(tensor_);
+  }
+
   /*! \brief Get the size of this TensorWrapper in the given dimension.
    *
    *  \param[in] size_t Dimension index.
@@ -518,6 +543,15 @@ class TensorWrapper {
   void *dptr() const noexcept {
     if (tensor_ == nullptr) return nullptr;
     return nvte_tensor_data(tensor_);
+  }
+
+  /*! \brief Get a raw pointer to the tensor's data.
+   *
+   *  \return A raw pointer to tensor's data.
+   */
+  void *columnwise_dptr() const noexcept {
+    if (tensor_ == nullptr) return nullptr;
+    return nvte_tensor_columnwise_data(tensor_);
   }
 
   /*! \brief Get a pointer to the tensor's amax data.

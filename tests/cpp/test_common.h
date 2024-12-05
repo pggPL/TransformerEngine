@@ -120,6 +120,15 @@ class Tensor {
     if (tensor_.dptr() != nullptr) {
       cudaFree(tensor_.dptr());
     }
+    if (tensor_.scale_inv()) {
+      cudaFree(tensor_.scale_inv());
+    }
+    if (tensor_.columnwise_dptr()){
+      cudaFree(tensor_.columnwise_dptr());
+    }
+    if (tensor_.columnwise_scale_inv()){
+      cudaFree(tensor_.columnwise_scale_inv());
+    }
   }
 
   NVTETensor data() const noexcept {
@@ -174,6 +183,12 @@ class Tensor {
     NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
     NVTE_CHECK(columnwise_, "Tensor does not have columnwise data!");
     return reinterpret_cast<T *>(cpu_data_columnwise_.get());
+  }
+
+  template <typename T>
+  T *columnwise_cpu_dptr() const {
+    NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
+    return reinterpret_cast<T *>(columnwise_cpu_data_.get());
   }
 
   float amax() const {
@@ -237,7 +252,7 @@ class Tensor {
   void to_cpu() const;
   void from_cpu() const;
   void set_scale(float scale);
-  void set_scale_inv(float scale_inv);
+  void set_scale_inv();
   void shareFP8Meta(const Tensor &other);
 
  private:

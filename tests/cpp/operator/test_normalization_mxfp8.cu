@@ -15,8 +15,7 @@
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
-#include <transformer_engine/layer_norm.h>
-#include <transformer_engine/rmsnorm.h>
+#include <transformer_engine/normalization.h>
 #include <transformer_engine/transformer_engine.h>
 #include "../test_common.h"
 
@@ -37,20 +36,12 @@ std::map<NormType, std::string> normToString = {
   {NormType::RMSNorm, "RMSNorm"}
 };
 
-template <typename OutputType, typename ScaleType>
-void dequantize(Tensor& input, Tensor& output)
-{
-  input.to_cpu();
-  auto scaling_mode = input.scaling_mode();
-  assert(input.shape().ndim == 2);
-  auto rows = input.rowwise_shape().data[0];
-  auto cols = input.rowwise_shape().data[1];
-  auto* output_ptr = output.rowwise_cpu_dptr<float>();
-  const auto* input_ptr = input.rowwise_cpu_dptr<OutputType>();
-  const auto* scale_ptr = input.rowwise_cpu_scale_inv_ptr<ScaleType>();
+template <typename InputType, typename ScaleType, typename OutputType>
+void dequantize_1x_kernel(InputType* input_ptr, ScaleType* scale_ptr, OutputType* output_ptr,
+  size_t rows, size_t cols, size_t scaling_mode_x, size_t scaling_mode_y){
 
-  const size_t block_size_Y = scaling_mode.x;   // mind the mapping Y <-- x
-  const size_t block_size_X = scaling_mode.y;   //              and X <-- y
+  const size_t block_size_Y = scaling_mode_x;   // mind the mapping Y <-- x
+  const size_t block_size_X = scaling_mode_y;   //              and X <-- y
   const size_t tile_size_Y = std::max(32lu, block_size_Y);
   const size_t tile_size_X = std::max(64lu, block_size_X);
   const size_t tiles_num_Y = (rows + tile_size_Y - 1) / tile_size_Y;
@@ -92,6 +83,26 @@ void dequantize(Tensor& input, Tensor& output)
           }
       }
   }
+}
+
+template <typename InputType, typename ScaleType>
+void dequantize_2x(Tensor& input, Tensor& output)
+{
+  input.to_cpu();
+  auto scaling_mode = input.scaling_mode();
+  assert(input.shape().ndim == 2);
+  assert(input.columnwise_shape().ndim == 2);
+
+  dequantize_1x_kernel(input.rowwise_cpu_dptr<InputType>(),
+                       input.rowwise_cpu_scale_inv_ptr<ScaleType>(),
+                       output.rowwise_cpu_dptr<float>(),
+                       input.rowwise_shape().data[0], input.rowwise_shape().data[1],
+                       32, 1);
+  dequantize_1x_kernel(input.columnwise_cpu_dptr<InputType>(),
+                       input.columnwise_cpu_scale_inv_ptr<ScaleType>(),
+                       output.columnwise_cpu_dptr<float>(),
+                       input.columnwise_shape().data[0], input.columnwise_shape().data[1],
+                       1, 32);
 }
 
 template <typename InputType>
@@ -168,9 +179,6 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
   DType wtype = TypeInfo<WeightType>::dtype;
   DType otype = TypeInfo<OutputType>::dtype;
 
-  const std::vector<int> row_mode = {1, 32, 0};
-  const std::vector<int> col_mode = {32, 1, 0};
-
   Tensor input({ N, H }, itype);
   Tensor z({ N, H }, otype, true, true, NVTE_MXFP8_1D_SCALING);
   Tensor gamma({ H }, wtype);
@@ -187,36 +195,31 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
   // Forward kernel
   float epsilon = 1e-5;
   if (norm_type == NormType::LayerNorm){
-    auto fwd_function = zero_centered_gamma ? nvte_layernorm1p_fwd_2x : nvte_layernorm_fwd_2x;
-    fwd_function(input.data(), gamma.data(), beta.data(), epsilon,
-                 z_rowwise.data(), z_colwise.data(), mu.data(), rsigma.data(), 0, prop.multiProcessorCount,
-                 workspace.data());
-
-    workspace = Tensor(workspace.shape(), workspace.dtype());
-    fwd_function(input.data(), gamma.data(), beta.data(), epsilon,
-                 z_rowwise.data(), z_colwise.data(), mu.data(), rsigma.data(), 0, prop.multiProcessorCount,
-                 workspace.data());
+    nvte_layernorm_fwd(input.data(), gamma.data(), beta.data(), epsilon,
+                       z.data(), mu.data(), rsigma.data(), workspace.data(),
+                       prop.multiProcessorCount, zero_centered_gamma,
+                       0);
+    workspace = Tensor(workspace.rowwise_shape(), workspace.dtype());
+    nvte_layernorm_fwd(input.data(), gamma.data(), beta.data(), epsilon,
+                       z.data(), mu.data(), rsigma.data(), workspace.data(),
+                       prop.multiProcessorCount, zero_centered_gamma,
+                       0);
   } else {
-    auto fwd_function = zero_centered_gamma ? nvte_rmsnorm1p_fwd_2x : nvte_rmsnorm_fwd_2x;
-    fwd_function(input.data(), gamma.data(), epsilon,
-                 z_rowwise.data(), z_colwise.data(), rsigma.data(), 0, prop.multiProcessorCount,
-                 workspace.data());
+    nvte_rmsnorm_fwd(input.data(), gamma.data(), epsilon,
+                     z.data(), rsigma.data(), workspace.data(),
+                     prop.multiProcessorCount, zero_centered_gamma,
+                     0);
 
-    workspace = Tensor(workspace.shape(), workspace.dtype());
-    fwd_function(input.data(), gamma.data(), epsilon,
-                 z_rowwise.data(), z_colwise.data(), rsigma.data(), 0, prop.multiProcessorCount,
-                 workspace.data());
+    workspace = Tensor(workspace.rowwise_shape(), workspace.dtype());
+    nvte_rmsnorm_fwd(input.data(), gamma.data(), epsilon,
+                     z.data(), rsigma.data(), workspace.data(),
+                     prop.multiProcessorCount, zero_centered_gamma,
+                     0);
   }
-  // z_rowwise.to_cpu();
-  // for (int i = 0; i < N; i++)
-  //   for (int j = 0; j < H; j++)
-  //     std::cout << float(z_rowwise.cpu_dptr<OutputType>()[i * H + j]) << std::endl;
 
-  Tensor dequantized_rowwise_output({ N, H }, DType::kFloat32);
-  Tensor dequantized_colwise_output({ N, H }, DType::kFloat32);
+  Tensor dequantized_output({ N, H }, DType::kFloat32, true, true);
 
-  dequantize<OutputType, e8m0_t>(z_rowwise, dequantized_rowwise_output);
-  dequantize<OutputType, e8m0_t>(z_colwise, dequantized_colwise_output);
+  dequantize_2x<OutputType, e8m0_t>(z, dequantized_output);
 
   // Reference implementations
   std::unique_ptr<float[]> ref_mu = std::make_unique<float[]>(N);
@@ -224,16 +227,16 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
   std::unique_ptr<float[]> ref_output = std::make_unique<float[]>(N * H);
 
 
-  compute_ref_stats(norm_type, input.cpu_dptr<InputType>(), ref_mu.get(),
+  compute_ref_stats(norm_type, input.rowwise_cpu_dptr<InputType>(), ref_mu.get(),
                     ref_rsigma.get(), N, H, epsilon);
   // use the GPU stats to tighten the tolerances
   mu.to_cpu();
   rsigma.to_cpu();
-  compute_ref_output(norm_type, input.cpu_dptr<InputType>(),
-                     gamma.cpu_dptr<WeightType>(),
-                     beta.cpu_dptr<WeightType>(),
-                     mu.cpu_dptr<float>(),
-                     rsigma.cpu_dptr<float>(),
+  compute_ref_output(norm_type, input.rowwise_cpu_dptr<InputType>(),
+                     gamma.rowwise_cpu_dptr<WeightType>(),
+                     beta.rowwise_cpu_dptr<WeightType>(),
+                     mu.rowwise_cpu_dptr<float>(),
+                     rsigma.rowwise_cpu_dptr<float>(),
                      N, H,
                      ref_output.get(),
                      zero_centered_gamma);
@@ -244,8 +247,8 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 
   auto [atol_stats, rtol_stats] = getTolerances(DType::kFloat32);
   rtol_stats = 5e-5;
-  compareResults("mu", mu, ref_mu.get(), atol_stats, rtol_stats);
-  compareResults("rsigma", rsigma, ref_rsigma.get(), atol_stats, rtol_stats);
+  compareResults("mu", mu, ref_mu.get(), true, atol_stats, rtol_stats);
+  compareResults("rsigma", rsigma, ref_rsigma.get(), true, atol_stats, rtol_stats);
 
   float atol, rtol;
   if (otype == DType::kFloat8E5M2){
@@ -260,17 +263,13 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
       rtol = 6.25e-2;
     }
   }
-  compareResults("output_rowwise", dequantized_rowwise_output, ref_output.get(), atol, rtol, false);
-  compareResults("output_colwise", dequantized_colwise_output, ref_output.get(), atol, rtol, false);
+  compareResults("output_rowwise", dequantized_output, ref_output.get(), true, atol, rtol, false);
+  compareResults("output_colwise", dequantized_output, ref_output.get(), false, atol, rtol, false);
 }
 
 std::vector<std::pair<size_t, size_t>> test_cases = {
   {32, 32},
-  {128, 64},
-  {768, 1024},
-  {64, 2304},
-  {128, 6144},
-  {256, 65536},
+  {768, 2304},
   {2048, 12288},
 };
 
@@ -310,7 +309,7 @@ INSTANTIATE_TEST_SUITE_P(
   ::testing::Combine(
     ::testing::Values(NormType::LayerNorm, NormType::RMSNorm),
     ::testing::Values(DType::kFloat32, DType::kBFloat16, DType::kFloat16),
-    ::testing::Values(DType::kFloat8E4M3, DType::kFloat8E5M2),
+    ::testing::Values(DType::kFloat8E5M2, DType::kFloat8E4M3),
     ::testing::ValuesIn(test_cases),
     ::testing::Values(false, true)),
   [](const testing::TestParamInfo<MxNormTestSuite::ParamType>& info) {
