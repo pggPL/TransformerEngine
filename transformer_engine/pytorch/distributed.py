@@ -20,7 +20,7 @@ from torch.distributed.fsdp._traversal_utils import _get_fsdp_states_with_module
 from .utils import safely_set_viewless_tensor_data
 from .constants import dist_group_type
 from .fp8 import FP8GlobalStateManager
-from .tensor.float8_tensor import Float8Quantizer, Float8Tensor
+from .tensor.float8_tensor import Quantizer, Float8Quantizer, Float8Tensor
 from .tensor.quantized_tensor import QuantizedTensor
 from .tensor._internal.float8_tensor_base import Float8TensorBase
 

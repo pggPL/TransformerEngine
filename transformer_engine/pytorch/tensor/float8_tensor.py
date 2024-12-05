@@ -22,7 +22,6 @@ class Float8Quantizer(Quantizer):
     scale: torch.Tensor
     amax: torch.Tensor
     dtype: TE_DType
-    single_usage_sufficient: bool = True
 
     def __init__(
         self,
@@ -53,7 +52,7 @@ class Float8Quantizer(Quantizer):
             src = src.contiguous()
 
         # Launch cast kernel
-        tex.quantize(src, self, dst);
+        tex.quantize(src, self, dst)
 
         # Update FP8 dtype
         dst._fp8_dtype = self.dtype

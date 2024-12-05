@@ -694,14 +694,21 @@ class RecipeState(abc.ABC):
         num_quantizers: int = 1,
         device: Optional[torch.device] = None,
     ) -> RecipeState:
-        if isinstance(recipe, DelayedScaling):
-            return DelayedScalingRecipeState(
-                recipe,
-                mode=mode,
-                num_quantizers=num_quantizers,
-                device=device,
-            )
-        raise ValueError("{recipe.__class__.__name__} is not supported")
+
+        RecipeState = None
+        if recipe.delayed():
+            RecipeState = DelayedScalingRecipeState
+        elif recipe.block():
+            RecipeState = BlockScalingRecipeState
+        else:
+            raise ValueError("{recipe.__class__.__name__} is not supported")
+
+        return RecipeState(
+            recipe,
+            mode=mode,
+            num_quantizers=num_quantizers,
+            device=device,
+        )
 
     @abc.abstractmethod
     def make_quantizers(self) -> list:
@@ -741,8 +748,40 @@ class DelayedScalingRecipeState(RecipeState):
         )
 
     def make_quantizers(self) -> list:
+        # TODO(ksivamani); Find better design for this, adding here to avoid circular import.
         from .tensor.float8_tensor import Float8Quantizer
         return [
             Float8Quantizer(self.scale[i], self.amax_history[0][i].reshape((1,)), self.dtype)
             for i in range(self.num_quantizers)
+        ]
+
+
+class BlockScalingRecipeState(RecipeState):
+
+    recipe: BlockScaling
+    mode: str
+    dtype: tex.DType
+
+    def __init__(
+        self,
+        recipe: BlockScaling,
+        *,
+        mode: str,
+        num_quantizers: int = 1,
+        device: Optional[torch.device] = None,
+    ) -> None:
+        self.recipe = recipe
+        self.mode = mode
+        self.num_quantizers = num_quantizers
+        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
+
+        # Allocate buffers
+        if device is None:
+            device = torch.device("cuda")
+
+    def make_quantizers(self) -> list:
+        # TODO(ksivamani); Find better design for this, adding here to avoid circular import.
+        from .tensor.mxfp8_tensor import MXFP8Quantizer
+        return [
+            MXFP8Quantizer(self.dtype) for i in range(self.num_quantizers)
         ]

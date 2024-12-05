@@ -20,10 +20,8 @@ import torch.nn.functional as F
 import transformer_engine_torch as tex
 
 from ._common import _ParameterInitMeta
-from ...common.recipe import DelayedScaling
 from ..fp8 import (
     FP8GlobalStateManager,
-    DelayedScalingRecipeState,
     RecipeState,
 )
 from ..distributed import (
@@ -32,13 +30,10 @@ from ..distributed import (
     in_fp8_activation_recompute_phase,
     _fsdp_gather_tensors,
 )
-from ..cpp_extensions import (
-    cast_to_fp8,
-)
 from ..constants import dist_group_type
-from ..tensor import Float8Tensor, QuantizedTensor, Quantizer
+from ..tensor import QuantizedTensor, Quantizer
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
-from transformer_engine.common.recipe import DelayedScaling, Recipe
+from transformer_engine.common.recipe import Recipe
 
 __all__ = ["initialize_ub", "destroy_ub"]
 
@@ -535,7 +530,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         """Init scales and amaxes for fwd | bwd."""
         fp8_meta_tensor_key = "scaling_fwd" if fwd else "scaling_bwd"
 
-        if isinstance(recipe, DelayedScaling):
+        if recipe.delayed():
             if self.fp8_meta_tensors_initialized:
                 # Handle changed amax history size.
                 self.adjust_amax_history_length(recipe.amax_history_len, fwd=fwd)
@@ -553,6 +548,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             mode=("forward" if fwd else "backward"),
             num_quantizers=num_fp8_tensors,
         )
+
         self.fp8_meta[fp8_meta_tensor_key] = recipe_state
         self.quantizers[fp8_meta_tensor_key] = recipe_state.make_quantizers()
 
