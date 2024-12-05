@@ -177,40 +177,6 @@ NVTETensor nvte_create_tensor(NVTEScalingMode scaling_mode) {
   return ret;
 }
 
-NVTETensor nvte_create_tensor_2x(void *dptr, const NVTEShape shape, void *columnwise_dptr,
-                                 const NVTEShape columnwise_shape, const NVTEDType dtype,
-                                 void *scale_inv, const NVTEShape scale_inv_shape,
-                                 void *columnwise_scale_inv,
-                                 const NVTEShape columnwise_scale_inv_shape,
-                                 const NVTEDType scale_inv_dtype, NVTEScalingMode scaling_mode) {
-  transformer_engine::Tensor *ret = new transformer_engine::Tensor;
-
-  ret->data.dptr = dptr;
-  ret->data.shape = std::vector<size_t>(shape.data, shape.data + shape.ndim);
-  ret->data.dtype = static_cast<transformer_engine::DType>(dtype);
-
-  ret->columnwise_data.dptr = columnwise_dptr;
-  ret->columnwise_data.shape =
-      std::vector<size_t>(columnwise_shape.data, columnwise_shape.data + columnwise_shape.ndim);
-  ret->columnwise_data.dtype = static_cast<transformer_engine::DType>(dtype);
-
-  ret->scale_inv.dptr = scale_inv;
-  ret->scale_inv.shape =
-      std::vector<size_t>(scale_inv_shape.data, scale_inv_shape.data + scale_inv_shape.ndim);
-  ret->scale_inv.dtype = static_cast<transformer_engine::DType>(scale_inv_dtype);
-
-  ret->columnwise_scale_inv.dptr = columnwise_scale_inv;
-  ret->columnwise_scale_inv.shape =
-      std::vector<size_t>(columnwise_scale_inv_shape.data,
-                          columnwise_scale_inv_shape.data + columnwise_scale_inv_shape.ndim);
-  ret->columnwise_scale_inv.dtype = static_cast<transformer_engine::DType>(scale_inv_dtype);
-
-  ret->scaling_mode = scaling_mode;
-  //TODO: add proper checks for tensor 2x2x
-  CheckScaleTensor(ret);
-  return ret;
-}
-
 void nvte_destroy_tensor(NVTETensor tensor) {
   if (tensor == nullptr) return;
   auto *t = reinterpret_cast<transformer_engine::Tensor *>(tensor);
@@ -218,11 +184,13 @@ void nvte_destroy_tensor(NVTETensor tensor) {
 }
 
 NVTEDType nvte_tensor_type(const NVTETensor tensor) {
+  if (tensor == nullptr) return kNVTEFloat32;
   return static_cast<NVTEDType>(
       reinterpret_cast<const transformer_engine::Tensor *>(tensor)->dtype());
 }
 
 NVTEShape nvte_tensor_shape(const NVTETensor tensor) {
+  if (tensor == nullptr) return { nullptr, 0 };
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   NVTEShape ret;
   if (t.has_data()) {
@@ -241,6 +209,7 @@ NVTEShape nvte_tensor_shape(const NVTETensor tensor) {
 }
 
 NVTEShape nvte_tensor_columnwise_shape(const NVTETensor tensor) {
+  if (tensor == nullptr) return { nullptr, 0 };
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   NVTEShape ret;
   ret.data = t.columnwise_data.shape.data();
@@ -249,17 +218,20 @@ NVTEShape nvte_tensor_columnwise_shape(const NVTETensor tensor) {
 }
 
 size_t nvte_tensor_ndim(const NVTETensor tensor) {
+  if (tensor == nullptr) return 0;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   return t.data.shape.size();
 }
 
 size_t nvte_tensor_size(const NVTETensor tensor, const size_t dim) {
+  if (tensor == nullptr) return 0;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   NVTE_CHECK(dim >= 0 && dim < t.data.shape.size(), "Invalid dimension index: ", dim);
   return t.data.shape[dim];
 }
 
 size_t nvte_tensor_numel(const NVTETensor tensor) {
+  if (tensor == nullptr) return 0;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   size_t numel = 1;
   for (auto size : t.data.shape) {
@@ -269,21 +241,25 @@ size_t nvte_tensor_numel(const NVTETensor tensor) {
 }
 
 size_t nvte_tensor_element_size(const NVTETensor tensor) {
+  if (tensor == nullptr) return sizeof(float);
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   return transformer_engine::typeToSize(t.data.dtype);
 }
 
 void *nvte_tensor_data(const NVTETensor tensor) {
+  if (tensor == nullptr) return nullptr;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   return t.data.dptr;
 }
 
 void *nvte_tensor_columnwise_data(const NVTETensor tensor) {
+  if (tensor == nullptr) return nullptr;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   return t.columnwise_data.dptr;
 }
 
 float *nvte_tensor_amax(const NVTETensor tensor) {
+  if (tensor == nullptr) return nullptr;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   NVTE_CHECK(t.amax.dtype == transformer_engine::DType::kFloat32,
              "Tensor's amax must have Float32 type!");
@@ -291,6 +267,7 @@ float *nvte_tensor_amax(const NVTETensor tensor) {
 }
 
 float *nvte_tensor_scale(const NVTETensor tensor) {
+  if (tensor == nullptr) return nullptr;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   NVTE_CHECK(t.scale.dtype == transformer_engine::DType::kFloat32,
              "Tensor's scale must have Float32 type!");
@@ -298,6 +275,7 @@ float *nvte_tensor_scale(const NVTETensor tensor) {
 }
 
 float *nvte_tensor_scale_inv(const NVTETensor tensor) {
+  if (tensor == nullptr) return nullptr;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   if (transformer_engine::is_tensor_scaling(t.scaling_mode))
     NVTE_CHECK(t.scale_inv.dtype == transformer_engine::DType::kFloat32,
@@ -309,6 +287,7 @@ float *nvte_tensor_scale_inv(const NVTETensor tensor) {
 }
 
 void *nvte_tensor_columnwise_scale_inv(const NVTETensor tensor) {
+  if (tensor == nullptr) return nullptr;
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   NVTE_CHECK(t.columnwise_scale_inv.dtype == transformer_engine::DType::kByte,
              "Tensor's inverse of scale must have Byte type!");
@@ -326,6 +305,10 @@ NVTEShape nvte_tensor_scale_inv_shape(const NVTETensor tensor) {
 void nvte_set_tensor_param(NVTETensor* tensor,
                            NVTETensorParam param_name,
                            const NVTEBasicTensor* param) {
+  NVTE_CHECK(tensor != nullptr,
+             "Tensor pointer can't be NULL.");
+  NVTE_CHECK(*tensor != nullptr,
+             "Tensor is not allocated.");
   auto &t = *reinterpret_cast<transformer_engine::Tensor *>(*tensor);
   switch (param_name) {
     case kNVTERowwiseData:
@@ -353,6 +336,11 @@ void nvte_set_tensor_param(NVTETensor* tensor,
 
 NVTEBasicTensor nvte_get_tensor_param(const NVTETensor tensor,
                                       NVTETensorParam param_name) {
+  if (tensor == nullptr) {
+    return {nullptr,
+            kNVTEFloat32,
+            {nullptr, 0}};
+  }
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   switch (param_name) {
     case kNVTERowwiseData:
