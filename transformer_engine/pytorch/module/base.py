@@ -37,6 +37,7 @@ from ..cpp_extensions import (
 )
 from ..constants import dist_group_type
 from ..tensor import Float8Tensor, QuantizedTensor, Quantizer
+from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from transformer_engine.common.recipe import DelayedScaling, Recipe
 
 __all__ = ["initialize_ub", "destroy_ub"]
@@ -816,17 +817,15 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
     ) -> Tuple[Union[torch.Tensor, None], ...]:
         """Utility function for backward.
         Returns tuple in order (all optional/None based on training precion/recipe):
-            R1: gathered `grad_output` in higher precision.
-            R2: gathered `grad_output` in FP8.
-            R3: R2 transposed.
-            R4: bias gradient on R1.
+            R1: gathered `grad_output`.
+            R2: bias gradient on R1.
 
         """
         grad_output = grad_output.reshape((-1, grad_output.shape[-1]))
         grad_output = grad_output.contiguous()
         gather_grad_output = row_parallel_mode and ctx.sequence_parallel
 
-        # No-FP8 case: bgrad is fused with wgrad for this case.
+        # Non-FP8 case: bgrad is fused with wgrad for this case.
         if not ctx.fp8:
             if gather_grad_output:
                 if not ctx.ub_overlap_ag:
@@ -836,67 +835,35 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     grad_output = ctx.ub_obj_gradout.get_ubuf_output(1)
             return grad_output, None
 
-        # FP8 case with gather: unfused bgrad, cast, transpose for efficient gather
-        # TODO: Implement
+        # FP8 with all-gather: unfused bgrad, fused cast + transpose
         if gather_grad_output:
             if ctx.use_bias:
                 # TODO: We know it creates spike in memory usage, we should WAR that
                 grad_bias = grad_output.view(-1, grad_output.shape[-1]).sum(dim=0)
             else:
                 grad_bias = None
-            if quantizer.single_usage_sufficient:
-                if ctx.ub_overlap_ag:
-                    grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(0)
-                else:
-                    grad_output_c = torch.empty_like(grad_output, dtype=torch.uint8)
-                if not isinstance(grad_output, Float8Tensor):
-                    # grad_output_mat = quantizer(grad_output_mat,columnwise = False)
-                    cast_to_fp8(
-                        grad_output,
-                        ctx.fp8_meta["scaling_bwd"],
-                        tex.FP8BwdTensors.GRAD_OUTPUT1,
-                        fp8_dtype_backward,
-                        out=grad_output_c,
-                    )
-                else:
-                    grad_output_c = grad_output
-                if not ctx.ub_overlap_ag:
-                    grad_output_c, _ = gather_along_first_dim(grad_output_c, ctx.tp_group)
-                    if not isinstance(grad_output_c, Float8Tensor):
-                        grad_output_t = tex.fp8_transpose(grad_output_c, fp8_dtype_backward)
-                    else:
-                        grad_output_t = grad_output_c.transpose_2d()
-                else:
-                    grad_output_c = ctx.ub_obj_gradout.get_ubuf_output(1)
-                    grad_output_t = None
-
-
-                return grad_output, grad_output_c, grad_output_t, grad_bias
-            else:
-                # TODO: Figure out UB and write BF16 AG + cast/transpose
-                pass
-
-        # FP8 case without gather: cast, transpose, bgrad fused
-        if ctx.use_bias:
-            grad_output_mat_no_fp8 = grad_output
-            # TODO: This part is kind of stupid
-            if isinstance(grad_output, QuantizedTensor):
-                grad_output_mat_no_fp8 = grad_output.dequantize()
-            # TODO: Should check whether we do wgrad/dgrad or both to properly set
-            # rowwise/columnwise
-            grad_bias, grad_output = tex.bgrad_quantize(
-                grad_output_mat_no_fp8,
-                quantizer,
+            if ctx.ub_overlap_ag:
+                # TODO: Implement
+                raise NotImplementedError(
+                    "Overlapped tensor parallelism with Userbuffers is not yet supported"
+                )
+            grad_output, _ = gather_along_first_dim(
+                grad_output,
+                ctx.tp_group,
+                quantizer=quantizer,
             )
             return grad_output, grad_bias
-        else:
-            if isinstance(grad_output, QuantizedTensor):
-                return grad_output, None
+
+        # FP8 without all-gather: fused bgrad + cast + transpose
+        grad_bias = None
+        if ctx.use_bias:
+            if isinstance(grad_output, (QuantizedTensor, Float8TensorBase)):
+                grad_bias = grad_output.dequantize().view(-1, grad_output.shape[-1]).sum(dim=0)
             else:
-                # TODO: Should check whether we do wgrad/dgrad or both to properly set
-                # rowwise/columnwise
-                grad_output = quantizer(grad_output)
-            return grad_output, None
+                grad_bias, grad_output = tex.bgrad_quantize(grad_output, quantizer)
+        if not isinstance(grad_output, (QuantizedTensor, Float8TensorBase)):
+            grad_output = quantizer(grad_output)
+        return grad_output, grad_bias
 
     def register_parameter(self, name, param, **kwargs):
         """

@@ -411,27 +411,40 @@ class BasicLinear(BasicOperation):
 
         # Check input tensor
         x_local = input
-        x_is_quantized = isinstance(x_local, QuantizedTensor)
-        own_quantized_x = False
-        if with_quantized_compute and not x_is_quantized:
+        x = None
+        x_async = None
+        with_x_all_gather = tensor_parallel_mode == "column" and sequence_parallel
+        own_quantized_x_local = False
+        if with_quantized_compute:
             if input_quantizer is None:
                 raise ValueError("Missing quantizer for input tensor")
             input_quantizer.set_usage(rowwise=True)
-            x_local = input_quantizer(x_local)
-            own_quantized_x = True
-        elif not with_quantized_compute and x_is_quantized:
-            x_local = x_local.dequantize()
-        if not with_quantized_compute and x_local.dtype != dtype:
-            x_local = x_local.to(dtype=dtype)
-        x = x_local
-        x_async = None
-        if tensor_parallel_mode == "column" and sequence_parallel:
-            ### TODO Check
-            x, x_async = gather_along_first_dim(
-                x_local,
-                tensor_parallel_group,
-                async_op=False,  ### TODO Async
-            )
+            if with_x_all_gather:
+                input_quantizer.set_usage(columnwise=False)
+                x, x_async = gather_along_first_dim(
+                    x_local,
+                    tensor_parallel_group,
+                    async_op=True,
+                    quantizer=input_quantizer,
+                )
+            else:
+                if not isinstance(x_local, QuantizedTensor):
+                    x_local = input_quantizer(x_local)
+                    own_quantized_x_local = True
+                x = x_local
+        else:
+            if isinstance(x_local, QuantizedTensor):
+                x_local = x_local.dequantize()
+            if x_local.dtype != dtype:
+                x_local = x_local.to(dtype=dtype)
+            if with_x_all_gather:
+                x, x_async = gather_along_first_dim(
+                    x_local,
+                    tensor_parallel_group,
+                    async_op=True,
+                )
+            else:
+                x = x_local
 
         # Check weight tensor
         w = weight
@@ -451,13 +464,19 @@ class BasicLinear(BasicOperation):
         if y is None:
             if not with_quantized_compute:
                 output_quantizer = None
+            if tensor_parallel_mode == "row":
+                output_quantizer = None
         elif isinstance(y, QuantizedTensor):
             if not with_quantized_compute:
                 raise ValueError(
                     "Output tensor is quantized, but quantized compute is not enabled"
                 )
-            if output_quantizer is None:
-                assert False  ### TODO get quantizer from y
+            if tensor_parallel_mode == "row":
+                raise ValueError(
+                    "Output tensor is quantized, "
+                    "but row tensor parallelism does not support quantized output"
+                )
+            assert output_quantizer is not None  ### TODO Get quantizer from y
         else:
             output_quantizer = None
 
@@ -471,6 +490,10 @@ class BasicLinear(BasicOperation):
                 raise ValueError(
                     "Accumulating into output tensor is not supported with row tensor parallelism"
                 )
+
+        # Synchronize communication for input
+        _wait_async(x_async)
+        x_async = None
 
         # Perform GEMM
         y, _, _ = general_gemm(
@@ -487,7 +510,6 @@ class BasicLinear(BasicOperation):
 
         # Reduce tensor-parallel output if needed
         if tensor_parallel_mode == "row":
-            ### TODO Check
             if sequence_parallel:
                 y, _ = reduce_scatter_along_first_dim(y, tensor_parallel_group)
             else:
@@ -495,7 +517,7 @@ class BasicLinear(BasicOperation):
 
         # Configure input tensor for backward pass
         ### TODO Restore
-        # if own_quantized_x:
+        # if own_quantized_x_local:
         #     x_local.update_usage(rowwise_usage=False)
 
         # Detach input tensor if needed
@@ -597,28 +619,40 @@ class BasicLinear(BasicOperation):
 
         # Check grad output tensor
         dy_local = grad_output
-        dy_is_quantized = isinstance(dy_local, QuantizedTensor)
-        if with_quantized_compute and not dy_is_quantized:
+        dy = None
+        dy_async = None
+        with_dy_all_gather = tensor_parallel_mode == "row" and sequence_parallel
+        if with_quantized_compute:
             if grad_output_quantizer is None:
                 raise ValueError("Missing quantizer for grad output tensor")
             grad_output_quantizer.set_usage(
                 rowwise=input_requires_grad,
                 columnwise=weight_requires_grad,
             )
-            dy_local = grad_output_quantizer(dy_local)
-        elif not with_quantized_compute and dy_is_quantized:
-            dy_local = dy_local.dequantize()
-        if not with_quantized_compute and dy_local.dtype != dtype:
-            dy_local = dy_local.to(dtype=dtype)
-        dy = dy_local
-        dy_async = None
-        if tensor_parallel_mode == "row" and sequence_parallel:
-            ### TODO Check
-            dy, dy_async = gather_along_first_dim(
-                dy_local,
-                tensor_parallel_group,
-                async_op=False,  ### TODO Async
-            )
+            if with_dy_all_gather:
+                dy, dy_async = gather_along_first_dim(
+                    dy_local,
+                    tensor_parallel_group,
+                    async_op=True,
+                    quantizer=grad_output_quantizer,
+                )
+            else:
+                if not isinstance(dy_local, QuantizedTensor):
+                    dy_local = grad_output_quantizer(dy_local)
+                dy = dy_local
+        else:
+            if isinstance(dy_local, QuantizedTensor):
+                dy_local = dy_local.dequantize()
+            if dy_local.dtype != dtype:
+                dy_local = dy_local.to(dtype=dtype)
+            if with_dy_all_gather:
+                dy, dy_async = gather_along_first_dim(
+                    dy_local,
+                    tensor_parallel_group,
+                    async_op=True,
+                )
+            else:
+                dy = dy_local
 
         # Check input tensor
         x = None
@@ -627,24 +661,35 @@ class BasicLinear(BasicOperation):
             if input is None:
                 raise ValueError("Input tensor is required to compute weight grad")
             x_local = input
-            x_is_quantized = isinstance(x_local, QuantizedTensor)
-            if with_quantized_compute and not x_is_quantized:
+            with_x_all_gather = tensor_parallel_mode == "column" and sequence_parallel
+            if with_quantized_compute:
                 if input_quantizer is None:
                     raise ValueError("Missing quantizer for input tensor")
-                input_quantizer.set_usage(columnwise=True)
-                x_local = input_quantizer(x_local)
-            elif not with_quantized_compute and x_is_quantized:
-                x_local = x_local.dequantize()
-            if not with_quantized_compute and x_local.dtype != dtype:
-                x_local = x_local.to(dtype=dtype)
-            x = x_local
-            if tensor_parallel_mode == "column" and sequence_parallel:
-                ### TODO Check
-                x, x_async = gather_along_first_dim(
-                    x_local,
-                    tensor_parallel_group,
-                    async_op=False,  ### TODO Async
-                )
+                input_quantizer.set_usage(rowwise=True, columnwise=True)
+                if with_x_all_gather:
+                    x, x_async = gather_along_first_dim(
+                        x_local,
+                        tensor_parallel_group,
+                        async_op=True,
+                        quantizer=input_quantizer,
+                    )
+                else:
+                    if not isinstance(x_local, QuantizedTensor):
+                        x_local = input_quantizer(x_local)
+                    x = x_local
+            else:
+                if isinstance(x_local, QuantizedTensor):
+                    x_local = x_local.dequantize()
+                if x_local.dtype != dtype:
+                    x_local = x_local.to(dtype=dtype)
+                if with_x_all_gather:
+                    x, x_async = gather_along_first_dim(
+                        x_local,
+                        tensor_parallel_group,
+                        async_op=True,
+                    )
+                else:
+                    x = x_local
 
         # Compute grad input
         dx = None
@@ -666,12 +711,33 @@ class BasicLinear(BasicOperation):
             if not with_quantized_compute and w.dtype != dtype:
                 w = w.to(dtype=dtype)
 
-            # Synchronize communication for grad output
+            # Synchronize tensor-parallel communication
             _wait_async(dy_async)
             dy_async = None
 
             # Check grad input tensor
             dx = grad_input
+            if dx is None:
+                if not with_quantized_compute:
+                    grad_input_quantizer = None
+                if tensor_parallel_mode == "column":
+                    grad_input_quantizer = None
+            elif isinstance(dx, QuantizedTensor):
+                if not with_quantized_compute:
+                    raise ValueError(
+                        "Grad input tensor is quantized, "
+                        "but quantized compute is not enabled"
+                    )
+                if tensor_parallel_mode == "column":
+                    raise ValueError(
+                        "Grad input tensor is quantized, "
+                        "but column tensor parallelism does not support quantized grad input"
+                    )
+                assert grad_input_quantizer is not None  ### TODO Get quantizer from dx
+            else:
+                grad_input_quantizer = None
+
+            # Check if accumulating into grad input tensor
             if accumulate_into_grad_input:
                 if dx is None:
                     raise ValueError(
@@ -698,15 +764,30 @@ class BasicLinear(BasicOperation):
                 grad=True,
             )
 
-            ### TODO TP comm
+            # Reduce tensor-parallel grad input if needed
+            if tensor_parallel_mode == "column":
+                if sequence_parallel:
+                    dx, dx_async = reduce_scatter_along_first_dim(
+                        dx,
+                        tensor_parallel_group,
+                        async_op=True,
+                    )
+                else:
+                    dx_async = torch.distributed.all_reduce(
+                        dx,
+                        group=tensor_parallel_group,
+                        async_op=True,
+                    )
 
         # Compute grad weight
         dw = None
         if weight_requires_grad:
 
-            # Synchronize communication for input
+            # Synchronize tensor-parallel communication
             _wait_async(x_async)
+            _wait_async(dy_async)
             x_async = None
+            dy_async = None
 
             # Check grad input tensor
             dw = grad_weight
@@ -833,6 +914,7 @@ class BasicLinear(BasicOperation):
             tensor_parallel_group=self.tensor_parallel_group,
             sequence_parallel=self.sequence_parallel,
             with_quantized_compute=ctx.with_quantized_compute,
+            input_quantizer=ctx.input_quantizer,
             weight_quantizer=ctx.weight_quantizer,
             grad_output_quantizer=ctx.grad_output_quantizer,
             grad_input_quantizer=ctx.grad_input_quantizer,

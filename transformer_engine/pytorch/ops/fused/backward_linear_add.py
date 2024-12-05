@@ -84,6 +84,7 @@ class BackwardLinearAdd(FusedOperation):
             tensor_parallel_group=linear_op.tensor_parallel_group,
             sequence_parallel=linear_op.sequence_parallel,
             with_quantized_compute=linear_op_ctx.with_quantized_compute,
+            input_quantizer=linear_op_ctx.input_quantizer,
             weight_quantizer=linear_op_ctx.weight_quantizer,
             grad_output_quantizer=linear_op_ctx.grad_output_quantizer,
             grad_input_quantizer=linear_op_ctx.grad_input_quantizer,
