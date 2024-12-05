@@ -43,8 +43,15 @@ class Float8Quantizer(Quantizer):
         src: torch.Tensor,
         dst: QuantizedTensor,
     ) -> QuantizedTensor:
+        if not isinstance(dst, Float8Tensor):
+            raise ValueError("Float8Quantizer can only update Float8Tensor")
 
-        assert isinstance(dst, Float8Tensor)
+        # Make sure input is in expected format
+        if not devices_match(src.device, dst.device):
+            src = src.to(device=dst.device)
+        if not src.is_contiguous():
+            src = src.contiguous()
+
         # Launch cast kernel
         tex.quantize(src, self, dst);
 
@@ -85,7 +92,8 @@ class Float8Quantizer(Quantizer):
             shape=shape,
             dtype=dtype,
             data=data,
-            fp8_dtype=self.fp8_dtype,
+            fp8_scale_inv=torch.empty(1, dtype=torch.float32, device=device),
+            fp8_dtype=self.dtype,
             requires_grad=requires_grad,
             data_transpose=data_transpose,
             quantizer=self,
@@ -192,7 +200,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         data = self._data
         if not data.is_contiguous():
             data = data.contiguous()
-        self._transpose = tex.fp8_transpose(self._data, self._fp8_dtype, out=self._transpose)
+        self._transpose = tex.fp8_transpose(data, self._fp8_dtype, out=self._transpose)
         self._transpose_invalid = False
 
     def update_usage(self, rowwise_usage=True, columnwise_usage=True):
