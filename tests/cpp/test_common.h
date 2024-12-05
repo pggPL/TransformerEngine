@@ -117,17 +117,27 @@ class Tensor {
   Tensor& operator=(Tensor &&other) = default;
 
   ~Tensor() {
-    if (tensor_.dptr() != nullptr) {
-      cudaFree(tensor_.dptr());
+    void *data_ptr = tensor_.dptr();
+    void *scale_inv = tensor_.scale_inv();
+    void *columnwise_data_ptr = tensor_.get_columnwise_data().data_ptr;
+    void *columnwise_scale_inv = tensor_.get_columnwise_scale_inv().data_ptr;
+    if (columnwise_data_ptr == data_ptr) {
+      columnwise_data_ptr = nullptr;
     }
-    if (tensor_.scale_inv()) {
-      cudaFree(tensor_.scale_inv());
+    if (columnwise_scale_inv == scale_inv) {
+      columnwise_scale_inv = nullptr;
     }
-    if (tensor_.columnwise_dptr()){
-      cudaFree(tensor_.columnwise_dptr());
+    if (data_ptr != nullptr) {
+      cudaFree(data_ptr);
     }
-    if (tensor_.get_columnwise_scale_inv().data_ptr != nullptr){
-      cudaFree(tensor_.get_columnwise_scale_inv().data_ptr);
+    if (scale_inv != nullptr) {
+      cudaFree(scale_inv);
+    }
+    if (columnwise_data_ptr != nullptr){
+      cudaFree(columnwise_data_ptr);
+    }
+    if (columnwise_scale_inv != nullptr){
+      cudaFree(columnwise_scale_inv);
     }
   }
 

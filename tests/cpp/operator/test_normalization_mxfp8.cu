@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <map>
 #include <iomanip>
 #include <iostream>
 #include <random>
