@@ -84,8 +84,8 @@ class MXFP8TensorBase:
         """Prepare the tensor base for saving for backward.
         After calling this, this tensor base does not hold any data."""
         tensors = [self._rowwise_data, self._columnwise_data]
-        self._rowwise_data = None
-        self._columnwise_data = None
+        # self._rowwise_data = None
+        # self._columnwise_data = None
         return tensors, self
 
     def restore_from_saved(self,

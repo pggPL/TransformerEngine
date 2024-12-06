@@ -4,7 +4,8 @@
 
 """Tensor class with FP8 data"""
 from __future__ import annotations
-from typing import Any, Dict, Optional, Tuple, Iterable
+import math
+from typing import Optional, Tuple, Iterable
 
 import torch
 import transformer_engine_torch as tex
@@ -12,33 +13,27 @@ import transformer_engine_torch as tex
 from transformer_engine_torch import DType as TE_DType
 from ..cpp_extensions.transpose import fp8_cast_transpose_fused
 from ..cpp_extensions.cast import cast_to_fp8
-from ..fp8 import DelayedScalingRecipeState, FP8GlobalStateManager
+from ..constants import MXFP8_BLOCK_SCALING_SIZE
+from ..fp8 import FP8GlobalStateManager
 from ..utils import devices_match, non_tn_fp8_gemm_supported
 
-from ._internal.float8_tensor_base import MXFP8TensorBase, _FromMXFP8Func
+from ._internal.mxfp8_tensor_base import MXFP8TensorBase, _FromMXFP8Func
 from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
 
 aten = torch.ops.aten
 
 class MXFP8Quantizer(Quantizer):
 
-    scale: torch.Tensor
-    amax: torch.Tensor
     dtype: TE_DType
-    single_usage_sufficient: bool = True
 
     def __init__(
         self,
-        scale: torch.Tensor,
-        amax: torch.Tensor,
         fp8_dtype: TE_DType,
         *,
         rowwise: bool = True,
         columnwise: bool = True,
     ) -> None:
         super().__init__(rowwise=rowwise, columnwise=columnwise)
-        self.scale = scale
-        self.amax = amax
         self.dtype = fp8_dtype
 
     def update_quantized(
@@ -47,37 +42,16 @@ class MXFP8Quantizer(Quantizer):
         dst: QuantizedTensor,
     ) -> QuantizedTensor:
 
-        assert isinstance(dst, MXFP8Tensor)
+        assert isinstance(dst, MXFP8Tensor), f"Cannot store quantized MXFP8 in {type(dst)} type."
+
+        # Make sure input is in expected format
+        if not devices_match(src.device, dst.device):
+            src = src.to(device=dst.device)
+        if not src.is_contiguous():
+            src = src.contiguous()
+
         # Launch cast kernel
-        if dst._transpose is None:
-            dst_data = dst._data
-            if src.dim() != 2:
-                src = src.view(1, -1)
-                dst_data = dst_data.view(1, -1)
-            cast_to_fp8(
-                src,
-                None,
-                None,
-                self.dtype,
-                out=dst_data,
-                scale=self.scale,
-                amax=self.amax,
-                scale_inv=dst._scale_inv,
-            )
-        else:
-            fp8_cast_transpose_fused(
-                src.view(-1, src.size(-1)),
-                None,
-                None,
-                self.dtype,
-                cast_out=dst._data,
-                transpose_out=dst._transpose,
-                scale=self.scale,
-                amax=self.amax,
-                scale_inv=dst._scale_inv,
-                # noop_flag=noop_flag,  ### TODO How to handle?
-            )
-            dst._transpose_invalid = False
+        tex.quantize(src, self, dst)
 
         # Update FP8 dtype
         dst._fp8_dtype = self.dtype
@@ -99,32 +73,34 @@ class MXFP8Quantizer(Quantizer):
 
         # Allocate FP8 data
         data = torch.empty(shape, dtype=torch.uint8, device=device)
+        scale_inv = torch.empty(math.prod(shape[:-1]) // MXFP8_BLOCK_SCALING_SIZE,
+                                shape[-1], dtype=torch.uint8, device=device)
 
         # Allocate FP8 data transpose if needed
-        data_transpose = None
+        columnwise_data = None
+        columnwise_scale_inv = None
         if self.columnwise_usage:
-            inner_dim = data.size(-1)
-            data_transpose = torch.empty(
-                inner_dim,
-                data.numel() // inner_dim,
-                dtype=torch.uint8,
-                device=device,
-            )
+            columnwise_data = torch.empty_like(data)
+            columnwise_scale_inv = torch.empty(math.prod(shape[:-1]),
+                                               shape[-1] // MXFP8_BLOCK_SCALING_SIZE,
+                                               dtype=torch.uint8, device=device)
 
         # Construct FP8 tensor
         return MXFP8Tensor(
             shape=shape,
             dtype=dtype,
-            data=data,
             fp8_dtype=self.fp8_dtype,
-            requires_grad=requires_grad,
-            data_transpose=data_transpose,
+            rowwise_data=data,
+            rowwise_scale_inv=scale_inv,
+            columnwise_data=columnwise_data,
+            columnwise_scale_inv=columnwise_scale_inv,
             quantizer=self,
+            requires_grad=requires_grad,
         )
 
     def calibrate(self, tensor: torch.Tensor) -> None:
-        amin, amax = tensor.aminmax()
-        self.amax.copy_(torch.max(-amin, amax))
+        # TODO(ksivamani): No calibration needed for mxfp8?
+        pass
 
 
 class MXFP8Tensor(MXFP8TensorBase, QuantizedTensor):
