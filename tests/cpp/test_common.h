@@ -117,17 +117,27 @@ class Tensor {
   Tensor& operator=(Tensor &&other) = default;
 
   ~Tensor() {
-    if (tensor_.dptr() != nullptr) {
-      cudaFree(tensor_.dptr());
+    void *data_ptr = tensor_.dptr();
+    void *scale_inv = tensor_.scale_inv();
+    void *columnwise_data_ptr = tensor_.get_columnwise_data().data_ptr;
+    void *columnwise_scale_inv = tensor_.get_columnwise_scale_inv().data_ptr;
+    if (columnwise_data_ptr == data_ptr) {
+      columnwise_data_ptr = nullptr;
     }
-    if (tensor_.scale_inv()) {
-      cudaFree(tensor_.scale_inv());
+    if (columnwise_scale_inv == scale_inv) {
+      columnwise_scale_inv = nullptr;
     }
-    if (tensor_.columnwise_dptr()){
-      cudaFree(tensor_.columnwise_dptr());
+    if (data_ptr != nullptr) {
+      cudaFree(data_ptr);
     }
-    if (tensor_.columnwise_scale_inv()){
-      cudaFree(tensor_.columnwise_scale_inv());
+    if (scale_inv != nullptr) {
+      cudaFree(scale_inv);
+    }
+    if (columnwise_data_ptr != nullptr){
+      cudaFree(columnwise_data_ptr);
+    }
+    if (columnwise_scale_inv != nullptr){
+      cudaFree(columnwise_scale_inv);
     }
   }
 
@@ -183,12 +193,6 @@ class Tensor {
     NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
     NVTE_CHECK(columnwise_, "Tensor does not have columnwise data!");
     return reinterpret_cast<T *>(cpu_data_columnwise_.get());
-  }
-
-  template <typename T>
-  T *columnwise_cpu_dptr() const {
-    NVTE_CHECK(TypeInfo<T>::dtype == tensor_.dtype(), "Invalid type!");
-    return reinterpret_cast<T *>(columnwise_cpu_data_.get());
   }
 
   float amax() const {
@@ -252,7 +256,7 @@ class Tensor {
   void to_cpu() const;
   void from_cpu() const;
   void set_scale(float scale);
-  void set_scale_inv();
+  void set_scale_inv(float scale_inv);
   void shareFP8Meta(const Tensor &other);
 
  private:
