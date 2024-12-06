@@ -218,7 +218,7 @@ class Tensor {
   std::shared_ptr<float> scale_cpu_data_;
   std::unique_ptr<unsigned char[]> scale_inv_cpu_data_;
   std::unique_ptr<unsigned char[]> columnwise_scale_inv_cpu_data_;
-  bool is_tensor_2x;
+  bool is_tensor_2x = false;
 };
 
 constexpr uint32_t FP32_EXPONENT_BIAS = 127;
