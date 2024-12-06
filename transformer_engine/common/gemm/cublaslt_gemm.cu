@@ -275,8 +275,10 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
           operationDesc, CUBLASLT_MATMUL_DESC_AMAX_D_POINTER, &D_amax, sizeof(D_amax)));
       NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(
           operationDesc, CUBLASLT_MATMUL_DESC_D_SCALE_MODE, &scaling_mode, sizeof(scaling_mode)));
-      // For FP8 output, cuBLAS requires C_type to be FP16/BF16
-      NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_16BF, m, n, ldd));
+      // For FP8 output, cuBLAS requires C_type to match bias_type and
+      // be FP16/BF16
+      const cudaDataType_t C_type = bias ? bias_type : CUDA_R_16BF;
+      NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Cdesc, C_type, m, n, ldd));
     } else {
       NVTE_CHECK_CUBLAS(cublasLtMatrixLayoutCreate(&Cdesc, D_type, m, n, ldd));
     }

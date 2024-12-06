@@ -214,13 +214,7 @@ class _LayerNormLinear(torch.autograd.Function):
 
                 # Configure quantizer
                 if weight_quantizer is not None:
-                    columnwise_usage = is_grad_enabled and inp.requires_grad
-                    if not columnwise_usage:
-                        columnwise_usage = (
-                            is_fp8_activation_recompute_enabled()
-                            and not in_fp8_activation_recompute_phase()
-                        )
-                    weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
+                    weight_quantizer.set_usage(rowwise=True, columnwise=True)
 
                 # FP8 cast to workspace buffer
                 update_workspace = is_first_microbatch is None or is_first_microbatch
@@ -392,7 +386,7 @@ class _LayerNormLinear(torch.autograd.Function):
 
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(
-                    rowwise=ctx.requires_dgrad or ctx.requires_wgrad, # TODO: look at this, it may be optimied, but casting to transpose only is not implemented
+                    rowwise=True,
                     columnwise=ctx.requires_wgrad,
                 )
             if ctx.grad_input_quantizer is not None:
@@ -486,39 +480,33 @@ class _LayerNormLinear(torch.autograd.Function):
             else:
                 accumulate_wgrad_into_param_main_grad = ctx.fuse_wgrad_accumulation
 
-            # Compute grad input tensor
-            dgrad = None
+            # dgrad GEMM
+            if ctx.grad_input_quantizer is not None:
+                ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
+            dgrad, _, _ = general_gemm(
+                weight,
+                grad_output,
+                get_workspace(),
+                layout="NN",
+                grad=True,
+                quantization_params=ctx.grad_input_quantizer,
+                out_dtype=ctx.activation_dtype,
+                use_split_accumulator=_2X_ACC_DGRAD,
+            )
+
+            # Launch tensor-parallel communication
             dgrad_work = None
-            if ctx.requires_dgrad:
-
-                # Update quantizer
-                if ctx.grad_input_quantizer is not None:
-                    ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
-
-                # dgrad GEMM
-                dgrad, _, _ = general_gemm(
-                        weight,
-                        grad_output,
-                        get_workspace(),
-                        layout="NN",
-                        grad=True,
-                        quantization_params=ctx.grad_input_quantizer,
-                        out_dtype=ctx.activation_dtype,
-                        use_split_accumulator=_2X_ACC_DGRAD,
-                )
-
-                # Launch tensor-parallel communication
-                if ctx.parallel_mode == "column":
-                    if ctx.sequence_parallel:
-                        if ctx.return_layernorm_output and ctx.return_layernorm_output_gathered:
-                            dgrad = dgrad + grad_outputs[1].view_as(dgrad)
-                        dgrad, dgrad_work = reduce_scatter_along_first_dim(
-                            dgrad,
-                            ctx.tp_group,
-                            async_op=True,
-                        )
-                    else:
-                        dgrad, dgrad_work = allreduce(dgrad, ctx.tp_group, async_op=True)
+            if ctx.parallel_mode == "column":
+                if ctx.sequence_parallel:
+                    if ctx.return_layernorm_output and ctx.return_layernorm_output_gathered:
+                        dgrad = dgrad + grad_outputs[1].view_as(dgrad)
+                    dgrad, dgrad_work = reduce_scatter_along_first_dim(
+                        dgrad,
+                        ctx.tp_group,
+                        async_op=True,
+                    )
+                else:
+                    dgrad, dgrad_work = allreduce(dgrad, ctx.tp_group, async_op=True)
 
             # Compute grad weight tensor
             wgrad = None

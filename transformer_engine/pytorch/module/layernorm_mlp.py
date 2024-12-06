@@ -243,14 +243,8 @@ class _LayerNormMLP(torch.autograd.Function):
             fc2_weightmat = cast_if_needed(fc2_weightmat, activation_dtype)
         else:
             update_workspace = is_first_microbatch is None or is_first_microbatch
-            columnwise_usage = is_grad_enabled and inp.requires_grad
-            if not columnwise_usage:
-                columnwise_usage = (
-                    is_fp8_activation_recompute_enabled()
-                    and not in_fp8_activation_recompute_phase()
-                )
             if not isinstance(fc1_weight, QuantizedTensor):
-                fc1_weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
+                fc1_weight_quantizer.set_usage(rowwise=True, columnwise=True)
                 fc1_weightmat = module.get_weight_workspace(
                     tensor=fc1_weight,
                     quantizer=fc1_weight_quantizer,
@@ -261,7 +255,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     is_grad_enabled=is_grad_enabled,
                 )
             if not isinstance(fc2_weight, QuantizedTensor):
-                fc2_weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
+                fc2_weight_quantizer.set_usage(rowwise=True, columnwise=True)
                 fc2_weightmat = module.get_weight_workspace(
                     tensor=fc2_weight,
                     quantizer=fc2_weight_quantizer,
@@ -661,9 +655,9 @@ class _LayerNormMLP(torch.autograd.Function):
                     use_split_accumulator=_2X_ACC_WGRAD,
                     out=fc2_weight.main_grad if ctx.fuse_wgrad_accumulation else None,
                 )
-            if fc2_bias_grad is None:
-                fc2_bias_grad = fc2_bias_grad_
-            del fc2_bias_grad_
+                if fc2_bias_grad is None:
+                    fc2_bias_grad = fc2_bias_grad_
+                del fc2_bias_grad_
             clear_tensor_data(act_out)
 
             # bias computation
