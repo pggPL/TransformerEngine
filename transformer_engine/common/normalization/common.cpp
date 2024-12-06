@@ -325,6 +325,8 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
         std::tie(_z_mx_col, _sf_col) = std::make_tuple(bs_col_ret[0], bs_col_ret[1]);
         _z_mx_col->set_output(true).set_data_type(get_cudnn_fe_dtype(otype));
         _sf_col->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);
+      } else {
+        NVTE_ERROR("Unsupported scaling mode.");
       }
     }
   } else {

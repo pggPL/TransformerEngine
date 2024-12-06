@@ -98,12 +98,12 @@ void dequantize_2x(Tensor& input, Tensor& output)
                        input.rowwise_cpu_scale_inv_ptr<ScaleType>(),
                        output.rowwise_cpu_dptr<float>(),
                        input.rowwise_shape().data[0], input.rowwise_shape().data[1],
-                       32, 1);
+                       1, 32);
   dequantize_1x_kernel(input.columnwise_cpu_dptr<InputType>(),
                        input.columnwise_cpu_scale_inv_ptr<ScaleType>(),
                        output.columnwise_cpu_dptr<float>(),
                        input.columnwise_shape().data[0], input.columnwise_shape().data[1],
-                       1, 32);
+                       32, 1);
 }
 
 template <typename InputType>
