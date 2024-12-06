@@ -191,18 +191,29 @@ NVTEDType nvte_tensor_type(const NVTETensor tensor) {
 NVTEShape nvte_tensor_shape(const NVTETensor tensor) {
   const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
   NVTEShape ret;
+
+  // FP8 tensor keeps shape in rowwise data
+  if (t.scaling_mode == NVTE_DELAYED_TENSOR_SCALING) {
+    ret.data = t.data.shape.data();
+    ret.ndim = t.data.shape.size();
+    return ret;
+  }
+
+  // Get shape based on what data is available
   if (t.has_data()) {
     ret.data = t.data.shape.data();
     ret.ndim = t.data.shape.size();
-  } else {
-    if (t.scaling_mode == NVTE_DELAYED_TENSOR_SCALING) {
-      NVTE_ERROR("Getting the shape from a columnwise tensor is "
-                 "not supported for this scaling mode.");
-    } else {
-      ret.data = t.columnwise_data.shape.data();
-      ret.ndim = t.columnwise_data.shape.size();
-    }
+    return ret;
   }
+  if (t.has_columnwise_data()) {
+    ret.data = t.columnwise_data.shape.data();
+    ret.ndim = t.columnwise_data.shape.size();
+    return ret;
+  }
+
+  // Tensor has no data
+  ret.data = t.data.shape.data();
+  ret.ndim = t.data.shape.size();
   return ret;
 }
 
