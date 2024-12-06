@@ -452,7 +452,7 @@ class BasicLinear(BasicOperation):
         if with_quantized_compute and not w_is_quantized:
             if weight_quantizer is None:
                 raise ValueError("Missing quantizer for weight tensor")
-            weight_quantizer.set_usage(rowwise=True)
+            weight_quantizer.set_usage(rowwise=True, columnwise=False)
             w = weight_quantizer(w)
         elif not with_quantized_compute and w_is_quantized:
             w = w.dequantize()
@@ -479,6 +479,8 @@ class BasicLinear(BasicOperation):
             assert output_quantizer is not None  ### TODO Get quantizer from y
         else:
             output_quantizer = None
+        if output_quantizer is not None:
+            output_quantizer.set_usage(rowwise=True, columnwise=False)
 
         # Check if accumulating into output tensor
         if accumulate_into_out:
@@ -704,7 +706,7 @@ class BasicLinear(BasicOperation):
             if with_quantized_compute and not w_is_quantized:
                 if weight_quantizer is None:
                     raise ValueError("Missing quantizer for weight tensor")
-                weight_quantizer.set_usage(columnwise=True)
+                weight_quantizer.set_usage(rowwise=True, columnwise=True)
                 w = weight_quantizer(w)
             elif not with_quantized_compute and w_is_quantized:
                 w = w.dequantize()
