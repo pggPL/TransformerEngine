@@ -46,7 +46,7 @@ from ..constants import GemmParallelModes, dist_group_type, TE_DType
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
 from ._common import _apply_normalization, _noop_cat
-from ..float8_tensor import Float8Tensor
+from ..tensor import Float8Tensor, Float8Quantizer
 from ..tensor.quantized_tensor import (
     QuantizedTensor,
     Quantizer,
@@ -127,10 +127,12 @@ class _LayerNormLinear(torch.autograd.Function):
             ln_bias = cast_if_needed(ln_bias, activation_dtype)
 
         if ub_overlap_ag:
+            raise NotImplementedError
             tp_world_size = get_distributed_world_size(tp_group)
             if tp_world_size == 1 or (not is_grad_enabled):
                 ub_overlap_ag = False
         if ub_overlap_ag:
+            raise NotImplementedError
             dim_size = list(inputmat.size())
             dim_size[0] = dim_size[0] * tp_world_size
             ub_obj_lnout = get_ub(ub_name + "_fprop")
@@ -140,106 +142,89 @@ class _LayerNormLinear(torch.autograd.Function):
                 ln_out = torch.empty_like(inputmat, memory_format=torch.contiguous_format)
             else:
                 ln_out = ub_obj_lnout.get_ubuf_output(0)
-        else:
-            ln_out_dtype = torch.uint8 if (fp8 and not return_layernorm_output) else inputmat.dtype
-            ln_out = torch.empty_like(
-                inputmat, dtype=ln_out_dtype, memory_format=torch.contiguous_format
-            )
-        
+
         weight_requires_grad = weight.requires_grad
         backward_needs_input = is_grad_enabled and weight_requires_grad
+        with_input_all_gather = parallel_mode == "column" and sequence_parallel
 
-        # Configure quantizers
+        # Configure quantizer for normalization output
+        if fp8 and input_quantizer is None:
+            raise ValueError("Missing quantizer for input tensor")
+        with_quantized_norm = fp8 and not return_layernorm_output
+        if with_quantized_norm:
+            if with_input_all_gather:
+                if isinstance(input_quantizer, Float8Quantizer):
+                    input_quantizer.set_usage(rowwise=True, columnwise=False)
+                else:
+                    with_quantized_norm = False
+            else:
+                input_quantizer.set_usage(
+                    rowwise=True,
+                    columnwise=(is_grad_enabled and weight_requires_grad),
+                )
 
-        if input_quantizer is not None:
-            input_quantizer.set_usage(
-                rowwise=True,
-                columnwise=(is_grad_enabled and weight_requires_grad),
-            )
-        if weight_quantizer is not None:
-            columnwise_usage = is_grad_enabled # and inp.requires_grad #TODO look at this
-            # TODO: why it is needed
-            # if not columnwise_usage:
-            #    columnwise_usage = (
-            #        is_fp8_activation_recompute_enabled()
-            #        and not in_fp8_activation_recompute_phase()
-            #    )
-            weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
-        if output_quantizer is not None:
-            output_quantizer.set_usage(rowwise=True, columnwise=False)
-
-        quantize = fp8 and not return_layernorm_output
-        # Launch normalization kernel
-        ln_out = None # #TODO
+        # Apply normalization
         ln_out, mu, rsigma = _apply_normalization(
             inputmat,
-            ln_out,
+            None,
             ln_weight,
             ln_bias,
             eps,
-            input_quantizer if quantize else None,
+            input_quantizer if with_quantized_norm else None,
             inp.dtype,
             normalization,
             fwd_ln_sm_margin,
             zero_centered_gamma,
-            is_grad_enabled
+            is_grad_enabled,
         )
+        ln_out_return = ln_out if return_layernorm_output else None
 
-        if not fp8 and fp8_calibration:
-            input_quantizer.calibrate(ln_out)
-            weight_quantizer.calibrate(weight)
-
-
-        # Column Parallel Linear
-        ln_out_gathered = False
-        ub_algo = None
-        if ub_overlap_ag:
-            ln_out_total = ub_obj_lnout.get_ubuf_output(1)
-            if not return_layernorm_output:
-                ln_out = torch.empty_like(ln_out)
-            if ub_obj_lnout.is_atomic_gemm():
-                ub_algo = tex.CommOverlapAlgo.ATOMIC_GEMM_AG_P2P
-            else:
-                ub_algo = tex.CommOverlapAlgo.SPLIT_PIPELINED_AG_P2P
-        elif parallel_mode == "column" and sequence_parallel:
-            ln_out_gathered = True
-            ln_out_total, _ = gather_along_first_dim(ln_out, tp_group)
+        # Prepare GEMM input
+        # Note: Cast to expected dtype and perform tensor-parallel communication
+        if with_input_all_gather:
+            with_quantized_all_gather = fp8
+            if return_layernorm_output and return_layernorm_output_gathered:
+                with_quantized_all_gather = False
+            if fp8:
+                input_quantizer.set_usage(rowwise=True, columnwise=False)
+            ln_out_total, _ = gather_along_first_dim(
+                ln_out,
+                tp_group,
+                quantizer=(input_quantizer if with_quantized_all_gather else None),
+            )
+            if return_layernorm_output and return_layernorm_output_gathered:
+                ln_out_return = ln_out_total
+            if fp8 and not with_quantized_all_gather:
+                ln_out_total = input_quantizer(ln_out_total)
         else:
+            if fp8 and not with_quantized_norm:
+                input_quantizer.set_usage(
+                    rowwise=True,
+                    columnwise=(is_grad_enabled and weight_requires_grad),
+                )
+                ln_out = input_quantizer(ln_out)
             ln_out_total = ln_out
 
-        # If residual connection is after LN, we need `ln_out_return`
-        # tensor in higher precision, this comes at the cost
-        # of an extra fp8 cast.
-        if return_layernorm_output:
-            # #TODO
-            ln_out_return = ln_out_total if return_layernorm_output_gathered else ln_out
-            if fp8:
-                if ub_overlap_ag:
-                    ln_out_fp8 = ub_obj_lnout.get_ubuf_output(0)
-                    pytex.cast_to_fp8(
-                        ln_out,
-                        fp8_meta["scaling_fwd"],
-                        tex.FP8FwdTensors.GEMM1_INPUT,
-                        fp8_dtype_forward,
-                        out=ln_out_fp8,
-                        scale_inv=ln_out_scale_inv,
-                    )
-                    ln_out = torch.empty_like(ln_out_fp8)
-                else:
-                    ln_out_total = input_quantizer.quantize(ln_out_total)
-                    if ln_out_gathered:
-                        rank = torch.distributed.get_rank(tp_group)
-                        slice_start = rank * ln_out.size(0)
-                        slice_end = (rank + 1) * ln_out.size(0)
-                        ln_out = ln_out_total[slice_start:slice_end, ...]
-                    else:
-                        ln_out = ln_out_total
-        weight_fp8 = weight
-        if fp8:
+        # Cast weight to expected dtype
+        weightmat = weight
+        if not fp8:
+            weightmat = cast_if_needed(weightmat, activation_dtype)
+        else:
             if not isinstance(weight, QuantizedTensor):
+
+                # Configure quantizer
+                if weight_quantizer is not None:
+                    columnwise_usage = is_grad_enabled and inp.requires_grad
+                    if not columnwise_usage:
+                        columnwise_usage = (
+                            is_fp8_activation_recompute_enabled()
+                            and not in_fp8_activation_recompute_phase()
+                        )
+                    weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
+
                 # FP8 cast to workspace buffer
                 update_workspace = is_first_microbatch is None or is_first_microbatch
-                weight_fp8 = module.get_weight_workspace(
+                weightmat = module.get_weight_workspace(
                     tensor=weight,
                     quantizer=weight_quantizer,
                     cache_name=(None if is_first_microbatch is None else "weight"),
@@ -249,14 +234,25 @@ class _LayerNormLinear(torch.autograd.Function):
                     is_grad_enabled=is_grad_enabled,
                 )
 
-            bias_dtype = torch.bfloat16 if activation_dtype == torch.float32 else activation_dtype
-        else:
-            bias_dtype = activation_dtype
-            weight_fp8 = cast_if_needed(weight, activation_dtype)
-        bias = cast_if_needed(bias, bias_dtype) if use_bias else bias
+        # Cast bias to expected dtype
+        bias_dtype = activation_dtype
+        if fp8 and activation_dtype == torch.float32:
+            bias_dtype = torch.bfloat16
+        bias = cast_if_needed(bias, bias_dtype) if bias is not None else bias
+
+        # Configure output quantizer
+        if output_quantizer is not None:
+            output_quantizer.set_usage(rowwise=True, columnwise=False)
+
+        # Calibrate quantizers if needed
+        if not fp8 and fp8_calibration:
+            if input_quantizer is not None:
+                input_quantizer.calibrate(ln_out_total)
+            if weight_quantizer is not None:
+                weight_quantizer.calibrate(weight)
 
         out, _, _ = general_gemm(
-            weight_fp8,
+            weightmat,
             ln_out_total,
             get_workspace(),
             quantization_params=output_quantizer,
@@ -269,8 +265,9 @@ class _LayerNormLinear(torch.autograd.Function):
 
         if is_grad_enabled:
             if cpu_offloading:
+                raise NotImplementedError
                 if fp8 and weight_fp8 is not None:
-                    weight_fp8.weight_offloading = True
+                    weightmat.weight_offloading = True
                 ln_weight.weight_offloading = True
                 weight.weight_offloading = True
 
@@ -288,13 +285,13 @@ class _LayerNormLinear(torch.autograd.Function):
                 fsdp_group,
                 mu,
                 rsigma,
-                weight_fp8 if fp8 and not isinstance(weight, Float8Tensor) else None,
+                weightmat if fp8 and not isinstance(weight, Float8Tensor) else None,
                 ln_out if weight.requires_grad else None,
             )
 
             saved_input_tensors, saved_input = prepare_for_saving(inputmat)
 
-            saved_weight_tensors, saved_weight = prepare_for_saving(weight_fp8)
+            saved_weight_tensors, saved_weight = prepare_for_saving(weightmat)
             saved_bias_tensors, saved_bias = prepare_for_saving(bias)
             saved_ln_weight_tensors, saved_ln_weight = prepare_for_saving(ln_weight)
             saved_ln_bias_tensors, saved_ln_bias = prepare_for_saving(ln_bias)
@@ -344,9 +341,7 @@ class _LayerNormLinear(torch.autograd.Function):
             ctx.tp_group = tp_group
             ctx.tp_size = tp_size
             ctx.return_layernorm_output = return_layernorm_output
-            ctx.return_layernorm_output_gathered = (
-                return_layernorm_output_gathered and ln_out_gathered
-            )
+            ctx.return_layernorm_output_gathered = return_layernorm_output_gathered
             ctx.bwd_ln_sm_margin = bwd_ln_sm_margin
             ctx.zero_centered_gamma = zero_centered_gamma
             ctx.ub_bulk_wgrad = ub_bulk_wgrad
@@ -406,7 +401,7 @@ class _LayerNormLinear(torch.autograd.Function):
             # Gather intermediate/activation tensors if needed
             # NOTE: weight_fp8 = weight when ctx.fp8 == False and torch.disttributed.FSDP already
             #       shards/unshards the base weights so we don't do it ourselves
-            
+
             # TODO
             #_fsdp_gather_tensors(
             #    ctx.fsdp_group,
@@ -418,20 +413,24 @@ class _LayerNormLinear(torch.autograd.Function):
             #)
 
             if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
+                raise NotImplementedError
                 weight = torch.nn.Parameter(weight, weight.requires_grad)
                 weight.main_grad = main_grad
 
             if ctx.ub_overlap_rs_dgrad:
+                raise NotImplementedError
                 ctx.ub_bulk_dgrad = False
                 ctx.ub_bulk_wgrad = False
                 tp_world_size = get_distributed_world_size(ctx.tp_group)
                 if tp_world_size == 1:
                     ctx.ub_overlap_rs_dgrad = False
             if ctx.ub_bulk_dgrad:
+                raise NotImplementedError
                 tp_world_size = get_distributed_world_size(ctx.tp_group)
                 if tp_world_size == 1 or not weight.requires_grad:
                     ctx.ub_bulk_dgrad = False
             if ctx.ub_bulk_dgrad:
+                raise NotImplementedError
                 dim_size = list(ln_out.size())
                 dim_size[0] = dim_size[0] * tp_world_size
                 ub_obj_lnout = get_ub(ctx.ub_name + "_dgrad")
@@ -439,23 +438,47 @@ class _LayerNormLinear(torch.autograd.Function):
 
 
             if ctx.ub_bulk_wgrad:
+                raise NotImplementedError
                 tp_world_size = get_distributed_world_size(ctx.tp_group)
                 if tp_world_size == 1 or not weight.requires_grad:
                     ctx.ub_bulk_wgrad = False
 
-            # Column Parallel Linear
-            # Overlap input AG with dgrad
-            if (
-                ctx.requires_wgrad
-                and (not ctx.ub_bulk_dgrad)
-                and ctx.parallel_mode == "column"
-                and ctx.sequence_parallel
-            ):
-                ln_out_total, handle = gather_along_first_dim(ln_out, ctx.tp_group, async_op=True)
+            # Prepare grad output tensor
+            # Note: Cast to expected dtype and perform tensor-parallel communication
+            if ctx.grad_output_quantizer is not None:
+                ctx.grad_output_quantizer.set_usage(
+                    rowwise=True,
+                    columnwise=ctx.requires_wgrad,
+                )
+            (
+                grad_output,
+                grad_bias,
+            ) = TransformerEngineBaseModule.grad_output_preprocess(
+                ctx,
+                grad_outputs[0],
+                ctx.parallel_mode == "row",
+                ctx.grad_output_quantizer,
+            )
+
+            # Prepare GEMM input
+            # Note: Perform tensor-parallel communication if needed
+            ln_out_total = None
+            ln_out_total_work = None
+            if ctx.requires_wgrad and ctx.parallel_mode == "column" and ctx.sequence_parallel:
+                quantizer = None
+                if ctx.fp8:
+                    quantizer = ctx.input_quantizer
+                    quantizer.set_usage(rowwise=True, columnwise=True)
+                ln_out_total, ln_out_total_async = gather_along_first_dim(
+                    ln_out,
+                    ctx.tp_group,
+                    async_op=True,
+                    quantizer=quantizer,
+                )
             else:
                 ln_out_total = ln_out
-                handle = None
 
+            # Check whether to output wgrad GEMM directly into main grad
             if ctx.is_first_microbatch is not None:
                 accumulate_wgrad_into_param_main_grad = (
                     ctx.fuse_wgrad_accumulation and not ctx.is_first_microbatch
@@ -463,131 +486,89 @@ class _LayerNormLinear(torch.autograd.Function):
             else:
                 accumulate_wgrad_into_param_main_grad = ctx.fuse_wgrad_accumulation
 
-            dgrad_size = list(inputmat.size())
-            dgrad_size[1] = ctx.weight.size(1)
-            if ctx.ub_bulk_wgrad:  # allocate dgrad output
-                ub_obj_dgrad = get_ub(ctx.ub_name + "_wgrad")
-                dgrad = ub_obj_dgrad.get_ubuf_output(1)  # AllGather output
-            elif ctx.ub_overlap_rs_dgrad:
-                ub_obj_dgrad = get_ub(ctx.ub_name + "_dgrad")
-                dgrad = ub_obj_dgrad.get_ubuf_output(1)  # AllGather output
-            else:
-                dgrad = torch.empty(dgrad_size, dtype=ctx.activation_dtype, device=inputmat.device)
+            # Compute grad input tensor
+            dgrad = None
+            dgrad_work = None
+            if ctx.requires_dgrad:
 
-            rs_out = None
-            if ctx.ub_bulk_dgrad:
-                ub_algo = tex.CommOverlapAlgo.BULK_OVERLAP_AG
-                ub_obj = ub_obj_lnout
-            elif ctx.ub_overlap_rs_dgrad:
-                dim_size = list(inputmat.size())
-                dim_size[0] = dim_size[0] // tp_world_size
-                dim_size[1] = ctx.weight.size(1)
-                rs_out = torch.empty(
-                    dim_size, dtype=ctx.activation_dtype, device=inputmat.device
-                )
-                if ub_obj_dgrad.is_p2p_overlap():
-                    if ctx.fp8 and ub_obj_dgrad.is_atomic_gemm():
-                        ub_algo = tex.CommOverlapAlgo.ATOMIC_GEMM_RS_P2P
-                    else:
-                        ub_algo = tex.CommOverlapAlgo.SPLIT_PIPELINED_RS_P2P
-                else:
-                    if ctx.fp8 and ub_obj_dgrad.is_atomic_gemm():
-                        ub_algo = tex.CommOverlapAlgo.ATOMIC_GEMM_RS
-                    else:
-                        ub_algo = tex.CommOverlapAlgo.SPLIT_PIPELINED_RS
-                ub_obj = ub_obj_dgrad
-            else:
-                ub_algo = None
-                ub_obj = None
+                # Update quantizer
+                if ctx.grad_input_quantizer is not None:
+                    ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
 
-            (
-                grad_output,
-                grad_bias,
-            ) = TransformerEngineBaseModule.grad_output_preprocess(
-                ctx, grad_outputs[0], ctx.parallel_mode == "row", ctx.grad_output_quantizer
-            )
-
-            # DGRAD
-            _, _, _ = general_gemm(
-                    weight,
-                    grad_output,
-                    get_workspace(),
-                    out=dgrad,
-                    layout="NN",
-                    grad=True,
-                    quantization_params=None, # in high precision
-                    out_dtype=ctx.activation_dtype,
-                    use_split_accumulator=_2X_ACC_DGRAD,
-                    ub_algo=ub_algo,
-                    ub=ub_obj,
+                # dgrad GEMM
+                dgrad, _, _ = general_gemm(
+                        weight,
+                        grad_output,
+                        get_workspace(),
+                        layout="NN",
+                        grad=True,
+                        quantization_params=ctx.grad_input_quantizer,
+                        out_dtype=ctx.activation_dtype,
+                        use_split_accumulator=_2X_ACC_DGRAD,
                 )
 
+                # Launch tensor-parallel communication
+                if ctx.parallel_mode == "column":
+                    if ctx.sequence_parallel:
+                        if ctx.return_layernorm_output and ctx.return_layernorm_output_gathered:
+                            dgrad = dgrad + grad_outputs[1].view_as(dgrad)
+                        dgrad, dgrad_work = reduce_scatter_along_first_dim(
+                            dgrad,
+                            ctx.tp_group,
+                            async_op=True,
+                        )
+                    else:
+                        dgrad, dgrad_work = allreduce(dgrad, ctx.tp_group, async_op=True)
 
-            if ctx.ub_bulk_dgrad:
-                ln_out_total = ub_obj_lnout.get_ubuf_output(1)
-
-            # Overlap dgrad-RS/AR with wgrad
-            if ctx.parallel_mode == "column" and ctx.sequence_parallel:
-                if not ctx.ub_bulk_dgrad and handle is not None:
-                    handle.wait()
-                if not ctx.ub_bulk_wgrad and not ctx.ub_overlap_rs_dgrad:
-                    if ctx.return_layernorm_output and ctx.return_layernorm_output_gathered:
-                        dgrad = dgrad + grad_outputs[1].view_as(dgrad)
-                    dgrad, handle = reduce_scatter_along_first_dim(
-                        dgrad, ctx.tp_group, async_op=True
-                    )
-            elif ctx.parallel_mode == "column" and ctx.tensor_parallel:
-                dgrad, handle = allreduce(dgrad, ctx.tp_group, async_op=True)
-
+            # Compute grad weight tensor
             wgrad = None
             if ctx.requires_wgrad:
-                # WGRAD
-                if ctx.input_quantizer is not None:
-                    ln_out_total._create_transpose()
+
+                # Synchronize tensor-parallel communication
+                if ln_out_total_work is not None:
+                    ln_out_total_work.wait()
+                    ln_out_total_work = None
+
+                # wgrad GEMM
+                # Note: Fuse with bgrad computation if needed
                 wgrad, grad_bias_, _ = general_gemm(
                     ln_out_total,
                     grad_output,
                     get_workspace(),
                     layout="NT",
-                    out_dtype=ctx.activation_dtype,
                     grad=True,
                     bias=(bias if grad_bias is None else None),
+                    out_dtype=ctx.activation_dtype,  # TODO: not sure about that
                     out=main_grad if ctx.fuse_wgrad_accumulation else None,
-                    ub_algo=tex.CommOverlapAlgo.BULK_OVERLAP_RS if ctx.ub_bulk_wgrad else None,
-                    ub=ub_obj_dgrad if ctx.ub_bulk_wgrad else None,
+                    use_split_accumulator=_2X_ACC_WGRAD,
                     accumulate=accumulate_wgrad_into_param_main_grad,
                 )
-
-                clear_tensor_data(ln_out_total)
-                if ctx.ub_bulk_wgrad:
-                    dgrad = ub_obj_dgrad.get_ubuf_output(0)  # Reduce-scatter output
-
                 if grad_bias is None:
                     grad_bias = grad_bias_
                 del grad_bias_
 
+                # Deallocate input tensor
                 if ctx.owns_input:
                     clear_tensor_data(ln_out_total)
 
-            # Column Parallel Linear
-            if (
-                (not ctx.ub_bulk_wgrad)
-                and ctx.parallel_mode == "column"
-                and ctx.tensor_parallel
-                and handle is not None
-            ):
-                handle.wait()
+            # Don't return grad bias if not needed
+            if not ctx.use_bias:
+                grad_bias = None
 
-            # LayerNorm gradient
-            if ctx.ub_overlap_rs_dgrad:
-                dgrad = rs_out.view(inputmat.shape)
-            else:
-                dgrad = dgrad.view(inputmat.shape)
+            # Synchronize tensor parallel communication
+            if ln_out_total_work is not None:
+                ln_out_total_work.wait()
+                ln_out_total_work = None
+            if dgrad_work is not None:
+                dgrad_work.wait()
+                dgrad_work = None
 
             # Residual gradient
+            dgrad = dgrad.view(inputmat.shape)
             if ctx.return_layernorm_output and not ctx.return_layernorm_output_gathered:
                 dgrad = dgrad + grad_outputs[1].view_as(dgrad)
 
+            # Norm gradient
             dgamma = None
             dbeta = None
             if ctx.normalization == "LayerNorm":
@@ -600,6 +581,7 @@ class _LayerNormLinear(torch.autograd.Function):
                     ctx.bwd_ln_sm_margin,
                     ctx.zero_centered_gamma,
                 )
+                dgrad = dgrad.reshape(inputmat.size())
             elif ctx.normalization == "RMSNorm":
                 dgrad, dgamma = tex.rmsnorm_bwd(
                     dgrad,
@@ -609,12 +591,10 @@ class _LayerNormLinear(torch.autograd.Function):
                     ctx.bwd_ln_sm_margin,
                     ctx.zero_centered_gamma,
                 )
+                dgrad = dgrad.reshape(inputmat.size())
                 dbeta = None
             clear_tensor_data(mu)
             clear_tensor_data(rsigma)
-
-            if not ctx.use_bias:
-                grad_bias = None
 
         if ctx.requires_wgrad:
             # Handle custom DDP from mcore.

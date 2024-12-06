@@ -419,21 +419,13 @@ class _Linear(torch.autograd.Function):
                     inputmat_total_work = None
 
                 if ctx.fp8:
-                    # WGRAD
                     # TODO: deal with this
-                    # if ctx.ub_overlap_ag:
-                    #     if isinstance(grad_output_c, Float8Tensor):
-                    #         grad_output_t = grad_output_c.transpose_2d()
-                    #     else:
-                    #         grad_output_t = tex.fp8_transpose(grad_output_c, fp8_dtype_backward)
-                    # if inputmat_t_total is None:
-                    #     if isinstance(inputmat_total, Float8Tensor):
-                    #         inputmat_t_total = inputmat_total.transpose_2d()
-                    #     else:
-                    #         inputmat_t_total = tex.fp8_transpose(
-                    #             inputmat_total, fp8_dtype_backward
-                    #         )
-                    pass
+                    if ctx.ub_overlap_ag:
+                        raise NotImplementedError
+                        if isinstance(grad_output_c, Float8Tensor):
+                            grad_output_t = grad_output_c.transpose_2d()
+                        else:
+                            grad_output_t = tex.fp8_transpose(grad_output_c, fp8_dtype_backward)
 
                 # wgrad GEMM
                 # Note: Fuse with bgrad computation if needed
