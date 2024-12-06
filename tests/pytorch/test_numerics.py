@@ -35,7 +35,7 @@ from transformer_engine.pytorch import (
     Fp8Unpadding,
 )
 from transformer_engine.pytorch.distributed import checkpoint as te_checkpoint
-from transformer_engine.pytorch.cpp_extensions import fp8_gemm, general_grouped_gemm, gemm, grouped_gemm
+from transformer_engine.pytorch.cpp_extensions import fp8_gemm, general_grouped_gemm, gemm
 from transformer_engine.pytorch.module.base import get_multi_stream_cublas_workspace, get_workspace
 from transformer_engine.pytorch.utils import get_device_compute_capability
 import transformer_engine_torch as tex
@@ -2084,7 +2084,7 @@ def test_grouped_gemm(shape, dtype, layout, accumulate):
             out=out_ref[i],
         )
 
-    grouped_gemm(
+    general_grouped_gemm(
         A,
         B,
         out,

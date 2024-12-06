@@ -214,24 +214,25 @@ std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(const std::ve
   }
   this->set_quantization_params(&tensor);
 
+  py::object ret;
   if (internal) {
     py::handle MXFP8TensorClass(reinterpret_cast<PyObject*>(MXFP8TensorBasePythonClass));
-    auto ret = MXFP8TensorClass("rowwise_data"_a=rowwise_data,
-                                "columnwise_data"_a=columnwise_data,
-                                "rowwise_scale_inv"_a=rowwise_scale_inv,
-                                "columnwise_scale_inv"_a=columnwise_scale_inv,
-                                "fp8_dtype"_a=this->dtype,
-                                "quantizer"_a=this->quantizer);
+    ret = MXFP8TensorClass("rowwise_data"_a=rowwise_data,
+                           "columnwise_data"_a=columnwise_data,
+                           "rowwise_scale_inv"_a=rowwise_scale_inv,
+                           "columnwise_scale_inv"_a=columnwise_scale_inv,
+                           "fp8_dtype"_a=this->dtype,
+                           "quantizer"_a=this->quantizer);
   } else {
     py::handle MXFP8TensorClass(reinterpret_cast<PyObject*>(MXFP8TensorPythonClass));
-    auto ret = MXFP8TensorClass("shape"_a=rowwise_torch_shape,
-                                "dtype"_a=dtype,
-                                "rowwise_data"_a=rowwise_data,
-                                "columnwise_data"_a=columnwise_data,
-                                "rowwise_scale_inv"_a=rowwise_scale_inv,
-                                "columnwise_scale_inv"_a=columnwise_scale_inv,
-                                "fp8_dtype"_a=this->dtype,
-                                "quantizer"_a=this->quantizer);
+    ret = MXFP8TensorClass("shape"_a=torch_shape,
+                           "dtype"_a=GetATenDType(dtype),
+                           "rowwise_data"_a=rowwise_data,
+                           "columnwise_data"_a=columnwise_data,
+                           "rowwise_scale_inv"_a=rowwise_scale_inv,
+                           "columnwise_scale_inv"_a=columnwise_scale_inv,
+                           "fp8_dtype"_a=this->dtype,
+                           "quantizer"_a=this->quantizer);
   }
 
   return {std::move(tensor), std::move(ret)};

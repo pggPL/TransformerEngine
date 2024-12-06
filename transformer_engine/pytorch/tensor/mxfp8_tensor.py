@@ -13,7 +13,7 @@ import transformer_engine_torch as tex
 from transformer_engine_torch import DType as TE_DType
 from ..cpp_extensions.transpose import fp8_cast_transpose_fused
 from ..cpp_extensions.cast import cast_to_fp8
-from ..constant import MXFP8_BLOCK_SCALING_SIZE
+from ..constants import MXFP8_BLOCK_SCALING_SIZE
 from ..fp8 import FP8GlobalStateManager
 from ..utils import devices_match, non_tn_fp8_gemm_supported
 
