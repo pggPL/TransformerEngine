@@ -147,6 +147,12 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
                  void *workspace, size_t workspaceSize, bool accumulate, bool use_split_accumulator,
                  int math_sm_count, int m_split, int n_split, bool gemm_producer,
                  const Tensor *inputCounter, cudaStream_t stream) {
+  // Return immediately if GEMM is trivial
+  if (m <= 0 || n <= 0) {
+    return;
+  }
+  NVTE_CHECK(k > 0);
+
   const GemmParam& param = CanonicalizeGemmInput(*inputA, transa, *inputB, transb,
                                                   k, lda, ldb);
   void *C = outputD->data.dptr;

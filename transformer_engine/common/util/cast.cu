@@ -1213,16 +1213,9 @@ void quantize_helper(const NVTETensor input,
   auto workspace_tensor = reinterpret_cast<Tensor*>(workspace);
 
   if (is_tensor_scaling(output_tensor->scaling_mode)) {
-    NVTE_CHECK(output_tensor->has_data(),
-               "Quantizing in only the columnwise direction not supported yet!");
-    if (!output_tensor->has_columnwise_data()) {
-      fp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(
-          input_tensor,
-          activation_tensor,
-          output_tensor,
-          dbias_tensor,
-          workspace_tensor, stream);
-    } else {
+    if (output_tensor->has_columnwise_data()) {
+      NVTE_CHECK(output_tensor->has_data(),
+                 "Quantizing in only the columnwise direction not supported yet!");
       // TODO: Change to calling some C++ function and finish
       // cast+transpose
       // TODO: handle noop
@@ -1237,6 +1230,13 @@ void quantize_helper(const NVTETensor input,
       if constexpr (!IS_DBIAS && IS_DACT) {
         NVTE_ERROR("Not implemented yet!");
       }
+    } else if (output_tensor->has_data()) {
+      fp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(
+          input_tensor,
+          activation_tensor,
+          output_tensor,
+          dbias_tensor,
+          workspace_tensor, stream);
     }
   } else {
     // MX scaling
