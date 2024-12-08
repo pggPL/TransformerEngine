@@ -212,6 +212,7 @@ void multi_cast_transpose(const std::vector<Tensor*> input_list,
     const auto& output = *output_list[tensor_id];
     CheckInputTensor(input, "multi_cast_transpose_input_" + std::to_string(tensor_id));
     CheckInputTensor(output, "multi_cast_transpose_output_" + std::to_string(tensor_id));
+    //std::cout << *static_cast<char*>(output.data.dptr) << std::endl;
     NVTE_CHECK(output.has_data() && output.has_columnwise_data(),
                "Both rowwise and columnwise output data needs to be allocated.");
 

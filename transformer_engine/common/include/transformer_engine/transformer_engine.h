@@ -599,6 +599,50 @@ class TensorWrapper {
     return nvte_tensor_scaling_mode(tensor_);
   }
 
+  void zero_(cudaStream_t stream) {
+      // Zero out tensor data if allocated
+      if (dptr() != nullptr) {
+          size_t size_in_bytes = bytes();
+          cudaError_t err = cudaMemsetAsync(dptr(), 0, size_in_bytes, stream);
+          //if (err != cudaSuccess) {
+          //    throw std::runtime_error("Failed to zero out tensor data");
+          //}
+      }
+      // Set amax to 0 if allocated
+      if (amax() != nullptr) {
+          float zero = 0.0f;
+          cudaError_t err = cudaMemcpyAsync(amax(), &zero, sizeof(float), cudaMemcpyHostToDevice, stream);
+          //if (err != cudaSuccess) {
+          //    throw std::runtime_error("Failed to set amax to 0");
+          //}
+      }
+
+      // Set scale to 1 if allocated
+      if (scale() != nullptr) {
+          float one = 1.0f;
+          cudaError_t err = cudaMemcpyAsync(scale(), &one, sizeof(float), cudaMemcpyHostToDevice, stream);
+          //if (err != cudaSuccess) {
+          //    throw std::runtime_error("Failed to set scale to 1");
+          //}
+      }
+
+      // Set scale_inv to 1 if allocated
+  if (scale_inv() != nullptr) {
+          const NVTEShape s_inv_shape = scale_inv_shape();
+          size_t numel = 1;
+          for (size_t i = 0; i < s_inv_shape.ndim; ++i) {
+              numel *= s_inv_shape.data[i];
+          }
+          // Create a host vector of ones
+          std::vector<float> ones(numel, 1.0f);
+          cudaError_t err = cudaMemcpyAsync(scale_inv(), ones.data(), numel * sizeof(float),
+                                            cudaMemcpyHostToDevice, stream);
+          //if (err != cudaSuccess) {
+          //    throw std::runtime_error("Failed to set scale_inv to 1");
+          //}
+      }
+  }
+
   static constexpr size_t defaultData = 1;
   static constexpr NVTEShape defaultShape = {&defaultData, 1};
 

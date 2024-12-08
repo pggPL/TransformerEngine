@@ -64,17 +64,17 @@ class TestFP8Recipe:
         forward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=True)
         amax_history_forward = fp8_meta[forward_key].amax_history
         scale_forward = fp8_meta[forward_key].scale
-        scale_inv_forward = fp8_meta[forward_key].scale_inv
+        #scale_inv_forward = fp8_meta[forward_key].scale_inv
         backward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=False)
         amax_history_backward = fp8_meta[backward_key].amax_history
         scale_backward = fp8_meta[backward_key].scale
-        scale_inv_backward = fp8_meta[backward_key].scale_inv
+        #scale_inv_backward = fp8_meta[backward_key].scale_inv
 
         # Tweak amax history and scaling factors
         amax_history_forward.copy_(2 * torch.rand_like(amax_history_forward) + 0.5)
         amax_history_forward[0, :].zero_()
         scale_forward.copy_(2 * torch.rand_like(scale_forward) + 0.5)
-        scale_inv_forward.copy_(torch.reciprocal(scale_forward))
+        #scale_inv_forward.copy_(torch.reciprocal(scale_forward))
         amax_history_backward[0, :].zero_()
 
         # Expected amax history after update
@@ -100,11 +100,11 @@ class TestFP8Recipe:
             raise ValueError(f"{amax_compute_algo=} is not supported")
         ref_scale_forward = (fp8_format.value.max_fwd / ref_amax_forward) / (2**margin)
         ref_scale_backward = (fp8_format.value.max_bwd / ref_amax_backward) / (2**margin)
-        ref_scale_inv_forward = torch.reciprocal(ref_scale_forward)
+        #ref_scale_inv_forward = torch.reciprocal(ref_scale_forward)
         update_weight_amax = is_first_microbatch is None or is_first_microbatch
-        if not update_weight_amax:
-            ref_scale_inv_forward[1].copy_(scale_inv_forward[1])
-        ref_scale_inv_backward = torch.reciprocal(ref_scale_backward)
+        #if not update_weight_amax:
+        #    ref_scale_inv_forward[1].copy_(scale_inv_forward[1])
+        #ref_scale_inv_backward = torch.reciprocal(ref_scale_backward)
 
         # Perform forward, backward, and optimizer steps to update fp8_meta
         with te.fp8_autocast(enabled=True, fp8_recipe=recipe):
@@ -133,8 +133,8 @@ class TestFP8Recipe:
             raise ValueError(f"{amax_compute_algo=} is not supported")
         ref_scale_forward = (fp8_format.value.max_fwd / ref_amax_forward) / (2**margin)
         ref_scale_backward = (fp8_format.value.max_bwd / ref_amax_backward) / (2**margin)
-        ref_scale_inv_forward = torch.reciprocal(ref_scale_forward)
-        ref_scale_inv_backward = torch.reciprocal(ref_scale_backward)
+        #ref_scale_inv_forward = torch.reciprocal(ref_scale_forward)
+        #ref_scale_inv_backward = torch.reciprocal(ref_scale_backward)
 
         # Check that scale and scale inverse match expected values
         # Note: scale and scale inverse are only updated when amax is updated
@@ -142,27 +142,27 @@ class TestFP8Recipe:
             scale_forward[0],
             ref_scale_forward[0],
         )
-        torch.testing.assert_close(
-            scale_inv_forward[0],
-            ref_scale_inv_forward[0],
-        )
+        #torch.testing.assert_close(
+        #    scale_inv_forward[0],
+        #    ref_scale_inv_forward[0],
+        #)
         if update_weight_amax:
             torch.testing.assert_close(
                 scale_forward[1],
                 ref_scale_forward[1],
             )
-            torch.testing.assert_close(
-                scale_inv_forward[1],
-                ref_scale_inv_forward[1],
-            )
+            #torch.testing.assert_close(
+            #    scale_inv_forward[1],
+            #    ref_scale_inv_forward[1],
+            #)
         torch.testing.assert_close(
             scale_backward[0],
             ref_scale_backward[0],
         )
-        torch.testing.assert_close(
-            scale_inv_backward[0],
-            ref_scale_inv_backward[0],
-        )
+        #torch.testing.assert_close(
+        #    scale_inv_backward[0],
+        #    ref_scale_inv_backward[0],
+        #)
 
     @pytest.mark.parametrize("amax_history_len", [31, 1024])
     @pytest.mark.parametrize("amax_compute_algo", ["max", "most_recent"])
@@ -369,7 +369,6 @@ class TestFP8Recipe:
                 fp8_meta[forward_key].amax_history.clone().view(-1),
                 [fp8_meta[forward_key].amax_history],
                 [fp8_meta[forward_key].scale],
-                [fp8_meta[forward_key].scale_inv],
                 recipe.amax_compute_algo,
                 fp8_dtype,
                 recipe.margin,
@@ -378,12 +377,8 @@ class TestFP8Recipe:
             _amax_and_scale_update(
                 fp8_meta[forward_key].amax_history,
                 fp8_meta[forward_key].scale,
-                fp8_meta[forward_key].scale_inv,
                 fp8_max,
                 recipe,
             )
 
         torch.testing.assert_close(fp8_meta[forward_key].scale, expected_scale)
-        torch.testing.assert_close(
-            fp8_meta[forward_key].scale_inv, torch.reciprocal(expected_scale)
-        )

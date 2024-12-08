@@ -6421,10 +6421,11 @@ class FusedAttnFunc(torch.autograd.Function):
         fp8_meta,
         deterministic,
     ):
+
         # pylint: disable=missing-function-docstring
         # "fp8_mha" decides outputs in fp8, while inputs are inferred from the real dtype
         is_input_fp8 = False
-        is_output_fp8 = fp8_meta["recipe"].fp8_mha
+        is_output_fp8 = fp8_meta["recipe"].fp8_mha if "recipe" in fp8_meta else False
         if fp8:
             fused_attention_backend = FusedAttnBackend["FP8"]
             fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
@@ -6600,6 +6601,8 @@ class FusedAttnFunc(torch.autograd.Function):
                 fp8_meta["scaling_fwd"].scale_inv.clone(),
             )
         else:
+            #import pdb; pdb.set_trace()
+            q = q.contiguous()
             out_ret, aux_ctx_tensors = fused_attn_fwd(
                 is_training,
                 max_seqlen_q,
@@ -6614,18 +6617,8 @@ class FusedAttnFunc(torch.autograd.Function):
                 attn_bias,
                 cu_seqlens_q_padded,
                 cu_seqlens_kv_padded,
-                None,  # d_scale_qkv
-                0,  # d_scale_qkv_offset
-                None,  # d_scale_s
-                0,  # d_scale_s_offset
-                None,  # q_scale_s
-                0,  # q_scale_s_offset
-                None,  # q_scale_o
-                0,  # q_scale_o_offset
-                None,  # amax_s
-                0,  # amax_s_offset
-                None,  # amax_o
-                0,  # amax_o_offset
+                None, # s_quantizer
+                None, # o_quantizer
                 attn_scale,
                 dropout_p,
                 fast_zero_fill,
@@ -6908,13 +6901,6 @@ class FusedAttnFunc(torch.autograd.Function):
                         None,
                         None,
                         None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
                         ctx.attn_scale,
                         ctx.dropout_p,
                         ctx.fast_zero_fill,
@@ -7085,6 +7071,7 @@ class FusedAttention(torch.nn.Module):
         fp8: bool = False,
         fp8_meta: Optional[Dict[str, Any]] = None,
     ) -> torch.Tensor:
+
         """fused attention fprop"""
         assert (
             fused_attention_backend != tex.NVTE_Fused_Attn_Backend.NVTE_No_Backend
@@ -7820,12 +7807,12 @@ class DotProductAttention(TransformerEngineBaseModule):
                                first microbatch (since it is the first gradient being
                                produced)
         """
+
         with self.prepare_forward(
             query_layer,
             num_gemms=3,
             allow_non_contiguous=True,
         ) as query_layer:
-
             if self.fp8:
                 if self.fp8_meta["recipe"].fp8_mha:
                     if not self.fp8_meta["recipe"].fp8_dpa:

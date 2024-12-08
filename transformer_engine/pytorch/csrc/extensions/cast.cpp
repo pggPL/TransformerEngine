@@ -37,6 +37,7 @@ py::object quantize(const at::Tensor& tensor, py::handle quantizer,
     te_output = makeTransformerEngineTensor(output, quantizer);
   }
 
+  if (te_output.numel() == 0) return out;
   nvte_quantize(te_input.data(), te_output.data(), at::cuda::getCurrentCUDAStream());
 
   return out;

@@ -302,7 +302,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 *saved_ln_out_tensors,
                 mu,
                 rsigma,
-                weight.main_grad if cpu_offloading and fuse_wgrad_accumulation else None
+                weight.main_grad if fuse_wgrad_accumulation and weight.requires_grad else None
             )
 
             ctx.saved_input = saved_input
@@ -386,8 +386,8 @@ class _LayerNormLinear(torch.autograd.Function):
 
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(
-                    rowwise=True,
-                    columnwise=ctx.requires_wgrad,
+                    rowwise=True, # TODO: look at this, it may be optimied, but casting to transpose only is not implemented
+                    columnwise=True, # TODO should not be implemented ctx.requires_wgrad 
                 )
             if ctx.grad_input_quantizer is not None:
                 ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
@@ -410,6 +410,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 raise NotImplementedError
                 weight = torch.nn.Parameter(weight, weight.requires_grad)
                 weight.main_grad = main_grad
+             
 
             if ctx.ub_overlap_rs_dgrad:
                 raise NotImplementedError
@@ -1056,7 +1057,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
                 bias_tensor = _noop_cat([getattr(self, name) for name in self.bias_names])
             else:
                 bias_tensor = getattr(self, self.bias_names[0])  # Unused
-
+            
             # Get quantizers
             input_quantizer, weight_quantizer, output_quantizer = None, None, None
             grad_output_quantizer, grad_input_quantizer = None, None

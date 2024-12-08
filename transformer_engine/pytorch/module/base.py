@@ -570,7 +570,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         with torch.no_grad():
             for key in (fwd_key, bwd_key):
                 fp8_meta_tensors[key].append(self.fp8_meta[key].scale.clone())
-                fp8_meta_tensors[key].append(self.fp8_meta[key].scale_inv.clone())
                 fp8_meta_tensors[key].append(self.fp8_meta[key].amax_history.clone())
         return fp8_meta_tensors
 
@@ -581,17 +580,13 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             if key in self.fp8_meta:
                 if fp8_meta_tensors is None:
                     self.fp8_meta[key].scale.copy_(torch.ones_like(self.fp8_meta[key].scale))
-                    self.fp8_meta[key].scale_inv.copy_(
-                        torch.ones_like(self.fp8_meta[key].scale_inv)
-                    )
                     self.fp8_meta[key].amax_history.copy_(
                         torch.zeros_like(self.fp8_meta[key].amax_history)
                     )
                 else:
                     assert key in fp8_meta_tensors, "Cannot reset fp8 tensors."
                     self.fp8_meta[key].scale.copy_(fp8_meta_tensors[key][0])
-                    self.fp8_meta[key].scale_inv.copy_(fp8_meta_tensors[key][1])
-                    self.fp8_meta[key].amax_history.copy_(fp8_meta_tensors[key][2])
+                    self.fp8_meta[key].amax_history.copy_(fp8_meta_tensors[key][1])
 
         with torch.no_grad():
             reset("scaling_fwd")
@@ -740,6 +735,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             # Allocate scales and amaxes
             self.init_fp8_meta_tensors(self.fp8_meta["recipe"])
             self.fp8_initialized = True
+
+            self.fp8_meta["recipe"] = FP8GlobalStateManager.get_fp8_recipe()
 
     @contextmanager
     def prepare_forward(
@@ -983,7 +980,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         if update_workspace:
             if tensor is None:
                 raise ValueError("tensor kwarg must be provided to update FP8 workspace")
-            out.quantize_(tensor, noop_flag=skip_update_flag)
+            out.quantize_(tensor, noop_flag=skip_update_flag) # TODO(pgadzinski) - Float8TensorBase do not have this method
 
         return out
 

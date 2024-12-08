@@ -241,7 +241,7 @@ class _Linear(torch.autograd.Function):
             ctx.save_for_backward(
                 *saved_input_tensors,
                 *saved_weight_tensors,
-                weight.main_grad if cpu_offloading and fuse_wgrad_accumulation else None,
+                weight.main_grad if fuse_wgrad_accumulation and weight.requires_grad else None, # TODO(pgadzinski) - think about it
                 bias,
                 weight if (fuse_wgrad_accumulation and
                            hasattr(weight, "grad_added_to_main_grad")) else None

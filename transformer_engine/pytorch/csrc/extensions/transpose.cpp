@@ -271,130 +271,54 @@ void fused_dswiglu_cast_transpose(at::Tensor grad_output, at::Tensor input, at::
                               at::cuda::getCurrentCUDAStream());
 }
 
-void fused_multi_cast_transpose_base(std::vector<at::Tensor> input_list,
-                                     std::vector<void*> scale_dptr_list,
-                                     std::vector<at::Tensor> cast_output_list,
-                                     std::vector<at::Tensor> transposed_output_list,
-                                     std::vector<void*> amax_dptr_list,
-                                     std::vector<void*> scale_inv_dptr_list,
-                                     transformer_engine::DType otype) {
+std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
+                          std::optional<std::vector<py::handle>> output_list,
+                          std::vector<py::handle> quantizer_list,
+                          transformer_engine::DType otype) {
   using namespace transformer_engine::pytorch;
-
-  // Extract properties from PyTorch tensors
-  std::vector<void*> input_dptr_list, cast_output_dptr_list, transposed_output_dptr_list;
-  std::vector<std::vector<size_t>> input_shape_list, cast_output_shape_list,
-      transposed_output_shape_list;
-  std::vector<transformer_engine::DType> input_type_list, cast_output_type_list,
-      transposed_output_type_list;
-  auto extract_tensor_props_skip_dtype = [](at::Tensor& tensor, std::vector<void*>& dptr_list,
-                                            std::vector<std::vector<size_t>>& shape_list) {
-    dptr_list.push_back(tensor.data_ptr());
-    shape_list.push_back({});
-    for (int d = 0; d < tensor.dim(); ++d) {
-      shape_list.back().push_back(tensor.size(d));
-    }
-  };
-  auto extract_tensor_props = [](at::Tensor& tensor, std::vector<void*>& dptr_list,
-                                 std::vector<std::vector<size_t>>& shape_list,
-                                 std::vector<transformer_engine::DType>& type_list) {
-    dptr_list.push_back(tensor.data_ptr());
-    shape_list.push_back({});
-    for (int d = 0; d < tensor.dim(); ++d) {
-      shape_list.back().push_back(tensor.size(d));
-    }
-    type_list.push_back(GetTransformerEngineDType(tensor.scalar_type()));
-  };
-  for (size_t tensor_id = 0; tensor_id < input_list.size(); ++tensor_id) {
-    extract_tensor_props(input_list[tensor_id], input_dptr_list, input_shape_list, input_type_list);
-    extract_tensor_props_skip_dtype(cast_output_list[tensor_id], cast_output_dptr_list,
-                                    cast_output_shape_list);
-    cast_output_type_list.push_back(otype);
-    extract_tensor_props_skip_dtype(transposed_output_list[tensor_id], transposed_output_dptr_list,
-                                    transposed_output_shape_list);
-    transposed_output_type_list.push_back(otype);
-  }
-
-  // Construct TE tensors
-  std::vector<NVTETensor> nvte_input_list, nvte_output_list;
+  std::vector<NVTETensor> nvte_tensor_input_list;
+  std::vector<NVTETensor> nvte_tensor_output_list;
+  std::vector<py::object> py_output_objects_list;
   std::vector<transformer_engine::TensorWrapper> tensor_wrappers;
-  auto make_tensor = [&tensor_wrappers](void* dptr, void* columnwise_dptr,
-                                        const std::vector<size_t>& shape,
-                                        const std::vector<size_t>& columnwise_shape,
-                                        transformer_engine::DType dtype, void* amax_dptr,
-                                        void* scale_dptr, void* scale_inv_dptr) -> NVTETensor {
-    tensor_wrappers.emplace_back(
-        makeTransformerEngineTensor(dptr, columnwise_dptr, shape, columnwise_shape, dtype,
-                                    amax_dptr, scale_dptr, scale_inv_dptr, scale_inv_dptr));
-    return tensor_wrappers.back().data();
-  };
-  for (size_t i = 0; i < input_dptr_list.size(); ++i) {
-    if (input_dptr_list[i] == nullptr) continue;
-    nvte_input_list.emplace_back(make_tensor(input_dptr_list[i], nullptr, input_shape_list[i], {},
-                                             input_type_list[i], nullptr, nullptr, nullptr));
-    nvte_output_list.emplace_back(
-        make_tensor(cast_output_dptr_list[i], transposed_output_dptr_list[i],
-                    cast_output_shape_list[i], transposed_output_shape_list[i],
-                    cast_output_type_list[i],
-                    amax_dptr_list[i], scale_dptr_list[i], scale_inv_dptr_list[i]));
+  auto none = py::none();
+  // create TE tensors from input
+  for(int i = 0; i < input_list.size(); i++) {
+    
+    auto input_tensor = makeTransformerEngineTensor(input_list[i], none);
+    const NVTEShape input_shape = input_tensor.shape();
+
+    transformer_engine::TensorWrapper output_tensor;
+    
+    if (output_list == std::nullopt) {
+      std::unique_ptr<Quantizer> quantizer = convert_quantizer(quantizer_list[i]);
+      std::vector<size_t> output_shape(input_shape.data, input_shape.data + input_shape.ndim);
+      py::object o;
+      std::tie(output_tensor, o) = quantizer->create_tensor(output_shape, otype);
+      py_output_objects_list.push_back(o);
+    }
+    else {
+      output_tensor = makeTransformerEngineTensor((*output_list)[i], quantizer_list[i]);
+    }
+    if(input_tensor.numel() == 0) continue;
+    
+    
+    nvte_tensor_output_list.emplace_back(output_tensor.data());
+    nvte_tensor_input_list.emplace_back(input_tensor.data());
+    tensor_wrappers.emplace_back(std::move(input_tensor));
+    tensor_wrappers.emplace_back(std::move(output_tensor));
   }
 
   // Check tensor lists
-  NVTE_CHECK(nvte_output_list.size() == nvte_input_list.size(),
+  NVTE_CHECK(nvte_tensor_output_list.size() == nvte_tensor_input_list.size(),
              "Number of input and output tensors must match");
 
   // Launch TE kernel
-  nvte_multi_cast_transpose(nvte_input_list.size(), nvte_input_list.data(),
-                            nvte_output_list.data(), at::cuda::getCurrentCUDAStream());
+ 
+  nvte_multi_cast_transpose(nvte_tensor_input_list.size(), nvte_tensor_input_list.data(),
+                            nvte_tensor_output_list.data(), at::cuda::getCurrentCUDAStream());
+  return py_output_objects_list;
 }
 
-void fused_multi_cast_transpose(std::vector<at::Tensor> input_list,
-                                std::vector<at::Tensor> scale_list,
-                                std::vector<at::Tensor> cast_output_list,
-                                std::vector<at::Tensor> transposed_output_list,
-                                std::vector<at::Tensor> amax_list,
-                                std::vector<at::Tensor> scale_inv_list,
-                                transformer_engine::DType otype) {
-  std::vector<void*> scale_dptr_list, amax_dptr_list, scale_inv_dptr_list;
-  for (size_t i = 0; i < scale_list.size(); ++i) {
-    scale_dptr_list.push_back(scale_list[i].data_ptr());
-    amax_dptr_list.push_back(amax_list[i].data_ptr());
-    scale_inv_dptr_list.push_back(scale_inv_list[i].data_ptr());
-  }
-
-  fused_multi_cast_transpose_base(input_list, scale_dptr_list, cast_output_list,
-                                  transposed_output_list, amax_dptr_list, scale_inv_dptr_list,
-                                  otype);
-}
-
-std::tuple<std::vector<at::Tensor>, std::vector<at::Tensor>> fused_multi_cast_transpose_alloc(
-    std::vector<at::Tensor> input_list, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-    std::vector<int> scale_indices, std::vector<int> amax_indices,
-    std::vector<int> scale_inv_indices, transformer_engine::DType otype) {
-  using namespace transformer_engine::pytorch;
-
-  std::vector<at::Tensor> cast_output_list;
-  std::vector<at::Tensor> transposed_output_list;
-  std::vector<void*> scale_dptr_list, amax_dptr_list, scale_inv_dptr_list;
-  for (size_t i = 0; i < input_list.size(); ++i) {
-    auto input_i = input_list[i];
-    // construct cast output tensors
-    auto cast_output_i = allocateTorchTensor(input_i.size(0), input_i.size(1), DType::kByte);
-    cast_output_list.push_back(cast_output_i);
-    // construct transposed output tensors
-    auto transposed_output_i = allocateTorchTensor(input_i.size(1), input_i.size(0), DType::kByte);
-    transposed_output_list.push_back(transposed_output_i);
-    // construct amax/scale/scale_inv dptr lists
-    amax_dptr_list.push_back(getDataPtr(amax, amax_indices[i]));
-    scale_dptr_list.push_back(getDataPtr(scale, scale_indices[i]));
-    scale_inv_dptr_list.push_back(getDataPtr(scale_inv, scale_inv_indices[i]));
-  }
-
-  fused_multi_cast_transpose_base(input_list, scale_dptr_list, cast_output_list,
-                                  transposed_output_list, amax_dptr_list, scale_inv_dptr_list,
-                                  otype);
-
-  return std::make_tuple(std::move(cast_output_list), std::move(transposed_output_list));
-}
 
 at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype, std::optional<at::Tensor> output) {
   using namespace transformer_engine::pytorch;
