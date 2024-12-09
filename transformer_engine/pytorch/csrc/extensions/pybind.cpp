@@ -160,53 +160,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("grad_input"), py::arg("grad_input_transpose"), py::arg("scale"), py::arg("amax"),
         py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
         py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("fused_multi_cast_transpose", &fused_multi_cast_transpose,
-        "Fused Multi-tensor Cast + Transpose", py::call_guard<py::gil_scoped_release>());
-  m.def("fused_multi_cast_transpose_alloc", &fused_multi_cast_transpose_alloc,
-        "Fused Multi-tensor Cast + Transpose with allocating output tensors",
-        py::call_guard<py::gil_scoped_release>());
   m.def("fused_multi_quantize", &fused_multi_quantize,
         "Fused Multi-tensor Cast + Transpose", py::arg("input_list"), py::arg("output_list"), 
         py::arg("quantizer_list"), py::arg("otype"));
-  m.def("cast_to_fp8", &cast_to_fp8, "Cast to FP8", py::call_guard<py::gil_scoped_release>(),
-        py::arg("input"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("cast_to_fp8_noalloc", &cast_to_fp8_noalloc, "Cast to FP8",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
-        py::arg("output"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias", &fp8_cast_dbias, "FP8 cast + dbias",
-        py::call_guard<py::gil_scoped_release>(), py::arg("input"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("scaling_mode"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_dgelu", &fp8_cast_dbias_dgelu, "Fused Cast + BGRAD + DGELU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_drelu", &fp8_cast_dbias_drelu, "Fused Cast + BGRAD + DRELU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_dsilu", &fp8_cast_dbias_dsilu, "Fused Cast + BGRAD + DSILU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_dqgelu", &fp8_cast_dbias_dqgelu, "Fused Cast + BGRAD + DQGELU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("fp8_cast_dbias_dsrelu", &fp8_cast_dbias_dsrelu, "Fused Cast + BGRAD + DSRELU",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("act_input"),
-        py::arg("scale"), py::arg("amax"), py::arg("scale_inv"), py::arg("otype"),
-        py::arg("scaling_mode"), py::arg("scale_offset") = 0, py::arg("amax_offset") = 0,
-        py::arg("scale_inv_offset") = 0);
-  m.def("te_gemm", &te_gemm, "CublasLt GEMM");  /// TODO Think
   m.def("te_general_grouped_gemm", &te_general_grouped_gemm, "Grouped GEMM");
   m.def("fused_attn_fwd_qkvpacked", &fused_attn_fwd_qkvpacked,
         "Fused Attention FP8/BF16/FP16 FWD with packed QKV",
@@ -221,8 +177,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "Fused Attention FP8/BF16/FP16 BWD with packed KV",
         py::call_guard<py::gil_scoped_release>());
   m.def("fused_attn_fwd", &fused_attn_fwd,
-        "Fused Attention FP8/BF16/FP16 FWD with separate Q, K and V");
-  m.def("fused_attn_fwd2", &fused_attn_fwd2,
         "Fused Attention FP8/BF16/FP16 FWD with separate Q, K and V");
   m.def("fused_attn_bwd", &fused_attn_bwd,
         "Fused Attention FP8/BF16/FP16 BWD with separate Q, K and V");

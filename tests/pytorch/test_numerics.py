@@ -35,12 +35,8 @@ from transformer_engine.pytorch import (
     Fp8Unpadding,
 )
 from transformer_engine.pytorch.distributed import checkpoint as te_checkpoint
-<<<<<<< HEAD
-from transformer_engine.pytorch.cpp_extensions import fp8_gemm, general_grouped_gemm, gemm
-=======
-from transformer_engine.pytorch.cpp_extensions import fp8_gemm,  general_gemm, general_grouped_gemm
+from transformer_engine.pytorch.cpp_extensions import general_gemm, general_grouped_gemm
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
->>>>>>> 4303cafbd (groupped linear and some fixes)
 from transformer_engine.pytorch.module.base import get_multi_stream_cublas_workspace, get_workspace
 from transformer_engine.pytorch.utils import get_device_compute_capability
 import transformer_engine_torch as tex
@@ -564,7 +560,6 @@ def test_gpt_selective_activation_recompute(dtype, bs, model, fp8, fp8_model_par
     if fp8 or fp8_model_params:
         tols.update(dict(rtol=0.125, atol=0.0675))
 
-    
     for i, (ref, test) in enumerate(zip(outputs, outputs_recompute)):
         torch.testing.assert_close(
             test,

@@ -518,6 +518,9 @@ class _LayerNormLinear(torch.autograd.Function):
                     ln_out_total_work.wait()
                     ln_out_total_work = None
 
+                if hasattr(ln_out_total, "_create_transpose"):
+                    ln_out_total._create_transpose() # TODO(pgadzinski) - temporary
+
                 # wgrad GEMM
                 # Note: Fuse with bgrad computation if needed
                 wgrad, grad_bias_, _ = general_gemm(

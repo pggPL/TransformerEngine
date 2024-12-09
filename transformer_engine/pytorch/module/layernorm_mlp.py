@@ -275,7 +275,7 @@ class _LayerNormMLP(torch.autograd.Function):
             if isinstance(fc1_weight, torch.Tensor) and not isinstance(fc1_weight, QuantizedTensor):
                 # FP8 cast to workspace buffer
                 update_workspace = is_first_microbatch is None or is_first_microbatch
-                fc1_weight_fp8 = module.get_weight_workspace(
+                fc1_weightmat = module.get_weight_workspace(
                     tensor=fc1_weight,
                     quantizer=fc1_weight_quantizer,
                     cache_name=(None if is_first_microbatch is None else "fc1_weight"),
@@ -320,7 +320,6 @@ class _LayerNormMLP(torch.autograd.Function):
             gelu = activation == "gelu" and gemm_gelu_fusion
         else:
             gelu = not bias_gelu_nvfusion and (activation == "gelu")
-
 
         fc1_outputs = general_gemm(
             fc1_weightmat,
@@ -799,6 +798,9 @@ class _LayerNormMLP(torch.autograd.Function):
                 if ln_out_total_work is not None:
                     ln_out_total_work.wait()
                     ln_out_total_work = None
+                
+                if hasattr(ln_out_total, "_create_transpose"):
+                    ln_out_total._create_transpose() # TODO(pgadzinski) - temporary
 
                 fc1_wgrad_outputs = general_gemm(
                     ln_out_total,
