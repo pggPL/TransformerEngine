@@ -123,11 +123,11 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
   }
 
   // The destination shared memory buffer of a bulk tensor operation should be 128 e8m0_t aligned
-  __shared__ alignas(16) IType in_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
-  __shared__ alignas(16) IType act_in_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
-  __shared__ alignas(16)
+  __shared__ alignas(128) IType in_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
+  __shared__ alignas(128) IType act_in_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
+  __shared__ alignas(128)
       OType out_rowwise_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
-  __shared__ alignas(16)
+  __shared__ alignas(128)
       OType out_colwise_sh[MXFP8_BUFFERS_NUM][MXFP8_SHMEM_DIM_Y][MXFP8_SHMEM_DIM_X];
 
   constexpr int shmem_buff_size = sizeof(in_sh) / MXFP8_BUFFERS_NUM;
@@ -441,9 +441,6 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
 
 constexpr size_t FP8_CHUNK_DIM_Y = 128;
 constexpr size_t FP8_CHUNK_DIM_X = 128;
-constexpr size_t FP8_CHUNKS_PER_BLOCK_Y = 1;
-constexpr size_t FP8_CHUNKS_PER_BLOCK_X = 1;
-constexpr size_t FP8_CHUNKS_PER_BLOCK = FP8_CHUNKS_PER_BLOCK_Y * FP8_CHUNKS_PER_BLOCK_X;
 constexpr size_t FP8_THREADS_PER_CHUNK = 128;
 constexpr size_t FP8_BUFFERS_NUM = 2;
 constexpr size_t FP8_PREFETCH_BUFFERS_NUM = 1;
@@ -469,8 +466,8 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
                        const size_t cols) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 
-  const int block_offset_Y = blockIdx.y * FP8_CHUNKS_PER_BLOCK_Y * FP8_CHUNK_DIM_Y;
-  const int block_offset_X = blockIdx.x * FP8_CHUNKS_PER_BLOCK_X * FP8_CHUNK_DIM_X;
+  const int block_offset_Y = blockIdx.y * FP8_CHUNK_DIM_Y;
+  const int block_offset_X = blockIdx.x * FP8_CHUNK_DIM_X;
 
   const int tid_Y = threadIdx.x / FP8_THREADS_PER_CHUNK;
   const int tid_X = threadIdx.x % FP8_THREADS_PER_CHUNK;
@@ -478,33 +475,32 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   const int thread_offset_Y = tid_Y;
   const int thread_offset_X = tid_X;
 
-  const int dbias_offset_Y = blockIdx.y * FP8_CHUNKS_PER_BLOCK_Y + tid_Y;
-  const int dbias_block_offset_X =
-      blockIdx.x * FP8_CHUNKS_PER_BLOCK_X * FP8_CHUNK_DIM_X + thread_offset_X;
+  const int dbias_offset_Y = blockIdx.y + tid_Y;
+  const int dbias_block_offset_X = blockIdx.x * FP8_CHUNK_DIM_X + thread_offset_X;
   const int dbias_stride = cols;
 
-  float partial_dbias[FP8_CHUNKS_PER_BLOCK_X];
+  float partial_dbias = 0.f;
 
   float amax = 0;
   const float scale = (scale_ptr != nullptr) ? *scale_ptr : 1;
 
   // The destination shared memory buffer of a bulk tensor operation should be 128-byte aligned
-  __shared__ alignas(16) IType in_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
-  __shared__ alignas(16) IType act_in_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
-  __shared__ alignas(16) OType out_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
+  __shared__ alignas(128) IType in_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
+  __shared__ alignas(128) IType act_in_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
+  __shared__ alignas(128) OType out_sh[FP8_BUFFERS_NUM][FP8_SHMEM_DIM_Y][FP8_SHMEM_DIM_X];
 
   constexpr int shmem_buff_size = sizeof(in_sh) / FP8_BUFFERS_NUM;
   constexpr int transaction_size = shmem_buff_size * (IS_DACT ? 2 : 1);
 
   const bool is_master_thread = (threadIdx.x == 0);
 
-// Initialize shared memory barrier with the number of threads participating in the barrier.
-#pragma nv_diag_suppress static_var_with_dynamic_init
+  // Initialize shared memory barrier with the number of threads participating in the barrier.
+  #pragma nv_diag_suppress static_var_with_dynamic_init
   __shared__ alignas(8) uint64_t mbar[FP8_ITERATIONS];
 
   if (is_master_thread) {
-// Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
-#pragma unroll
+  // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
+    #pragma unroll
     for (int iter = 0; iter < FP8_ITERATIONS; ++iter) {
       ptx::mbarrier_init(&mbar[iter], FP8_THREADS_PER_CHUNK);
     }
@@ -514,130 +510,122 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   __syncthreads();
 
   int parity = 0;
-#pragma unroll
-  for (int chunk = 0; chunk < FP8_CHUNKS_PER_BLOCK; ++chunk) {
-    const int chunk_Y = chunk / FP8_CHUNKS_PER_BLOCK_X;
-    const int chunk_X = chunk % FP8_CHUNKS_PER_BLOCK_X;
 
-    const int chunk_offset_Y = block_offset_Y + chunk_Y * FP8_CHUNK_DIM_Y;
-    const int chunk_offset_X = block_offset_X + chunk_X * FP8_CHUNK_DIM_X;
+  const int chunk_offset_Y = block_offset_Y;
+  const int chunk_offset_X = block_offset_X;
 
-    if (is_master_thread) {
-#pragma unroll
-      for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
-        const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * FP8_BUFFER_DIM_Y;
-        const int chunk_stage_offset_X = chunk_offset_X;
+  if (is_master_thread) {
+  #pragma unroll
+    for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
+      const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * FP8_BUFFER_DIM_Y;
+      const int chunk_stage_offset_X = chunk_offset_X;
+      // Initiate bulk tensor copy
+      ptx::cp_async_bulk_tensor_2d_global_to_shared(
+          reinterpret_cast<uint64_t *>(&in_sh[prefetch_buff]),
+          reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_stage_offset_X,
+          chunk_stage_offset_Y, &mbar[prefetch_buff]);
+
+      if constexpr (IS_DACT) {
+        ptx::cp_async_bulk_tensor_2d_global_to_shared(
+            reinterpret_cast<uint64_t *>(&act_in_sh[prefetch_buff]),
+            reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_stage_offset_X,
+            chunk_stage_offset_Y, &mbar[prefetch_buff]);
+      }
+
+      // Arrive on the barrier and tell how many bytes are expected to come in.
+      ptx::mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
+    }
+  } else {
+    // Other threads just arrive
+    #pragma unroll
+    for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
+      ptx::mbarrier_arrive(&mbar[prefetch_buff]);
+    }
+  }
+
+  #pragma unroll
+  for (int iter = 0; iter < FP8_ITERATIONS; ++iter) {
+    const int buff = iter % FP8_BUFFERS_NUM;
+    const int next_iter = iter + FP8_PREFETCH_BUFFERS_NUM;
+    if (next_iter < FP8_ITERATIONS) {
+      if (is_master_thread) {
+        const int next_buff = next_iter % FP8_BUFFERS_NUM;
+        const int chunk_it_offset_y = chunk_offset_Y + next_iter * FP8_BUFFER_DIM_Y;
+        const int chunk_it_offset_x = chunk_offset_X;
         // Initiate bulk tensor copy
         ptx::cp_async_bulk_tensor_2d_global_to_shared(
-            reinterpret_cast<uint64_t *>(&in_sh[prefetch_buff]),
-            reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_stage_offset_X,
-            chunk_stage_offset_Y, &mbar[prefetch_buff]);
+            reinterpret_cast<uint64_t *>(&in_sh[next_buff]),
+            reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_it_offset_x,
+            chunk_it_offset_y, &mbar[next_iter]);
 
         if constexpr (IS_DACT) {
           ptx::cp_async_bulk_tensor_2d_global_to_shared(
-              reinterpret_cast<uint64_t *>(&act_in_sh[prefetch_buff]),
-              reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_stage_offset_X,
-              chunk_stage_offset_Y, &mbar[prefetch_buff]);
+              reinterpret_cast<uint64_t *>(&act_in_sh[next_buff]),
+              reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_it_offset_x,
+              chunk_it_offset_y, &mbar[next_iter]);
         }
 
         // Arrive on the barrier and tell how many bytes are expected to come in.
-        ptx::mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
-      }
-    } else {
-// Other threads just arrive
-#pragma unroll
-      for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
-        ptx::mbarrier_arrive(&mbar[prefetch_buff]);
+        ptx::mbarrier_arrive_expect_tx(&mbar[next_iter], transaction_size);
+      } else {
+        // Other threads just arrive
+        ptx::mbarrier_arrive(&mbar[next_iter]);
       }
     }
 
-#pragma unroll
-    for (int iter = 0; iter < FP8_ITERATIONS; ++iter) {
-      const int buff = iter % FP8_BUFFERS_NUM;
-      const int next_iter = iter + FP8_PREFETCH_BUFFERS_NUM;
-      if (next_iter < FP8_ITERATIONS) {
-        if (is_master_thread) {
-          const int next_buff = next_iter % FP8_BUFFERS_NUM;
-          const int chunk_it_offset_y = chunk_offset_Y + next_iter * FP8_BUFFER_DIM_Y;
-          const int chunk_it_offset_x = chunk_offset_X;
-          // Initiate bulk tensor copy
-          ptx::cp_async_bulk_tensor_2d_global_to_shared(
-              reinterpret_cast<uint64_t *>(&in_sh[next_buff]),
-              reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_it_offset_x,
-              chunk_it_offset_y, &mbar[next_iter]);
+    ptx::fence_proxy_async_shared_cta();
 
-          if constexpr (IS_DACT) {
-            ptx::cp_async_bulk_tensor_2d_global_to_shared(
-                reinterpret_cast<uint64_t *>(&act_in_sh[next_buff]),
-                reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_it_offset_x,
-                chunk_it_offset_y, &mbar[next_iter]);
-          }
+    // Wait for the data to have arrived
+    ptx::mbarrier_wait_parity(&mbar[iter], parity);
 
-          // Arrive on the barrier and tell how many bytes are expected to come in.
-          ptx::mbarrier_arrive_expect_tx(&mbar[next_iter], transaction_size);
-        } else {
-          // Other threads just arrive
-          ptx::mbarrier_arrive(&mbar[next_iter]);
-        }
+    #pragma unroll
+    for (int stage = 0; stage < FP8_BUFF_STAGES_NUM; ++stage) {
+      const int stage_offset_Y = stage;
+      const int shmem_offset_y = thread_offset_Y + stage_offset_Y;
+      const int shmem_offset_x = thread_offset_X;
+
+      float elt = static_cast<float>(in_sh[buff][shmem_offset_y][shmem_offset_x]);
+      if constexpr (IS_DACT) {
+        elt *= OP(static_cast<float>(act_in_sh[buff][shmem_offset_y][shmem_offset_x]), {});
       }
-
-      ptx::fence_proxy_async_shared_cta();
-
-      // Wait for the data to have arrived
-      ptx::mbarrier_wait_parity(&mbar[iter], parity);
-
-#pragma unroll
-      for (int stage = 0; stage < FP8_BUFF_STAGES_NUM; ++stage) {
-        const int stage_offset_Y = stage;
-        const int shmem_offset_y = thread_offset_Y + stage_offset_Y;
-        const int shmem_offset_x = thread_offset_X;
-
-        float elt = static_cast<float>(in_sh[buff][shmem_offset_y][shmem_offset_x]);
-        if constexpr (IS_DACT) {
-          elt *= OP(static_cast<float>(act_in_sh[buff][shmem_offset_y][shmem_offset_x]), {});
-        }
-        if constexpr (IS_DBIAS) {
-          partial_dbias[chunk_X] += elt;
-        }
-        if (isfinite(elt)) {
-          amax = fmaxf(amax, fabsf(elt));
-        }
-        out_sh[buff][shmem_offset_y][shmem_offset_x] = static_cast<OType>(elt * scale);
+      if constexpr (IS_DBIAS) {
+        partial_dbias += elt;
       }
-
-      // Wait for shared memory writes to be visible to TMA engine.
-      ptx::fence_proxy_async_shared_cta();
-      __syncthreads();
-      // After syncthreads, writes by all threads are visible to TMA engine.
-
-      // Initiate TMA transfer to copy shared memory to global memory
-      if (is_master_thread) {
-        const int chunk_it_offset_y = chunk_offset_Y + iter * FP8_BUFFER_DIM_Y;
-        const int chunk_it_offset_x = chunk_offset_X;
-        ptx::cp_async_bulk_tensor_2d_shared_to_global(
-            reinterpret_cast<const uint64_t *>(&tensor_map_output), chunk_it_offset_x,
-            chunk_it_offset_y, reinterpret_cast<uint64_t *>(&out_sh[buff]));
-
-        // Create a "bulk async-group" out of the previous bulk copy operation.
-        ptx::cp_async_bulk_commit_group();
-
-        // Wait for TMA transfer to have finished reading shared memory.
-        ptx::cp_async_bulk_wait_group_read<FP8_PREFETCH_BUFFERS_NUM>();
+      if (isfinite(elt)) {
+        amax = fmaxf(amax, fabsf(elt));
       }
+      out_sh[buff][shmem_offset_y][shmem_offset_x] = static_cast<OType>(elt * scale);
     }
-    ptx::cp_async_bulk_wait_group_read<0>();
+
+    // Wait for shared memory writes to be visible to TMA engine.
+    ptx::fence_proxy_async_shared_cta();
     __syncthreads();
+    // After syncthreads, writes by all threads are visible to TMA engine.
 
-    parity ^= 1;
+    // Initiate TMA transfer to copy shared memory to global memory
+    if (is_master_thread) {
+      const int chunk_it_offset_y = chunk_offset_Y + iter * FP8_BUFFER_DIM_Y;
+      const int chunk_it_offset_x = chunk_offset_X;
+      ptx::cp_async_bulk_tensor_2d_shared_to_global(
+          reinterpret_cast<const uint64_t *>(&tensor_map_output), chunk_it_offset_x,
+          chunk_it_offset_y, reinterpret_cast<uint64_t *>(&out_sh[buff]));
+
+      // Create a "bulk async-group" out of the previous bulk copy operation.
+      ptx::cp_async_bulk_commit_group();
+
+      // Wait for TMA transfer to have finished reading shared memory.
+      ptx::cp_async_bulk_wait_group_read<FP8_PREFETCH_BUFFERS_NUM>();
+    }
   }
+  ptx::cp_async_bulk_wait_group_read<0>();
+  __syncthreads();
+
+  parity ^= 1;
 
   if constexpr (IS_DBIAS) {
-#pragma unroll
-    for (int i = 0; i < FP8_CHUNKS_PER_BLOCK_X; ++i) {
-      const int dbias_offset_X = dbias_block_offset_X + i * FP8_CHUNK_DIM_X;
-      const int dbias_offset = dbias_offset_Y * dbias_stride + dbias_offset_X;
-      dbias_workspace[dbias_offset] = partial_dbias[i];
-    }
+    const int dbias_offset_X = dbias_block_offset_X;
+    const int dbias_offset = dbias_offset_Y * dbias_stride + dbias_offset_X;
+    dbias_workspace[dbias_offset] = partial_dbias;
   }
 
   if (amax_ptr != nullptr) {
@@ -691,8 +679,8 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
   const float scale = (scale_ptr != nullptr) ? *scale_ptr : 1;
 
   // The destination shared memory buffer of a bulk tensor operation should be 128-byte aligned
-  __shared__ alignas(16) IType in_sh[SHMEM_BUFFERS][SHMEM_DIM];
-  __shared__ alignas(16) OType out_sh[SHMEM_BUFFERS][SHMEM_DIM];
+  __shared__ alignas(128) IType in_sh[SHMEM_BUFFERS][SHMEM_DIM];
+  __shared__ alignas(128) OType out_sh[SHMEM_BUFFERS][SHMEM_DIM];
 
   constexpr int transaction_size_IN = sizeof(in_sh) / SHMEM_BUFFERS;
   constexpr int transaction_size_OUT = sizeof(out_sh) / SHMEM_BUFFERS;
@@ -909,8 +897,8 @@ void cast_fp8_2D(const Tensor &input, const Tensor &act_input, Tensor *output, T
   const size_t cols = input.data.shape[1];
   const size_t chunks_Y = DIVUP(rows, FP8_CHUNK_DIM_Y);
   const size_t chunks_X = DIVUP(cols, FP8_CHUNK_DIM_X);
-  const size_t blocks_Y = DIVUP(chunks_Y, FP8_CHUNKS_PER_BLOCK_Y);
-  const size_t blocks_X = DIVUP(chunks_X, FP8_CHUNKS_PER_BLOCK_X);
+  const size_t blocks_Y = chunks_Y;
+  const size_t blocks_X = chunks_X;
 
   const size_t dbias_rows = blocks_Y;
   const size_t dbias_cols = cols;
