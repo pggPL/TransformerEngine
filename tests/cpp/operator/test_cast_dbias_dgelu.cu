@@ -36,7 +36,6 @@ void compute_ref_cast_dbias_dgelu(const IT *input,
 
   std::vector<CT> acc_dbias(H, 0.);
 
-  #pragma omp parallel for reduction(max: amax) proc_bind(spread)
   for (size_t i = 0; i < N; i++) {
     for (size_t j = 0; j < H; j++) {
       CT in_elt = static_cast<CT>(input[i * H + j]);
