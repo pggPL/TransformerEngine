@@ -603,27 +603,18 @@ class TensorWrapper {
       // Zero out tensor data if allocated
       if (dptr() != nullptr) {
           size_t size_in_bytes = bytes();
-          cudaError_t err = cudaMemsetAsync(dptr(), 0, size_in_bytes, stream);
-          //if (err != cudaSuccess) {
-          //    throw std::runtime_error("Failed to zero out tensor data");
-          //}
+          cudaMemsetAsync(dptr(), 0, size_in_bytes, stream);
       }
       // Set amax to 0 if allocated
       if (amax() != nullptr) {
           float zero = 0.0f;
-          cudaError_t err = cudaMemcpyAsync(amax(), &zero, sizeof(float), cudaMemcpyHostToDevice, stream);
-          //if (err != cudaSuccess) {
-          //    throw std::runtime_error("Failed to set amax to 0");
-          //}
+          cudaMemcpyAsync(amax(), &zero, sizeof(float), cudaMemcpyHostToDevice, stream);
       }
 
       // Set scale to 1 if allocated
       if (scale() != nullptr) {
           float one = 1.0f;
-          cudaError_t err = cudaMemcpyAsync(scale(), &one, sizeof(float), cudaMemcpyHostToDevice, stream);
-          //if (err != cudaSuccess) {
-          //    throw std::runtime_error("Failed to set scale to 1");
-          //}
+          cudaMemcpyAsync(scale(), &one, sizeof(float), cudaMemcpyHostToDevice, stream);
       }
 
       // Set scale_inv to 1 if allocated
@@ -635,11 +626,8 @@ class TensorWrapper {
           }
           // Create a host vector of ones
           std::vector<float> ones(numel, 1.0f);
-          cudaError_t err = cudaMemcpyAsync(scale_inv(), ones.data(), numel * sizeof(float),
+          cudaMemcpyAsync(scale_inv(), ones.data(), numel * sizeof(float),
                                             cudaMemcpyHostToDevice, stream);
-          //if (err != cudaSuccess) {
-          //    throw std::runtime_error("Failed to set scale_inv to 1");
-          //}
       }
   }
 
