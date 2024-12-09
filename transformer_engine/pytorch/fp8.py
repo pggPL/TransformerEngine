@@ -98,9 +98,7 @@ class FP8GlobalStateManager:
     autocast_to_fp8_params = {}
     fp8_param_to_autocast = {}
     skip_fp8_weight_update_tensor = None
-
-    # Current scaling / MXFP8 specific parameters.
-    mxfp8_available = False
+    mxfp8_available = None
     reason_for_no_mxfp8 = ""
 
     @classmethod
@@ -208,6 +206,9 @@ class FP8GlobalStateManager:
         Note: For CG capture, this method is called from the graphed
         wrapper. For non CG case, it's called from within the module.
         """
+
+        if fp8_meta["recipe"].block():
+            return
 
         # Every module must call this function exactly once since
         # the amax tensors are static. Ensures that compatibility
