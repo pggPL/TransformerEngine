@@ -21,7 +21,7 @@ extern "C" {
  *
  * The formula used:
  * @f[
- * y = \frac{x - E[x]}{\sqrt{Var[x] + \varepsilon}}\gamma) + \beta
+ * y = \frac{x - E[x]}{\sqrt{Var[x] + \varepsilon}} \gamma + \beta
  * @f]
  *
  * Calling this function with workspace set to empty tensor will not perform the operation,
@@ -38,7 +38,7 @@ extern "C" {
  *                                     the last dimension. Shape: [N].
  *  \param[out]    workspace           Workspace tensor.
  *  \param[in]     multiprocessorCount Number of SMs in the device.
- *  \param[in]     zero_centered_gamma If zero_centered_gamma is enabled
+ *  \param[in]     zero_centered_gamma Multiply normalized values by @f$ \gamma+1 @f$ instead of @f$ \gamma @f$
  *  \param[in]     stream              CUDA stream used for the operation.
  */
 void nvte_layernorm_fwd(const NVTETensor x, const NVTETensor gamma, const NVTETensor beta,
@@ -70,15 +70,12 @@ void nvte_layernorm_fwd(const NVTETensor x, const NVTETensor gamma, const NVTETe
  *  \param[out]    dbeta               Gradient for beta tensor of shape [H].
  *  \param[out]    workspace           Workspace tensor.
  *  \param[in]     multiprocessorCount Number of SMs in the device.
- *  \param[in]     zero_centered_gamma If zero_centered_gamma is enabled
+ *  \param[in]     zero_centered_gamma Multiply normalized values by @f$ \gamma+1 @f$ instead of @f$ \gamma @f$
  *  \param[in]     stream              CUDA stream used for the operation.
  */
-void nvte_layernorm_bwd(const NVTETensor dz,      // BxSxhidden_size
-                        const NVTETensor x,       // BxSxhidden_size
-                        const NVTETensor mu,      // BxS, FP32!
-                        const NVTETensor rsigma,  // BxS, FP32!
-                        const NVTETensor gamma,   // hidden_size
-                        NVTETensor dx, NVTETensor dgamma, NVTETensor dbeta, NVTETensor workspace,
+void nvte_layernorm_bwd(const NVTETensor dz, const NVTETensor x, const NVTETensor mu,
+                        const NVTETensor rsigma, const NVTETensor gamma, NVTETensor dx,
+                        NVTETensor dgamma, NVTETensor dbeta, NVTETensor workspace,
                         const int multiprocessorCount, const bool zero_centered_gamma,
                         cudaStream_t stream);
 
@@ -105,7 +102,7 @@ void nvte_layernorm_bwd(const NVTETensor dz,      // BxSxhidden_size
  *                                     calculated over the last dimension. Shape: [N].
  *  \param[out]    workspace           Workspace tensor.
  *  \param[in]     multiprocessorCount Number of SMs in the device.
- *  \param[in]     zero_centered_gamma If zero_centered_gamma is enabled
+ *  \param[in]     zero_centered_gamma Multiply normalized values by @f$ \gamma+1 @f$ instead of @f$ \gamma @f$
  *  \param[in]     stream              CUDA stream used for the operation.
  */
 void nvte_rmsnorm_fwd(const NVTETensor x, const NVTETensor gamma, const float epsilon, NVTETensor z,
@@ -137,13 +134,20 @@ void nvte_rmsnorm_fwd(const NVTETensor x, const NVTETensor gamma, const float ep
  *  \param[out]    dgamma              Gradient for gamma tensor of shape [H].
  *  \param[out]    workspace           Workspace tensor.
  *  \param[in]     multiprocessorCount Number of SMs in the device.
- *  \param[in]     zero_centered_gamma If zero_centered_gamma is enabled
+ *  \param[in]     zero_centered_gamma Multiply normalized values by @f$ \gamma+1 @f$ instead of @f$ \gamma @f$
  *  \param[in]     stream              CUDA stream used for the operation.
  */
 void nvte_rmsnorm_bwd(const NVTETensor dz, const NVTETensor x, const NVTETensor rsigma,
                       const NVTETensor gamma, NVTETensor dx, NVTETensor dgamma,
                       NVTETensor workspace, const int multiprocessorCount,
                       const bool zero_centered_gamma, cudaStream_t stream);
+
+/*! \brief Helper to enable cuDNN backend for normalization
+ *
+ *  \param[in]     bool              Enable if True
+ */
+void nvte_enable_cudnn_norm_fwd(bool enable);
+void nvte_enable_cudnn_norm_bwd(bool enable);
 
 #ifdef __cplusplus
 }  // extern "C"

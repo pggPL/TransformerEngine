@@ -46,7 +46,7 @@ void rmsnorm_fwd(const Tensor &x, const Tensor &gamma, const float epsilon, Tens
 
   NVTE_Norm_Backend norm_backend;
   bool is_aligned = true;
-  if (std::getenv("NVTE_FWD_RMSNORM_USE_CUDNN") || is_block_scaling(z->scaling_mode)) {
+  if (use_cudnn_norm_fwd() || is_block_scaling(z->scaling_mode)) {
     // TODO: add check for GPU ARCH
     norm_backend = NVTE_Norm_Backend::Cudnn;
   } else {
@@ -106,7 +106,7 @@ void rmsnorm_bwd(const Tensor &dz, const Tensor &x, const Tensor &rsigma, const 
 
   NVTE_Norm_Backend norm_backend;
   bool is_aligned = true;
-  if (std::getenv("NVTE_BWD_RMSNORM_USE_CUDNN")) {
+  if (use_cudnn_norm_bwd()) {
     // TODO: add check for GPU ARCH
     norm_backend = NVTE_Norm_Backend::Cudnn;
   } else {
