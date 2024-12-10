@@ -155,6 +155,7 @@ def general_gemm(
         accumulate,
         use_split_accumulator,
     )
+
     fn = tex.generic_gemm
     if ub_algo is not None:
         raise ValueError("Not implemented yet!")
