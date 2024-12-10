@@ -13,10 +13,11 @@
 namespace transformer_engine::pytorch {
 
 py::object quantize(const at::Tensor& tensor, py::handle quantizer,
-                    const py::object& output) {
+                    const py::object& output, std::optional<at::Tensor> noop) {
   init_extension();
   auto my_quantizer = convert_quantizer(quantizer);
   auto input_tensor = tensor.contiguous();
+  
 
   const TensorWrapper& te_input = makeTransformerEngineTensor(input_tensor);
   const auto& te_input_shape = te_input.shape();
@@ -37,8 +38,18 @@ py::object quantize(const at::Tensor& tensor, py::handle quantizer,
     te_output = makeTransformerEngineTensor(output, quantizer);
   }
 
+  TensorWrapper te_noop;
+  if(noop.has_value()) {
+    te_noop = makeTransformerEngineTensor(*noop);
+  }
+  else {
+    auto opts = torch::TensorOptions().dtype(at::kFloat).device(torch::kCUDA);
+    te_noop = makeTransformerEngineTensor(at::empty({0}, opts));
+  }
+  
+
   if (te_output.numel() == 0) return out;
-  nvte_quantize(te_input.data(), te_output.data(), at::cuda::getCurrentCUDAStream());
+  nvte_quantize_noop(te_input.data(), te_output.data(), te_noop.data(), at::cuda::getCurrentCUDAStream());
 
   return out;
 }

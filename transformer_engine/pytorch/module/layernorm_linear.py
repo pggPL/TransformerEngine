@@ -259,8 +259,7 @@ class _LayerNormLinear(torch.autograd.Function):
 
         if is_grad_enabled:
             if cpu_offloading:
-                raise NotImplementedError
-                if fp8 and weight_fp8 is not None:
+                if fp8 and weightmat is not None:
                     weightmat.weight_offloading = True
                 ln_weight.weight_offloading = True
                 weight.weight_offloading = True
@@ -438,13 +437,6 @@ class _LayerNormLinear(torch.autograd.Function):
                 if tp_world_size == 1 or not weight.requires_grad:
                     ctx.ub_bulk_wgrad = False
 
-            # Prepare grad output tensor
-            # Note: Cast to expected dtype and perform tensor-parallel communication
-            if ctx.grad_output_quantizer is not None:
-                ctx.grad_output_quantizer.set_usage(
-                    rowwise=True,
-                    columnwise=ctx.requires_wgrad,
-                )
             (
                 grad_output,
                 grad_bias,

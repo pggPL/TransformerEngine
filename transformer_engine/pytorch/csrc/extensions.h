@@ -255,7 +255,7 @@ namespace transformer_engine::pytorch {
 
 py::object quantize(const at::Tensor& tensor,
                     py::handle quantizer,
-                    const py::object& output);
+                    const py::object& output, std::optional<at::Tensor> noop);
 
 py::object dequantize(const py::handle& input, transformer_engine::DType otype);
 

@@ -47,6 +47,7 @@ class Quantizer(abc.ABC):
         self,
         src: torch.Tensor,
         dst: QuantizedTensor,
+        noop_flag: Optional[torch.Tensor]
     ) -> QuantizedTensor:
         ...
 
@@ -349,13 +350,16 @@ class QuantizedTensor(torch.Tensor):
         shape: Optional[Iterable[int]] = None,
         dtype: Optional[torch.dtype] = None,
         requires_grad: bool = False,
+        data: Optional[torch.Tensor] = None,
     ) -> QuantizedTensor:
         """Use attributes of a QuantizedTensor to create another QuantizedTensor,
-        potentially changing shape or type.
+        potentially changing shape, type or data.
         """
         shape = shape if shape is not None else tensor.shape
         dtype = dtype if dtype is not None else tensor.dtype
         kwargs = tensor.get_metadata()
+        if data is not None:
+            kwargs['data'] = data
         return cls(shape=shape, dtype=dtype,
                    requires_grad=requires_grad,
                    **kwargs)

@@ -65,6 +65,12 @@ void nvte_quantize(const NVTETensor input, NVTETensor output, cudaStream_t strea
  *  \param[out]     workspace        Workspace tensor.
  *  \param[in]      stream           CUDA stream used for the operation.
  */
+void nvte_quantize_noop(const NVTETensor input, NVTETensor output, NVTETensor noop, cudaStream_t stream);
+
+/*! \brief Cast tensor to MXFP8. Additionally, reduce the input along columns.
+ *
+ * TODO
+ */
 void nvte_quantize_dbias(const NVTETensor input, NVTETensor output, NVTETensor dbias,
                              NVTETensor workplace, cudaStream_t stream);
 

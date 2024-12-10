@@ -41,6 +41,7 @@ class Float8Quantizer(Quantizer):
         self,
         src: torch.Tensor,
         dst: QuantizedTensor,
+        noop_flag: Optional[torch.Tensor]
     ) -> QuantizedTensor:
         if not isinstance(dst, Float8Tensor):
             raise ValueError("Float8Quantizer can only update Float8Tensor")
@@ -52,7 +53,7 @@ class Float8Quantizer(Quantizer):
             src = src.contiguous()
 
         # Launch cast kernel
-        tex.quantize(src, self, dst)
+        tex.quantize(src, self, noop_flag, dst)
 
         # Update FP8 dtype
         dst._fp8_dtype = self.dtype
@@ -185,10 +186,12 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             float32 flag indicating whether to avoid performing update
 
         """
-        ### TODO Support noop_flag
+        ### TODO Support noop_flag - (pgadzinski) - look also in base.py line 
+        # "tex.quantize(tensor, quantizer, out)"
+        # need to support this flag too
         if isinstance(tensor, QuantizedTensor):
-            return self.quantize_(tensor.dequantize())
-        self._get_quantizer().update_quantized(tensor, self)
+            return self.quantize_(tensor.dequantize(), noop_flag=noop_flag)
+        self._get_quantizer().update_quantized(tensor, self, noop_flag=noop_flag)
         return self
 
     def detach(self) -> Float8Tensor:

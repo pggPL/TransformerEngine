@@ -13,8 +13,9 @@ import transformer_engine_torch as tex
 from transformer_engine.pytorch.fp8 import (
     FP8GlobalStateManager,
     _amax_and_scale_update,
-    get_default_fp8_recipe,
+    get_default_fp8_recipe
 )
+from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
 import transformer_engine.pytorch.ops as te_ops
 import transformer_engine_torch as tex
 
@@ -142,27 +143,15 @@ class TestFP8Recipe:
             scale_forward[0],
             ref_scale_forward[0],
         )
-        #torch.testing.assert_close(
-        #    scale_inv_forward[0],
-        #    ref_scale_inv_forward[0],
-        #)
         if update_weight_amax:
             torch.testing.assert_close(
                 scale_forward[1],
                 ref_scale_forward[1],
             )
-            #torch.testing.assert_close(
-            #    scale_inv_forward[1],
-            #    ref_scale_inv_forward[1],
-            #)
         torch.testing.assert_close(
             scale_backward[0],
             ref_scale_backward[0],
         )
-        #torch.testing.assert_close(
-        #    scale_inv_backward[0],
-        #    ref_scale_inv_backward[0],
-        #)
 
     @pytest.mark.parametrize("amax_history_len", [31, 1024])
     @pytest.mark.parametrize("amax_compute_algo", ["max", "most_recent"])
@@ -183,9 +172,9 @@ class TestFP8Recipe:
         # Get FP8 meta tensors
         forward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=True)
         backward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=False)
-        x_fp8_meta = op.get_fp8_meta("input")[forward_key]
-        w_fp8_meta = op.get_fp8_meta("param")[forward_key]
-        dy_fp8_meta = op.get_fp8_meta("grad_output")[backward_key]
+        x_fp8_meta = op.get_quantizer("forward", 0)
+        w_fp8_meta = op.get_quantizer("forward", 1)
+        dy_fp8_meta = op.get_quantizer("backward", 0)
 
         # Perform training steps
         x_history = []
@@ -247,7 +236,7 @@ class TestFP8Recipe:
                 )
 
             def check_scale(
-                fp8_meta: dict,
+                quanitzer: Float8Quantizer,
                 ref_amax_history: Iterable[float],
                 stage: str,
             ):
@@ -272,18 +261,11 @@ class TestFP8Recipe:
 
                 # Check values in FP8 meta tensors
                 torch.testing.assert_close(
-                    fp8_meta.scale.item(),
+                    quanitzer.scale.item(),
                     ref_scale,
-                )
-                torch.testing.assert_close(
-                    fp8_meta.scale_inv.item(),
-                    1 / ref_scale,
                 )
 
             # Check that results match expected values
-            check_amax_history(x_fp8_meta, x_history)
-            check_amax_history(w_fp8_meta, w_history)
-            check_amax_history(dy_fp8_meta, dy_history)
             check_scale(x_fp8_meta, x_history, "forward")
             check_scale(w_fp8_meta, w_history, "forward")
             check_scale(dy_fp8_meta, dy_history, "backward")

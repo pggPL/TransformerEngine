@@ -332,7 +332,7 @@ class _Linear(torch.autograd.Function):
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(
                     rowwise=True,
-                    columnwise=ctx.requires_wgrad,
+                    columnwise=True, # TODO(pgadzinski) - remove
                 )
             (
                 grad_output,

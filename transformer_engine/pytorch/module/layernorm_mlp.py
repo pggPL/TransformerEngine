@@ -623,7 +623,7 @@ class _LayerNormMLP(torch.autograd.Function):
             if ctx.grad_fc2_output_quantizer is not None:
                 ctx.grad_fc2_output_quantizer.set_usage(
                     rowwise=True,
-                    columnwise=ctx.fc2_weight_requires_grad,
+                    columnwise=True, # TODO(pgadzinski) - remove
                 )
             ctx.use_bias = fc1_bias is not None  # For grad_output_preprocess
             (
@@ -1315,8 +1315,10 @@ class LayerNormMLP(TransformerEngineBaseModule):
                 if torch.is_grad_enabled():
                     grad_fc2_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
                     grad_fc2_output_quantizer.internal = True
+                    grad_fc2_output_quantizer.set_usage(rowwise=True, columnwise=True) # TODO(pgadzinski) - remove
                     grad_fc1_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT1]
                     grad_fc1_output_quantizer.internal = True
+                    grad_fc1_output_quantizer.set_usage(rowwise=True, columnwise=True)  # TODO(pgadzinski) - remove
                     grad_input_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT2]
                     grad_input_quantizer.internal = True
 
