@@ -1221,7 +1221,8 @@ void quantize_helper(const NVTETensor input,
       // cast+transpose
       // TODO: handle noop
       if constexpr (!IS_DBIAS && !IS_DACT) {
-        const auto noop_tensor = *(reinterpret_cast<const Tensor*>(noop));
+        const auto noop_tensor = noop != nullptr ? *(reinterpret_cast<const Tensor*>(noop))
+                                                 : Tensor();
         cast_transpose(input_tensor, noop_tensor, output_tensor, stream);
       }
       if constexpr (IS_DBIAS) {
