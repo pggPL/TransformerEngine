@@ -43,7 +43,6 @@ from ..cpp_extensions import (
 from ..constants import GemmParallelModes, dist_group_type
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
-from ..tensor.float8_tensor import Float8Tensor
 from ..tensor.quantized_tensor import (
     QuantizedTensor,
     Quantizer,
@@ -422,7 +421,7 @@ class _Linear(torch.autograd.Function):
                     # TODO: deal with this
                     if ctx.ub_overlap_ag:
                         raise NotImplementedError
-                        if isinstance(grad_output_c, Float8Tensor):
+                        if isinstance(grad_output_c, QuantizedTensor):
                             grad_output_t = grad_output_c.transpose_2d()
                         else:
                             grad_output_t = tex.fp8_transpose(grad_output_c, fp8_dtype_backward)
@@ -491,7 +490,7 @@ class _Linear(torch.autograd.Function):
             FP8GlobalStateManager.reduce_and_update_fp8_tensors(forward=False)
 
         # Scatter fp8 weight buffers
-        if ctx.fp8 and not isinstance(weight, Float8Tensor):
+        if ctx.fp8 and not isinstance(weight, QuantizedTensor):
             _fsdp_scatter_tensors(ctx.fsdp_group, weight_fp8)
 
         return (
@@ -732,7 +731,7 @@ class Linear(TransformerEngineBaseModule):
             # Check if parameters are subviews of buffers
             is_subview = (split_start, split_end) != (0, self.out_features)
             if is_subview and with_fp8_params:
-                raise RuntimeError("Splitting Float8Tensor into multiple params is not supported")
+                raise RuntimeError("Splitting QuantizedTensor into multiple params is not supported")
 
             # Construct weight parameter
             self.register_parameter(
@@ -866,7 +865,7 @@ class Linear(TransformerEngineBaseModule):
             # Make sure weight tensor has correct quantizer
             # Note: Quantizer might have changed if quantization
             # recipe changed
-            if weight_quantizer is not None and isinstance(weight_tensor, Float8Tensor):
+            if weight_quantizer is not None and isinstance(weight_tensor, QuantizedTensor):
                 weight_tensor._quantizer = weight_quantizer
 
             if torch.is_grad_enabled():

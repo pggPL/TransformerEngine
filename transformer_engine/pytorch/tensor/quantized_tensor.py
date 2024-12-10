@@ -42,6 +42,16 @@ class Quantizer(abc.ABC):
         self.columnwise_usage = columnwise
         self.internal = False
 
+    def __repr__(self):
+        return (
+            "Quantizer("
+            f"rowwise_usage={self.rowwise_usage}, "
+            f"columnwise_usage={self.columnwise_usage}, "
+            f"internal={self.internal}, "
+            f"single_usage_sufficient={self.single_usage_sufficient}"
+            ")"
+        )
+
     @abc.abstractmethod
     def update_quantized(
         self,

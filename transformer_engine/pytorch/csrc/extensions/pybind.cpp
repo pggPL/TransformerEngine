@@ -16,6 +16,7 @@
 #include "pytorch/csrc/common.h"
 #include "pybind.h"
 #include "common.h"
+
 namespace transformer_engine::pytorch {
 
 PyTypeObject *Float8TensorPythonClass = nullptr;  /// TODO Remove

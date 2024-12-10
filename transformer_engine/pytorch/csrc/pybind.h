@@ -4,6 +4,8 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#define PYBIND11_DETAILED_ERROR_MESSAGES  // TODO remove
+
 #ifndef TRANSFORMER_ENGINE_PYTORCH_CSRC_EXTENSIONS_PYBIND_H_
 #define TRANSFORMER_ENGINE_PYTORCH_CSRC_EXTENSIONS_PYBIND_H_
 #include <pybind11/detail/common.h>
