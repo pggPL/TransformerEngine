@@ -49,8 +49,8 @@ TensorWrapper NVTETensorFromMXFP8Tensor(py::handle tensor, Quantizer* quantizer)
   auto ret = TensorWrapper();
 
   if (quantizer->rowwise_usage) {
-    const at::Tensor &data_rowwise = tensor.attr("_data_rowwise").cast<at::Tensor>();
-    const at::Tensor &scale_inv_rowwise = tensor.attr("_scale_inv_rowwise").cast<at::Tensor>();
+    const at::Tensor &data_rowwise = tensor.attr("_rowwise_data").cast<at::Tensor>();
+    const at::Tensor &scale_inv_rowwise = tensor.attr("_rowwise_scale_inv").cast<at::Tensor>();
     float *scale_inv_rowwise_dptr = reinterpret_cast<float*>(scale_inv_rowwise.data_ptr());
     const auto& shape = getTensorShape(data_rowwise);
     ret.set_rowwise_data(data_rowwise.data_ptr(), dtype, shape);
@@ -63,8 +63,8 @@ TensorWrapper NVTETensorFromMXFP8Tensor(py::handle tensor, Quantizer* quantizer)
   }
 
   if (quantizer->columnwise_usage) {
-    const at::Tensor &data_colwise = tensor.attr("_data_colwise").cast<at::Tensor>();
-    const at::Tensor &scale_inv_colwise = tensor.attr("_scale_inv_colwise").cast<at::Tensor>();
+    const at::Tensor &data_colwise = tensor.attr("_columnwise_data").cast<at::Tensor>();
+    const at::Tensor &scale_inv_colwise = tensor.attr("_columnwise_scale_inv").cast<at::Tensor>();
     float *scale_inv_colwise_dptr = reinterpret_cast<float*>(scale_inv_colwise.data_ptr());
     const auto& shape = getTensorShape(data_colwise);
     ret.set_columnwise_data(data_colwise.data_ptr(), dtype, shape);
