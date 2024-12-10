@@ -123,7 +123,7 @@ class _QuantizeFunc(torch.autograd.Function):
         quantizer: Quantizer,
     ) -> QuantizedTensor:
         # pylint: disable=missing-function-docstring
-        return tex.quantize(tensor, quantizer)
+        return tex.quantize(tensor, quantizer)  # TODO(ksivamani): Fix call -- what path is this?
 
     @staticmethod
     def backward(

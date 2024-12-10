@@ -33,6 +33,7 @@ from ..distributed import (
 from ..constants import dist_group_type
 from ..tensor import QuantizedTensor, Quantizer
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
+from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 from transformer_engine.common.recipe import Recipe
 
 __all__ = ["initialize_ub", "destroy_ub"]
@@ -850,11 +851,11 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         # FP8 without all-gather: fused bgrad + cast + transpose
         grad_bias = None
         if ctx.use_bias:
-            if isinstance(grad_output, (QuantizedTensor, Float8TensorBase)):
+            if isinstance(grad_output, (QuantizedTensor, Float8TensorBase, MXFP8TensorBase)):
                 grad_bias = grad_output.dequantize().view(-1, grad_output.shape[-1]).sum(dim=0)
             else:
                 grad_bias, grad_output = tex.bgrad_quantize(grad_output, quantizer)
-        if not isinstance(grad_output, (QuantizedTensor, Float8TensorBase)):
+        if not isinstance(grad_output, (QuantizedTensor, Float8TensorBase, MXFP8TensorBase)):
             grad_output = quantizer(grad_output)
         return grad_output, grad_bias
 
@@ -893,7 +894,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                     with get_rng_state_tracker().fork():
                         init_fn(param)
 
-            # If primary weights are in fp8, wrap the parameter as Float8Tensor
+            # If primary weights are in fp8, wrap the parameter as FP8Tensor
             fp8_meta_index = self.param_init_meta[name].fp8_meta_index
             if self.primary_weights_in_fp8 and fp8_meta_index is not None:
                 quantizer = self.quantizers["scaling_fwd"][fp8_meta_index]
