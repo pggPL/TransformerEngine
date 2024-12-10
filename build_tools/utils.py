@@ -211,7 +211,7 @@ def cuda_version() -> Tuple[int, ...]:
 def get_frameworks() -> List[str]:
     """DL frameworks to build support for"""
     _frameworks: List[str] = []
-    supported_frameworks = ["pytorch", "jax", "paddle"]
+    supported_frameworks = ["pytorch", "jax"]
 
     # Check environment variable
     if os.getenv("NVTE_FRAMEWORK"):
@@ -237,12 +237,6 @@ def get_frameworks() -> List[str]:
             pass
         else:
             _frameworks.append("jax")
-        try:
-            import paddle
-        except ImportError:
-            pass
-        else:
-            _frameworks.append("paddle")
 
     # Special framework names
     if "all" in _frameworks:
@@ -311,7 +305,6 @@ def uninstall_te_wheel_packages():
             "-y",
             "transformer_engine_cu12",
             "transformer_engine_torch",
-            "transformer_engine_paddle",
             "transformer_engine_jax",
         ]
     )

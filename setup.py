@@ -36,8 +36,6 @@ os.environ["NVTE_PROJECT_BUILDING"] = "1"
 
 if "pytorch" in frameworks:
     from torch.utils.cpp_extension import BuildExtension
-elif "paddle" in frameworks:
-    from paddle.utils.cpp_extension import BuildExtension
 elif "jax" in frameworks:
     install_and_import("pybind11[global]")
     from pybind11.setup_helpers import build_ext as BuildExtension
@@ -107,9 +105,6 @@ def setup_requirements() -> Tuple[List[str], List[str], List[str]]:
             install_reqs.extend(["jax", "flax>=0.7.1"])
             # test_reqs.extend(["numpy", "praxis"])
             test_reqs.extend(["numpy"])
-        if "paddle" in frameworks:
-            install_reqs.append("paddlepaddle-gpu")
-            test_reqs.append("numpy")
 
     return [remove_dups(reqs) for reqs in [setup_reqs, install_reqs, test_reqs]]
 
@@ -134,7 +129,6 @@ if __name__ == "__main__":
         extras_require = {
             "pytorch": [f"transformer_engine_torch=={__version__}"],
             "jax": [f"transformer_engine_jax=={__version__}"],
-            "paddle": [f"transformer_engine_paddle=={__version__}"],
         }
     else:
         setup_requires, install_requires, test_requires = setup_requirements()
@@ -181,16 +175,6 @@ if __name__ == "__main__":
                     setup_jax_extension(
                         "transformer_engine/jax/csrc",
                         current_file_path / "transformer_engine" / "jax" / "csrc",
-                        current_file_path / "transformer_engine",
-                    )
-                )
-            if "paddle" in frameworks:
-                from build_tools.paddle import setup_paddle_extension
-
-                ext_modules.append(
-                    setup_paddle_extension(
-                        "transformer_engine/paddle/csrc",
-                        current_file_path / "transformer_engine" / "paddle" / "csrc",
                         current_file_path / "transformer_engine",
                     )
                 )
