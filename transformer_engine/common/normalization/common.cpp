@@ -15,6 +15,8 @@
 #include <numeric>
 #include "transformer_engine/transformer_engine.h"
 
+#include "transformer_engine/normalization.h"
+
 /*
 
 Supported Type combinations:
@@ -37,14 +39,15 @@ Compute always in FP32
 namespace transformer_engine {
 namespace normalization {
 
-TupleKeyType get_key(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype, DType itype,
-                     DType otype, DType ctype, uint64_t batch_size, uint64_t hidden_size,
-                     bool zero_centered_gamma, bool is_tuned) {
+TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
+                     NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype, DType ctype,
+                     uint64_t batch_size, uint64_t hidden_size, bool zero_centered_gamma,
+                     bool is_tuned) {
   // TODO: Add scaling_mode to general_key is needed
   uint64_t general_key = static_cast<uint32_t>(itype) | (static_cast<uint32_t>(otype) << 3) |
                          (static_cast<uint32_t>(ctype) << 6) | (static_cast<uint32_t>(wtype) << 9) |
                          (uint32_t(NormType) << 12) | (uint32_t(NormStage)) << 14 |
-                         (uint32_t(zero_centered_gamma) << 16);
+                         (uint32_t(NormBackend) << 16) | (uint32_t(zero_centered_gamma) << 18);
   return std::make_tuple(general_key, batch_size, hidden_size, is_tuned);
 }
 
@@ -64,8 +67,8 @@ TeNormalizationPlan<KernelParamsType>::TeNormalizationPlan(
     kernel_params.fp8_out = is_fp8_dtype(otype);
   }
   // TE kernels have no template for batch_size and zero_centered_gamma, thus zero out those
-  auto key =
-      get_key(NormType, NormStage, wtype, itype, otype, ctype, 0, hidden_size, false, is_tuned);
+  auto key = get_key(NVTE_Norm_Backend::Te, NormType, NormStage, wtype, itype, otype, ctype, 0,
+                     hidden_size, false, is_tuned);
   _kernel = KernelRegistry::getKernel(key);
 
   this->_build();
@@ -445,8 +448,8 @@ NormalizationPlanBase* NormalizationPlanRegistry::getNormalizationPlan(
     const NVTEScalingMode mode) {
   const DType ctype = DType::kFloat32;
   bool is_tuned = is_aligned && (batch_size % 4 == 0);
-  auto key = get_key(NormType, NormStage, wtype, itype, otype, ctype, batch_size, hidden_size,
-                     zero_centered_gamma, is_tuned);
+  auto key = get_key(NormBackend, NormType, NormStage, wtype, itype, otype, ctype, batch_size,
+                     hidden_size, zero_centered_gamma, is_tuned);
 
   auto it = normalizationPlanMap.find(key);
   if (it != normalizationPlanMap.end()) {
@@ -471,5 +474,28 @@ NormalizationPlanBase* NormalizationPlanRegistry::getNormalizationPlan(
   return normalizationPlanMap[key].get();
 }
 
+bool& _cudnn_norm_fwd_flag() {
+  static bool flag = transformer_engine::getenv<bool>("NVTE_NORM_FWD_USE_CUDNN");
+  return flag;
+}
+
+bool& _cudnn_norm_bwd_flag() {
+  static bool flag = transformer_engine::getenv<bool>("NVTE_NORM_BWD_USE_CUDNN");
+  return flag;
+}
+
+bool use_cudnn_norm_fwd() { return _cudnn_norm_fwd_flag(); }
+bool use_cudnn_norm_bwd() { return _cudnn_norm_bwd_flag(); }
+
 }  //  namespace normalization
 }  // namespace transformer_engine
+
+void nvte_enable_cudnn_norm_fwd(bool enable) {
+  NVTE_API_CALL(nvte_enable_cudnn_norm_fwd);
+  transformer_engine::normalization::_cudnn_norm_fwd_flag() = enable;
+}
+
+void nvte_enable_cudnn_norm_bwd(bool enable) {
+  NVTE_API_CALL(nvte_enable_cudnn_norm_bwd);
+  transformer_engine::normalization::_cudnn_norm_bwd_flag() = enable;
+}

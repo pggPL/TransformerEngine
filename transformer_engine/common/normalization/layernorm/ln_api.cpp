@@ -56,7 +56,7 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
 
   NVTE_Norm_Backend norm_backend;
   bool is_aligned = true;
-  if (std::getenv("NVTE_FWD_LAYERNORM_USE_CUDNN") || is_block_scaling(z->scaling_mode)) {
+  if (use_cudnn_norm_fwd() || is_block_scaling(z->scaling_mode)) {
     // TODO: add check for GPU ARCH
     norm_backend = NVTE_Norm_Backend::Cudnn;
   } else {
@@ -125,7 +125,7 @@ void layernorm_bwd(const Tensor& dz, const Tensor& x, const Tensor& mu, const Te
 
   NVTE_Norm_Backend norm_backend;
   bool is_aligned = true;
-  if (std::getenv("NVTE_BWD_LAYERNORM_USE_CUDNN")) {
+  if (use_cudnn_norm_bwd()) {
     // TODO: add check for GPU ARCH
     norm_backend = NVTE_Norm_Backend::Cudnn;
   } else {

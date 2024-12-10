@@ -22,6 +22,7 @@
 
 #include "../common.h"
 #include "../cudnn_utils.h"
+#include "../util/system.h"
 
 namespace transformer_engine {
 
@@ -142,6 +143,8 @@ enum class NVTE_Norm_Stage { Forward, Backward };
 using TupleKeyType = std::tuple<uint64_t, uint64_t, uint64_t, bool>;
 struct TupleHash {
   size_t operator()(const TupleKeyType& t) const {
+    // Generate a hash for a tuple by combining the hashes of its entries
+    // See: https://www.boost.org/doc/libs/1_55_0/doc/html/hash/reference.html#boost.hash_combine
     size_t seed = 0;
     std::hash<uint64_t> hasher;
     seed ^= hasher(std::get<0>(t)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
@@ -151,9 +154,10 @@ struct TupleHash {
   }
 };
 
-TupleKeyType get_key(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype, DType itype,
-                     DType otype, DType ctype, uint64_t batch_size, uint64_t hidden_size,
-                     bool zero_centered_gamma, bool is_tuned);
+TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
+                     NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype, DType ctype,
+                     uint64_t batch_size, uint64_t hidden_size, bool zero_centered_gamma,
+                     bool is_tuned);
 
 template <typename KernelParamsType>
 class TeNormalizationRegistry {
@@ -360,20 +364,20 @@ struct TypeToDType<byte> {
   static int                                                                                                        \
       register_##NORM_TYPE##_##NORM_STAGE##_##LAUNCH_TYPE##_##HIDDEN_SIZE##_##WTYPE##_##ITYPE##_##OTYPE##_##CTYPE = \
           TeNormalizationRegistry<NORM_STAGE##KernelParams>::registerFunction(                                      \
-              (get_key(NVTE_Norm_Type::NORM_TYPE, NVTE_Norm_Stage::NORM_STAGE,                                      \
-                       (TypeToDType<WTYPE>::value), (TypeToDType<ITYPE>::value),                                    \
-                       (TypeToDType<OTYPE>::value), (TypeToDType<CTYPE>::value), 0, HIDDEN_SIZE,                    \
-                       0, IS_TUNED(LAUNCH_TYPE))),                                                                  \
+              (get_key(NVTE_Norm_Backend::Te, NVTE_Norm_Type::NORM_TYPE,                                            \
+                       NVTE_Norm_Stage::NORM_STAGE, (TypeToDType<WTYPE>::value),                                    \
+                       (TypeToDType<ITYPE>::value), (TypeToDType<OTYPE>::value),                                    \
+                       (TypeToDType<CTYPE>::value), 0, HIDDEN_SIZE, 0, IS_TUNED(LAUNCH_TYPE))),                     \
               FUNC_NAME)
-
-// For FP8 only
-void ComputeScaleInv(void* scale, void* scale_inv);
 
 // Alignment check
 template <size_t Alignment = 16, typename... Args>
 bool is_ptr_aligned(const Args*... ptrs) {
   return ((reinterpret_cast<uintptr_t>(ptrs) % Alignment == 0) && ...);
 }
+
+bool use_cudnn_norm_fwd();
+bool use_cudnn_norm_bwd();
 
 }  // namespace normalization
 }  // namespace transformer_engine
