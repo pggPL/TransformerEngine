@@ -59,9 +59,10 @@ TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantize
   // Regular pyTorch tensor
   at::Tensor torch_tensor = tensor.cast<at::Tensor>();
 
-  if (!torch_tensor.is_contiguous()) {
-    torch_tensor = torch_tensor.contiguous();
-  }
+  // #TODO (pgadzinski) - needed in attention for non-contiguous tensors.
+  //if (!torch_tensor.is_contiguous()) {
+  //  torch_tensor = torch_tensor.contiguous();
+  //}
   auto ret = TensorWrapper(my_quantizer->get_scaling_mode());
   ret.set_rowwise_data(torch_tensor.data_ptr(),
                        GetTransformerEngineDType(torch_tensor.scalar_type()),

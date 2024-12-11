@@ -99,18 +99,8 @@ def fused_attn_fwd_qkvpacked(
     fused_attention_backend: tex.NVTE_Fused_Attn_Backend,
     attn_bias: torch.Tensor = None,
     cu_seqlens_padded: torch.Tensor = None,
-    d_scale_qkv: torch.Tensor = None,
-    d_scale_qkv_offset: int = META_QKV,
-    d_scale_s: torch.Tensor = None,
-    d_scale_s_offset: int = META_S,
-    q_scale_s: torch.Tensor = None,
-    q_scale_s_offset: int = META_S,
-    q_scale_o: torch.Tensor = None,
-    q_scale_o_offset: int = META_O,
-    amax_s: torch.Tensor = None,
-    amax_s_offset: int = META_S,
-    amax_o: torch.Tensor = None,
-    amax_o_offset: int = META_O,
+    s_quantizer: Quantizer = None,
+    o_quantizer: Quantizer = None,
     attn_scale: float = None,
     dropout: float = 0.0,
     fast_zero_fill: bool = True,
@@ -143,30 +133,6 @@ def fused_attn_fwd_qkvpacked(
                 shape [1, num_heads, max_seqlen, max_seqlen], same data type as qkv
     cu_seqlens_padded: torch.Tensor, default = None
                 cumulative sequence offsets for QKV; shape [batch_size + 1]
-    d_scale_qkv: torch.Tensor, default = None
-                input tensor for the dequantization of QKV in FP8 computations
-    d_scale_qkv_offset: int, default = META_QKV
-                offset in d_scale_qkv for QKV
-    d_scale_s: torch.Tensor, default = None
-                input tensor for the dequantization of S in FP8 computations, S = Softmax(Q * K.T)
-    d_scale_s_offset: int, default = META_S
-                offset in d_scale_s for S
-    q_scale_s: torch.Tensor, default = None
-                input tensor for the quantization of S in FP8 computations, S = Softmax(Q * K.T)
-    q_scale_s_offset: int, default = META_S
-                offset in q_scale_s for S
-    q_scale_o: torch.Tensor, default = None
-                input tensor for the quantization of O in FP8 computations
-    q_scale_o_offset: int, default = META_O
-                offset in q_scale_o for O
-    amax_s: torch.Tensor, default = None
-                output tensor, amax of S, used by the next iteration in FP8 computations
-    amax_s_offset: int, default = META_S
-                offset in amax_s for S
-    amax_o: torch.Tensor, default = None
-                output tensor, amax of O, used by the next iteration in FP8 computations
-    amax_o_offset: int, default = META_O
-                offset in amax_o for O
     attn_scale: float, default = None
                 if not None, use attn_scale as the attention scale for Q*K.T BMM;
                 if None, use 1.0/sqrt(head_dim_qk) as the default
@@ -250,14 +216,8 @@ def fused_attn_fwd_qkvpacked(
             max_seqlen * max_seqlen + BACKEND_F16m512_FP8_THREADS_PER_CTA - 1
         ) // BACKEND_F16m512_FP8_THREADS_PER_CTA
 
-        assert (
-            d_scale_qkv is not None
-        ), "d_scale_qkv is required as an input for FP8 fused attention."
-        assert d_scale_s is not None, "q_scale_s is required as an input for FP8 fused attention."
-        assert q_scale_s is not None, "q_scale_s is required as an input for FP8 fused attention."
-        assert q_scale_o is not None, "q_scale_o is required as an input for FP8 fused attention."
-        assert amax_s is not None, "amax_s is required as an input for FP8 fused attention."
-        assert amax_o is not None, "amax_o is required as an input for FP8 fused attention."
+        assert s_quantizer is not None
+        assert o_quantizer is not None
     else:
         raise ValueError(f"Unsupported backend {fused_attention_backend}")
 
@@ -276,18 +236,8 @@ def fused_attn_fwd_qkvpacked(
         qkv,
         qkv_dtype,
         cu_seqlens_padded,
-        d_scale_qkv,
-        d_scale_qkv_offset,
-        d_scale_s,
-        d_scale_s_offset,
-        q_scale_s,
-        q_scale_s_offset,
-        q_scale_o,
-        q_scale_o_offset,
-        amax_s,
-        amax_s_offset,
-        amax_o,
-        amax_o_offset,
+        s_quantizer,
+        o_quantizer,
         attn_bias,
         rng_gen,
         rng_elts_per_thread,
@@ -308,16 +258,9 @@ def fused_attn_bwd_qkvpacked(
     aux_ctx_tensors: List[torch.Tensor],
     fused_attention_backend: tex.NVTE_Fused_Attn_Backend,
     cu_seqlens_padded: torch.Tensor = None,
-    d_scale_qkv: torch.Tensor = None,
-    d_scale_s: torch.Tensor = None,
-    d_scale_o: torch.Tensor = None,
-    d_scale_do: torch.Tensor = None,
-    d_scale_dp: torch.Tensor = None,
-    q_scale_s: torch.Tensor = None,
-    q_scale_dp: torch.Tensor = None,
-    q_scale_dqkv: torch.Tensor = None,
-    amax_dp: torch.Tensor = None,
-    amax_dqkv: torch.Tensor = None,
+    s_quantizer: Quantizer = None,
+    dp_quantizer: Quantizer = None,
+    dqkv_quantizer: Quantizer = None,
     attn_scale: float = None,
     dropout: float = 0.0,
     fast_zero_fill: bool = True,
@@ -421,16 +364,9 @@ def fused_attn_bwd_qkvpacked(
         ), "aux_ctx_tensors must contain rng_state as its last element."
 
     if fused_attention_backend == FusedAttnBackend["FP8"]:
-        assert d_scale_qkv is not None, "d_scale_qkv is required for FP8 fused attention."
-        assert d_scale_s is not None, "d_scale_s is required for FP8 fused attention."
-        assert d_scale_o is not None, "d_scale_o is required for FP8 fused attention."
-        assert d_scale_do is not None, "d_scale_do is required for FP8 fused attention."
-        assert d_scale_dp is not None, "d_scale_dp is required for FP8 fused attention."
-        assert q_scale_s is not None, "q_scale_s is required for FP8 fused attention."
-        assert q_scale_dp is not None, "q_scale_dp is required for FP8 fused attention."
-        assert q_scale_dqkv is not None, "q_scale_dqkv is required for FP8 fused attention."
-        assert amax_dp is not None, "amax_dp is required for FP8 fused attention."
-        assert amax_dqkv is not None, "amax_dqkv is required for FP8 fused attention."
+        assert s_quantizer is not None
+        assert dp_quantizer is not None
+        assert dqkv_quantizer is not None
         assert (
             len(aux_ctx_tensors) == 3
         ), "aux_ctx_tensors is required to be [M, ZInv, rng_state] for FP8 fused attention."
@@ -454,16 +390,9 @@ def fused_attn_bwd_qkvpacked(
         dqkv_dtype,
         aux_ctx_tensors,
         cu_seqlens_padded,
-        d_scale_qkv,
-        d_scale_s,
-        d_scale_o,
-        d_scale_do,
-        d_scale_dp,
-        q_scale_s,
-        q_scale_dp,
-        q_scale_dqkv,
-        amax_dp,
-        amax_dqkv,
+        s_quantizer,
+        dp_quantizer,
+        dqkv_quantizer,
     )
 
     return output_tensors
@@ -482,18 +411,8 @@ def fused_attn_fwd_kvpacked(
     attn_bias: torch.Tensor = None,
     cu_seqlens_q_padded: torch.Tensor = None,
     cu_seqlens_kv_padded: torch.Tensor = None,
-    d_scale_qkv: torch.Tensor = None,
-    d_scale_qkv_offset: int = META_QKV,
-    d_scale_s: torch.Tensor = None,
-    d_scale_s_offset: int = META_S,
-    q_scale_s: torch.Tensor = None,
-    q_scale_s_offset: int = META_S,
-    q_scale_o: torch.Tensor = None,
-    q_scale_o_offset: int = META_O,
-    amax_s: torch.Tensor = None,
-    amax_s_offset: int = META_S,
-    amax_o: torch.Tensor = None,
-    amax_o_offset: int = META_O,
+    s_quantizer: Quantizer = None,
+    o_quantizer: Quantizer = None,
     attn_scale: float = None,
     dropout: float = 0.0,
     fast_zero_fill: bool = True,
@@ -535,30 +454,6 @@ def fused_attn_fwd_kvpacked(
                 cumulative sequence offsets for Q; shape [batch_size + 1]
     cu_seqlens_kv_padded: torch.Tensor, default = None
                 cumulative sequence offsets for KV; shape [batch_size + 1]
-    d_scale_qkv: torch.Tensor, default = None
-                input tensor for the dequantization of QKV in FP8 computations
-    d_scale_qkv_offset: int, default = META_QKV
-                offset in d_scale_qkv for QKV
-    d_scale_s: torch.Tensor, default = None
-                input tensor for the dequantization of S in FP8 computations, S = Softmax(Q * K.T)
-    d_scale_s_offset: int, default = META_S
-                offset in d_scale_s for S
-    q_scale_s: torch.Tensor, default = None
-                input tensor for the quantization of S in FP8 computations, S = Softmax(Q * K.T)
-    q_scale_s_offset: int, default = META_S
-                offset in q_scale_s for S
-    q_scale_o: torch.Tensor, default = None
-                input tensor for the quantization of O in FP8 computations
-    q_scale_o_offset: int, default = META_O
-                offset in q_scale_o for O
-    amax_s: torch.Tensor, default = None
-                output tensor, amax of S, used by the next iteration in FP8 computations
-    amax_s_offset: int, default = META_S
-                offset in amax_s for S
-    amax_o: torch.Tensor, default = None
-                output tensor, amax of O, used by the next iteration in FP8 computations
-    amax_o_offset: int, default = META_O
-                offset in amax_o for O
     attn_scale: float, default = None
                 if not None, use attn_scale as the attention scale for Q*K.T BMM;
                 if None, use 1.0/sqrt(head_dim_qk) as the default
@@ -643,14 +538,8 @@ def fused_attn_fwd_kvpacked(
             max_seqlen_q * max_seqlen_q + BACKEND_F16m512_FP8_THREADS_PER_CTA - 1
         ) // BACKEND_F16m512_FP8_THREADS_PER_CTA
 
-        assert (
-            d_scale_qkv is not None
-        ), "d_scale_qkv is required as an input for FP8 fused attention."
-        assert d_scale_s is not None, "q_scale_s is required as an input for FP8 fused attention."
-        assert q_scale_s is not None, "q_scale_s is required as an input for FP8 fused attention."
-        assert q_scale_o is not None, "q_scale_o is required as an input for FP8 fused attention."
-        assert amax_s is not None, "amax_s is required as an input for FP8 fused attention."
-        assert amax_o is not None, "amax_o is required as an input for FP8 fused attention."
+        assert s_quantizer is not None
+        assert o_quantizer is not None
     else:
         raise ValueError(f"Unsupported backend {fused_attention_backend}")
 
@@ -673,18 +562,8 @@ def fused_attn_fwd_kvpacked(
         qkv_dtype,
         cu_seqlens_q_padded,
         cu_seqlens_kv_padded,
-        d_scale_qkv,
-        d_scale_qkv_offset,
-        d_scale_s,
-        d_scale_s_offset,
-        q_scale_s,
-        q_scale_s_offset,
-        q_scale_o,
-        q_scale_o_offset,
-        amax_s,
-        amax_s_offset,
-        amax_o,
-        amax_o_offset,
+        s_quantizer,
+        o_quantizer,
         attn_bias,
         rng_gen,
         rng_elts_per_thread,
@@ -709,16 +588,9 @@ def fused_attn_bwd_kvpacked(
     fused_attention_backend: tex.NVTE_Fused_Attn_Backend,
     cu_seqlens_q_padded: torch.Tensor = None,
     cu_seqlens_kv_padded: torch.Tensor = None,
-    d_scale_qkv: torch.Tensor = None,
-    d_scale_s: torch.Tensor = None,
-    d_scale_o: torch.Tensor = None,
-    d_scale_do: torch.Tensor = None,
-    d_scale_dp: torch.Tensor = None,
-    q_scale_s: torch.Tensor = None,
-    q_scale_dp: torch.Tensor = None,
-    q_scale_dqkv: torch.Tensor = None,
-    amax_dp: torch.Tensor = None,
-    amax_dqkv: torch.Tensor = None,
+    s_quantizer: Quantizer = None,
+    dp_quantizer: Quantizer = None,
+    dqkv_quantizer: Quantizer = None,
     attn_scale: float = None,
     dropout: float = 0.0,
     fast_zero_fill: bool = True,
@@ -835,16 +707,6 @@ def fused_attn_bwd_kvpacked(
         ), "aux_ctx_tensors must contain rng_state as its last element."
 
     if fused_attention_backend == FusedAttnBackend["FP8"]:
-        assert d_scale_qkv is not None, "d_scale_qkv is required for FP8 fused attention."
-        assert d_scale_s is not None, "d_scale_s is required for FP8 fused attention."
-        assert d_scale_o is not None, "d_scale_o is required for FP8 fused attention."
-        assert d_scale_do is not None, "d_scale_do is required for FP8 fused attention."
-        assert d_scale_dp is not None, "d_scale_dp is required for FP8 fused attention."
-        assert q_scale_s is not None, "q_scale_s is required for FP8 fused attention."
-        assert q_scale_dp is not None, "q_scale_dp is required for FP8 fused attention."
-        assert q_scale_dqkv is not None, "q_scale_dqkv is required for FP8 fused attention."
-        assert amax_dp is not None, "amax_dp is required for FP8 fused attention."
-        assert amax_dqkv is not None, "amax_dqkv is required for FP8 fused attention."
         assert (
             len(aux_ctx_tensors) == 3
         ), "aux_ctx_tensors is required to be [M, ZInv, rng_state] for FP8 fused attention."
@@ -872,16 +734,9 @@ def fused_attn_bwd_kvpacked(
         aux_ctx_tensors,
         cu_seqlens_q_padded,
         cu_seqlens_kv_padded,
-        d_scale_qkv,
-        d_scale_s,
-        d_scale_o,
-        d_scale_do,
-        d_scale_dp,
-        q_scale_s,
-        q_scale_dp,
-        q_scale_dqkv,
-        amax_dp,
-        amax_dqkv,
+        s_quantizer,
+        dp_quantizer,
+        dqkv_quantizer,
     )
 
     return output_tensors
@@ -1044,45 +899,6 @@ def fused_attn_fwd(
         raise ValueError(f"Unsupported backend {fused_attention_backend}")
 
     # execute kernel
-
-    #q = q.contiguous()
-    output_tensors = tex.fused_attn_fwd2(
-        max_seqlen_q,
-        max_seqlen_kv,
-        is_training,
-        attn_scale,
-        dropout,
-        fast_zero_fill,
-        QKVLayout[qkv_layout],
-        AttnBiasType[attn_bias_type],
-        AttnMaskType[attn_mask_type],
-        window_size,
-        cu_seqlens_q,
-        cu_seqlens_kv,
-        q,
-        k,
-        v,
-        qkv_dtype,
-        cu_seqlens_q_padded,
-        cu_seqlens_kv_padded,
-        None,
-        0,
-        None,
-        0,
-        None,
-        0,
-        None,
-        0,
-        None,
-        0,
-        None,
-        0,
-        attn_bias,
-        rng_gen,
-        rng_elts_per_thread,
-    )
-    return output_tensors[0], output_tensors[1:]
-
     
     output_tensors = tex.fused_attn_fwd(
         max_seqlen_q,
@@ -1260,10 +1076,6 @@ def fused_attn_bwd(
         assert (
             len(aux_ctx_tensors) == 3
         ), "aux_ctx_tensors is required to be [M, ZInv, rng_state] for FP8 fused attention."
-    import pdb 
-    #pdb.set_trace()
-    # execute kernel
-    return [q, k, v, torch.Tensor()]
     output_tensors = tex.fused_attn_bwd(
         max_seqlen_q,
         max_seqlen_kv,
