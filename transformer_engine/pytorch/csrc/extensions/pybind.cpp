@@ -75,28 +75,60 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("noop") = py::none());
   m.def("dequantize", &transformer_engine::pytorch::dequantize, "Dequantize",
         py::arg("input"), py::arg("otype"));
-  m.def("bgrad_quantize", transformer_engine::pytorch::bgrad_quantize);
-  m.def("generic_gemm", transformer_engine::pytorch::gemm);
-  m.def("gelu", transformer_engine::pytorch::gelu, "GeLU activation");
-  m.def("relu", transformer_engine::pytorch::relu, "ReLU activation");
-  m.def("geglu", transformer_engine::pytorch::geglu, "GeGLU activation");
-  m.def("reglu", transformer_engine::pytorch::reglu, "ReGLU activation");
-  m.def("swiglu", transformer_engine::pytorch::swiglu, "SwiGLU activation");
-  m.def("qgelu", transformer_engine::pytorch::qgelu, "QuickGELU activation");
-  m.def("srelu", transformer_engine::pytorch::srelu, "Squared ReLU activation");
-  m.def("dgelu", transformer_engine::pytorch::dgelu, "Backward of GeLU");
-  m.def("drelu", transformer_engine::pytorch::drelu, "Backward of ReLU");
-  m.def("dgeglu", transformer_engine::pytorch::dgeglu, "Backward of GeGLU");
-  m.def("dreglu", transformer_engine::pytorch::dreglu, "Backward of ReGLU");
-  m.def("dswiglu", transformer_engine::pytorch::dswiglu, "Backward of SwiGLU");
-  m.def("dqgelu", transformer_engine::pytorch::dqgelu, "Backward of QuickGELU");
-  m.def("dsrelu", transformer_engine::pytorch::dsrelu, "Backward of Squared ReLU");
-  m.def("dbias_dgelu", transformer_engine::pytorch::dbias_dgelu, "DGeLU + DBias + Quantize");
-  m.def("dbias_dsilu", transformer_engine::pytorch::dbias_dsilu, "DSiLU + DBias + Quantize");
-  m.def("dbias_drelu", transformer_engine::pytorch::dbias_drelu, "DReLU + DBias + Quantize");
-  m.def("dbias_dqgelu", transformer_engine::pytorch::dbias_dqgelu, "DQGeLU + DBias + Quantize");
+  m.def("bgrad_quantize", transformer_engine::pytorch::bgrad_quantize,
+        "Compute bias gradient and quantize",
+        py::arg("input"), py::arg("quantizer"));
+  m.def("generic_gemm", transformer_engine::pytorch::gemm,
+        "Compute GEMM (matrix-matrix multiply",
+        py::arg("A"), py::arg("transA"),
+        py::arg("B"), py::arg("transB"),
+        py::arg("D"), py::arg("quantizer"),
+        py::arg("output_dtype"), py::arg("bias"),
+        py::arg("bias_type"), py::arg("gelu"),
+        py::arg("grad"), py::arg("workspace"),
+        py::arg("workspace_size"), py::arg("accumulate"),
+        py::arg("use_split_accumulator"));
+
+  m.def("gelu", transformer_engine::pytorch::gelu, "GeLU activation",
+        py::arg("input"), py::arg("quantizer"));
+  m.def("relu", transformer_engine::pytorch::relu, "ReLU activation",
+        py::arg("input"), py::arg("quantizer"));
+  m.def("geglu", transformer_engine::pytorch::geglu, "GeGLU activation",
+        py::arg("input"), py::arg("quantizer"));
+  m.def("reglu", transformer_engine::pytorch::reglu, "ReGLU activation",
+        py::arg("input"), py::arg("quantizer"));
+  m.def("swiglu", transformer_engine::pytorch::swiglu, "SwiGLU activation",
+        py::arg("input"), py::arg("quantizer"));
+  m.def("qgelu", transformer_engine::pytorch::qgelu, "QuickGELU activation",
+        py::arg("input"), py::arg("quantizer"));
+  m.def("srelu", transformer_engine::pytorch::srelu, "Squared ReLU activation",
+        py::arg("input"), py::arg("quantizer"));
+  m.def("dgelu", transformer_engine::pytorch::dgelu, "Backward of GeLU",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("drelu", transformer_engine::pytorch::drelu, "Backward of ReLU",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dgeglu", transformer_engine::pytorch::dgeglu, "Backward of GeGLU",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dreglu", transformer_engine::pytorch::dreglu, "Backward of ReGLU",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dswiglu", transformer_engine::pytorch::dswiglu, "Backward of SwiGLU",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dqgelu", transformer_engine::pytorch::dqgelu, "Backward of QuickGELU",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dsrelu", transformer_engine::pytorch::dsrelu, "Backward of Squared ReLU",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+
+  m.def("dbias_dgelu", transformer_engine::pytorch::dbias_dgelu, "DGeLU + DBias + Quantize",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dbias_dsilu", transformer_engine::pytorch::dbias_dsilu, "DSiLU + DBias + Quantize",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dbias_drelu", transformer_engine::pytorch::dbias_drelu, "DReLU + DBias + Quantize",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dbias_dqgelu", transformer_engine::pytorch::dbias_dqgelu, "DQGeLU + DBias + Quantize",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
   m.def("dbias_dsrelu", transformer_engine::pytorch::dbias_dsrelu,
-        "DSquaredReLU + DBias + Quantize");
+        "DSquaredReLU + DBias + Quantize",
+        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
 
   // Permutation functions
   m.def("moe_permute_fwd", moe_permute_fwd);
@@ -127,16 +159,16 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
 
   // Other granular functions
-  m.def("layernorm_fwd", &layernorm_fwd, "LN FWD FP8",
+  m.def("layernorm_fwd", &layernorm_fwd, "LayerNorm",
         py::arg("input"), py::arg("weight"),
-        py::arg("bias"), py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), 
+        py::arg("bias"), py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"),
         py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"));
-  m.def("layernorm_bwd", &layernorm_bwd, "LN BWD");
-  m.def("rmsnorm_fwd", &rmsnorm_fwd, "RMSNorm FWD FP8",
+  m.def("layernorm_bwd", &layernorm_bwd, "Backward of LayerNorm");
+  m.def("rmsnorm_fwd", &rmsnorm_fwd, "RMSNorm",
         py::arg("input"), py::arg("weight"),
         py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), py::arg("otype"),
         py::arg("sm_margin"), py::arg("zero_centered_gamma"));
-  m.def("rmsnorm_bwd", &rmsnorm_bwd, "RMSNorm BWD");
+  m.def("rmsnorm_bwd", &rmsnorm_bwd, "Backward of RMSNorm");
   m.def("fused_cast_transpose_noop", &fused_cast_transpose_noop,
         "Cast + Transpose with noop option", py::call_guard<py::gil_scoped_release>(),
         py::arg("input"), py::arg("noop"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
