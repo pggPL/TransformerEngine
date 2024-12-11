@@ -144,17 +144,17 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
     if (t.has_data()) {
       NVTE_CHECK(t.scale_inv.dptr != nullptr,
                  "FP8 scaling factor output ", name, "_scale_inverse must be allocated");
-      NVTE_CHECK(t.scale_inv.dtype == DType::kFloat32 || t.scale_inv.dtype == DType::kByte,
+      NVTE_CHECK(t.scale_inv.dtype == DType::kFloat32 || t.scale_inv.dtype == DType::kFloat8E8M0,
                  "FP8 scaling factor output ", name, "_scale_inverse has invalid dtype "
-                 "(expected Float32 or Byte, got ", to_string(t.scale_inv.dtype), ")");
+                 "(expected Float32 or Float8E8M0, got ", to_string(t.scale_inv.dtype), ")");
     }
     if (t.has_columnwise_data()) {
       NVTE_CHECK(t.columnwise_scale_inv.dptr != nullptr,
                  "FP8 scaling factor output ", name, "_columnwise_scale_inverse must be allocated");
       NVTE_CHECK(t.columnwise_scale_inv.dtype == DType::kFloat32 ||
-                 t.columnwise_scale_inv.dtype == DType::kByte,
+                 t.columnwise_scale_inv.dtype == DType::kFloat8E8M0,
                  "FP8 scaling factor output ", name, "_columnwise_scale_inverse has invalid dtype "
-                 "(expected Float32 or Byte, got ", to_string(t.columnwise_scale_inv.dtype), ")");
+                 "(expected Float32 or Float8E8M0, got ", to_string(t.columnwise_scale_inv.dtype), ")");
     }
   } else {
     NVTE_CHECK(t.scale.dptr == nullptr, "Scale is not supported for non-FP8 output ", name);
