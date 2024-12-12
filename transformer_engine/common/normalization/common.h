@@ -292,9 +292,8 @@ class CudnnNormalizationPlan : public NormalizationPlanBase {
 
 class NormalizationPlanRegistry {
  public:
-  // TODO thread-safe
   static NormalizationPlanRegistry& getInstance() {
-    static NormalizationPlanRegistry instance;
+    static thread_local NormalizationPlanRegistry instance;
     return instance;
   }
 
