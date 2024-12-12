@@ -494,13 +494,13 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
 
   const bool is_master_thread = (threadIdx.x == 0);
 
-  // Initialize shared memory barrier with the number of threads participating in the barrier.
-  #pragma nv_diag_suppress static_var_with_dynamic_init
+// Initialize shared memory barrier with the number of threads participating in the barrier.
+#pragma nv_diag_suppress static_var_with_dynamic_init
   __shared__ alignas(8) uint64_t mbar[FP8_ITERATIONS];
 
   if (is_master_thread) {
-  // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
-    #pragma unroll
+    // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
+#pragma unroll
     for (int iter = 0; iter < FP8_ITERATIONS; ++iter) {
       ptx::mbarrier_init(&mbar[iter], FP8_THREADS_PER_CHUNK);
     }
@@ -515,7 +515,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   const int chunk_offset_X = block_offset_X;
 
   if (is_master_thread) {
-  #pragma unroll
+#pragma unroll
     for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
       const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * FP8_BUFFER_DIM_Y;
       const int chunk_stage_offset_X = chunk_offset_X;
@@ -536,14 +536,14 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
       ptx::mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
     }
   } else {
-    // Other threads just arrive
-    #pragma unroll
+// Other threads just arrive
+#pragma unroll
     for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
       ptx::mbarrier_arrive(&mbar[prefetch_buff]);
     }
   }
 
-  #pragma unroll
+#pragma unroll
   for (int iter = 0; iter < FP8_ITERATIONS; ++iter) {
     const int buff = iter % FP8_BUFFERS_NUM;
     const int next_iter = iter + FP8_PREFETCH_BUFFERS_NUM;
@@ -578,7 +578,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
     // Wait for the data to have arrived
     ptx::mbarrier_wait_parity(&mbar[iter], parity);
 
-    #pragma unroll
+#pragma unroll
     for (int stage = 0; stage < FP8_BUFF_STAGES_NUM; ++stage) {
       const int stage_offset_Y = stage;
       const int shmem_offset_y = thread_offset_Y + stage_offset_Y;
