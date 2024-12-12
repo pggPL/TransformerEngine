@@ -79,6 +79,7 @@ def _act_func(activation: str):
         "reglu": (tex.reglu, tex.dreglu),
         "swiglu": (tex.swiglu, tex.dswiglu),
         "qgelu": (tex.qgelu, tex.dqgelu),
+        "qgeglu": (tex.qgeglu, tex.dqgeglu),
         "srelu": (tex.srelu, tex.dsrelu),
     }
     if activation not in funcs:

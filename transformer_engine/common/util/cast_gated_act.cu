@@ -847,14 +847,3 @@ void fp8_quantize_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *
 }
 
 }  // namespace transformer_engine
-
-void nvte_quantize_dswiglu(const NVTETensor grad, const NVTETensor gated_input,
-                           NVTETensor output, cudaStream_t stream) {
-  NVTE_API_CALL(nvte_quantize_dswiglu);
-  using namespace transformer_engine;
-
-  fp8_quantize_dgated<Empty, silu<fp32, fp32>, dsilu<fp32, fp32>>(
-      *reinterpret_cast<const Tensor *>(grad),
-      *reinterpret_cast<const Tensor *>(gated_input),
-      reinterpret_cast<Tensor *>(output), stream);
-}

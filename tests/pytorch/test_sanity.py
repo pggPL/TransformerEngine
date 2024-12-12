@@ -138,7 +138,7 @@ if is_bf16_compatible():  # bf16 requires sm_80 or higher
 all_boolean = [True, False]
 batch_sizes_with_zero = [0, 1, 2]
 
-all_activations = ["gelu", "relu", "reglu", "geglu", "swiglu", "srelu"]
+all_activations = ["gelu", "relu", "reglu", "geglu", "swiglu", "srelu", "qgelu", "qgeglu"]
 all_normalizations = ["LayerNorm", "RMSNorm"]
 
 
