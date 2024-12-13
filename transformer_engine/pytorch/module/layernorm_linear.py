@@ -313,6 +313,9 @@ class _LayerNormLinear(torch.autograd.Function):
             ctx.requires_dgrad = inp.requires_grad
             ctx.requires_wgrad = weight.requires_grad
 
+            if fuse_wgrad_accumulation:
+                ctx.main_grad = weight.main_grad
+
             ctx.grad_input_quantizer = grad_input_quantizer
             ctx.grad_output_quantizer = grad_output_quantizer
             ctx.input_quantizer = input_quantizer
@@ -383,7 +386,7 @@ class _LayerNormLinear(torch.autograd.Function):
             mu, rsigma = saved_tensors
 
             # Since main_grad can be modified inplace, it should not be a part of saved_tensors
-            main_grad = weight.main_grad if weight is not None and ctx.fuse_wgrad_accumulation and weight.requires_grad else None
+            main_grad = ctx.main_grad if weight is not None and ctx.fuse_wgrad_accumulation and ctx.requires_wgrad else None
 
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(

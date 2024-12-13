@@ -253,6 +253,10 @@ class _Linear(torch.autograd.Function):
             ctx.grad_output_quantizer = grad_output_quantizer
             ctx.grad_input_quantizer = grad_input_quantizer
             ctx.fuse_wgrad_accumulation = fuse_wgrad_accumulation
+
+            if fuse_wgrad_accumulation:
+                ctx.main_grad = weight.main_grad
+
             ctx.cpu_offloading = cpu_offloading
             ctx.is_first_microbatch = is_first_microbatch
             ctx.use_bias = bias is not None
@@ -298,7 +302,7 @@ class _Linear(torch.autograd.Function):
             ) = saved_tensors
 
             # Since main_grad can be modified inplace, it should not be a part of saved_tensors
-            main_grad = weight.main_grad if weight is not None and ctx.fuse_wgrad_accumulation and weight.requires_grad else None
+            main_grad = ctx.main_grad if weight is not None and ctx.fuse_wgrad_accumulation and ctx.requires_wgrad else None
 
             # Gather intermediate/activation tensors if needed
             # NOTE: weight_fp8 = weight when ctx.fp8 == False and torch.disttributed.FSDP already
