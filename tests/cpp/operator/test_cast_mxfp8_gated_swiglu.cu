@@ -28,7 +28,7 @@ template <typename IType, typename OType>
 void scale_block(const IType* grad,
                  const IType* input,
                  OType* output,
-                 e8m0_t* output_scales,
+                 fp8e8m0* output_scales,
                  const size_t scale_idx,
                  float& thread_amax,
                  const size_t i_min,
@@ -56,7 +56,7 @@ void scale_block(const IType* grad,
         }
     }
 
-    const e8m0_t biased_exponent = float_to_e8m0(block_amax * Quantized_Limits<OType>::max_reciprocal());
+    const fp8e8m0 biased_exponent = float_to_e8m0(block_amax * Quantized_Limits<OType>::max_reciprocal());
     const float scale_reciprocal = exp2f_rcp(biased_exponent);
     output_scales[scale_idx] = biased_exponent;
 
@@ -81,7 +81,7 @@ template <typename IType, typename OType>
 void compute_ref_x1(const IType* grad,
                     const IType* input,
                     OType* output,
-                    e8m0_t* output_scales,
+                    fp8e8m0* output_scales,
                     float& ref_amax,
                     const size_t rows,
                     const size_t cols,
@@ -136,8 +136,8 @@ void compute_ref_x2(const IType* grad,
                     const IType* input,
                     OType* output_rowwise,
                     OType* output_colwise,
-                    e8m0_t* scales_rowwise,
-                    e8m0_t* scales_colwise,
+                    fp8e8m0* scales_rowwise,
+                    fp8e8m0* scales_colwise,
                     float& ref_amax,
                     const size_t rows,
                     const size_t cols,
@@ -186,7 +186,7 @@ void performTest_x1(const size_t rows,
     Tensor output({ rows, cols * 2 }, otype, rowwise, colwise, NVTE_MXFP8_1D_SCALING);
 
     std::unique_ptr<OType[]> ref_output = std::make_unique<OType[]>(rows * cols * 2);
-    std::unique_ptr<e8m0_t[]> ref_output_scales = std::make_unique<e8m0_t[]>(blocks_Y * blocks_X);
+    std::unique_ptr<fp8e8m0[]> ref_output_scales = std::make_unique<fp8e8m0[]>(blocks_Y * blocks_X);
 
     // fillCase<EncodingType>(&grad, fill_case);
     fillUniform(&grad);
@@ -212,9 +212,9 @@ void performTest_x1(const size_t rows,
     auto [atol, rtol] = getTolerances(otype);
     compareResults("output", output, ref_output.get(), rowwise, atol, rtol);
     if (rowwise) {
-      compare_e8m0_scaling_factors("scales", output.rowwise_cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+      compare_e8m0_scaling_factors("scales", output.rowwise_cpu_scale_inv_ptr<fp8e8m0>(), ref_output_scales.get(), blocks_num);
     } else {
-      compare_e8m0_scaling_factors("scales", output.columnwise_cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+      compare_e8m0_scaling_factors("scales", output.columnwise_cpu_scale_inv_ptr<fp8e8m0>(), ref_output_scales.get(), blocks_num);
     }
 }
 
@@ -251,8 +251,8 @@ void performTest_x2(const size_t rows,
 
     std::unique_ptr<OType[]> ref_output_rowwise = std::make_unique<OType[]>(rows * cols * 2);
     std::unique_ptr<OType[]> ref_output_colwise = std::make_unique<OType[]>(rows * cols * 2);
-    std::unique_ptr<e8m0_t[]> ref_scales_rowwise = std::make_unique<e8m0_t[]>(rows * blocks_X);
-    std::unique_ptr<e8m0_t[]> ref_scales_colwise = std::make_unique<e8m0_t[]>(blocks_Y * cols);
+    std::unique_ptr<fp8e8m0[]> ref_scales_rowwise = std::make_unique<fp8e8m0[]>(rows * blocks_X);
+    std::unique_ptr<fp8e8m0[]> ref_scales_colwise = std::make_unique<fp8e8m0[]>(blocks_Y * cols);
 
     // fillCase<EncodingType>(&grad, fill_case);
     fillUniform(&grad);
@@ -281,9 +281,9 @@ void performTest_x2(const size_t rows,
     auto [atol_amax, rtol_amax] = getTolerances(DType::kFloat32);
     compareResults("output_c_rowwise", output, ref_output_rowwise.get(), true, atol, rtol);
     compareResults("output_c_colwise", output, ref_output_colwise.get(), false, atol, rtol);
-    compare_e8m0_scaling_factors("scales_rowwise", output.rowwise_cpu_scale_inv_ptr<e8m0_t>(),
+    compare_e8m0_scaling_factors("scales_rowwise", output.rowwise_cpu_scale_inv_ptr<fp8e8m0>(),
                                  ref_scales_rowwise.get(), blocks_num_rowwise);
-    compare_e8m0_scaling_factors("scales_colwise", output.columnwise_cpu_scale_inv_ptr<e8m0_t>(),
+    compare_e8m0_scaling_factors("scales_colwise", output.columnwise_cpu_scale_inv_ptr<fp8e8m0>(),
                                  ref_scales_colwise.get(), blocks_num_colwise);
 }
 

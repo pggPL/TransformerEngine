@@ -9,22 +9,29 @@
 
 #include "../common.h"
 #include "../util/vectorized_pointwise.h"
+#include "../util/math.h"
+
+extern void nvte_quantize_gelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
+extern void nvte_quantize_qgelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
+extern void nvte_quantize_silu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
+extern void nvte_quantize_relu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
+extern void nvte_quantize_srelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
 
 namespace transformer_engine {
 
 template <typename ComputeType, typename Param, ComputeType (*OP)(ComputeType, const Param &)>
-void act_fn(const Tensor &input, Tensor *output, cudaStream_t stream) {
+void act_fn(const NVTETensor input_nvte, NVTETensor output_nvte, cudaStream_t stream) {
+  const Tensor input = *reinterpret_cast<const Tensor*>(input_nvte);
+  Tensor* output = reinterpret_cast<Tensor*>(output_nvte);
+
   CheckInputTensor(input, "act_lu_input");
   CheckOutputTensor(*output, "act_lu_output");
   NVTE_CHECK(input.data.shape == output->data.shape, "Input and output shapes must match.");
   const size_t tot_elts = product(input.data.shape);
 
-  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
-      input.data.dtype, IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_OUTPUT(
-          output->data.dtype, OType,
-          if (!is_fp8_dtype(output->data.dtype) ||
-              is_delayed_tensor_scaling(output->scaling_mode)) {
+  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_OUTPUT(output->data.dtype, OType,
+          if (!is_fp8_dtype(output->data.dtype) || is_delayed_tensor_scaling(output->scaling_mode)) {
             constexpr int nvec = 32 / sizeof(IType);
             VectorizedUnaryKernelLauncher<nvec, Param, OP>(
                 reinterpret_cast<const IType *>(input.data.dptr),
@@ -32,10 +39,20 @@ void act_fn(const Tensor &input, Tensor *output, cudaStream_t stream) {
                 reinterpret_cast<const ComputeType *>(output->scale.dptr),
                 reinterpret_cast<ComputeType *>(output->amax.dptr),
                 reinterpret_cast<ComputeType *>(output->scale_inv.dptr), tot_elts, {}, stream);
+          } else if (is_mxfp_scaling(output->scaling_mode)) {
+            if (OP == gelu<fp32,fp32>)        { nvte_quantize_gelu(input_nvte, output_nvte, stream);  }
+            else if (OP == qgelu<fp32,fp32>)  { nvte_quantize_qgelu(input_nvte, output_nvte, stream); }
+            else if (OP == silu<fp32,fp32>)   { nvte_quantize_silu(input_nvte, output_nvte, stream);  }
+            else if (OP == relu<fp32,fp32>)   { nvte_quantize_relu(input_nvte, output_nvte, stream);  }
+            else if (OP == srelu<fp32,fp32>)  { nvte_quantize_srelu(input_nvte, output_nvte, stream); }
+            else {
+              NVTE_ERROR("Activation type is not supported");
+            }
           } else {
             NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
-          });  // NOLINT(*)
-  );           // NOLINT(*)
+          }
+      );  // NOLINT(*)
+  );      // NOLINT(*)
 }
 
 template <typename ComputeType, typename Param, ComputeType (*OP)(ComputeType, const Param &)>

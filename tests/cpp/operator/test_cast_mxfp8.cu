@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <transformer_engine/cast.h>
+#include <transformer_engine/activation.h>
 #include "../test_common.h"
 #include "transformer_engine/transformer_engine.h"
 
@@ -28,16 +29,17 @@ namespace {
 enum ProcessingMethod {
     CAST_ONLY,
     CAST_DBIAS,
-    CAST_DBIAS_DACT
+    CAST_DBIAS_DACT,
+    CAST_ACT
 };
 
-enum dActivationType {
+enum ActivationType {
     Identity,
-    dGeLU,
-    dSiLU,
-    dReLU,
-    dQGeLU,
-    dSReLU
+    GeLU,
+    SiLU,
+    ReLU,
+    QGeLU,
+    SReLU
 };
 
 template <typename InputType, typename OutputType, float (*OP)(const float)>
@@ -46,7 +48,7 @@ void scale_block(const ProcessingMethod processing_method,
                  const InputType* act_input,
                  OutputType* output_c,
                  float* dbias,
-                 e8m0_t* output_scales,
+                 fp8e8m0* output_scales,
                  const size_t scale_idx,
                  const size_t i_min,
                  const size_t i_max,
@@ -59,8 +61,13 @@ void scale_block(const ProcessingMethod processing_method,
     for (size_t i = i_min; i < i_max; ++i) {
         for (size_t j = j_min; j < j_max; ++j) {
             const size_t idx = i * cols + j;
-            const float activation_val = OP(static_cast<float>(act_input[idx]));
-            const float elt = static_cast<float>(input[idx]) * activation_val;
+            float elt;
+            if (processing_method == ProcessingMethod::CAST_ACT) {
+                elt = OP(static_cast<float>(input[idx]));
+            } else {
+                const float activation_val = OP(static_cast<float>(act_input[idx]));
+                elt = static_cast<float>(input[idx]) * activation_val;
+            }
             dbias[j] += elt;
             if (isinf(elt) || isnan(elt)) {
                 continue;
@@ -69,7 +76,7 @@ void scale_block(const ProcessingMethod processing_method,
         }
     }
 
-    const e8m0_t biased_exponent = float_to_e8m0(amax * Quantized_Limits<OutputType>::max_reciprocal());
+    const fp8e8m0 biased_exponent = float_to_e8m0(amax * Quantized_Limits<OutputType>::max_reciprocal());
     const float scale_reciprocal = exp2f_rcp(biased_exponent);
     output_scales[scale_idx] = biased_exponent;
 
@@ -77,8 +84,13 @@ void scale_block(const ProcessingMethod processing_method,
     for (size_t i = i_min; i < i_max; ++i) {
         for (size_t j = j_min; j < j_max; ++j) {
             const size_t idx = i * cols + j;
-            const float activation_val = OP(static_cast<float>(act_input[idx]));
-            const float elt = static_cast<float>(input[idx]) * activation_val;
+            float elt;
+            if (processing_method == ProcessingMethod::CAST_ACT) {
+                elt = OP(static_cast<float>(input[idx]));
+            } else {
+                const float activation_val = OP(static_cast<float>(act_input[idx]));
+                elt = static_cast<float>(input[idx]) * activation_val;
+            }
             output_c[idx] = static_cast<OutputType>(elt * scale_reciprocal);
         }
     }
@@ -89,7 +101,7 @@ void compute_ref_x1(const ProcessingMethod processing_method,
                     const InputType* input,
                     const InputType* act_input,
                     OutputType* output_c,
-                    e8m0_t* output_scales,
+                    fp8e8m0* output_scales,
                     InputType* output_dbias,
                     const size_t rows,
                     const size_t cols,
@@ -123,8 +135,8 @@ void compute_ref_x2(const ProcessingMethod processing_method,
                     const InputType* act_input,
                     OutputType* output_rowwise,
                     OutputType* output_colwise,
-                    e8m0_t* scales_rowwise,
-                    e8m0_t* scales_colwise,
+                    fp8e8m0* scales_rowwise,
+                    fp8e8m0* scales_colwise,
                     InputType* output_dbias,
                     const size_t rows,
                     const size_t cols,
@@ -175,7 +187,7 @@ void performTest_x1(const ProcessingMethod processing_method,
 
     std::unique_ptr<OutputType[]> ref_output_c = std::make_unique<OutputType[]>(rows * cols);
     std::unique_ptr<InputType[]> ref_output_dbias = std::make_unique<InputType[]>(cols);
-    std::unique_ptr<e8m0_t[]> ref_output_scales = std::make_unique<e8m0_t[]>(blocks_Y * blocks_X);
+    std::unique_ptr<fp8e8m0[]> ref_output_scales = std::make_unique<fp8e8m0[]>(blocks_Y * blocks_X);
 
     fillCase<EncodingType>(&input, fill_case);
     fillUniform(&act_input);
@@ -218,6 +230,10 @@ void performTest_x1(const ProcessingMethod processing_method,
                                       0);
             break;
         }
+        case ProcessingMethod::CAST_ACT: {
+            nvte_gelu(input.data(), output_c.data(), 0);
+            break;
+        }
     }
 
     cudaDeviceSynchronize();
@@ -238,10 +254,10 @@ void performTest_x1(const ProcessingMethod processing_method,
     auto [atol, rtol] = getTolerances(otype);
     compareResults("output_c", output_c, ref_output_c.get(), rowwise, atol, rtol);
     if (rowwise) {
-      compare_e8m0_scaling_factors("scales", output_c.rowwise_cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+      compare_e8m0_scaling_factors("scales", output_c.rowwise_cpu_scale_inv_ptr<fp8e8m0>(), ref_output_scales.get(), blocks_num);
     }
     if (colwise) {
-      compare_e8m0_scaling_factors("scales", output_c.columnwise_cpu_scale_inv_ptr<e8m0_t>(), ref_output_scales.get(), blocks_num);
+      compare_e8m0_scaling_factors("scales", output_c.columnwise_cpu_scale_inv_ptr<fp8e8m0>(), ref_output_scales.get(), blocks_num);
     }
 
     if (processing_method == ProcessingMethod::CAST_DBIAS || processing_method == ProcessingMethod::CAST_DBIAS_DACT) {
@@ -289,8 +305,8 @@ void performTest_x2(const ProcessingMethod processing_method,
 
     std::unique_ptr<OutputType[]> ref_output_c_rowwise = std::make_unique<OutputType[]>(rows * cols);
     std::unique_ptr<OutputType[]> ref_output_c_colwise = std::make_unique<OutputType[]>(rows * cols);
-    std::unique_ptr<e8m0_t[]> ref_scales_rowwise = std::make_unique<e8m0_t[]>(rows * blocks_X);
-    std::unique_ptr<e8m0_t[]> ref_scales_colwise = std::make_unique<e8m0_t[]>(blocks_Y * cols);
+    std::unique_ptr<fp8e8m0[]> ref_scales_rowwise = std::make_unique<fp8e8m0[]>(rows * blocks_X);
+    std::unique_ptr<fp8e8m0[]> ref_scales_colwise = std::make_unique<fp8e8m0[]>(blocks_Y * cols);
     std::unique_ptr<InputType[]> ref_output_dbias = std::make_unique<InputType[]>(cols);
 
     fillCase<EncodingType>(&input, fill_case);
@@ -334,6 +350,10 @@ void performTest_x2(const ProcessingMethod processing_method,
                                       0);
             break;
         }
+        case ProcessingMethod::CAST_ACT: {
+            nvte_gelu(input.data(), output.data(), 0);
+            break;
+        }
     }
 
     cudaDeviceSynchronize();
@@ -356,9 +376,9 @@ void performTest_x2(const ProcessingMethod processing_method,
     auto [atol, rtol] = getTolerances(otype);
     compareResults("output_c_rowwise", output, ref_output_c_rowwise.get(), true, atol, rtol);
     compareResults("output_c_colwise", output, ref_output_c_colwise.get(), false, atol, rtol);
-    compare_e8m0_scaling_factors("scales_rowwise", output.rowwise_cpu_scale_inv_ptr<e8m0_t>(),
+    compare_e8m0_scaling_factors("scales_rowwise", output.rowwise_cpu_scale_inv_ptr<fp8e8m0>(),
                                  ref_scales_rowwise.get(), blocks_num_rowwise);
-    compare_e8m0_scaling_factors("scales_colwise", output.columnwise_cpu_scale_inv_ptr<e8m0_t>(),
+    compare_e8m0_scaling_factors("scales_colwise", output.columnwise_cpu_scale_inv_ptr<fp8e8m0>(),
                                  ref_scales_colwise.get(), blocks_num_colwise);
 
     if (processing_method == ProcessingMethod::CAST_DBIAS || processing_method == ProcessingMethod::CAST_DBIAS_DACT) {
@@ -399,23 +419,24 @@ std::vector<ProcessingMethod> processing_methods = {
     ProcessingMethod::CAST_ONLY,
     ProcessingMethod::CAST_DBIAS,
     ProcessingMethod::CAST_DBIAS_DACT,
+    ProcessingMethod::CAST_ACT,
 };
 
-// Only dGeLU activation tests are supported
-std::vector<dActivationType> dActivation_types = {
-    dActivationType::Identity,
-    dActivationType::dGeLU,
-    // dActivationType::dSiLU,
-    // dActivationType::dReLU,
-    // dActivationType::dQGeLU,
-    // dActivationType::dSReLU,
+// Only GeLU activation tests are supported
+std::vector<ActivationType> Activation_types = {
+    ActivationType::Identity,
+    ActivationType::GeLU,
+    // ActivationType::SiLU,
+    // ActivationType::ReLU,
+    // ActivationType::QGeLU,
+    // ActivationType::SReLU,
 };
 
 }  // namespace
 
 class FusedCastMXFP8TestSuite : public ::testing::TestWithParam
     <std::tuple<ProcessingMethod,
-                dActivationType,
+                ActivationType,
                 std::pair<size_t, size_t>,
                 std::pair<size_t, size_t>,
                 transformer_engine::DType,
@@ -424,12 +445,22 @@ class FusedCastMXFP8TestSuite : public ::testing::TestWithParam
 
 #define DACT_FUNC_SWITCH(OP_FUNC_TYPE, OP, ...) \
 switch (OP_FUNC_TYPE) { \
-    case dActivationType::Identity: { constexpr auto OP = &identity; { __VA_ARGS__ } } break; \
-    case dActivationType::dGeLU:    { constexpr auto OP = &dgelu;    { __VA_ARGS__ } } break; \
-    case dActivationType::dSiLU:    { constexpr auto OP = &dsilu;    { __VA_ARGS__ } } break; \
-    case dActivationType::dReLU:    { constexpr auto OP = &drelu;    { __VA_ARGS__ } } break; \
-    case dActivationType::dQGeLU:   { constexpr auto OP = &dqgelu;   { __VA_ARGS__ } } break; \
-    case dActivationType::dSReLU:   { constexpr auto OP = &dsrelu;   { __VA_ARGS__ } } break; \
+    case ActivationType::Identity: { constexpr auto OP = &identity; { __VA_ARGS__ } } break; \
+    case ActivationType::GeLU:     { constexpr auto OP = &dgelu;    { __VA_ARGS__ } } break; \
+    case ActivationType::SiLU:     { constexpr auto OP = &dsilu;    { __VA_ARGS__ } } break; \
+    case ActivationType::ReLU:     { constexpr auto OP = &drelu;    { __VA_ARGS__ } } break; \
+    case ActivationType::QGeLU:    { constexpr auto OP = &dqgelu;   { __VA_ARGS__ } } break; \
+    case ActivationType::SReLU:    { constexpr auto OP = &dsrelu;   { __VA_ARGS__ } } break; \
+}
+
+#define ACT_FUNC_SWITCH(OP_FUNC_TYPE, OP, ...) \
+switch (OP_FUNC_TYPE) { \
+    case ActivationType::Identity: { constexpr auto OP = &identity; { __VA_ARGS__ } } break; \
+    case ActivationType::GeLU:     { constexpr auto OP = &gelu;    { __VA_ARGS__ } } break; \
+    case ActivationType::SiLU:     { constexpr auto OP = &silu;    { __VA_ARGS__ } } break; \
+    case ActivationType::ReLU:     { constexpr auto OP = &relu;    { __VA_ARGS__ } } break; \
+    case ActivationType::QGeLU:    { constexpr auto OP = &qgelu;   { __VA_ARGS__ } } break; \
+    case ActivationType::SReLU:    { constexpr auto OP = &srelu;   { __VA_ARGS__ } } break; \
 }
 
 static const int32_t deviceComputeCapability = [](){
@@ -450,42 +481,67 @@ TEST_P(FusedCastMXFP8TestSuite, TestFusedCastMXFP8) {
     using namespace test;
 
     const ProcessingMethod processing_method = std::get<0>(GetParam());
-    const dActivationType dAct_type = std::get<1>(GetParam());
+    const ActivationType Act_type = std::get<1>(GetParam());
     const auto matrix_size = std::get<2>(GetParam());
     const auto block_size = std::get<3>(GetParam());
     const DType input_type = std::get<4>(GetParam());
     const DType output_type = std::get<5>(GetParam());
     const InputsFillCase fill_case = std::get<6>(GetParam());
 
-    // Skips non dAct tests if the dActivation type is not an identity
-    if (processing_method != ProcessingMethod::CAST_DBIAS_DACT
-        && dAct_type != dActivationType::Identity) {
+    // Skips non Act tests if the Activation type is not an identity
+    if ((processing_method == ProcessingMethod::CAST_ONLY || processing_method == ProcessingMethod::CAST_DBIAS) 
+        && Act_type != ActivationType::Identity) {
         GTEST_SKIP();
     }
 
-    // Skips dAct tests if the dActivation type is an identity
+    // Skips Act tests if the Activation type is an identity
     if (processing_method == ProcessingMethod::CAST_DBIAS_DACT
-        && dAct_type == dActivationType::Identity) {
+        && Act_type == ActivationType::Identity) {
+        GTEST_SKIP();
+    }
+
+    // Skips Forward Act tests if the Activation type is not an identity
+    if (processing_method == ProcessingMethod::CAST_ACT 
+        && Act_type == ActivationType::Identity) {
         GTEST_SKIP();
     }
 
     const bool rowwise = block_size.second != 1;
     const bool colwise = block_size.first != 1;
-    DACT_FUNC_SWITCH(dAct_type, OP,
-        TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(input_type, InputType,
-            TRANSFORMER_ENGINE_TYPE_SWITCH_FP8_ONLY(output_type, OutputType,
-                if (block_size.first == 1 || block_size.second == 1) {
-                    performTest_x1<InputType, OutputType, OP>(
-                        processing_method, matrix_size.first, matrix_size.second,
-                        rowwise, colwise, fill_case);
-                } else {
-                    performTest_x2<InputType, OutputType, OP>(
-                        processing_method, matrix_size.first, matrix_size.second,
-                        block_size.first, block_size.second, fill_case);
-                }
+    if (processing_method == ProcessingMethod::CAST_ACT) {
+        // Forward activations
+        ACT_FUNC_SWITCH(Act_type, OP,
+            TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(input_type, InputType,
+                TRANSFORMER_ENGINE_TYPE_SWITCH_FP8_ONLY(output_type, OutputType,
+                    if (block_size.first == 1 || block_size.second == 1) {
+                        performTest_x1<InputType, OutputType, OP>(
+                            processing_method, matrix_size.first, matrix_size.second,
+                            rowwise, colwise, fill_case);
+                    } else {
+                        performTest_x2<InputType, OutputType, OP>(
+                            processing_method, matrix_size.first, matrix_size.second,
+                            block_size.first, block_size.second, fill_case);
+                    }
+                );
             );
         );
-    );
+    } else {
+        DACT_FUNC_SWITCH(Act_type, OP,
+            TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(input_type, InputType,
+                TRANSFORMER_ENGINE_TYPE_SWITCH_FP8_ONLY(output_type, OutputType,
+                    if (block_size.first == 1 || block_size.second == 1) {
+                        performTest_x1<InputType, OutputType, OP>(
+                            processing_method, matrix_size.first, matrix_size.second,
+                            rowwise, colwise, fill_case);
+                    } else {
+                        performTest_x2<InputType, OutputType, OP>(
+                            processing_method, matrix_size.first, matrix_size.second,
+                            block_size.first, block_size.second, fill_case);
+                    }
+                );
+            );
+        );
+    }
 }
 
 std::string to_string(const ProcessingMethod method) {
@@ -493,18 +549,19 @@ std::string to_string(const ProcessingMethod method) {
         case ProcessingMethod::CAST_ONLY:       return "CAST_ONLY";
         case ProcessingMethod::CAST_DBIAS:      return "CAST_DBIAS";
         case ProcessingMethod::CAST_DBIAS_DACT: return "CAST_DBIAS_DACT";
+        case ProcessingMethod::CAST_ACT:        return "CAST_ACT";
         default: return "";
     }
 }
 
-std::string to_string(const dActivationType dAct_type) {
-    switch (dAct_type) {
-        case dActivationType::Identity: return "Identity";
-        case dActivationType::dGeLU:    return "dGeLU";
-        case dActivationType::dSiLU:    return "dSiLU";
-        case dActivationType::dReLU:    return "dReLU";
-        case dActivationType::dQGeLU:   return "dQGeLU";
-        case dActivationType::dSReLU:   return "dSReLU";
+std::string to_string(const ActivationType Act_type) {
+    switch (Act_type) {    
+        case ActivationType::Identity:  return "Identity";
+        case ActivationType::GeLU:      return "GeLU";
+        case ActivationType::SiLU:      return "SiLU";
+        case ActivationType::ReLU:      return "ReLU";
+        case ActivationType::QGeLU:     return "QGeLU";
+        case ActivationType::SReLU:     return "SReLU";
         default: return "";
     }
 }
@@ -514,7 +571,7 @@ INSTANTIATE_TEST_SUITE_P(
     FusedCastMXFP8TestSuite,
     ::testing::Combine(
         ::testing::ValuesIn(processing_methods),
-        ::testing::ValuesIn(dActivation_types),
+        ::testing::ValuesIn(Activation_types),
         ::testing::ValuesIn(matrix_sizes),
         ::testing::ValuesIn(block_sizes),
         ::testing::Values(DType::kFloat32, DType::kBFloat16, DType::kFloat16),

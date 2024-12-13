@@ -10,8 +10,7 @@
 void nvte_silu(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_silu);
   using namespace transformer_engine;
-  act_fn<fp32, Empty, silu<fp32, fp32>>(*reinterpret_cast<const Tensor*>(input),
-                                        reinterpret_cast<Tensor*>(output), stream);
+  act_fn<fp32, Empty, silu<fp32, fp32>>(input, output, stream);
 }
 
 void nvte_dsilu(const NVTETensor grad, const NVTETensor input, NVTETensor output,

@@ -4,6 +4,13 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+/*! \file ptx.cuh
+ *  \brief BW PTX 
+ */
+
+#ifndef TRANSFORMER_ENGINE_PTX_CUH_
+#define TRANSFORMER_ENGINE_PTX_CUH_
+
 #include <cuda.h>
 #include <cuda_runtime.h>
 
@@ -163,3 +170,5 @@ __device__ __forceinline__ void fence_proxy_async_shared_cta() {
 
 }  // namespace ptx
 }  // namespace transformer_engine
+
+#endif  // TRANSFORMER_ENGINE_PTX_CUH_

@@ -49,16 +49,6 @@ void nvte_qgelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
 
 void nvte_srelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
 
-void nvte_quantize_gelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
-
-void nvte_quantize_silu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
-
-void nvte_quantize_relu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
-
-void nvte_quantize_qgelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
-
-void nvte_quantize_srelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
-
 /*! \brief Compute activation gradient.
  *
  *  \param[in]     grad      Incoming gradient.

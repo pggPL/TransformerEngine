@@ -52,7 +52,7 @@ using fp16 = half;
 using bf16 = nv_bfloat16;
 using fp8e4m3 = __nv_fp8_e4m3;
 using fp8e5m2 = __nv_fp8_e5m2;
-using e8m0_t = uint8_t;
+using fp8e8m0 = uint8_t;
 
 template <typename T>
 struct TypeInfo{
@@ -64,7 +64,7 @@ struct TypeInfo{
                              bf16,
                              fp8e4m3,
                              fp8e5m2,
-                             e8m0_t>;
+                             fp8e8m0>;
 
     template <typename U, DType current>
     struct Helper {
@@ -347,12 +347,12 @@ enum InputsFillCase {
     uniform                     = 4,    // std::uniform_real_distribution<> dis(-2.0, 1.0)
 };
 
-inline e8m0_t float_to_e8m0(float val) {
+inline fp8e8m0 float_to_e8m0(float val) {
   if (std::isinf(val) || std::isnan(val)) {
     return 0xFF;
   }
   uint32_t val_u32 = *reinterpret_cast<uint32_t*>(&val);
-  e8m0_t exponent = (val_u32 >> FP32_MANTISSA_BITS) & 0xFF;
+  fp8e8m0 exponent = (val_u32 >> FP32_MANTISSA_BITS) & 0xFF;
   uint32_t mantissa = val_u32 & 0x7FFFFF;
   if ((mantissa > 0) && (exponent != 0xFE)) {     // exp can only be < 0xFE here
     ++exponent;                                   // roundup
@@ -360,7 +360,7 @@ inline e8m0_t float_to_e8m0(float val) {
   return exponent;
 }
 
-inline float exp2f_rcp(e8m0_t biased_exp) {
+inline float exp2f_rcp(fp8e8m0 biased_exp) {
   return exp2f(FP32_EXPONENT_BIAS - static_cast<float>(biased_exp));
 }
 

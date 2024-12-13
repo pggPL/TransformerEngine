@@ -9,8 +9,7 @@
 void nvte_gelu(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_gelu);
   using namespace transformer_engine;
-  act_fn<fp32, Empty, gelu<fp32, fp32>>(*reinterpret_cast<const Tensor*>(input),
-                                        reinterpret_cast<Tensor*>(output), stream);
+  act_fn<fp32, Empty, gelu<fp32, fp32>>(input, output, stream);
 }
 
 void nvte_dgelu(const NVTETensor grad, const NVTETensor input, NVTETensor output,
@@ -41,8 +40,7 @@ void nvte_dgeglu(const NVTETensor grad, const NVTETensor input, NVTETensor outpu
 void nvte_qgelu(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_qgelu);
   using namespace transformer_engine;
-  act_fn<fp32, Empty, qgelu<fp32, fp32>>(*reinterpret_cast<const Tensor*>(input),
-                                         reinterpret_cast<Tensor*>(output), stream);
+  act_fn<fp32, Empty, qgelu<fp32, fp32>>(input, output, stream);
 }
 
 void nvte_dqgelu(const NVTETensor grad, const NVTETensor input, NVTETensor output,

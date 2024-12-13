@@ -25,7 +25,8 @@ std::vector<DType> all_fp_types = {DType::kFloat32,
                                    DType::kFloat16,
                                    DType::kBFloat16,
                                    DType::kFloat8E5M2,
-                                   DType::kFloat8E4M3};
+                                   DType::kFloat8E4M3,
+                                   DType::kFloat8E8M0};
 
 bool areShapesEqual(const NVTEShape &s1, const NVTEShape &s2) {
   if (s1.ndim != s2.ndim) return false;
@@ -53,7 +54,8 @@ const std::string &typeName(DType type) {
     {DType::kFloat16, "float16"},
     {DType::kBFloat16, "bfloat16"},
     {DType::kFloat8E4M3, "float8e4m3"},
-    {DType::kFloat8E5M2, "float8e5m2"}};
+    {DType::kFloat8E5M2, "float8e5m2"},
+    {DType::kFloat8E8M0, "float8e8m0"}};
   return name_map.at(type);
 }
 
@@ -146,8 +148,8 @@ std::pair<scale_inv_meta, scale_inv_meta> get_scales(const NVTEShape& shape,
                                alignment) * alignment;
       ret_colwise.shape = {scale_dim_0, scale_dim_1};
     }
-    ret_rowwise.type = DType::kByte;
-    ret_colwise.type = DType::kByte;
+    ret_rowwise.type = DType::kFloat8E8M0;
+    ret_colwise.type = DType::kFloat8E8M0;
     ret_rowwise.type_size = sizeof(uint8_t);
     ret_colwise.type_size = sizeof(uint8_t);
 
@@ -250,14 +252,14 @@ Tensor::Tensor(const NVTEShape &shape, const DType type,
         cudaMemset(rowwise_scale_inv, 0, rowwise_scale_size);
         rowwise_scale_inv_cpu_data_ = std::make_unique<unsigned char[]>(rowwise_scale_size);
         std::fill_n(rowwise_scale_inv_cpu_data_.get(), rowwise_scale_size, 0);
-        tensor_.set_rowwise_scale_inv(rowwise_scale_inv, DType::kByte, scale_shape);
+        tensor_.set_rowwise_scale_inv(rowwise_scale_inv, DType::kFloat8E8M0, scale_shape);
       }
       if (columnwise) {
         cudaMalloc((void**)&columnwise_scale_inv, columnwise_scale_size);  // NOLINT(*)
         cudaMemset(columnwise_scale_inv, 0, columnwise_scale_size);
         columnwise_scale_inv_cpu_data_ = std::make_unique<unsigned char[]>(columnwise_scale_size);
         std::fill_n(columnwise_scale_inv_cpu_data_.get(), columnwise_scale_size, 0);
-        tensor_.set_columnwise_scale_inv(columnwise_scale_inv, DType::kByte, columnwise_scale_shape);
+        tensor_.set_columnwise_scale_inv(columnwise_scale_inv, DType::kFloat8E8M0, columnwise_scale_shape);
       }
     }
   }
@@ -603,6 +605,7 @@ std::pair<double, double> getTolerances(const DType type) {
       return {1e-5, 1e-2};
     case DType::kFloat8E4M3:
     case DType::kFloat8E5M2:
+    case DType::kFloat8E8M0:
       return {1e-2, 1e-2};
     default:
       NVTE_CHECK("Invalid type!");
@@ -726,7 +729,7 @@ void setRandomScaleInv(Tensor *t) {
 }
 
 bool isFp8Type(DType type) {
-    return type == DType::kFloat8E4M3 || type == DType::kFloat8E5M2;
+    return type == DType::kFloat8E4M3 || type == DType::kFloat8E5M2 || type == DType::kFloat8E8M0;
 }
 
 }  // namespace test
