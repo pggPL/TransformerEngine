@@ -240,7 +240,6 @@ class _Linear(torch.autograd.Function):
             ctx.save_for_backward(
                 *saved_input_tensors,
                 *saved_weight_tensors,
-                weight.main_grad if fuse_wgrad_accumulation and weight.requires_grad else None, # TODO(pgadzinski) - think about it
                 bias,
                 weight if (fuse_wgrad_accumulation and
                            hasattr(weight, "grad_added_to_main_grad")) else None
@@ -294,10 +293,12 @@ class _Linear(torch.autograd.Function):
             inputmat, saved_tensors = restore_from_saved(ctx.saved_input, saved_tensors)
             weight_fp8, saved_tensors = restore_from_saved(ctx.saved_weight, saved_tensors)
             (
-                main_grad,
                 bias,
                 weight
             ) = saved_tensors
+
+            # Since main_grad can be modified inplace, it should not be a part of saved_tensors
+            main_grad = weight.main_grad if weight is not None and ctx.fuse_wgrad_accumulation and weight.requires_grad else None
 
             # Gather intermediate/activation tensors if needed
             # NOTE: weight_fp8 = weight when ctx.fp8 == False and torch.disttributed.FSDP already

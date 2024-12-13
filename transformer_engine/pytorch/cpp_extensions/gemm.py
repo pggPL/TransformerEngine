@@ -137,7 +137,6 @@ def general_gemm(
     if bias is None and not grad:
         bias = _empty_tensor()
 
-
     args = (
         A,
         transa,  # transa

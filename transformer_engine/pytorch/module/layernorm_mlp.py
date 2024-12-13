@@ -457,8 +457,6 @@ class _LayerNormMLP(torch.autograd.Function):
                 *saved_act_out_tensors,
                 *saved_fc2_weight_tensors,
                 *saved_fc2_bias_tensors,
-                fc1_weight.main_grad if ( fuse_wgrad_accumulation and fc1_weight.requires_grad) else None, # TODO(pgadzinski) - think about ir
-                fc2_weight.main_grad if ( fuse_wgrad_accumulation and fc2_weight.requires_grad) else None, # TODO(pgadzinski) - think about ir
                 mu,
                 rsigma,
             )
@@ -563,6 +561,10 @@ class _LayerNormMLP(torch.autograd.Function):
             fc2_weight, saved_tensors = restore_from_saved(ctx.saved_fc2_weight, saved_tensors)
             fc2_bias, saved_tensors = restore_from_saved(ctx.saved_fc2_bias, saved_tensors)
             fc1_weight_main_grad, fc2_weight_main_grad, mu, rsigma = saved_tensors
+
+            # Since main_grad can be modified inplace, it should not be a part of saved_tensors
+            fc1_weight_main_grad = fc1_weight.main_grad if fc1_weight is not None and ctx.fuse_wgrad_accumulation and fc1_weight.requires_grad else None
+            fc2_weight_main_grad = fc2_weight.main_grad if fc2_weight is not None and ctx.fuse_wgrad_accumulation and fc2_weight.requires_grad else None
 
             # TODO: Fix this
             # Gather saved autograd context tensors when running with FSDP

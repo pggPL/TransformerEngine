@@ -301,7 +301,6 @@ class _LayerNormLinear(torch.autograd.Function):
                 *saved_ln_out_tensors,
                 mu,
                 rsigma,
-                weight.main_grad if fuse_wgrad_accumulation and weight.requires_grad else None
             )
 
             ctx.saved_input = saved_input
@@ -381,7 +380,10 @@ class _LayerNormLinear(torch.autograd.Function):
             ln_weight, saved_tensors = restore_from_saved(ctx.saved_ln_weight, saved_tensors)
             ln_bias, saved_tensors = restore_from_saved(ctx.saved_ln_bias, saved_tensors)
             ln_out, saved_tensors = restore_from_saved(ctx.saved_ln_out, saved_tensors)
-            mu, rsigma, main_grad = saved_tensors
+            mu, rsigma = saved_tensors
+
+            # Since main_grad can be modified inplace, it should not be a part of saved_tensors
+            main_grad = weight.main_grad if weight is not None and ctx.fuse_wgrad_accumulation and weight.requires_grad else None
 
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(

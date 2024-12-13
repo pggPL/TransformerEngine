@@ -46,7 +46,7 @@ TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, Quantizer* quantizer
 
 TensorWrapper NVTETensorFromMXFP8Tensor(py::handle tensor, Quantizer* quantizer) {
   const DType dtype = tensor.attr("_fp8_dtype").cast<DType>();
-  auto ret = TensorWrapper();
+  auto ret = TensorWrapper(quantizer->get_scaling_mode());
 
   bool rowwise_usage = !(tensor.attr("_rowwise_data").is_none());
   bool columnwise_usage = !(tensor.attr("_columnwise_data").is_none());

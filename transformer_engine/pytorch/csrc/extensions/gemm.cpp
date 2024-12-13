@@ -98,10 +98,6 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   const TensorWrapper& A_tensor = makeTransformerEngineTensor(A, none);
   const TensorWrapper& B_tensor = makeTransformerEngineTensor(B, none);
 
-
-
-  
-
   // Check tensor dimensions
   const auto& A_shape = A_tensor.shape();
   const auto& B_shape = B_tensor.shape();
