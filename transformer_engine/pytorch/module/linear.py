@@ -436,7 +436,7 @@ class _Linear(torch.autograd.Function):
                     layout="NT",
                     grad=True,
                     bias=(bias if grad_bias is None else None),
-                    out_dtype=ctx.activation_dtype,  # TODO: not sure about that
+                    out_dtype=main_grad.dtype if ctx.fuse_wgrad_accumulation else None,
                     out=main_grad if ctx.fuse_wgrad_accumulation else None,
                     use_split_accumulator=_2X_ACC_WGRAD,
                     accumulate=accumulate_wgrad_into_param_main_grad,
