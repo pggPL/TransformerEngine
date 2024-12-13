@@ -692,12 +692,11 @@ class _LayerNormMLP(torch.autograd.Function):
                     act_out,
                     grad_output,
                     get_workspace(),
-                    out_dtype=fc2_weight_main_grad if ctx.fuse_wgrad_accumulation else None,
+                    out_dtype=fc2_weight_main_grad if ctx.fuse_wgrad_accumulation else ctx.activation_dtype,
                     quantization_params = None, # wgrad in high precision
                     layout="NT",
                     grad=True,
                     accumulate=accumulate_wgrad_into_param_main_grad,
-                    bias=fc2_bias if fc2_bias is not None and fc2_bias_grad is None else None,
                     use_split_accumulator=_2X_ACC_WGRAD,
                     out=fc2_weight_main_grad if ctx.fuse_wgrad_accumulation else None,
                 )
@@ -809,7 +808,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     ln_out_total,
                     dact,
                     get_workspace(),
-                    out_dtype=fc1_weight_main_grad if ctx.fuse_wgrad_accumulation else None,
+                    out_dtype=fc1_weight_main_grad if ctx.fuse_wgrad_accumulation else ctx.activation_dtype,
                     layout="NT",
                     grad=True,
                     bias=fc1_bias if fuse_gemm_and_bias_wgrad else None,
