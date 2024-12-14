@@ -95,8 +95,10 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   NVTE_CHECK(!A.is_none(), "Tensor A has not been provided");
   NVTE_CHECK(!B.is_none(), "Tensor B has not been provided");
   auto none = py::none();
-  const TensorWrapper& A_tensor = makeTransformerEngineTensor(A, none);
-  const TensorWrapper& B_tensor = makeTransformerEngineTensor(B, none);
+  TensorWrapper A_tensor = makeTransformerEngineTensor(A, none);
+  TensorWrapper B_tensor = makeTransformerEngineTensor(B, none);
+  swizzle_scaling_factors(A_tensor, transa);
+  swizzle_scaling_factors(B_tensor, !transb);
 
   // Check tensor dimensions
   const auto& A_shape = A_tensor.shape();

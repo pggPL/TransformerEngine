@@ -437,8 +437,7 @@ void fused_multi_row_padding(at::Tensor input, at::Tensor output,
  * swizzle
  **************************************************************************************************/
 
-at::Tensor swizzle_scaling_factors(at::Tensor input, at::Tensor scale_inv,
-                                   std::vector<int64_t> scaling_mode);
+void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool trans);
 
 /***************************************************************************************************
  * Comm+GEMM Overlap Wrappers

@@ -161,6 +161,14 @@ size_t product(const NVTEShape& shape, size_t begin, size_t end) {
   return ret;
 }
 
+std::vector<size_t> nvte_shape_to_vector(const NVTEShape& nvte_shape) {
+  std::vector<size_t> shape;
+  for (size_t i = 0; i < nvte_shape.ndim; i++) {
+    shape.push_back(nvte_shape.data[i]);
+  }
+  return shape;
+}
+
 at::Tensor allocateSpace(const std::vector<size_t>& shape, const transformer_engine::DType type,
                          bool init_to_zeros) {
   std::vector<int64_t> shape_int64(shape.begin(), shape.end());
