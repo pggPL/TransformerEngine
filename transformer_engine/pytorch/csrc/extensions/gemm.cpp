@@ -165,7 +165,6 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   const int sm_count = transformer_engine::cuda::sm_count(device_id);
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
-
   if(A_tensor.numel() != 0 && B_tensor.numel() != 0) {
     // Launch GEMM
     nvte_cublas_gemm(A_tensor.data(), B_tensor.data(), D_tensor.data(), bias_tensor.data(),
@@ -191,8 +190,6 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
     }
     return out;
   }
-
-  
 
   // Pack outputs
   std::vector<py::object> out;
