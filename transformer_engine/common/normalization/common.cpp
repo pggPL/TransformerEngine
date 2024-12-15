@@ -188,7 +188,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
                                                const bool zero_centered_gamma,
                                                const NVTEScalingMode& mode,
                                                bool rowwise, bool columnwise)
-    : _fp8_out(is_fp8_dtype(otype)), _zero_centered(zero_centered_gamma) {
+    : _fp8_out(is_fp8_dtype(otype)), _zero_centered(zero_centered_gamma), _rowwise(rowwise), _columnwise(columnwise){
   static_assert(CUDNN_FRONTEND_VERSION >= 10601,
                 "CUDNN_FRONTEND_VERSION should be at least 1.6.1!");
 
@@ -317,7 +317,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
         auto z_2d = _graph.reshape(_z, fe::graph::Reshape_attributes());
         z_2d->set_dim({batch_dim, hidden_dim});
 
-        if (rowwise) {
+        if (_rowwise) {
           auto mx_quantize_row_opts = fe::graph::Block_scale_quantize_attributes()
                                           .set_block_size(32)
                                           .set_axis(1)
@@ -328,7 +328,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
           _sf_row->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);  //TODO
         }
 
-        if (columnwise) {
+        if (_columnwise) {
           auto mx_quantize_col_opts = fe::graph::Block_scale_quantize_attributes()
                                           .set_block_size(32)
                                           .set_axis(0)
@@ -418,12 +418,12 @@ void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, 
                           {_amax, z->amax.dptr},
                           {_z_fp8, z->data.dptr}});
   } else if (_fp8_out && _ndim_scale_block == 1) {
-    if (rowwise) {
+    if (_rowwise) {
       _variant_pack.insert({{_z_mx_row, z->data.dptr},
                             {_sf_row, z->scale_inv.dptr}});
     }
 
-    if (columnwise) {
+    if (_columnwise) {
       _variant_pack.insert({{_z_mx_col, z->columnwise_data.dptr},
                             {_sf_col, z->columnwise_scale_inv.dptr}});
     }
