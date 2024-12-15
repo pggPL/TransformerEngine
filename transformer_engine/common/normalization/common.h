@@ -216,7 +216,7 @@ class NormalizationPlanBase {
 
   virtual void execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr, void* mean_dptr,
                        void* eps_dptr, void* rsigma_dptr, void* workspace_dptr,
-                       cudaStream_t stream, const bool rowwise = true, const bool columnwise = true) = 0;
+                       cudaStream_t stream) = 0;
 
   virtual void execute(void* x_dptr, void* gamma_dptr, void* mean_dptr, void* rsigma_dptr,
                        void* dx_dptr, void* dz_dptr, void* dbeta_dptr, void* dgamma_dptr,
@@ -236,7 +236,7 @@ class TeNormalizationPlan : public NormalizationPlanBase {
 
   void execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr, void* mean_dptr,
                void* eps_dptr, void* rsigma_dptr, void* workspace_dptr,
-               cudaStream_t stream, const bool rowwise = true, const bool columnwise = true) override;
+               cudaStream_t stream) override;
 
   void execute(void* x_dptr, void* gamma_dptr, void* mean_dptr, void* rsigma_dptr, void* dx_dptr,
                void* dz_dptr, void* dbeta_dptr, void* dgamma_dptr, void* workspace_dptr,
@@ -265,7 +265,7 @@ class CudnnNormalizationPlan : public NormalizationPlanBase {
 
   void execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr, void* mean_dptr,
                void* eps_dptr, void* rsigma_dptr, void* workspace_dptr,
-               cudaStream_t stream, const bool rowwise = true, const bool columnwise = true) override;
+               cudaStream_t stream) override;
 
   void execute(void* x_dptr, void* gamma_dptr, void* mean_dptr, void* rsigma_dptr, void* dx_dptr,
                void* dz_dptr, void* dbeta_dptr, void* dgamma_dptr, void* workspace_dptr,

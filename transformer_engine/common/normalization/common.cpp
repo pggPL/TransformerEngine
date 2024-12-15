@@ -42,12 +42,13 @@ namespace normalization {
 TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
                      NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype, DType ctype,
                      uint64_t batch_size, uint64_t hidden_size, bool zero_centered_gamma,
-                     bool is_tuned) {
+                     bool is_tuned, bool rowwise = true, bool columnwise = true) {
   // TODO: Add scaling_mode to general_key is needed
   uint64_t general_key = static_cast<uint32_t>(itype) | (static_cast<uint32_t>(otype) << 3) |
                          (static_cast<uint32_t>(ctype) << 6) | (static_cast<uint32_t>(wtype) << 9) |
                          (uint32_t(NormType) << 12) | (uint32_t(NormStage)) << 14 |
-                         (uint32_t(NormBackend) << 16) | (uint32_t(zero_centered_gamma) << 18);
+                         (uint32_t(NormBackend) << 16) | (uint32_t(zero_centered_gamma) << 18) |
+                         (uint32_t(rowwise) << 19) | (uint32_t(columnwise) << 20);
   return std::make_tuple(general_key, batch_size, hidden_size, is_tuned);
 }
 
@@ -78,8 +79,7 @@ template <>
 void TeNormalizationPlan<ForwardKernelParams>::execute(Tensor* z, void* x_dptr, void* gamma_dptr,
                                                        void* beta_dptr, void* mean_dptr,
                                                        void* eps_dptr, void* rsigma_dptr,
-                                                       void* workspace_dptr, cudaStream_t stream,
-                                                       const bool rowwise, const bool columnwise
+                                                       void* workspace_dptr, cudaStream_t stream
                                                        ) {
   _launch_params.stream = stream;
 
@@ -107,8 +107,8 @@ template <>
 void TeNormalizationPlan<BackwardKernelParams>::execute(Tensor* z, void* x_dptr, void* gamma_dptr,
                                                         void* beta_dptr, void* mean_dptr,
                                                         void* eps_dptr, void* rsigma_dptr,
-                                                        void* workspace_dptr, cudaStream_t stream,
-                                                        const bool rowwise, const bool columnwise) {
+                                                        void* workspace_dptr, cudaStream_t stream)
+{
   NVTE_ERROR("Backward normalization should not call the forward execute function!");
 }
 
@@ -397,8 +397,8 @@ std::vector<size_t> CudnnNormalizationPlan::getWorkspaceShape() const {
 
 void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr,
                                      void* mean_dptr, void* eps_dptr, void* rsigma_dptr,
-                                     void* workspace_dptr, cudaStream_t stream,
-                                     const bool rowwise, const bool columnwise) {
+                                     void* workspace_dptr, cudaStream_t stream)
+{
   // Binding data pointers to graph tensors
   _variant_pack = {{_x, x_dptr}, {_rsigma, rsigma_dptr}, {_eps, eps_dptr}};
 
@@ -466,7 +466,7 @@ NormalizationPlanBase* NormalizationPlanRegistry::getNormalizationPlan(
   const DType ctype = DType::kFloat32;
   bool is_tuned = is_aligned && (batch_size % 4 == 0);
   auto key = get_key(NormBackend, NormType, NormStage, wtype, itype, otype, ctype, batch_size,
-                     hidden_size, zero_centered_gamma, is_tuned);
+                     hidden_size, zero_centered_gamma, is_tuned, rowwise, columnwise);
 
   auto it = normalizationPlanMap.find(key);
   if (it != normalizationPlanMap.end()) {
