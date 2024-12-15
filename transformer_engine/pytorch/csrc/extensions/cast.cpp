@@ -18,7 +18,6 @@ py::object quantize(const at::Tensor& tensor, py::handle quantizer,
   auto my_quantizer = convert_quantizer(quantizer);
   auto input_tensor = tensor.contiguous();
   
-
   const TensorWrapper& te_input = makeTransformerEngineTensor(input_tensor);
   const auto& te_input_shape = te_input.shape();
   std::vector<size_t> input_shape(te_input_shape.data,
@@ -46,7 +45,6 @@ py::object quantize(const at::Tensor& tensor, py::handle quantizer,
     auto opts = torch::TensorOptions().dtype(at::kFloat).device(torch::kCUDA);
     te_noop = makeTransformerEngineTensor(at::empty({0}, opts));
   }
-  
 
   if (te_output.numel() == 0) return out;
   nvte_quantize_noop(te_input.data(), te_output.data(), te_noop.data(), at::cuda::getCurrentCUDAStream());

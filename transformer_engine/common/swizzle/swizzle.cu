@@ -222,6 +222,7 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
 
     NVTE_CHECK(m % SF_TILE_DIM_M == 0, "Input should be padded in M/N dimension!");
     NVTE_CHECK(k % SF_TILE_DIM_K == 0, "Input should be padded in K dimension!");
+    NVTE_CHECK(k > 0, "Input scale inverse should be 2D!");
     if (output->has_data()) {
       NVTE_CHECK(m * k == std::accumulate(output->scale_inv.shape.begin(),
                                           output->scale_inv.shape.end(), 1, std::multiplies<int>()),

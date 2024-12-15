@@ -82,11 +82,12 @@ GemmParam CanonicalizeGemmInput(
              "Input B does not hold any data!");
   GemmParam ret(transA, transB);
 
+  ret.lda = lda;
+  ret.ldb = ldb;
+
   if (is_tensor_scaling(A.scaling_mode)) {
     ret.A = A.data.dptr;
     ret.A_scale_inv = A.scale_inv.dptr;
-    ret.lda = lda;
-    ret.ldb = ldb;
     if (transA == CUBLAS_OP_T) {
       ret.Atype = A.data.dtype;
     } else {

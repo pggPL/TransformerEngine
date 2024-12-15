@@ -12,6 +12,8 @@
 
 namespace transformer_engine::pytorch {
 
+constexpr size_t MXFP8_BLOCK_SIZE = 32;
+
 Quantizer::Quantizer(const py::handle& quantizer) {
   if (quantizer.is_none()) {
     this->rowwise_usage = true;
@@ -185,32 +187,33 @@ std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(const std::ve
     numel *= s;
   }
 
-  TensorWrapper tensor(this->get_scaling_mode());
+  TensorWrapper tensor(NVTE_MXFP8_1D_SCALING);
   at::TensorOptions opts;
   at::Tensor rowwise_data, columnwise_data, rowwise_scale_inv, columnwise_scale_inv;
   opts = opts.dtype(torch::kUInt8).device(torch::kCUDA);
+  auto last_dim = torch_shape.back();
 
   if (rowwise_usage) {
     rowwise_data = at::empty(torch_shape, opts);
-    rowwise_scale_inv = at::empty({numel / 32}, opts);  // TODO (fix size)
+    rowwise_scale_inv = at::empty({numel / last_dim, last_dim / MXFP8_BLOCK_SIZE}, opts);
 
     tensor.set_rowwise_data(rowwise_data.data_ptr(),
                             this->dtype,
                             shape);
     tensor.set_rowwise_scale_inv(rowwise_scale_inv.data_ptr(),
                                  DType::kFloat8E8M0,
-                                 std::vector<size_t>{numel / 32});
+                                 std::vector<size_t>{numel / last_dim, last_dim / MXFP8_BLOCK_SIZE});
   }
   if (columnwise_usage) {
     columnwise_data = at::empty(torch_shape, opts);
-    columnwise_scale_inv = at::empty({numel / 32}, opts);  // TODO (fix size)
+    columnwise_scale_inv = at::empty({numel / last_dim, last_dim / MXFP8_BLOCK_SIZE}, opts);
 
     tensor.set_columnwise_data(columnwise_data.data_ptr(),
                                this->dtype,
                                shape);
     tensor.set_columnwise_scale_inv(columnwise_scale_inv.data_ptr(),
                                     DType::kFloat8E8M0,
-                                    std::vector<size_t>{numel / 32});
+                                    std::vector<size_t>{numel / last_dim, last_dim / MXFP8_BLOCK_SIZE});
   }
   this->set_quantization_params(&tensor);
 
