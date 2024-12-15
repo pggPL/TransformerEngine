@@ -4,55 +4,34 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+/*! \file activation_template.h
+ *  \brief Activation functions template.
+ */
+
+#ifndef TRANSFORMER_ENGINE_ACTIVATION_TEMPLATE_H_
+#define TRANSFORMER_ENGINE_ACTIVATION_TEMPLATE_H_
+
 #include <cuda_runtime.h>
 #include <transformer_engine/activation.h>
 
 #include "../common.h"
+#include "../util/cast_kernels.cuh"
 #include "../util/vectorized_pointwise.h"
 #include "../util/math.h"
-
-extern void nvte_quantize_gelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
-extern void nvte_quantize_qgelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
-extern void nvte_quantize_silu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
-extern void nvte_quantize_relu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
-extern void nvte_quantize_srelu(const NVTETensor input, NVTETensor output, cudaStream_t stream);
 
 namespace transformer_engine {
 
 template <typename ComputeType, typename Param, ComputeType (*OP)(ComputeType, const Param &)>
-void act_fn(const NVTETensor input_nvte, NVTETensor output_nvte, cudaStream_t stream) {
-  const Tensor input = *reinterpret_cast<const Tensor*>(input_nvte);
-  Tensor* output = reinterpret_cast<Tensor*>(output_nvte);
+void act_fn(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
+  constexpr bool IS_DBIAS = false;
+  constexpr bool IS_DACT = false;
+  constexpr bool IS_ACT = true;
+  constexpr NVTETensor dbias = nullptr;
+  constexpr NVTETensor workspace = nullptr;
+  constexpr const NVTETensor activation_input = nullptr;
 
-  CheckInputTensor(input, "act_lu_input");
-  CheckOutputTensor(*output, "act_lu_output");
-  NVTE_CHECK(input.data.shape == output->data.shape, "Input and output shapes must match.");
-  const size_t tot_elts = product(input.data.shape);
-
-  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_OUTPUT(output->data.dtype, OType,
-          if (!is_fp8_dtype(output->data.dtype) || is_delayed_tensor_scaling(output->scaling_mode)) {
-            constexpr int nvec = 32 / sizeof(IType);
-            VectorizedUnaryKernelLauncher<nvec, Param, OP>(
-                reinterpret_cast<const IType *>(input.data.dptr),
-                reinterpret_cast<OType *>(output->data.dptr),
-                reinterpret_cast<const ComputeType *>(output->scale.dptr),
-                reinterpret_cast<ComputeType *>(output->amax.dptr),
-                reinterpret_cast<ComputeType *>(output->scale_inv.dptr), tot_elts, {}, stream);
-          } else if (is_mxfp_scaling(output->scaling_mode)) {
-            if (OP == gelu<fp32,fp32>)        { nvte_quantize_gelu(input_nvte, output_nvte, stream);  }
-            else if (OP == qgelu<fp32,fp32>)  { nvte_quantize_qgelu(input_nvte, output_nvte, stream); }
-            else if (OP == silu<fp32,fp32>)   { nvte_quantize_silu(input_nvte, output_nvte, stream);  }
-            else if (OP == relu<fp32,fp32>)   { nvte_quantize_relu(input_nvte, output_nvte, stream);  }
-            else if (OP == srelu<fp32,fp32>)  { nvte_quantize_srelu(input_nvte, output_nvte, stream); }
-            else {
-              NVTE_ERROR("Activation type is not supported");
-            }
-          } else {
-            NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
-          }
-      );  // NOLINT(*)
-  );      // NOLINT(*)
+  detail::quantize_helper<IS_DBIAS, IS_DACT, IS_ACT, Empty, OP>
+      (input, activation_input, nullptr, output, dbias, workspace, stream);
 }
 
 template <typename ComputeType, typename Param, ComputeType (*OP)(ComputeType, const Param &)>
@@ -149,3 +128,5 @@ void dgated_act_fn(const Tensor &grad, const Tensor &input, Tensor *output, cuda
 }
 
 }  // namespace transformer_engine
+
+#endif  // TRANSFORMER_ENGINE_ACTIVATION_TEMPLATE_H_

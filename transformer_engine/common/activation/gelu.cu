@@ -3,6 +3,7 @@
  *
  * See LICENSE for license information.
  ************************************************************************/
+
 #include "../util/math.h"
 #include "./activation_template.h"
 
