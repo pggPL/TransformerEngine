@@ -78,7 +78,9 @@ template <>
 void TeNormalizationPlan<ForwardKernelParams>::execute(Tensor* z, void* x_dptr, void* gamma_dptr,
                                                        void* beta_dptr, void* mean_dptr,
                                                        void* eps_dptr, void* rsigma_dptr,
-                                                       void* workspace_dptr, cudaStream_t stream) {
+                                                       void* workspace_dptr, cudaStream_t stream,
+                                                       const bool rowwise, const bool columnwise
+                                                       ) {
   _launch_params.stream = stream;
 
   auto& kernel_params = _launch_params.params;
@@ -105,7 +107,8 @@ template <>
 void TeNormalizationPlan<BackwardKernelParams>::execute(Tensor* z, void* x_dptr, void* gamma_dptr,
                                                         void* beta_dptr, void* mean_dptr,
                                                         void* eps_dptr, void* rsigma_dptr,
-                                                        void* workspace_dptr, cudaStream_t stream) {
+                                                        void* workspace_dptr, cudaStream_t stream,
+                                                        const bool rowwise, const bool columnwise) {
   NVTE_ERROR("Backward normalization should not call the forward execute function!");
 }
 
@@ -183,7 +186,8 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
                                                const size_t batch_size, const size_t hidden_size,
                                                const size_t sm_count,
                                                const bool zero_centered_gamma,
-                                               const NVTEScalingMode& mode)
+                                               const NVTEScalingMode& mode,
+                                               bool rowwise, bool columnwise)
     : _fp8_out(is_fp8_dtype(otype)), _zero_centered(zero_centered_gamma) {
   static_assert(CUDNN_FRONTEND_VERSION >= 10601,
                 "CUDNN_FRONTEND_VERSION should be at least 1.6.1!");
@@ -195,6 +199,8 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
   } else {
     NVTE_CHECK(mode == NVTE_MXFP8_1D_SCALING,
                "Unsupported scaling mode.");
+    NVTE_CHECK(rowwise || columnwise,
+               "No scaling mode selected.");
     _ndim_scale_block = 1;
   }
 
@@ -311,23 +317,27 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
         auto z_2d = _graph.reshape(_z, fe::graph::Reshape_attributes());
         z_2d->set_dim({batch_dim, hidden_dim});
 
-        auto mx_quantize_row_opts = fe::graph::Block_scale_quantize_attributes()
-                                        .set_block_size(32)
-                                        .set_axis(1)
-                                        .set_transpose(false);
-        auto bs_row_ret = _graph.block_scale_quantize(z_2d, mx_quantize_row_opts);
-        std::tie(_z_mx_row, _sf_row) = std::make_tuple(bs_row_ret[0], bs_row_ret[1]);
-        _z_mx_row->set_output(true).set_data_type(get_cudnn_fe_dtype(otype));
-        _sf_row->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);  //TODO
+        if (rowwise) {
+          auto mx_quantize_row_opts = fe::graph::Block_scale_quantize_attributes()
+                                          .set_block_size(32)
+                                          .set_axis(1)
+                                          .set_transpose(false);
+          auto bs_row_ret = _graph.block_scale_quantize(z_2d, mx_quantize_row_opts);
+          std::tie(_z_mx_row, _sf_row) = std::make_tuple(bs_row_ret[0], bs_row_ret[1]);
+          _z_mx_row->set_output(true).set_data_type(get_cudnn_fe_dtype(otype));
+          _sf_row->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);  //TODO
+        }
 
-        auto mx_quantize_col_opts = fe::graph::Block_scale_quantize_attributes()
-                                        .set_block_size(32)
-                                        .set_axis(0)
-                                        .set_transpose(false);
-        auto bs_col_ret = _graph.block_scale_quantize(z_2d, mx_quantize_col_opts);
-        std::tie(_z_mx_col, _sf_col) = std::make_tuple(bs_col_ret[0], bs_col_ret[1]);
-        _z_mx_col->set_output(true).set_data_type(get_cudnn_fe_dtype(otype));
-        _sf_col->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);
+        if (columnwise) {
+          auto mx_quantize_col_opts = fe::graph::Block_scale_quantize_attributes()
+                                          .set_block_size(32)
+                                          .set_axis(0)
+                                          .set_transpose(false);
+          auto bs_col_ret = _graph.block_scale_quantize(z_2d, mx_quantize_col_opts);
+          std::tie(_z_mx_col, _sf_col) = std::make_tuple(bs_col_ret[0], bs_col_ret[1]);
+          _z_mx_col->set_output(true).set_data_type(get_cudnn_fe_dtype(otype));
+          _sf_col->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);
+        }
       } else {
         NVTE_ERROR("Unsupported scaling mode.");
       }
@@ -387,7 +397,8 @@ std::vector<size_t> CudnnNormalizationPlan::getWorkspaceShape() const {
 
 void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr,
                                      void* mean_dptr, void* eps_dptr, void* rsigma_dptr,
-                                     void* workspace_dptr, cudaStream_t stream) {
+                                     void* workspace_dptr, cudaStream_t stream,
+                                     const bool rowwise, const bool columnwise) {
   // Binding data pointers to graph tensors
   _variant_pack = {{_x, x_dptr}, {_rsigma, rsigma_dptr}, {_eps, eps_dptr}};
 
@@ -400,19 +411,25 @@ void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, 
   else
     _variant_pack.insert({{_gamma, gamma_dptr}});
 
-  if (_fp8_out && _ndim_scale_block == 0)
+  if (_fp8_out && _ndim_scale_block == 0) {
     _variant_pack.insert({{_one_for_div, reinterpret_cast<void*>(_one_dptr.get())},
                           {_z_scale, z->scale.dptr},
                           {_z_scale_inv, z->scale_inv.dptr},
                           {_amax, z->amax.dptr},
                           {_z_fp8, z->data.dptr}});
-  else if (_fp8_out && _ndim_scale_block == 1)
-    _variant_pack.insert({{_z_mx_row, z->data.dptr},
-                          {_sf_row, z->scale_inv.dptr},
-                          {_z_mx_col, z->columnwise_data.dptr},
-                          {_sf_col, z->columnwise_scale_inv.dptr}});
-  else
+  } else if (_fp8_out && _ndim_scale_block == 1) {
+    if (rowwise) {
+      _variant_pack.insert({{_z_mx_row, z->data.dptr},
+                            {_sf_row, z->scale_inv.dptr}});
+    }
+
+    if (columnwise) {
+      _variant_pack.insert({{_z_mx_col, z->columnwise_data.dptr},
+                            {_sf_col, z->columnwise_scale_inv.dptr}});
+    }
+  } else {
     _variant_pack.insert({{_z, z->data.dptr}});
+  }
 
   // Execute the computation
   NVTE_CHECK_CUDNN(cudnnSetStream(_handle, stream));
@@ -445,7 +462,7 @@ NormalizationPlanBase* NormalizationPlanRegistry::getNormalizationPlan(
     NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype,
     DType itype, DType otype, const size_t batch_size, const size_t hidden_size,
     const size_t sm_count, const bool zero_centered_gamma, const bool is_aligned,
-    const NVTEScalingMode mode) {
+    const NVTEScalingMode mode, const bool rowwise, const bool columnwise) {
   const DType ctype = DType::kFloat32;
   bool is_tuned = is_aligned && (batch_size % 4 == 0);
   auto key = get_key(NormBackend, NormType, NormStage, wtype, itype, otype, ctype, batch_size,
@@ -460,7 +477,7 @@ NormalizationPlanBase* NormalizationPlanRegistry::getNormalizationPlan(
   if (NormBackend == NVTE_Norm_Backend::Cudnn) {
     plan = std::make_unique<CudnnNormalizationPlan>(NormType, NormStage, wtype, itype, otype, ctype,
                                                     batch_size, hidden_size, sm_count,
-                                                    zero_centered_gamma, mode);
+                                                    zero_centered_gamma, mode, rowwise, columnwise);
   } else if (NormStage == NVTE_Norm_Stage::Forward) {
     plan = std::make_unique<TeNormalizationPlan<ForwardKernelParams>>(
         NormType, NormStage, wtype, itype, otype, ctype, batch_size, hidden_size, sm_count,

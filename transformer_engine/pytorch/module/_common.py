@@ -47,10 +47,6 @@ def _apply_normalization(
     zero_centered_gamma: bool,
     is_grad_enabled: bool,
 ):
-    if output_quantizer is not None:
-        usages = (output_quantizer.rowwise_usage, output_quantizer.columnwise_usage)
-        output_quantizer.set_usage(rowwise=True, columnwise=True)
-
     normalization_func = _get_normalization_func(normalization, True)
 
     inputs = (inputmat, ln_weight) if ln_bias is None else (inputmat, ln_weight, ln_bias)
@@ -64,11 +60,6 @@ def _apply_normalization(
         fwd_ln_sm_margin,
         zero_centered_gamma
     )
-
-    if output_quantizer is not None:
-        output_quantizer.set_usage(rowwise=usages[0], columnwise=usages[1])
-        if isinstance(output, QuantizedTensor):
-            output.update_usage(*usages)
 
     return output
 

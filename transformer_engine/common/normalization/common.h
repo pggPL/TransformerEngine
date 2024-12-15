@@ -216,7 +216,7 @@ class NormalizationPlanBase {
 
   virtual void execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr, void* mean_dptr,
                        void* eps_dptr, void* rsigma_dptr, void* workspace_dptr,
-                       cudaStream_t stream) = 0;
+                       cudaStream_t stream, const bool rowwise = true, const bool columnwise = true) = 0;
 
   virtual void execute(void* x_dptr, void* gamma_dptr, void* mean_dptr, void* rsigma_dptr,
                        void* dx_dptr, void* dz_dptr, void* dbeta_dptr, void* dgamma_dptr,
@@ -236,7 +236,7 @@ class TeNormalizationPlan : public NormalizationPlanBase {
 
   void execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr, void* mean_dptr,
                void* eps_dptr, void* rsigma_dptr, void* workspace_dptr,
-               cudaStream_t stream) override;
+               cudaStream_t stream, const bool rowwise = true, const bool columnwise = true) override;
 
   void execute(void* x_dptr, void* gamma_dptr, void* mean_dptr, void* rsigma_dptr, void* dx_dptr,
                void* dz_dptr, void* dbeta_dptr, void* dgamma_dptr, void* workspace_dptr,
@@ -258,13 +258,14 @@ class CudnnNormalizationPlan : public NormalizationPlanBase {
   CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype,
                          DType itype, DType otype, DType ctype, const size_t batch_size,
                          const size_t hidden_size, const size_t sm_count,
-                         const bool zero_centered_gamma, const NVTEScalingMode& mode);
+                         const bool zero_centered_gamma, const NVTEScalingMode& mode,
+                         const bool rowwise = true, const bool columnwise = true);
 
   std::vector<size_t> getWorkspaceShape() const override;
 
   void execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr, void* mean_dptr,
                void* eps_dptr, void* rsigma_dptr, void* workspace_dptr,
-               cudaStream_t stream) override;
+               cudaStream_t stream, const bool rowwise = true, const bool columnwise = true) override;
 
   void execute(void* x_dptr, void* gamma_dptr, void* mean_dptr, void* rsigma_dptr, void* dx_dptr,
                void* dz_dptr, void* dbeta_dptr, void* dgamma_dptr, void* workspace_dptr,
@@ -304,7 +305,9 @@ class NormalizationPlanRegistry {
       const size_t batch_size, const size_t hidden_size,
       const size_t sm_count, const bool zero_centered_gamma,
       const bool is_aligned,
-      const NVTEScalingMode mode = NVTE_DELAYED_TENSOR_SCALING);
+      const NVTEScalingMode mode = NVTE_DELAYED_TENSOR_SCALING,
+      const bool rowwise = true,
+      const bool columnwise = true);
 
  private:
   NormalizationPlanRegistry() {}
