@@ -133,7 +133,7 @@ GemmParam CanonicalizeGemmInput(
     ret.A_scale_inv = transA ? A.scale_inv.dptr : A.columnwise_scale_inv.dptr;
     ret.B = transB ? B.columnwise_data.dptr : B.data.dptr;
     ret.Btype = transB ? B.columnwise_data.dtype : B.data.dtype;
-    ret.B_scale_inv = transA ? B.columnwise_scale_inv.dptr : B.scale_inv.dptr;
+    ret.B_scale_inv = transB ? B.columnwise_scale_inv.dptr : B.scale_inv.dptr;
   }
   return ret;
 }

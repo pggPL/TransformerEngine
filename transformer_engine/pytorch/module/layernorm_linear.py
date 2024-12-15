@@ -46,7 +46,6 @@ from ..constants import GemmParallelModes, dist_group_type, TE_DType
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
 from ._common import _apply_normalization, _noop_cat
-from ..tensor import Float8Tensor, Float8Quantizer
 from ..tensor.quantized_tensor import (
     QuantizedTensor,
     Quantizer,
@@ -153,7 +152,7 @@ class _LayerNormLinear(torch.autograd.Function):
         with_quantized_norm = fp8 and not return_layernorm_output
         if with_quantized_norm:
             if with_input_all_gather:
-                if isinstance(input_quantizer, Float8Quantizer):
+                if isinstance(input_quantizer, Quantizer):
                     input_quantizer.set_usage(rowwise=True, columnwise=False)
                 else:
                     with_quantized_norm = False
@@ -278,7 +277,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 fsdp_group,
                 mu,
                 rsigma,
-                weightmat if fp8 and not isinstance(weight, Float8Tensor) else None,
+                weightmat if fp8 and not isinstance(weight, QuantizedTensor) else None,
                 ln_out if weight.requires_grad else None,
             )
 
@@ -406,7 +405,7 @@ class _LayerNormLinear(torch.autograd.Function):
             #    ctx.fsdp_shapes,
             #    mu,
             #    rsigma,
-            #    weight_fp8 if ctx.fp8 and not isinstance(weight, Float8Tensor) else None,
+            #    weight_fp8 if ctx.fp8 and not isinstance(weight, QuantizedTensor) else None,
             #    ln_out,
             #)
 
@@ -611,7 +610,7 @@ class _LayerNormLinear(torch.autograd.Function):
             FP8GlobalStateManager.reduce_and_update_fp8_tensors(forward=False)
 
         # Scatter fp8 weight buffers
-        #if ctx.fp8 and not isinstance(weight, Float8Tensor):
+        #if ctx.fp8 and not isinstance(weight, QuantizedTensor):
         #    _fsdp_scatter_tensors(ctx.fsdp_group, weight_fp8)
 
         return (
@@ -911,7 +910,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
             # Check if parameters are subviews of buffers
             is_subview = (split_start, split_end) != (0, self.out_features)
             if is_subview and with_fp8_params:
-                raise RuntimeError("Splitting Float8Tensor into multiple params is not supported")
+                raise RuntimeError("Splitting QuantizedTensor into multiple params is not supported")
 
             # Construct weight parameter
             self.register_parameter(
