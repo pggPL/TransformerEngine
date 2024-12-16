@@ -267,6 +267,10 @@ struct TypeInfo {
       using type = fp8e5m2;                                  \
       { __VA_ARGS__ }                                        \
     } break;                                                 \
+    case DType::kFloat8E8M0: {                               \
+      using type = byte;                                  \
+      { __VA_ARGS__ }                                        \
+    } break;                                                 \
     default:                                                 \
       NVTE_ERROR("Invalid type.");                           \
   }
