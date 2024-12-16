@@ -250,14 +250,14 @@ Tensor::Tensor(const NVTEShape &shape, const DType type,
         cudaMemset(rowwise_scale_inv, 0, rowwise_scale_size);
         rowwise_scale_inv_cpu_data_ = std::make_unique<unsigned char[]>(rowwise_scale_size);
         std::fill_n(rowwise_scale_inv_cpu_data_.get(), rowwise_scale_size, 0);
-        tensor_.set_rowwise_scale_inv(rowwise_scale_inv, DType::kByte, scale_shape);
+        tensor_.set_rowwise_scale_inv(rowwise_scale_inv, DType::kFloat8E8M0, scale_shape);
       }
       if (columnwise) {
         cudaMalloc((void**)&columnwise_scale_inv, columnwise_scale_size);  // NOLINT(*)
         cudaMemset(columnwise_scale_inv, 0, columnwise_scale_size);
         columnwise_scale_inv_cpu_data_ = std::make_unique<unsigned char[]>(columnwise_scale_size);
         std::fill_n(columnwise_scale_inv_cpu_data_.get(), columnwise_scale_size, 0);
-        tensor_.set_columnwise_scale_inv(columnwise_scale_inv, DType::kByte, columnwise_scale_shape);
+        tensor_.set_columnwise_scale_inv(columnwise_scale_inv, DType::kFloat8E8M0, columnwise_scale_shape);
       }
     }
   }
