@@ -1097,7 +1097,6 @@ __device__ inline float dequantize_func(float value, const DequantizeParam &para
 }  // namespace detail
 
 
-// Supported by the Arch < 10.0
 template <typename ParamOP, float (*OP)(float, const ParamOP &)>
 void CastVectorizedUnaryKernelLauncher(const Tensor &input, Tensor *output,
                                        Tensor *workspace, cudaStream_t stream) {
@@ -1138,7 +1137,11 @@ void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor *act_input, Tens
         cast_fp8_1D<IS_ACT, ParamOP, OP>(input, output, stream);
       } else {
         // Unaligned
-        CastVectorizedUnaryKernelLauncher<ParamOP, OP>(input, output, workspace, stream);
+        if constexpr (OP == nullptr) {
+          CastVectorizedUnaryKernelLauncher<ParamOP, identity<fp32,fp32>>(input, output, workspace, stream);
+        } else {
+          CastVectorizedUnaryKernelLauncher<ParamOP, OP>(input, output, workspace, stream);
+        }
       }
     } else {
       cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
