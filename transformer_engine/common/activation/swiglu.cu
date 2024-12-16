@@ -17,9 +17,7 @@ void nvte_dsilu(const NVTETensor grad, const NVTETensor input, NVTETensor output
                 cudaStream_t stream) {
   NVTE_API_CALL(nvte_dsilu);
   using namespace transformer_engine;
-  dact_fn<fp32, Empty, dsilu<fp32, fp32>>(*reinterpret_cast<const Tensor*>(grad),
-                                          *reinterpret_cast<const Tensor*>(input),
-                                          reinterpret_cast<Tensor*>(output), stream);
+  dact_fn<fp32, Empty, dsilu<fp32, fp32>>(grad, input, output, stream);
 }
 
 void nvte_swiglu(const NVTETensor input, NVTETensor output, cudaStream_t stream) {

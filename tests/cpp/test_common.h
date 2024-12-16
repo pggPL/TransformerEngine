@@ -364,7 +364,7 @@ inline float exp2f_rcp(fp8e8m0 biased_exp) {
   return exp2f(FP32_EXPONENT_BIAS - static_cast<float>(biased_exp));
 }
 
-inline float identity(const float x) { return 1; }
+inline float identity(const float x) { return x; }
 inline float gelu(const float x)     { return x * (0.5f + 0.5f * tanhf(x * (0.79788456f + 0.03567741f * x * x))); }
 inline float dgelu(const float x) {
     const float tanh_out = tanhf(0.79788456f * x * (1 + 0.044715f * x * x));

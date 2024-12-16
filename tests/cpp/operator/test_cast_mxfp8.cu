@@ -30,6 +30,7 @@ enum ProcessingMethod {
     CAST_ONLY,
     CAST_DBIAS,
     CAST_DBIAS_DACT,
+    CAST_DACT,
     CAST_ACT
 };
 
@@ -61,12 +62,14 @@ void scale_block(const ProcessingMethod processing_method,
     for (size_t i = i_min; i < i_max; ++i) {
         for (size_t j = j_min; j < j_max; ++j) {
             const size_t idx = i * cols + j;
-            float elt;
-            if (processing_method == ProcessingMethod::CAST_ACT) {
-                elt = OP(static_cast<float>(input[idx]));
-            } else {
-                const float activation_val = OP(static_cast<float>(act_input[idx]));
-                elt = static_cast<float>(input[idx]) * activation_val;
+            float elt = static_cast<float>(input[idx]);
+            if (processing_method != ProcessingMethod::CAST_ONLY
+                && processing_method != ProcessingMethod::CAST_DBIAS) {
+                elt = OP(elt);
+            }
+            if (processing_method == ProcessingMethod::CAST_DACT ||
+                processing_method == ProcessingMethod::CAST_DBIAS_DACT) {
+                elt *= static_cast<float>(act_input[idx]);
             }
             dbias[j] += elt;
             if (isinf(elt) || isnan(elt)) {
@@ -84,12 +87,14 @@ void scale_block(const ProcessingMethod processing_method,
     for (size_t i = i_min; i < i_max; ++i) {
         for (size_t j = j_min; j < j_max; ++j) {
             const size_t idx = i * cols + j;
-            float elt;
-            if (processing_method == ProcessingMethod::CAST_ACT) {
-                elt = OP(static_cast<float>(input[idx]));
-            } else {
-                const float activation_val = OP(static_cast<float>(act_input[idx]));
-                elt = static_cast<float>(input[idx]) * activation_val;
+            float elt = static_cast<float>(input[idx]);
+            if (processing_method != ProcessingMethod::CAST_ONLY
+                && processing_method != ProcessingMethod::CAST_DBIAS) {
+                elt = OP(elt);
+            }
+            if (processing_method == ProcessingMethod::CAST_DACT ||
+                processing_method == ProcessingMethod::CAST_DBIAS_DACT) {
+                elt *= static_cast<float>(act_input[idx]);
             }
             output_c[idx] = static_cast<OutputType>(elt * scale_reciprocal);
         }
@@ -176,10 +181,6 @@ void performTest_x1(const ProcessingMethod processing_method,
     const size_t blocks_X = (cols + block_size_cols - 1) / block_size_cols;
     const size_t blocks_num = blocks_Y * blocks_X;
 
-    const int block_rows_dim = static_cast<int>(block_size_rows);
-    const int block_cols_dim = static_cast<int>(block_size_cols);
-    const int is_delayed_scaling = false;
-
     Tensor input({ rows, cols }, itype);
     Tensor act_input({ rows, cols }, itype);
     Tensor output_c({ rows, cols }, otype, rowwise, colwise, NVTE_MXFP8_1D_SCALING);
@@ -228,6 +229,10 @@ void performTest_x1(const ProcessingMethod processing_method,
                                       output_dbias.data(),
                                       workspace.data(),
                                       0);
+            break;
+        }
+        case ProcessingMethod::CAST_DACT: {
+            nvte_dgelu(act_input.data(), input.data(), output_c.data(), 0);
             break;
         }
         case ProcessingMethod::CAST_ACT: {
@@ -294,10 +299,6 @@ void performTest_x2(const ProcessingMethod processing_method,
     const size_t blocks_num_rowwise = rows * blocks_X;
     const size_t blocks_num_colwise = blocks_Y * cols;
 
-    const int block_rows_dim = static_cast<int>(block_size_rows);
-    const int block_cols_dim = static_cast<int>(block_size_cols);
-    const int is_delayed_scaling = false;
-
     Tensor input({ rows, cols }, itype);
     Tensor act_input({ rows, cols }, itype);
     Tensor output({ rows, cols }, otype, true, true, NVTE_MXFP8_1D_SCALING);
@@ -348,6 +349,10 @@ void performTest_x2(const ProcessingMethod processing_method,
                                       output_dbias.data(),
                                       workspace.data(),
                                       0);
+            break;
+        }
+        case ProcessingMethod::CAST_DACT: {
+            nvte_dgelu(act_input.data(), input.data(), output.data(), 0);
             break;
         }
         case ProcessingMethod::CAST_ACT: {
@@ -419,6 +424,7 @@ std::vector<ProcessingMethod> processing_methods = {
     ProcessingMethod::CAST_ONLY,
     ProcessingMethod::CAST_DBIAS,
     ProcessingMethod::CAST_DBIAS_DACT,
+    ProcessingMethod::CAST_DACT,
     ProcessingMethod::CAST_ACT,
 };
 
@@ -493,16 +499,10 @@ TEST_P(FusedCastMXFP8TestSuite, TestFusedCastMXFP8) {
         && Act_type != ActivationType::Identity) {
         GTEST_SKIP();
     }
-
-    // Skips Act tests if the Activation type is an identity
-    if (processing_method == ProcessingMethod::CAST_DBIAS_DACT
-        && Act_type == ActivationType::Identity) {
-        GTEST_SKIP();
-    }
-
-    // Skips Forward Act tests if the Activation type is not an identity
-    if (processing_method == ProcessingMethod::CAST_ACT 
-        && Act_type == ActivationType::Identity) {
+    // Skips Act tests if the Activation is an identity
+    if ((processing_method == ProcessingMethod::CAST_DBIAS_DACT
+        || processing_method == ProcessingMethod::CAST_DACT
+        || processing_method == ProcessingMethod::CAST_ACT) && (Act_type == ActivationType::Identity)) {
         GTEST_SKIP();
     }
 
@@ -549,6 +549,7 @@ std::string to_string(const ProcessingMethod method) {
         case ProcessingMethod::CAST_ONLY:       return "CAST_ONLY";
         case ProcessingMethod::CAST_DBIAS:      return "CAST_DBIAS";
         case ProcessingMethod::CAST_DBIAS_DACT: return "CAST_DBIAS_DACT";
+        case ProcessingMethod::CAST_DACT:       return "CAST_DACT";
         case ProcessingMethod::CAST_ACT:        return "CAST_ACT";
         default: return "";
     }

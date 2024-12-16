@@ -17,9 +17,7 @@ void nvte_drelu(const NVTETensor grad, const NVTETensor input, NVTETensor output
                 cudaStream_t stream) {
   NVTE_API_CALL(nvte_drelu);
   using namespace transformer_engine;
-  dact_fn<fp32, Empty, drelu<fp32, fp32>>(*reinterpret_cast<const Tensor*>(grad),
-                                          *reinterpret_cast<const Tensor*>(input),
-                                          reinterpret_cast<Tensor*>(output), stream);
+  dact_fn<fp32, Empty, drelu<fp32, fp32>>(grad, input, output, stream);
 }
 
 void nvte_reglu(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
@@ -48,9 +46,7 @@ void nvte_dsrelu(const NVTETensor grad, const NVTETensor input, NVTETensor outpu
                  cudaStream_t stream) {
   NVTE_API_CALL(nvte_dsrelu);
   using namespace transformer_engine;
-  dact_fn<fp32, Empty, dsrelu<fp32, fp32>>(*reinterpret_cast<const Tensor*>(grad),
-                                           *reinterpret_cast<const Tensor*>(input),
-                                           reinterpret_cast<Tensor*>(output), stream);
+  dact_fn<fp32, Empty, dsrelu<fp32, fp32>>(grad, input, output, stream);
 }
 
 void nvte_sreglu(const NVTETensor input, NVTETensor output, cudaStream_t stream) {

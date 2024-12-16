@@ -35,32 +35,15 @@ void act_fn(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
 }
 
 template <typename ComputeType, typename Param, ComputeType (*OP)(ComputeType, const Param &)>
-void dact_fn(const Tensor &grad, const Tensor &input, Tensor *output, cudaStream_t stream) {
-  CheckInputTensor(input, "dact_lu_input");
-  CheckInputTensor(grad, "dact_lu_input_grad");
-  CheckOutputTensor(*output, "dact_lu_output");
-  NVTE_CHECK(input.data.shape == output->data.shape, "Input and output shapes must match.");
-  NVTE_CHECK(input.data.dtype == grad.data.dtype, "Input and incoming gradient types must match.");
-  const size_t tot_elts = product(input.data.shape);
+void dact_fn(const NVTETensor grad, const NVTETensor input, NVTETensor output, cudaStream_t stream) {
+  constexpr bool IS_DBIAS = false;
+  constexpr bool IS_DACT = true;
+  constexpr bool IS_ACT = false;
+  constexpr NVTETensor dbias = nullptr;
+  constexpr NVTETensor workspace = nullptr;
 
-  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
-      input.data.dtype, IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_OUTPUT(
-          output->data.dtype, OType,
-          if (!is_fp8_dtype(output->data.dtype) ||
-              is_delayed_tensor_scaling(output->scaling_mode)) {
-            constexpr int nvec = 32 / sizeof(IType);
-            VectorizedUnaryGradKernelLauncher<nvec, Param, OP>(
-                reinterpret_cast<const IType *>(grad.data.dptr),
-                reinterpret_cast<const IType *>(input.data.dptr),
-                reinterpret_cast<OType *>(output->data.dptr),
-                reinterpret_cast<const ComputeType *>(output->scale.dptr),
-                reinterpret_cast<ComputeType *>(output->amax.dptr),
-                reinterpret_cast<ComputeType *>(output->scale_inv.dptr), tot_elts, {}, stream);
-          } else {
-            NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
-          });  // NOLINT(*)
-  );           // NOLINT(*)
+  detail::quantize_helper<IS_DBIAS, IS_DACT, IS_ACT, Empty, OP>
+      (input, grad, nullptr, output, dbias, workspace, stream);
 }
 
 template <typename ComputeType, typename Param, ComputeType (*OP)(ComputeType, const Param &)>
