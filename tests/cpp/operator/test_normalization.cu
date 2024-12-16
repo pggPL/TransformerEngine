@@ -10,10 +10,6 @@
 #include <iomanip>
 #include <iostream>
 #include <random>
-<<<<<<< HEAD
-=======
-#include <stdlib.h>
->>>>>>> main
 
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
