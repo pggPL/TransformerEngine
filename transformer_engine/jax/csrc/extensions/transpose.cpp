@@ -5,9 +5,9 @@
  ************************************************************************/
 
 #include "transformer_engine/transpose.h"
-#include "transformer_engine/cast.h"
 
 #include "extensions.h"
+#include "transformer_engine/cast.h"
 #include "xla/ffi/api/ffi.h"
 
 namespace transformer_engine {
@@ -166,8 +166,8 @@ pybind11::tuple GetDBiasCastTransposeWorkspaceSizes(size_t batch_size, size_t hi
 
   TensorWrapper dummy_workspace;
 
-  nvte_quantize_dbias(input_tensor.data(), output_tensor.data(),
-                      dbias_tensor.data(), dummy_workspace.data(), nullptr);
+  nvte_quantize_dbias(input_tensor.data(), output_tensor.data(), dbias_tensor.data(),
+                      dummy_workspace.data(), nullptr);
 
   auto work_shape = MakeShapeVector(dummy_workspace.shape());
   return pybind11::make_tuple(std::make_pair(work_shape, dummy_workspace.dtype()));
@@ -209,8 +209,8 @@ void DBiasCastTranspose(cudaStream_t stream, void **buffers, const char *opaque,
 
   auto workspace = TensorWrapper(workspace_ptr, desc.wkshape.to_vector(), desc.wk_dtype);
 
-  nvte_quantize_dbias(input_tensor.data(), output_tensor.data(),
-                      dbias_tensor.data(), workspace.data(), stream);
+  nvte_quantize_dbias(input_tensor.data(), output_tensor.data(), dbias_tensor.data(),
+                      workspace.data(), stream);
 }
 
 Error_Type DBiasCastTransposeFFI(cudaStream_t stream, Buffer_Type input_buf, Buffer_Type amax_buf,
@@ -258,8 +258,8 @@ Error_Type DBiasCastTransposeFFI(cudaStream_t stream, Buffer_Type input_buf, Buf
   auto dbias_tensor = TensorWrapper(dbias, dbias_shape, in_dtype);
   auto workspace_tensor = TensorWrapper(workspace, workspace_shape, workspace_dtype);
 
-  nvte_quantize_dbias(input_tensor.data(), output_tensor.data(),
-                      dbias_tensor.data(), workspace_tensor.data(), stream);
+  nvte_quantize_dbias(input_tensor.data(), output_tensor.data(), dbias_tensor.data(),
+                      workspace_tensor.data(), stream);
   return ffi_with_cuda_error_check();
 }
 

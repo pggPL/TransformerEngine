@@ -21,6 +21,7 @@ from ...utils import clear_tensor_data, devices_match
 from ..op import BasicOperation, OperationContext
 from .._common import reshape
 
+
 class _ActivationOperation(BasicOperation, metaclass=abc.ABCMeta):
     r"""Apply activation function
 

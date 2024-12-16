@@ -126,7 +126,7 @@ def general_gemm(
     assert layout in ("TN", "NN", "NT"), f"GEMM layout {layout} not supported."
     transa = layout[0] == "T"
     transb = layout[1] == "T"
-    #assert quantization_params is None, "FP8 output not supported yet"
+    # assert quantization_params is None, "FP8 output not supported yet"
     if out is not None:
         if not out.is_contiguous():
             raise ValueError("Output tensor is not contiguous.")
@@ -568,6 +568,7 @@ def gemm(
 
     return out, grad_bias, gelu_input
 
+
 def general_grouped_gemm(
     A: List[torch.Tensor],
     B: List[torch.Tensor],
@@ -583,25 +584,23 @@ def general_grouped_gemm(
     use_bias: bool = False,
     use_split_accumulator: bool = False,
     D_dtype: Optional[tex.DType] = None,
-    single_output = False,
+    single_output=False,
 ) -> Tuple[List[torch.Tensor], ...]:
     """
     TN layout Grouped GEMM with fp8 inputs.
     """
     num_gemms = len(A)
 
+    transa = layout[0] == "T"
+    transb = layout[1] == "T"
 
-    transa = layout[0] == 'T'
-    transb = layout[1] == 'T'
-
-    #assert [a.is_contiguous() for a in A]
-    #assert [b.is_contiguous() for b in B]
+    # assert [a.is_contiguous() for a in A]
+    # assert [b.is_contiguous() for b in B]
 
     if isinstance(A[0], QuantizedTensor):
         for a, b in zip(A, B):
             assert_dim_for_fp8_exec(a._data)
             assert_dim_for_fp8_exec(b._data)
-
 
     empty_tensor = _empty_tensor()
     empty_tensors = [empty_tensor] * num_gemms
@@ -627,9 +626,9 @@ def general_grouped_gemm(
         gelu_input = [
             torch.empty_like(o, dtype=bias_dtype, memory_format=torch.contiguous_format)
             for o in out
-        ] # this should differ with respect to single output
+        ]  # this should differ with respect to single output
 
-    #import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     bias = tex.te_general_grouped_gemm(
         A,
         transa,

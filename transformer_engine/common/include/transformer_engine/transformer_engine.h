@@ -49,7 +49,7 @@ struct NVTEShape {
  *  It does not own the memory it points to.
  */
 struct NVTEBasicTensor {
-  void* data_ptr;
+  void *data_ptr;
   NVTEDType dtype;
   NVTEShape shape;
 };
@@ -58,12 +58,12 @@ struct NVTEBasicTensor {
  *  \brief Indicates the kind of the tensor parameter to set/get.
  */
 enum NVTETensorParam {
-  kNVTERowwiseData             = 0,  /*!< Data usable in rowwise manner */
-  kNVTEColumnwiseData          = 1,  /*!< Data usable in columnwise manner */
-  kNVTEScale                   = 2,  /*!< Scale tensor */
-  kNVTEAmax                    = 3,  /*!< Amax tensor */
-  kNVTERowwiseScaleInv         = 4,  /*!< Scale inverse tensor for decoding Rowwise Data */
-  kNVTEColumnwiseScaleInv      = 5,  /*!< Scale inverse tensor for decoding Columnwise Data */
+  kNVTERowwiseData = 0,        /*!< Data usable in rowwise manner */
+  kNVTEColumnwiseData = 1,     /*!< Data usable in columnwise manner */
+  kNVTEScale = 2,              /*!< Scale tensor */
+  kNVTEAmax = 3,               /*!< Amax tensor */
+  kNVTERowwiseScaleInv = 4,    /*!< Scale inverse tensor for decoding Rowwise Data */
+  kNVTEColumnwiseScaleInv = 5, /*!< Scale inverse tensor for decoding Columnwise Data */
   kNVTENumTensorParams
 };
 
@@ -223,17 +223,15 @@ NVTEShape nvte_tensor_scale_inv_shape(const NVTETensor tensor);
  *  \param[in] param_name The parameter to be set.
  *  \param[in] param The value to be set.
  */
-void nvte_set_tensor_param(NVTETensor* tensor,
-                           NVTETensorParam param_name,
-                           const NVTEBasicTensor* param);
+void nvte_set_tensor_param(NVTETensor *tensor, NVTETensorParam param_name,
+                           const NVTEBasicTensor *param);
 
 /*! \brief Get a value of the parameter of the tensor.
  *
  *  \param[in] tensor Tensor.
  *  \param[in] param_name The parameter to be set.
  */
-NVTEBasicTensor nvte_get_tensor_param(const NVTETensor tensor,
-                                      NVTETensorParam param_name);
+NVTEBasicTensor nvte_get_tensor_param(const NVTETensor tensor, NVTETensorParam param_name);
 
 /*! \brief Get the granularity of scaling of this tensor.
  *
@@ -350,7 +348,7 @@ class TensorWrapper {
    * Create a new empty TE tensor which holds nothing.
    */
   TensorWrapper(const NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING)
-    : tensor_(nvte_create_tensor(scaling_mode)) {}
+      : tensor_(nvte_create_tensor(scaling_mode)) {}
 
   /*! \brief TensorWrapper destructor. */
   ~TensorWrapper() { nvte_destroy_tensor(tensor_); }
@@ -385,8 +383,8 @@ class TensorWrapper {
 
   // Parameter setters
   template <typename ShapeType>
-  TensorWrapper& set_parameter(const NVTETensorParam param, void* dptr,
-                               DType type, const ShapeType& shape) noexcept {
+  TensorWrapper &set_parameter(const NVTETensorParam param, void *dptr, DType type,
+                               const ShapeType &shape) noexcept {
     NVTEShape nvte_shape = this->convertShape(shape);
     NVTEBasicTensor data = {dptr, static_cast<NVTEDType>(type), nvte_shape};
     nvte_set_tensor_param(&tensor_, param, &data);
@@ -394,32 +392,32 @@ class TensorWrapper {
   }
 
   template <typename ShapeType>
-  TensorWrapper& set_rowwise_data(void* dptr, DType type, const ShapeType& shape) noexcept {
+  TensorWrapper &set_rowwise_data(void *dptr, DType type, const ShapeType &shape) noexcept {
     return set_parameter(kNVTERowwiseData, dptr, type, shape);
   }
 
   template <typename ShapeType>
-  TensorWrapper& set_columnwise_data(void* dptr, DType type, const ShapeType& shape) noexcept {
+  TensorWrapper &set_columnwise_data(void *dptr, DType type, const ShapeType &shape) noexcept {
     return set_parameter(kNVTEColumnwiseData, dptr, type, shape);
   }
 
   template <typename ShapeType>
-  TensorWrapper& set_scale(void* dptr, DType type, const ShapeType& shape) noexcept {
+  TensorWrapper &set_scale(void *dptr, DType type, const ShapeType &shape) noexcept {
     return set_parameter(kNVTEScale, dptr, type, shape);
   }
 
   template <typename ShapeType>
-  TensorWrapper& set_amax(void* dptr, DType type, const ShapeType& shape) noexcept {
+  TensorWrapper &set_amax(void *dptr, DType type, const ShapeType &shape) noexcept {
     return set_parameter(kNVTEAmax, dptr, type, shape);
   }
 
   template <typename ShapeType>
-  TensorWrapper& set_rowwise_scale_inv(void* dptr, DType type, const ShapeType& shape) noexcept {
+  TensorWrapper &set_rowwise_scale_inv(void *dptr, DType type, const ShapeType &shape) noexcept {
     return set_parameter(kNVTERowwiseScaleInv, dptr, type, shape);
   }
 
   template <typename ShapeType>
-  TensorWrapper& set_columnwise_scale_inv(void* dptr, DType type, const ShapeType& shape) noexcept {
+  TensorWrapper &set_columnwise_scale_inv(void *dptr, DType type, const ShapeType &shape) noexcept {
     return set_parameter(kNVTEColumnwiseScaleInv, dptr, type, shape);
   }
 
@@ -429,21 +427,15 @@ class TensorWrapper {
     return nvte_get_tensor_param(tensor_, param);
   }
 
-  NVTEBasicTensor get_rowwise_data() const noexcept {
-    return get_parameter(kNVTERowwiseData);
-  }
+  NVTEBasicTensor get_rowwise_data() const noexcept { return get_parameter(kNVTERowwiseData); }
 
   NVTEBasicTensor get_columnwise_data() const noexcept {
     return get_parameter(kNVTEColumnwiseData);
   }
 
-  NVTEBasicTensor get_scale() const noexcept {
-    return get_parameter(kNVTEScale);
-  }
+  NVTEBasicTensor get_scale() const noexcept { return get_parameter(kNVTEScale); }
 
-  NVTEBasicTensor get_amax() const noexcept {
-    return get_parameter(kNVTEAmax);
-  }
+  NVTEBasicTensor get_amax() const noexcept { return get_parameter(kNVTEAmax); }
 
   NVTEBasicTensor get_rowwise_scale_inv() const noexcept {
     return get_parameter(kNVTERowwiseScaleInv);
@@ -600,48 +592,44 @@ class TensorWrapper {
   }
 
   void zero_(cudaStream_t stream) {
-      // Zero out tensor data if allocated
-      if (dptr() != nullptr) {
-          size_t size_in_bytes = bytes();
-          cudaMemsetAsync(dptr(), 0, size_in_bytes, stream);
-      }
-      // Set amax to 0 if allocated
-      if (amax() != nullptr) {
-          float zero = 0.0f;
-          cudaMemcpyAsync(amax(), &zero, sizeof(float), cudaMemcpyHostToDevice, stream);
-      }
+    // Zero out tensor data if allocated
+    if (dptr() != nullptr) {
+      size_t size_in_bytes = bytes();
+      cudaMemsetAsync(dptr(), 0, size_in_bytes, stream);
+    }
+    // Set amax to 0 if allocated
+    if (amax() != nullptr) {
+      float zero = 0.0f;
+      cudaMemcpyAsync(amax(), &zero, sizeof(float), cudaMemcpyHostToDevice, stream);
+    }
 
-      // Set scale to 1 if allocated
-      if (scale() != nullptr) {
-          float one = 1.0f;
-          cudaMemcpyAsync(scale(), &one, sizeof(float), cudaMemcpyHostToDevice, stream);
-      }
+    // Set scale to 1 if allocated
+    if (scale() != nullptr) {
+      float one = 1.0f;
+      cudaMemcpyAsync(scale(), &one, sizeof(float), cudaMemcpyHostToDevice, stream);
+    }
 
-      // Set scale_inv to 1 if allocated
-  if (scale_inv() != nullptr) {
-          const NVTEShape s_inv_shape = scale_inv_shape();
-          size_t numel = 1;
-          for (size_t i = 0; i < s_inv_shape.ndim; ++i) {
-              numel *= s_inv_shape.data[i];
-          }
-          // Create a host vector of ones
-          std::vector<float> ones(numel, 1.0f);
-          cudaMemcpyAsync(scale_inv(), ones.data(), numel * sizeof(float),
-                                            cudaMemcpyHostToDevice, stream);
+    // Set scale_inv to 1 if allocated
+    if (scale_inv() != nullptr) {
+      const NVTEShape s_inv_shape = scale_inv_shape();
+      size_t numel = 1;
+      for (size_t i = 0; i < s_inv_shape.ndim; ++i) {
+        numel *= s_inv_shape.data[i];
       }
+      // Create a host vector of ones
+      std::vector<float> ones(numel, 1.0f);
+      cudaMemcpyAsync(scale_inv(), ones.data(), numel * sizeof(float), cudaMemcpyHostToDevice,
+                      stream);
+    }
   }
 
   static constexpr size_t defaultData = 1;
   static constexpr NVTEShape defaultShape = {&defaultData, 1};
 
  private:
-  NVTEShape convertShape(const NVTEShape& s) {
-    return s;
-  }
+  NVTEShape convertShape(const NVTEShape &s) { return s; }
 
-  NVTEShape convertShape(const std::vector<size_t>& s) {
-    return {s.data(), s.size()};
-  }
+  NVTEShape convertShape(const std::vector<size_t> &s) { return {s.data(), s.size()}; }
 
   /*! \brief Wrapped NVTETensor. */
   NVTETensor tensor_ = nullptr;

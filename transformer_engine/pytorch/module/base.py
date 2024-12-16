@@ -525,9 +525,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                             self.fp8_meta[meta_key].amax_history
                         )
 
-    def set_meta_tensor(self,
-                        fwd: bool,
-                        recipe: Recipe) -> None:
+    def set_meta_tensor(self, fwd: bool, recipe: Recipe) -> None:
         """Init scales and amaxes for fwd | bwd."""
         fp8_meta_tensor_key = "scaling_fwd" if fwd else "scaling_bwd"
 
@@ -539,9 +537,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         # Max. number of fp8 tensors per GEMM = 3 (input, weight, output) for fwd and
         # 2 (grad_output and grad_input) for bwd
-        num_fp8_tensors = (
-            self.fp8_meta["num_gemms"] * 3 if fwd else self.fp8_meta["num_gemms"] * 2
-        )
+        num_fp8_tensors = self.fp8_meta["num_gemms"] * 3 if fwd else self.fp8_meta["num_gemms"] * 2
 
         # Initialize recipe state and quantizers
         recipe_state = RecipeState.create(
@@ -553,8 +549,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fp8_meta[fp8_meta_tensor_key] = recipe_state
         self.quantizers[fp8_meta_tensor_key] = recipe_state.make_quantizers()
 
-    def init_fp8_meta_tensors(self,
-                              recipe: Recipe) -> None:
+    def init_fp8_meta_tensors(self, recipe: Recipe) -> None:
         """Init scales and amaxes."""
         self.set_meta_tensor(True, recipe)
         self.set_meta_tensor(False, recipe)
@@ -752,7 +747,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         fp8_enabled = self.fp8 or self.fp8_calibration
         self.fp8_meta["fp8_checkpoint"] = self.fp8 or self.fp8_calibration
 
-        if (self.fp8_parameters or fp8_enabled):
+        if self.fp8_parameters or fp8_enabled:
             if (
                 self.fp8_initialized
                 and FP8GlobalStateManager.get_fp8_recipe() == self.fp8_meta["recipe"]
@@ -764,7 +759,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             # If fp8 isn't enabled, turn off and return.
             self.fp8_initialized = False
             return
-
 
         if self.fp8_parameters and not self.fp8_initialized:
             self.fp8_meta["num_gemms"] = num_gemms
@@ -944,7 +938,9 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             fp8_meta_index = self.param_init_meta[name].fp8_meta_index
             if self.primary_weights_in_fp8 and fp8_meta_index is not None:
                 quantizer = self.quantizers["scaling_fwd"][fp8_meta_index]
-                assert quantizer is not None # to use primary fp8 weight one needs to use FP8 autocast with specific recipe.
+                assert (
+                    quantizer is not None
+                )  # to use primary fp8 weight one needs to use FP8 autocast with specific recipe.
                 param = quantizer(param)
 
             # Redo parameter wrap in case we broke it above
@@ -1011,8 +1007,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         if out is None:
             if tensor is None or quantizer is None:
                 raise ValueError(
-                    "tensor and quantizer kwargs "
-                    "must be provided to construct FP8 workspace"
+                    "tensor and quantizer kwargs must be provided to construct FP8 workspace"
                 )
             out = quantizer(tensor)
 

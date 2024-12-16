@@ -196,9 +196,7 @@ class _Linear(torch.autograd.Function):
                     ub_algo = tex.UbufOverlapAlgo.SPLIT_PIPELINED_RS
             if fp8 and ub_obj_projout.is_fp8_ubuf():
                 assert fp8_output
-                ub_obj_projout.set_ubuf_scale_inv(
-                    torch.reciprocal(output_quantizer.scale)
-                )
+                ub_obj_projout.set_ubuf_scale_inv(torch.reciprocal(output_quantizer.scale))
 
         out, _, _ = general_gemm(
             weightmat,
@@ -241,8 +239,11 @@ class _Linear(torch.autograd.Function):
                 *saved_input_tensors,
                 *saved_weight_tensors,
                 bias,
-                weight if (fuse_wgrad_accumulation and
-                           hasattr(weight, "grad_added_to_main_grad")) else None
+                (
+                    weight
+                    if (fuse_wgrad_accumulation and hasattr(weight, "grad_added_to_main_grad"))
+                    else None
+                ),
             )
 
             ctx.saved_input = saved_input
@@ -296,13 +297,14 @@ class _Linear(torch.autograd.Function):
             saved_tensors = ctx.saved_tensors
             inputmat, saved_tensors = restore_from_saved(ctx.saved_input, saved_tensors)
             weight_fp8, saved_tensors = restore_from_saved(ctx.saved_weight, saved_tensors)
-            (
-                bias,
-                weight
-            ) = saved_tensors
+            (bias, weight) = saved_tensors
 
             # Since main_grad can be modified inplace, it should not be a part of saved_tensors
-            main_grad = ctx.main_grad if weight is not None and ctx.fuse_wgrad_accumulation and ctx.requires_wgrad else None
+            main_grad = (
+                ctx.main_grad
+                if weight is not None and ctx.fuse_wgrad_accumulation and ctx.requires_wgrad
+                else None
+            )
 
             # Gather intermediate/activation tensors if needed
             # NOTE: weight_fp8 = weight when ctx.fp8 == False and torch.disttributed.FSDP already
@@ -314,7 +316,7 @@ class _Linear(torch.autograd.Function):
                 weight_fp8,
             )
 
-            #TODO: understand and fix
+            # TODO: understand and fix
             # if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
             #     weight = torch.nn.Parameter(weight, weight.requires_grad)
             #     weight.main_grad = main_grad
@@ -336,7 +338,7 @@ class _Linear(torch.autograd.Function):
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(
                     rowwise=True,
-                    columnwise=True, # TODO(pgadzinski) - remove
+                    columnwise=True,  # TODO(pgadzinski) - remove
                 )
             (
                 grad_output,
@@ -353,9 +355,7 @@ class _Linear(torch.autograd.Function):
             inputmat_total = None
             inputmat_total_work = None
             with_input_all_gather = (
-                ctx.requires_wgrad
-                and ctx.parallel_mode == "column"
-                and ctx.sequence_parallel
+                ctx.requires_wgrad and ctx.parallel_mode == "column" and ctx.sequence_parallel
             )
             if ctx.requires_wgrad and ctx.parallel_mode == "column" and ctx.sequence_parallel:
                 quantizer = None
@@ -390,16 +390,16 @@ class _Linear(torch.autograd.Function):
 
                 # dgrad GEMM
                 dgrad, _, _ = general_gemm(
-                        weight_fp8,
-                        grad_output,
-                        get_workspace(),
-                        layout="NN",
-                        grad=True,
-                        quantization_params=ctx.grad_input_quantizer,
-                        out_dtype=ctx.activation_dtype,
-                        use_split_accumulator=_2X_ACC_DGRAD,
-                        ub_algo=ub_algo if ctx.ub_overlap_ag else None,
-                        ub=ctx.ub_obj_gradout if ctx.ub_overlap_ag else None
+                    weight_fp8,
+                    grad_output,
+                    get_workspace(),
+                    layout="NN",
+                    grad=True,
+                    quantization_params=ctx.grad_input_quantizer,
+                    out_dtype=ctx.activation_dtype,
+                    use_split_accumulator=_2X_ACC_DGRAD,
+                    ub_algo=ub_algo if ctx.ub_overlap_ag else None,
+                    ub=ctx.ub_obj_gradout if ctx.ub_overlap_ag else None,
                 )
 
                 # Launch tensor-parallel communication
@@ -439,7 +439,9 @@ class _Linear(torch.autograd.Function):
                     get_workspace(),
                     layout="NT",
                     grad=True,
-                    out_dtype=main_grad.dtype if ctx.fuse_wgrad_accumulation else ctx.activation_dtype,
+                    out_dtype=(
+                        main_grad.dtype if ctx.fuse_wgrad_accumulation else ctx.activation_dtype
+                    ),
                     out=main_grad if ctx.fuse_wgrad_accumulation else None,
                     use_split_accumulator=_2X_ACC_WGRAD,
                     accumulate=accumulate_wgrad_into_param_main_grad,
@@ -466,9 +468,10 @@ class _Linear(torch.autograd.Function):
 
         if ctx.requires_wgrad:
             # Handle custom DDP from mcore.
-            if (ctx.fuse_wgrad_accumulation and
-                weight is not None and
-                hasattr(weight, "grad_added_to_main_grad")
+            if (
+                ctx.fuse_wgrad_accumulation
+                and weight is not None
+                and hasattr(weight, "grad_added_to_main_grad")
             ):
                 weight.grad_added_to_main_grad = True
                 if getattr(weight, "zero_out_wgrad", False):
@@ -735,7 +738,9 @@ class Linear(TransformerEngineBaseModule):
             # Check if parameters are subviews of buffers
             is_subview = (split_start, split_end) != (0, self.out_features)
             if is_subview and with_fp8_params:
-                raise RuntimeError("Splitting QuantizedTensor into multiple params is not supported")
+                raise RuntimeError(
+                    "Splitting QuantizedTensor into multiple params is not supported"
+                )
 
             # Construct weight parameter
             self.register_parameter(
@@ -861,9 +866,13 @@ class Linear(TransformerEngineBaseModule):
                 weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
                 weight_quantizer.internal = True
                 if fp8_output:
-                    output_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_OUTPUT]
+                    output_quantizer = self.quantizers["scaling_fwd"][
+                        tex.FP8FwdTensors.GEMM1_OUTPUT
+                    ]
                 if torch.is_grad_enabled():
-                    grad_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
+                    grad_output_quantizer = self.quantizers["scaling_bwd"][
+                        tex.FP8BwdTensors.GRAD_OUTPUT1
+                    ]
                     grad_output_quantizer.internal = True
 
             # Make sure weight tensor has correct quantizer

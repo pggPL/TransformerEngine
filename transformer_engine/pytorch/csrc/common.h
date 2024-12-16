@@ -119,9 +119,7 @@ class NoneQuantizer : public Quantizer {
  public:
   NoneQuantizer(const py::handle& quantizer) : Quantizer(quantizer) {}
 
-  virtual NVTEScalingMode get_scaling_mode() const override {
-    return NVTE_DELAYED_TENSOR_SCALING;
-  }
+  virtual NVTEScalingMode get_scaling_mode() const override { return NVTE_DELAYED_TENSOR_SCALING; }
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override {}
 
@@ -138,9 +136,7 @@ class Float8Quantizer : public Quantizer {
 
   Float8Quantizer(const py::handle& quantizer);
 
-  virtual NVTEScalingMode get_scaling_mode() const override {
-    return NVTE_DELAYED_TENSOR_SCALING;
-  }
+  virtual NVTEScalingMode get_scaling_mode() const override { return NVTE_DELAYED_TENSOR_SCALING; }
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;
 
@@ -154,9 +150,7 @@ class MXFP8Quantizer : public Quantizer {
 
   MXFP8Quantizer(const py::handle& quantizer);
 
-  virtual NVTEScalingMode get_scaling_mode() const override {
-    return NVTE_MXFP8_1D_SCALING;
-  }
+  virtual NVTEScalingMode get_scaling_mode() const override { return NVTE_MXFP8_1D_SCALING; }
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;
 
@@ -228,14 +222,9 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
     NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING);
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
-    void* data_ptr, void* columnwise_data_ptr,
-    const std::vector<size_t>& shape,
-    const std::vector<size_t>& columnwise_shape,
-    const transformer_engine::DType type,
-    void* amax_ptr,
-    void* scale_ptr,
-    void* scale_inv_ptr,
-    void* columnwise_scale_inv_ptr,
+    void* data_ptr, void* columnwise_data_ptr, const std::vector<size_t>& shape,
+    const std::vector<size_t>& columnwise_shape, const transformer_engine::DType type,
+    void* amax_ptr, void* scale_ptr, void* scale_inv_ptr, void* columnwise_scale_inv_ptr,
     const std::vector<size_t>& scale_inv_shape = {1},
     const std::vector<size_t>& columnwise_scale_inv_shape = {1},
     NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING);
@@ -275,47 +264,47 @@ std::vector<size_t> convertShape(const NVTEShape& shape);
 }  // namespace transformer_engine::pytorch
 
 namespace std {
-  template <typename T>
-  string to_string(const vector<T>& vec) {
-    string ret = "[";
-    for (const auto& val : vec) {
-      ret += to_string(val) + ",";
-    }
-    if (ret.size() > 1) {
-      ret[ret.size() - 1] = ']';
-    } else {
-      ret += "]";
-    }
-    return ret;
+template <typename T>
+string to_string(const vector<T>& vec) {
+  string ret = "[";
+  for (const auto& val : vec) {
+    ret += to_string(val) + ",";
   }
+  if (ret.size() > 1) {
+    ret[ret.size() - 1] = ']';
+  } else {
+    ret += "]";
+  }
+  return ret;
+}
 
-  // Torch shape -> string
-  template <typename T>
-  string to_string(const c10::ArrayRef<T>& vec) {
-    string ret = "[";
-    for (const auto& val : vec) {
-      ret += to_string(val) + ",";
-    }
-    if (ret.size() > 1) {
-      ret[ret.size() - 1] = ']';
-    } else {
-      ret += "]";
-    }
-    return ret;
+// Torch shape -> string
+template <typename T>
+string to_string(const c10::ArrayRef<T>& vec) {
+  string ret = "[";
+  for (const auto& val : vec) {
+    ret += to_string(val) + ",";
   }
+  if (ret.size() > 1) {
+    ret[ret.size() - 1] = ']';
+  } else {
+    ret += "]";
+  }
+  return ret;
+}
 
-  inline string to_string(const NVTEShape& s) {
-    string ret = "[";
-    for (size_t i = 0; i < s.ndim; ++i) {
-      ret += to_string(s.data[i]) + ",";
-    }
-    if (ret.size() > 1) {
-      ret[ret.size() - 1] = ']';
-    } else {
-      ret += "]";
-    }
-    return ret;
+inline string to_string(const NVTEShape& s) {
+  string ret = "[";
+  for (size_t i = 0; i < s.ndim; ++i) {
+    ret += to_string(s.data[i]) + ",";
   }
+  if (ret.size() > 1) {
+    ret[ret.size() - 1] = ']';
+  } else {
+    ret += "]";
+  }
+  return ret;
+}
 }  // namespace std
 
 #endif  // TRANSFORMER_ENGINE_PYTORCH_CSRC_COMMON_H_

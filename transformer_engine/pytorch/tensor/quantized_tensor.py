@@ -15,6 +15,7 @@ from torch.utils._pytree import tree_map
 import transformer_engine_torch as tex
 from ...common.recipe import Recipe
 
+
 def prepare_for_saving(tensor) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
     if tensor is None:
         return [None], None
@@ -22,13 +23,15 @@ def prepare_for_saving(tensor) -> Tuple[list[Optional[torch.Tensor]], Optional[A
         return [tensor], None
     return tensor.prepare_for_saving()
 
-def restore_from_saved(tensor: Optional[Any],
-                       saved_tensors: list[Optional[torch.Tensor]]
+
+def restore_from_saved(
+    tensor: Optional[Any], saved_tensors: list[Optional[torch.Tensor]]
 ) -> Tuple[Optional[Any], list[Optional[torch.Tensor]]]:
     if tensor is None:
         return saved_tensors[0], saved_tensors[1:]
     new_tensors = tensor.restore_from_saved(saved_tensors)
     return tensor, new_tensors
+
 
 class Quantizer(abc.ABC):
 
@@ -54,12 +57,8 @@ class Quantizer(abc.ABC):
 
     @abc.abstractmethod
     def update_quantized(
-        self,
-        src: torch.Tensor,
-        dst: QuantizedTensor,
-        noop_flag: Optional[torch.Tensor]
-    ) -> QuantizedTensor:
-        ...
+        self, src: torch.Tensor, dst: QuantizedTensor, noop_flag: Optional[torch.Tensor]
+    ) -> QuantizedTensor: ...
 
     def quantize(
         self,
@@ -72,7 +71,6 @@ class Quantizer(abc.ABC):
         if (not self.internal) and torch.is_grad_enabled():
             return _QuantizeFunc.apply(tensor, self)
         return _QuantizeFunc.forward(None, tensor, self)
-
 
     def multi_quantize(self, list_of_tensors):
         list_of_output_tensors = []
@@ -90,12 +88,10 @@ class Quantizer(abc.ABC):
         *,
         dtype: torch.dtype = torch.float32,
         device: Optional[torch.device] = None,
-    ) -> QuantizedTensor:
-        ...
+    ) -> QuantizedTensor: ...
 
     @abc.abstractmethod
-    def calibrate(self, tensor: torch.Tensor) -> None:
-        ...
+    def calibrate(self, tensor: torch.Tensor) -> None: ...
 
     def set_usage(
         self,
@@ -134,6 +130,7 @@ class _QuantizeFunc(torch.autograd.Function):
         # Assume that we want gradients in full precision
         return grad, None
 
+
 class _IdentityFunc(torch.autograd.Function):
     """Identity function
 
@@ -159,8 +156,7 @@ class _IdentityFunc(torch.autograd.Function):
         kwargs = tensor.get_metadata()
         for key, val in init_kwargs.items():
             kwargs[key] = val
-        return type(tensor)(tensor.shape, tensor.dtype,
-                            **kwargs)
+        return type(tensor)(tensor.shape, tensor.dtype, **kwargs)
 
     @staticmethod
     def backward(ctx, grad):
@@ -168,12 +164,14 @@ class _IdentityFunc(torch.autograd.Function):
         # TODO: Why this cast?
         return grad.to(ctx.input_dtype), None
 
+
 def _stride_from_shape(shape: list[int]):
     # TODO: This is probably pretty inefficient
     stride = [1] * len(shape)
     for i in range(len(stride) - 1, 0, -1):
         stride[i - 1] = stride[i] * shape[i]
     return stride
+
 
 class QuantizedTensor(torch.Tensor):
     """Abstract base class for tensor with quantized data
@@ -185,11 +183,7 @@ class QuantizedTensor(torch.Tensor):
 
     """
 
-    def __new__(cls,
-                shape: Iterable[int],
-                dtype: torch.dtype,
-                *,
-                requires_grad: bool = False):
+    def __new__(cls, shape: Iterable[int], dtype: torch.dtype, *, requires_grad: bool = False):
         # We are assuming only contiguous tensors
         stride = _stride_from_shape(shape)
         instance = torch.Tensor._make_wrapper_subclass(
@@ -239,13 +233,10 @@ class QuantizedTensor(torch.Tensor):
         )
 
     def clear(self):
-        """Deallocate this tensor's memory. Typically not needed and must be used carefully.
-        """
+        """Deallocate this tensor's memory. Typically not needed and must be used carefully."""
         pass
 
-    def __repr__(self,
-                 *,
-                 tensor_contents = None) -> str:
+    def __repr__(self, *, tensor_contents=None) -> str:
         return f"{self.__class__.__name__}(data={self.dequantize(dtype=self.dtype)})"
 
     def float(self) -> torch.Tensor:
@@ -260,8 +251,7 @@ class QuantizedTensor(torch.Tensor):
         # pylint: disable=missing-function-docstring
         return self.dequantize(dtype=torch.float16)
 
-    def cpu(self,
-            memory_format = torch.preserve_format) -> torch.Tensor:
+    def cpu(self, memory_format=torch.preserve_format) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
         return self.dequantize().cpu(memory_format=memory_format)
 
@@ -369,10 +359,8 @@ class QuantizedTensor(torch.Tensor):
         dtype = dtype if dtype is not None else tensor.dtype
         kwargs = tensor.get_metadata()
         if data is not None:
-            kwargs['data'] = data
-        return cls(shape=shape, dtype=dtype,
-                   requires_grad=requires_grad,
-                   **kwargs)
+            kwargs["data"] = data
+        return cls(shape=shape, dtype=dtype, requires_grad=requires_grad, **kwargs)
 
     def to_dtype(self, dtype: torch.dtype) -> QuantizedTensor:
         """Create `QuantizedTensor` with given nominal dtype

@@ -82,10 +82,9 @@ constexpr size_t bsize = 256;
  * Grid dims: num_scales x 1 x 1
  */
 __global__ void __launch_bounds__(bsize)
-    kernel(const float* amax_history_ptr, const float* scale_ptr,
-           float* updated_amax_history_ptr,
-           float* updated_scale_ptr, size_t amax_history_length,
-           size_t amax_history_stride, AmaxComputeAlgo amax_compute_algo, float scaled_max) {
+    kernel(const float* amax_history_ptr, const float* scale_ptr, float* updated_amax_history_ptr,
+           float* updated_scale_ptr, size_t amax_history_length, size_t amax_history_stride,
+           AmaxComputeAlgo amax_compute_algo, float scaled_max) {
   const size_t tid = threadIdx.x;
   const size_t bid = blockIdx.x;
 
@@ -258,8 +257,7 @@ __global__ void __launch_bounds__(bsize)
 }  // namespace
 
 void amax_and_scale_update(const Tensor& amax_history, const Tensor& scale,
-                           Tensor* updated_amax_history_,
-                           Tensor* updated_scale_,
+                           Tensor* updated_amax_history_, Tensor* updated_scale_,
                            const std::string& amax_compute_algo, DType fp8_dtype, float margin,
                            cudaStream_t stream) {
   auto& updated_amax_history = *updated_amax_history_;
@@ -307,8 +305,7 @@ void amax_and_scale_update(const Tensor& amax_history, const Tensor& scale,
   amax_and_scale_update_impl::kernel<<<grid_size, block_size, 0, stream>>>(
       static_cast<const float*>(amax_history.data.dptr), static_cast<const float*>(scale.data.dptr),
       static_cast<float*>(updated_amax_history.data.dptr),
-      static_cast<float*>(updated_scale.data.dptr),
-      amax_history_length, num_scales,
+      static_cast<float*>(updated_scale.data.dptr), amax_history_length, num_scales,
       amax_compute_algo_, scaled_max);
   NVTE_CHECK_CUDA(cudaGetLastError());
 }
@@ -394,23 +391,21 @@ void amax_and_scale_update_after_reduction(const Tensor& amax_reduction_buffer,
 }  // namespace transformer_engine
 
 void nvte_delayed_scaling_recipe_amax_and_scale_update(
-    const NVTETensor amax_history, const NVTETensor scale,
-    NVTETensor updated_amax_history, NVTETensor updated_scale,
-    const char* amax_compute_algo, NVTEDType fp8_dtype, float margin,
+    const NVTETensor amax_history, const NVTETensor scale, NVTETensor updated_amax_history,
+    NVTETensor updated_scale, const char* amax_compute_algo, NVTEDType fp8_dtype, float margin,
     cudaStream_t stream) {
   NVTE_API_CALL(nvte_delayed_scaling_recipe_amax_and_scale_update);
   using namespace transformer_engine;
   delayed_scaling_recipe::amax_and_scale_update(
       *reinterpret_cast<const Tensor*>(amax_history), *reinterpret_cast<const Tensor*>(scale),
       reinterpret_cast<Tensor*>(updated_amax_history), reinterpret_cast<Tensor*>(updated_scale),
-      amax_compute_algo,
-      static_cast<DType>(fp8_dtype), margin, stream);
+      amax_compute_algo, static_cast<DType>(fp8_dtype), margin, stream);
 }
 
 void nvte_delayed_scaling_recipe_amax_and_scale_update_after_reduction(
     const NVTETensor amax_reduction_buffer, std::vector<NVTETensor> amax_histories,
-    std::vector<NVTETensor> scales,
-    const char* amax_compute_algo, NVTEDType fp8_dtype, float margin, cudaStream_t stream) {
+    std::vector<NVTETensor> scales, const char* amax_compute_algo, NVTEDType fp8_dtype,
+    float margin, cudaStream_t stream) {
   NVTE_API_CALL(nvte_delayed_scaling_recipe_amax_and_scale_update_after_reduction);
   using namespace transformer_engine;
   size_t num_tensors = amax_histories.size();

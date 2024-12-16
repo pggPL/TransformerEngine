@@ -13,9 +13,9 @@
 #include <cstdlib>
 #include <iostream>
 #include <numeric>
-#include "transformer_engine/transformer_engine.h"
 
 #include "transformer_engine/normalization.h"
+#include "transformer_engine/transformer_engine.h"
 
 /*
 
@@ -193,8 +193,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
   if (is_tensor_scaling(mode)) {
     _ndim_scale_block = 0;
   } else {
-    NVTE_CHECK(mode == NVTE_MXFP8_1D_SCALING,
-               "Unsupported scaling mode.");
+    NVTE_CHECK(mode == NVTE_MXFP8_1D_SCALING, "Unsupported scaling mode.");
     _ndim_scale_block = 1;
   }
 

@@ -253,7 +253,7 @@ def _test_permutation(
         te_permute_fwd_input_grad = te_permute_fwd_input.grad.float()
         te_unpermute_output_ = te_unpermute_output.float()
         te_unpermute_fwd_input_grad = te_unpermute_fwd_input.grad.float()
-    
+
     torch.testing.assert_close(
         pytorch_permute_output.float(),
         te_permute_output_,

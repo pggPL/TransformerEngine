@@ -501,7 +501,6 @@ class _checkpoint_hook(
                 # Set RNG states to what we saved before the forward pass
                 frame.restore_rng_states(forward=True)
 
-
                 # Recompute the forward pass
                 with _recomputation_hook(frame):
                     frame.recompute_fn(*args, **kwargs)
@@ -896,9 +895,7 @@ def gather_along_first_dim(
             out._transpose = None
             out._transpose_invalid = True
         else:
-            raise RuntimeError(
-                "Float8TensorBase is not supported yet without Float8Quantizer"
-            )
+            raise RuntimeError("Float8TensorBase is not supported yet without Float8Quantizer")
         out._scale_inv = input_._scale_inv
 
         # Perform communication

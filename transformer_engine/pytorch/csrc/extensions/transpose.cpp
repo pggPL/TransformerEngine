@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include <optional>
+
 #include "ATen/core/TensorBody.h"
 #include "extensions.h"
 
@@ -26,15 +27,9 @@ void fused_cast_transpose_noop(at::Tensor input, at::Tensor noop, at::Tensor sca
   // Construct Transformer Engine tensors
   auto input_cu = makeTransformerEngineTensor(input);
   auto noop_cu = makeTransformerEngineTensor(noop);
-  auto output_cu = makeTransformerEngineTensor(input_cast.data_ptr(),
-                                               input_transpose.data_ptr(),
-                                               {M, N},
-                                               {N, M},
-                                               otype,
-                                               amax_dptr,
-                                               scale_dptr,
-                                               scale_inv_dptr,
-                                               scale_inv_dptr);
+  auto output_cu =
+      makeTransformerEngineTensor(input_cast.data_ptr(), input_transpose.data_ptr(), {M, N}, {N, M},
+                                  otype, amax_dptr, scale_dptr, scale_inv_dptr, scale_inv_dptr);
 
   // Launch kernel
   nvte_cast_transpose_with_noop(input_cu.data(), noop_cu.data(), output_cu.data(),
@@ -74,29 +69,23 @@ std::vector<at::Tensor> fused_cast_transpose_bgrad(at::Tensor grad_output, at::T
   // Construct Transformer Engine tensors
   auto input_cu = makeTransformerEngineTensor(grad_output);
 
-  auto output_cu = makeTransformerEngineTensor(grad_output_cast.data_ptr(),
-                                               grad_output_transpose.data_ptr(),
-                                               {M, N},
-                                               {N, M},
-                                               otype,
-                                               amax_dptr,
-                                               scale_dptr,
-                                               scale_inv_dptr,
-                                               scale_inv_dptr);
+  auto output_cu = makeTransformerEngineTensor(
+      grad_output_cast.data_ptr(), grad_output_transpose.data_ptr(), {M, N}, {N, M}, otype,
+      amax_dptr, scale_dptr, scale_inv_dptr, scale_inv_dptr);
 
   auto dbias_cu = makeTransformerEngineTensor(grad_bias);
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  nvte_cast_transpose_dbias(input_cu.data(), output_cu.data(),
-                            dbias_cu.data(), workspace.data(), at::cuda::getCurrentCUDAStream());
+  nvte_cast_transpose_dbias(input_cu.data(), output_cu.data(), dbias_cu.data(), workspace.data(),
+                            at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
   workspace =
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  nvte_cast_transpose_dbias(input_cu.data(), output_cu.data(),
-                            dbias_cu.data(), workspace.data(), at::cuda::getCurrentCUDAStream());
+  nvte_cast_transpose_dbias(input_cu.data(), output_cu.data(), dbias_cu.data(), workspace.data(),
+                            at::cuda::getCurrentCUDAStream());
 
   return {grad_bias, grad_output_cast, grad_output_transpose};
 }
@@ -168,15 +157,9 @@ std::vector<at::Tensor> fused_cast_transpose_bgrad_dgelu(at::Tensor grad_output,
       allocateTorchTensor(grad_output.size(1), grad_output.size(0), DType::kByte);
   auto gelu_input_cu = makeTransformerEngineTensor(gelu_input);
   auto input_cu = makeTransformerEngineTensor(grad_output);
-  auto output_cu = makeTransformerEngineTensor(dgelu.data_ptr(),
-                                               dgelu_transpose.data_ptr(),
-                                               {M, N},
-                                               {N, M},
-                                               otype,
-                                               amax_dptr,
-                                               scale_dptr,
-                                               scale_inv_dptr,
-                                               scale_inv_dptr);
+  auto output_cu =
+      makeTransformerEngineTensor(dgelu.data_ptr(), dgelu_transpose.data_ptr(), {M, N}, {N, M},
+                                  otype, amax_dptr, scale_dptr, scale_inv_dptr, scale_inv_dptr);
 
   auto dbias_cu = makeTransformerEngineTensor(grad_bias);
 
@@ -256,15 +239,9 @@ void fused_dswiglu_cast_transpose(at::Tensor grad_output, at::Tensor input, at::
   // Construct Transformer Engine tensors
   auto dy_cu = makeTransformerEngineTensor(grad_output);
   auto x_cu = makeTransformerEngineTensor(input);
-  auto dx_cu = makeTransformerEngineTensor(grad_input.data_ptr(),
-                                           grad_input_transpose.data_ptr(),
-                                           {M, 2 * N},
-                                           {2 * N, M},
-                                           otype,
-                                           amax_dptr,
-                                           scale_dptr,
-                                           scale_inv_dptr,
-                                           scale_inv_dptr);
+  auto dx_cu = makeTransformerEngineTensor(grad_input.data_ptr(), grad_input_transpose.data_ptr(),
+                                           {M, 2 * N}, {2 * N, M}, otype, amax_dptr, scale_dptr,
+                                           scale_inv_dptr, scale_inv_dptr);
 
   // Launch kernel
   nvte_dswiglu_cast_transpose(dy_cu.data(), x_cu.data(), dx_cu.data(),
@@ -272,9 +249,9 @@ void fused_dswiglu_cast_transpose(at::Tensor grad_output, at::Tensor input, at::
 }
 
 std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
-                          std::optional<std::vector<py::handle>> output_list,
-                          std::vector<py::handle> quantizer_list,
-                          transformer_engine::DType otype) {
+                                             std::optional<std::vector<py::handle>> output_list,
+                                             std::vector<py::handle> quantizer_list,
+                                             transformer_engine::DType otype) {
   using namespace transformer_engine::pytorch;
   std::vector<NVTETensor> nvte_tensor_input_list;
   std::vector<NVTETensor> nvte_tensor_output_list;
@@ -282,26 +259,23 @@ std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
   std::vector<transformer_engine::TensorWrapper> tensor_wrappers;
   auto none = py::none();
   // create TE tensors from input
-  for(int i = 0; i < input_list.size(); i++) {
-    
+  for (int i = 0; i < input_list.size(); i++) {
     auto input_tensor = makeTransformerEngineTensor(input_list[i], none);
     const NVTEShape input_shape = input_tensor.shape();
 
     transformer_engine::TensorWrapper output_tensor;
-    
+
     if (output_list == std::nullopt) {
       std::unique_ptr<Quantizer> quantizer = convert_quantizer(quantizer_list[i]);
       std::vector<size_t> output_shape(input_shape.data, input_shape.data + input_shape.ndim);
       py::object o;
       std::tie(output_tensor, o) = quantizer->create_tensor(output_shape, otype);
       py_output_objects_list.push_back(o);
-    }
-    else {
+    } else {
       output_tensor = makeTransformerEngineTensor((*output_list)[i], quantizer_list[i]);
     }
-    if(input_tensor.numel() == 0) continue;
-    
-    
+    if (input_tensor.numel() == 0) continue;
+
     nvte_tensor_output_list.emplace_back(output_tensor.data());
     nvte_tensor_input_list.emplace_back(input_tensor.data());
     tensor_wrappers.emplace_back(std::move(input_tensor));
@@ -313,14 +287,14 @@ std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
              "Number of input and output tensors must match");
 
   // Launch TE kernel
- 
+
   nvte_multi_cast_transpose(nvte_tensor_input_list.size(), nvte_tensor_input_list.data(),
                             nvte_tensor_output_list.data(), at::cuda::getCurrentCUDAStream());
   return py_output_objects_list;
 }
 
-
-at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype, std::optional<at::Tensor> output) {
+at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype,
+                         std::optional<at::Tensor> output) {
   using namespace transformer_engine::pytorch;
 
   const auto dim = input.dim();

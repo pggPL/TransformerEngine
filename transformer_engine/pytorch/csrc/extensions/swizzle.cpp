@@ -43,9 +43,9 @@ void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool roww
   auto input_cu =
       makeTransformerEngineTensor(input.dptr(), input_shape, dtype, nullptr, nullptr,
                                   scale_inv_dptr, scale_inv_shape, NVTE_MXFP8_1D_SCALING);
-  auto output_cu = makeTransformerEngineTensor(
-      input.dptr(), input_shape, dtype, nullptr, nullptr, swizzled_scale_inv_dptr,
-      scale_inv_shape, NVTE_MXFP8_1D_SCALING);
+  auto output_cu =
+      makeTransformerEngineTensor(input.dptr(), input_shape, dtype, nullptr, nullptr,
+                                  swizzled_scale_inv_dptr, scale_inv_shape, NVTE_MXFP8_1D_SCALING);
 
   // Launch kernel
   nvte_swizzle_scaling_factors(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());

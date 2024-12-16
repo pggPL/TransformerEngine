@@ -43,6 +43,7 @@ class Recipe:
     """
     Base recipe class.
     """
+
     def block(self):
         """Whether the given recipe is block scaling."""
         return isinstance(self, BlockScaling)

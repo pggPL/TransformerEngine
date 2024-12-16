@@ -10,10 +10,10 @@
 
 #include <algorithm>
 
-#include "cast_transpose.h"
 #include "../util/rtc.h"
 #include "../util/string.h"
 #include "../utils.cuh"
+#include "cast_transpose.h"
 
 namespace transformer_engine::detail {
 
@@ -241,11 +241,9 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *output_, cu
              ", output=", output.data.shape);
   const size_t row_length = input.flat_last_dim();
   const size_t num_rows = input.flat_first_dim();
-  NVTE_CHECK(output.flat_first_dim() == num_rows &&
-             output.flat_last_dim() == row_length,
-             "Invalid output dimensions (expected ",
-             std::vector<size_t>{num_rows, row_length}, ", got ",
-             std::vector<size_t>{output.flat_first_dim(), output.flat_last_dim()}, ")");
+  NVTE_CHECK(output.flat_first_dim() == num_rows && output.flat_last_dim() == row_length,
+             "Invalid output dimensions (expected ", std::vector<size_t>{num_rows, row_length},
+             ", got ", std::vector<size_t>{output.flat_first_dim(), output.flat_last_dim()}, ")");
 
   // Check that cast and transposed output data matches
   NVTE_CHECK(output.data.dtype == output.columnwise_data.dtype,
@@ -323,8 +321,7 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *output_, cu
                                  static_cast<OutputType *>(output.columnwise_data.dptr),
                                  static_cast<const CType *>(output.scale.dptr),
                                  static_cast<CType *>(output.amax.dptr),
-                                 static_cast<CType *>(output.scale_inv.dptr), row_length,
-                                 num_rows);
+                                 static_cast<CType *>(output.scale_inv.dptr), row_length, num_rows);
             } else {  // Statically-compiled general kernel
               constexpr size_t load_size = 4;
               constexpr size_t store_size = 4;
@@ -348,21 +345,21 @@ void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *output_, cu
   );           // NOLINT(*)
 }
 
-}  // namespace transformer_engine
+}  // namespace transformer_engine::detail
 
 void nvte_cast_transpose(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose);
   using namespace transformer_engine;
   auto noop = Tensor();
   transformer_engine::detail::cast_transpose(*reinterpret_cast<const Tensor *>(input), noop,
-                 reinterpret_cast<Tensor *>(output), stream);
+                                             reinterpret_cast<Tensor *>(output), stream);
 }
 
-void nvte_cast_transpose_with_noop(const NVTETensor input, const NVTETensor noop,
-                                   NVTETensor output,
+void nvte_cast_transpose_with_noop(const NVTETensor input, const NVTETensor noop, NVTETensor output,
                                    cudaStream_t stream) {
   NVTE_API_CALL(nvte_cast_transpose_with_noop);
   using namespace transformer_engine;
-  transformer_engine::detail::cast_transpose(*reinterpret_cast<const Tensor *>(input), *reinterpret_cast<const Tensor *>(noop),
-                 reinterpret_cast<Tensor *>(output), stream);
+  transformer_engine::detail::cast_transpose(*reinterpret_cast<const Tensor *>(input),
+                                             *reinterpret_cast<const Tensor *>(noop),
+                                             reinterpret_cast<Tensor *>(output), stream);
 }

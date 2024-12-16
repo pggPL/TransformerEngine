@@ -327,9 +327,8 @@ class BasicLinear(BasicOperation):
             # Make sure weight tensor has correct quantizer
             # Note: Quantizer might have changed if quantization
             # recipe changed
-            if (
-                isinstance(weight_quantizer, Float8Quantizer)
-                and isinstance(weight, Float8TensorBase)
+            if isinstance(weight_quantizer, Float8Quantizer) and isinstance(
+                weight, Float8TensorBase
             ):
                 weight._quantizer = weight_quantizer
 
@@ -468,9 +467,7 @@ class BasicLinear(BasicOperation):
                 output_quantizer = None
         elif isinstance(y, QuantizedTensor):
             if not with_quantized_compute:
-                raise ValueError(
-                    "Output tensor is quantized, but quantized compute is not enabled"
-                )
+                raise ValueError("Output tensor is quantized, but quantized compute is not enabled")
             if tensor_parallel_mode == "row":
                 raise ValueError(
                     "Output tensor is quantized, "
@@ -727,8 +724,7 @@ class BasicLinear(BasicOperation):
             elif isinstance(dx, QuantizedTensor):
                 if not with_quantized_compute:
                     raise ValueError(
-                        "Grad input tensor is quantized, "
-                        "but quantized compute is not enabled"
+                        "Grad input tensor is quantized, but quantized compute is not enabled"
                     )
                 if tensor_parallel_mode == "column":
                     raise ValueError(

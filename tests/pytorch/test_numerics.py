@@ -517,7 +517,6 @@ def _test_e2e_selective_recompute(bs, dtype, config, fp8, fp8_model_params=False
     te_inp_hidden_states.retain_grad()
     te_inp_attn_mask = get_causal_attn_mask(config.seq_len)
 
-
     with fp8_autocast(enabled=fp8):
         te_out = block(
             te_inp_hidden_states,
@@ -627,7 +626,6 @@ def _test_e2e_full_recompute(
     loss = te_out.sum()
     loss.backward()
     torch.cuda.synchronize()
-
 
     outputs = [te_out]
     names = ["output"]
@@ -1005,7 +1003,6 @@ def _test_granular_accuracy(block, bs, dtype, config):
     loss = out.sum()
     loss.backward()
 
-
     torch.cuda.synchronize()
     outputs = [out, inp_hidden_states.grad]
     for p in block.parameters():
@@ -1268,7 +1265,6 @@ def test_layernorm_linear_accuracy(dtype, bs, model, normalization, zero_centere
     te_outputs = _test_granular_accuracy(te_ln_linear, bs, dtype, config)
     torch_outputs = _test_granular_accuracy(torch_ln_linear, bs, dtype, config)
 
-
     atol = {
         torch.float32: 2.5e-4,
         torch.half: 2e-3,
@@ -1281,7 +1277,7 @@ def test_layernorm_linear_accuracy(dtype, bs, model, normalization, zero_centere
     }
 
     # Check output.
-    assert_allclose(te_outputs[0], torch_outputs[0], atol[dtype],  rtol[dtype])
+    assert_allclose(te_outputs[0], torch_outputs[0], atol[dtype], rtol[dtype])
 
     if model == "small":
         atol = {
@@ -2108,7 +2104,7 @@ def test_grouped_gemm(shape, dtype, layout, accumulate):
         list(out),
         dtype,
         get_multi_stream_cublas_workspace(),
-        m_splits=[k] * n, # TODO, not sure
+        m_splits=[k] * n,  # TODO, not sure
         grad=grad,
         accumulate=accumulate,
         layout=layout,
@@ -2189,7 +2185,6 @@ def test_fp8_grouped_gemm(shape, fp8_dtype, accumulate):
         m_splits=[k] * m_splits,
         accumulate=accumulate,
     )
-
 
     # should be bit-wise match
     for o, o_ref in zip(out, out_ref):

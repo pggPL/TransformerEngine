@@ -44,7 +44,6 @@ NVTE_Fused_Attn_Backend get_fused_attn_backend(const transformer_engine::DType q
                                                size_t head_dim_qk, size_t head_dim_v,
                                                int64_t window_size_left, int64_t window_size_right);
 
-
 std::vector<py::object> fused_attn_fwd_qkvpacked(
     size_t max_seqlen, bool is_training, float attn_scale, float p_dropout, bool set_zero,
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
@@ -59,30 +58,29 @@ std::vector<py::object> fused_attn_bwd_qkvpacked(
     bool deterministic, const at::Tensor cu_seqlens, const py::handle QKV, const py::handle O,
     const py::handle dO, const transformer_engine::DType qkv_type,
     const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
-    const c10::optional<at::Tensor> cu_seqlens_padded, py::handle s_quantizer, py::handle dp_quantizer,
-    py::handle dqkv_quantizer);
+    const c10::optional<at::Tensor> cu_seqlens_padded, py::handle s_quantizer,
+    py::handle dp_quantizer, py::handle dqkv_quantizer);
 
-std::vector<py::object>  fused_attn_fwd_kvpacked(
+std::vector<py::object> fused_attn_fwd_kvpacked(
     size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, float attn_scale, float p_dropout,
     bool set_zero, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
     NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
-    const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, py::handle Q,
-    py::handle KV, const transformer_engine::DType qkv_type,
-    const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded,
-    py::handle s_quantizer, py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
+    const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, py::handle Q, py::handle KV,
+    const transformer_engine::DType qkv_type, const c10::optional<at::Tensor> cu_seqlens_q_padded,
+    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
+    py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread);
 
 std::vector<py::object> fused_attn_bwd_kvpacked(
     size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float p_dropout, bool set_zero,
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
     const std::vector<int64_t> window_size, bool deterministic, const at::Tensor cu_seqlens_q,
-    const at::Tensor cu_seqlens_kv, py::handle Q, py::handle KV, py::handle O,
-    py::handle dO, const transformer_engine::DType qkv_type,
-    const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
+    const at::Tensor cu_seqlens_kv, py::handle Q, py::handle KV, py::handle O, py::handle dO,
+    const transformer_engine::DType qkv_type, const transformer_engine::DType dqkv_type,
+    const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded,
-    py::handle s_quantizer, py::handle dp_quantizer, py::handle dqkv_quantizer);
+    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
+    py::handle dp_quantizer, py::handle dqkv_quantizer);
 
 std::vector<py::object> fused_attn_fwd(
     size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, float attn_scale, float p_dropout,
@@ -91,11 +89,11 @@ std::vector<py::object> fused_attn_fwd(
     const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const py::handle Q,
     const py::handle K, const py::handle V, const transformer_engine::DType qkv_type,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded,
-    py::handle s_quantizer, py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
-    const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread) ;
+    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
+    py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
+    const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread);
 
-std::vector<py::object>fused_attn_bwd(
+std::vector<py::object> fused_attn_bwd(
     size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float p_dropout, bool set_zero,
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
     const std::vector<int64_t> window_size, bool deterministic, const at::Tensor cu_seqlens_q,
@@ -103,8 +101,8 @@ std::vector<py::object>fused_attn_bwd(
     const py::handle O, py::handle dO, const transformer_engine::DType qkv_type,
     const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded,
-    py::handle s_quantizer, py::handle dp_quantizer, py::handle dqkv_quantizer);
+    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
+    py::handle dp_quantizer, py::handle dqkv_quantizer);
 
 at::Tensor fa_prepare_fwd(at::Tensor qkvi);
 at::Tensor fa_prepare_bwd(at::Tensor q, at::Tensor k, at::Tensor v);
@@ -125,15 +123,13 @@ void te_atomic_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine
                     bool use_split_accumulator, int math_sm_count, int m_split, int n_split,
                     bool gemm_producer, at::Tensor counter);
 
-std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(std::vector<py::handle> A, bool transa, 
-                     std::vector<py::handle> B, bool transb, 
-                     std::optional<std::vector<at::Tensor>> D,
-                     transformer_engine::DType D_type, std::vector<int64_t> m_splits, 
-                     std::vector<at::Tensor> bias, transformer_engine::DType bias_type,  
-                     bool single_output, 
-                     std::vector<at::Tensor> pre_gelu_out,
-                     bool grad, std::vector<at::Tensor> workspace, size_t workspaceSize,
-                     bool accumulate, bool use_split_accumulator, int math_sm_count);
+std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(
+    std::vector<py::handle> A, bool transa, std::vector<py::handle> B, bool transb,
+    std::optional<std::vector<at::Tensor>> D, transformer_engine::DType D_type,
+    std::vector<int64_t> m_splits, std::vector<at::Tensor> bias,
+    transformer_engine::DType bias_type, bool single_output, std::vector<at::Tensor> pre_gelu_out,
+    bool grad, std::vector<at::Tensor> workspace, size_t workspaceSize, bool accumulate,
+    bool use_split_accumulator, int math_sm_count);
 
 /***************************************************************************************************
  * Transpose
@@ -175,11 +171,12 @@ void fused_dswiglu_cast_transpose(at::Tensor grad_output, at::Tensor input, at::
                                   int amax_offset = 0, int scale_inv_offset = 0);
 
 std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
-                          std::optional<std::vector<py::handle>> output_list,
-                          std::vector<py::handle> quantizer_list,
-                          transformer_engine::DType otype);
+                                             std::optional<std::vector<py::handle>> output_list,
+                                             std::vector<py::handle> quantizer_list,
+                                             transformer_engine::DType otype);
 
-at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype, std::optional<at::Tensor> output = std::nullopt);
+at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype,
+                         std::optional<at::Tensor> output = std::nullopt);
 
 void fp8_transpose_noalloc_noop(at::Tensor input, at::Tensor output, at::Tensor noop,
                                 transformer_engine::DType otype);
@@ -190,33 +187,33 @@ namespace transformer_engine::pytorch {
  * Activations
  **************************************************************************************************/
 
-py::object gelu(const at::Tensor& input, py::handle quantizer);
+py::object gelu(const at::Tensor &input, py::handle quantizer);
 
-py::object relu(const at::Tensor& input, py::handle quantizer);
+py::object relu(const at::Tensor &input, py::handle quantizer);
 
-py::object geglu(const at::Tensor& input, py::handle quantizer);
+py::object geglu(const at::Tensor &input, py::handle quantizer);
 
-py::object reglu(const at::Tensor& input, py::handle quantizer);
+py::object reglu(const at::Tensor &input, py::handle quantizer);
 
-py::object swiglu(const at::Tensor& input, py::handle quantizer);
+py::object swiglu(const at::Tensor &input, py::handle quantizer);
 
-py::object qgelu(const at::Tensor& input, py::handle quantizer);
+py::object qgelu(const at::Tensor &input, py::handle quantizer);
 
-py::object srelu(const at::Tensor& input, py::handle quantizer);
+py::object srelu(const at::Tensor &input, py::handle quantizer);
 
-py::object dgelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
+py::object dgelu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 
-py::object drelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
+py::object drelu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 
-py::object dgeglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
+py::object dgeglu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 
-py::object dreglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
+py::object dreglu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 
-py::object dswiglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
+py::object dswiglu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 
-py::object dqgelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
+py::object dqgelu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 
-py::object dsrelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer);
+py::object dsrelu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 
 }  // namespace transformer_engine::pytorch
 
@@ -229,11 +226,10 @@ std::vector<py::object> layernorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                       const at::Tensor &gamma, const int sm_margin,
                                       const bool zero_centered_gamma);
 
-std::vector<py::object> layernorm_fwd(py::handle input, py::handle weight,
-                                      MaybeTensor bias, float eps, py::object ln_out,
-                                      py::handle quantizer, transformer_engine::DType out_dtype,
-                                      const int sm_margin, const bool zero_centered_gamma);
-
+std::vector<py::object> layernorm_fwd(py::handle input, py::handle weight, MaybeTensor bias,
+                                      float eps, py::object ln_out, py::handle quantizer,
+                                      transformer_engine::DType out_dtype, const int sm_margin,
+                                      const bool zero_centered_gamma);
 
 /***************************************************************************************************
  * RMSNorm
@@ -244,8 +240,9 @@ std::vector<py::object> rmsnorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                     const int sm_margin, const bool zero_centered_gamma);
 
 std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &weight, float eps,
-                                    py::object ln_out, py::handle quantizer, transformer_engine::DType otype,
-                                    const int sm_margin, const bool zero_centered_gamma);
+                                    py::object ln_out, py::handle quantizer,
+                                    transformer_engine::DType otype, const int sm_margin,
+                                    const bool zero_centered_gamma);
 
 /***************************************************************************************************
  * Cast
@@ -253,43 +250,35 @@ std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &w
 
 namespace transformer_engine::pytorch {
 
-py::object quantize(const at::Tensor& tensor,
-                    py::handle quantizer,
-                    const py::object& output, std::optional<at::Tensor> noop);
+py::object quantize(const at::Tensor &tensor, py::handle quantizer, const py::object &output,
+                    std::optional<at::Tensor> noop);
 
-py::object dequantize(const py::handle& input, transformer_engine::DType otype);
+py::object dequantize(const py::handle &input, transformer_engine::DType otype);
 
-std::vector<py::object> bgrad_quantize(const at::Tensor& input, py::handle py_quantizer);
+std::vector<py::object> bgrad_quantize(const at::Tensor &input, py::handle py_quantizer);
 
-std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb,
-                             py::object D, py::handle quantizer,
-                             std::optional<DType> out_dtype,
-                             MaybeTensor bias, DType bias_type, bool gelu,
-                             bool grad, at::Tensor workspace, size_t workspaceSize,
-                             bool accumulate, bool use_split_accumulator);
+std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb, py::object D,
+                             py::handle quantizer, std::optional<DType> out_dtype, MaybeTensor bias,
+                             DType bias_type, bool gelu, bool grad, at::Tensor workspace,
+                             size_t workspaceSize, bool accumulate, bool use_split_accumulator);
 
 /***************************************************************************************************
  * Cast fusions
  **************************************************************************************************/
 
-std::vector<py::object> dbias_dgelu(const at::Tensor& grad_output,
-                                    const at::Tensor& act_input,
+std::vector<py::object> dbias_dgelu(const at::Tensor &grad_output, const at::Tensor &act_input,
                                     py::handle quantizer);
 
-std::vector<py::object> dbias_dsilu(const at::Tensor& grad_output,
-                                    const at::Tensor& act_input,
+std::vector<py::object> dbias_dsilu(const at::Tensor &grad_output, const at::Tensor &act_input,
                                     py::handle quantizer);
 
-std::vector<py::object> dbias_drelu(const at::Tensor& grad_output,
-                                    const at::Tensor& act_input,
+std::vector<py::object> dbias_drelu(const at::Tensor &grad_output, const at::Tensor &act_input,
                                     py::handle quantizer);
 
-std::vector<py::object> dbias_dqgelu(const at::Tensor& grad_output,
-                                     const at::Tensor& act_input,
+std::vector<py::object> dbias_dqgelu(const at::Tensor &grad_output, const at::Tensor &act_input,
                                      py::handle quantizer);
 
-std::vector<py::object> dbias_dsrelu(const at::Tensor& grad_output,
-                                     const at::Tensor& act_input,
+std::vector<py::object> dbias_dsrelu(const at::Tensor &grad_output, const at::Tensor &act_input,
                                      py::handle quantizer);
 
 }  // namespace transformer_engine::pytorch
@@ -437,7 +426,7 @@ void fused_multi_row_padding(at::Tensor input, at::Tensor output,
  * swizzle
  **************************************************************************************************/
 
-void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool trans);
+void swizzle_scaling_factors(transformer_engine::TensorWrapper &input, bool trans);
 
 /***************************************************************************************************
  * Comm+GEMM Overlap Wrappers

@@ -12,10 +12,12 @@
 #include "common/common.h"
 #include "extensions.h"
 
-void fused_amax_and_scale_update_after_reduction(
-    const at::Tensor &amax_reduction_buffer, std::vector<at::Tensor> amax_histories,
-    std::vector<at::Tensor> scales,
-    const std::string &amax_compute_algo, transformer_engine::DType fp8_dtype, float margin) {
+void fused_amax_and_scale_update_after_reduction(const at::Tensor &amax_reduction_buffer,
+                                                 std::vector<at::Tensor> amax_histories,
+                                                 std::vector<at::Tensor> scales,
+                                                 const std::string &amax_compute_algo,
+                                                 transformer_engine::DType fp8_dtype,
+                                                 float margin) {
   using namespace transformer_engine;
   using namespace transformer_engine::pytorch;
   size_t num_tensors = amax_histories.size();

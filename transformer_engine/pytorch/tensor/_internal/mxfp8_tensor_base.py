@@ -43,6 +43,7 @@ class _FromMXFP8Func(torch.autograd.Function):
         # Assume that we want gradients in full precision
         return grad, None
 
+
 class MXFP8TensorBase:
     _rowwise_data: Optional[torch.Tensor]
     _columnwise_data: Optional[torch.Tensor]
@@ -51,15 +52,16 @@ class MXFP8TensorBase:
     _rowwise_scale_inv: torch.Tensor
     _columnwise_scale_inv: torch.Tensor
 
-    def __new__(cls,
-                *args,
-                rowwise_data: Optional[torch.Tensor],
-                rowwise_scale_inv: torch.Tensor,
-                columnwise_data: Optional[torch.Tensor],
-                columnwise_scale_inv: torch.Tensor,
-                fp8_dtype: TE_DType,
-                quantizer: Optional[Quantizer] = None,
-                **kwargs
+    def __new__(
+        cls,
+        *args,
+        rowwise_data: Optional[torch.Tensor],
+        rowwise_scale_inv: torch.Tensor,
+        columnwise_data: Optional[torch.Tensor],
+        columnwise_scale_inv: torch.Tensor,
+        fp8_dtype: TE_DType,
+        quantizer: Optional[Quantizer] = None,
+        **kwargs,
     ):
         instance = super().__new__(cls, *args, **kwargs)
         instance._rowwise_data = rowwise_data
@@ -72,12 +74,13 @@ class MXFP8TensorBase:
         return instance
 
     def get_metadata(self) -> Dict[str, Any]:
-        return {"rowwise_data": self._rowwise_data,
-                "rowwise_scale_inv": self._rowwise_scale_inv,
-                "columnwise_data": self._columnwise_data,
-                "columnwise_scale_inv": self._columnwise_scale_inv,
-                "fp8_dtype": self._fp8_dtype,
-                "quantizer": self._quantizer,
+        return {
+            "rowwise_data": self._rowwise_data,
+            "rowwise_scale_inv": self._rowwise_scale_inv,
+            "columnwise_data": self._columnwise_data,
+            "columnwise_scale_inv": self._columnwise_scale_inv,
+            "fp8_dtype": self._fp8_dtype,
+            "quantizer": self._quantizer,
         }
 
     def prepare_for_saving(self) -> Tuple[list[Optional[torch.Tensor]], MXFP8TensorBase]:
@@ -88,16 +91,15 @@ class MXFP8TensorBase:
         # self._columnwise_data = None
         return tensors, self
 
-    def restore_from_saved(self,
-                           tensors: list[Optional[torch.Tensor]]) -> list[Optional[torch.Tensor]]:
+    def restore_from_saved(
+        self, tensors: list[Optional[torch.Tensor]]
+    ) -> list[Optional[torch.Tensor]]:
         """Restore the tensor base data from the saved tensors list."""
         self._rowwise_data = tensors[0]
         self._columnwise_data = tensors[1]
         return tensors[2:]
 
-    def dequantize(self,
-                   *,
-                   dtype: torch.dtype = torch.float32) -> torch.Tensor:
+    def dequantize(self, *, dtype: torch.dtype = torch.float32) -> torch.Tensor:
         return _FromMXFP8Func.forward(None, self, dtype)
 
     def __repr__(self):

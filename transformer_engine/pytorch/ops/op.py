@@ -271,9 +271,9 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             if current_length != target_length:
                 with torch.no_grad():
                     if target_length < current_length:
-                        recipe_state.amax_history = (
-                            recipe_state.amax_history[:target_length].clone()
-                        )
+                        recipe_state.amax_history = recipe_state.amax_history[
+                            :target_length
+                        ].clone()
                     else:
                         recipe_state.amax_history = torch.nn.functional.pad(
                             recipe_state.amax_history,
@@ -510,9 +510,7 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         # See: https://github.com/NVIDIA/TransformerEngine/pull/363
 
         # Return immediately if op has no FP8 state
-        has_fp8_state = any(
-            self.num_fp8_scales(mode) > 0 for mode in ("forward", "backward")
-        )
+        has_fp8_state = any(self.num_fp8_scales(mode) > 0 for mode in ("forward", "backward"))
         if not has_fp8_state:
             return torch.Tensor()
 
