@@ -89,7 +89,7 @@ void rmsnorm_fwd(const Tensor &x, const Tensor &gamma, const float epsilon, Tens
   NVTE_CHECK(workspace->data.shape == plan->getWorkspaceShape());
   plan->execute(z, x.data.dptr, gamma.data.dptr, nullptr /*beta*/, nullptr /*mu*/,
                 reinterpret_cast<void *>(const_cast<float *>(&epsilon)), rsigma->data.dptr,
-                workspace->data.dptr, stream, rowwise, columnwise);
+                workspace->data.dptr, stream);
   return;
 }
 

@@ -100,7 +100,7 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
   NVTE_CHECK(workspace->data.shape == plan->getWorkspaceShape());
   plan->execute(z, x.data.dptr, gamma.data.dptr, beta.data.dptr, mu->data.dptr,
                 reinterpret_cast<void*>(const_cast<float*>(&epsilon)), rsigma->data.dptr,
-                workspace->data.dptr, stream, rowwise, columnwise);
+                workspace->data.dptr, stream);
   return;
 }
 

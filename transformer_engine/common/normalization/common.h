@@ -157,7 +157,7 @@ struct TupleHash {
 TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
                      NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype, DType ctype,
                      uint64_t batch_size, uint64_t hidden_size, bool zero_centered_gamma,
-                     bool is_tuned);
+                     bool is_tuned, bool rowwise = true, bool columnwise = false);
 
 template <typename KernelParamsType>
 class TeNormalizationRegistry {
@@ -308,7 +308,7 @@ class NormalizationPlanRegistry {
       const bool is_aligned,
       const NVTEScalingMode mode = NVTE_DELAYED_TENSOR_SCALING,
       const bool rowwise = true,
-      const bool columnwise = true);
+      const bool columnwise = false);
 
  private:
   NormalizationPlanRegistry() {}
