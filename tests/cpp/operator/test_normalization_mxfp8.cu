@@ -316,15 +316,14 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(DType::kFloat8E5M2, DType::kFloat8E4M3),
     ::testing::ValuesIn(test_cases),
     ::testing::Values(true, false),
-    ::testing::Values(true)),
-    // ::testing::Values(true, false)),
+    ::testing::Values(true, false)),
   [](const testing::TestParamInfo<MxNormTestSuite::ParamType>& info) {
     std::string name = normToString.at(std::get<0>(info.param)) + "_" +
       test::typeName(std::get<1>(info.param)) + "X" +
       test::typeName(std::get<2>(info.param)) + "X" +
       std::to_string(std::get<3>(info.param).first) + "X" +
       std::to_string(std::get<3>(info.param).second) + "X" +
-      std::to_string(std::get<4>(info.param)) + "wColwise" +
-      std::to_string(std::get<5>(info.param));
+      std::to_string(std::get<4>(info.param)) + "out" +
+      std::to_string(int(std::get<5>(info.param)) + 1) + "x";
     return name;
   });
