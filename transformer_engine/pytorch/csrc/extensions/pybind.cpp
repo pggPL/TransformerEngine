@@ -4,18 +4,20 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#include "pybind.h"
+
 #include <pybind11/detail/common.h>
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+
 #include <stdexcept>
 
 #include "../extensions.h"
+#include "common.h"
 #include "object.h"
 #include "pybind11/cast.h"
 #include "pytorch/csrc/common.h"
-#include "pybind.h"
-#include "common.h"
 
 namespace transformer_engine::pytorch {
 
@@ -29,15 +31,14 @@ PyTypeObject *MXFP8QuantizerClass = nullptr;
 void init_float8_extension() {
   if (Float8TensorPythonClass) return;
   auto fp8_module = py::module_::import("transformer_engine.pytorch.tensor.float8_tensor");
-  Float8QuantizerClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
-                                                                              "Float8Quantizer"));
-  Float8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
-                                                                                   "Float8Tensor"));
+  Float8QuantizerClass =
+      reinterpret_cast<PyTypeObject *>(PyObject_GetAttrString(fp8_module.ptr(), "Float8Quantizer"));
+  Float8TensorPythonClass =
+      reinterpret_cast<PyTypeObject *>(PyObject_GetAttrString(fp8_module.ptr(), "Float8Tensor"));
   auto fp8_base_module =
-    py::module_::import("transformer_engine.pytorch.tensor._internal.float8_tensor_base");
-  Float8TensorBasePythonClass = reinterpret_cast<PyTypeObject*>(
-      PyObject_GetAttrString(fp8_base_module.ptr(),
-                             "Float8TensorBase"));
+      py::module_::import("transformer_engine.pytorch.tensor._internal.float8_tensor_base");
+  Float8TensorBasePythonClass = reinterpret_cast<PyTypeObject *>(
+      PyObject_GetAttrString(fp8_base_module.ptr(), "Float8TensorBase"));
   NVTE_CHECK(Float8TensorPythonClass != nullptr,
              "Internal error: could not initialize pyTorch Float8 extension.");
 }
@@ -45,15 +46,14 @@ void init_float8_extension() {
 void init_mxfp8_extension() {
   if (MXFP8TensorPythonClass) return;
   auto fp8_module = py::module_::import("transformer_engine.pytorch.tensor.mxfp8_tensor");
-  MXFP8QuantizerClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
-                                                                              "MXFP8Quantizer"));
-  MXFP8TensorPythonClass = reinterpret_cast<PyTypeObject*>(PyObject_GetAttrString(fp8_module.ptr(),
-                                                                                  "MXFP8Tensor"));
+  MXFP8QuantizerClass =
+      reinterpret_cast<PyTypeObject *>(PyObject_GetAttrString(fp8_module.ptr(), "MXFP8Quantizer"));
+  MXFP8TensorPythonClass =
+      reinterpret_cast<PyTypeObject *>(PyObject_GetAttrString(fp8_module.ptr(), "MXFP8Tensor"));
   auto fp8_base_module =
-    py::module_::import("transformer_engine.pytorch.tensor._internal.mxfp8_tensor_base");
-  MXFP8TensorBasePythonClass = reinterpret_cast<PyTypeObject*>(
-      PyObject_GetAttrString(fp8_base_module.ptr(),
-                             "MXFP8TensorBase"));
+      py::module_::import("transformer_engine.pytorch.tensor._internal.mxfp8_tensor_base");
+  MXFP8TensorBasePythonClass = reinterpret_cast<PyTypeObject *>(
+      PyObject_GetAttrString(fp8_base_module.ptr(), "MXFP8TensorBase"));
   NVTE_CHECK(MXFP8TensorPythonClass != nullptr,
              "Internal error: could not initialize pyTorch MXFP8 extension.");
 }
@@ -63,60 +63,52 @@ void init_extension() {
   init_mxfp8_extension();
 }
 
-
 }  // namespace transformer_engine::pytorch
 
 #include "common/util/pybind_helper.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   NVTE_DECLARE_COMMON_PYBIND11_HANDLES(m)
-  m.def("quantize", transformer_engine::pytorch::quantize,
-        py::arg("tensor"), py::arg("quantizer"), py::arg("output") = py::none(),
-        py::arg("noop") = py::none());
-  m.def("dequantize", &transformer_engine::pytorch::dequantize, "Dequantize",
-        py::arg("input"), py::arg("otype"));
+  m.def("quantize", transformer_engine::pytorch::quantize, py::arg("tensor"), py::arg("quantizer"),
+        py::arg("output") = py::none(), py::arg("noop") = py::none());
+  m.def("dequantize", &transformer_engine::pytorch::dequantize, "Dequantize", py::arg("input"),
+        py::arg("otype"));
   m.def("bgrad_quantize", transformer_engine::pytorch::bgrad_quantize,
-        "Compute bias gradient and quantize",
-        py::arg("input"), py::arg("quantizer"));
-  m.def("generic_gemm", transformer_engine::pytorch::gemm,
-        "Compute GEMM (matrix-matrix multiply",
-        py::arg("A"), py::arg("transA"),
-        py::arg("B"), py::arg("transB"),
-        py::arg("D"), py::arg("quantizer"),
-        py::arg("output_dtype"), py::arg("bias"),
-        py::arg("bias_type"), py::arg("gelu"),
-        py::arg("grad"), py::arg("workspace"),
-        py::arg("workspace_size"), py::arg("accumulate"),
-        py::arg("use_split_accumulator"));
+        "Compute bias gradient and quantize", py::arg("input"), py::arg("quantizer"));
+  m.def("generic_gemm", transformer_engine::pytorch::gemm, "Compute GEMM (matrix-matrix multiply",
+        py::arg("A"), py::arg("transA"), py::arg("B"), py::arg("transB"), py::arg("D"),
+        py::arg("quantizer"), py::arg("output_dtype"), py::arg("bias"), py::arg("bias_type"),
+        py::arg("gelu"), py::arg("grad"), py::arg("workspace"), py::arg("workspace_size"),
+        py::arg("accumulate"), py::arg("use_split_accumulator"));
 
-  m.def("gelu", transformer_engine::pytorch::gelu, "GeLU activation",
-        py::arg("input"), py::arg("quantizer"));
-  m.def("relu", transformer_engine::pytorch::relu, "ReLU activation",
-        py::arg("input"), py::arg("quantizer"));
-  m.def("geglu", transformer_engine::pytorch::geglu, "GeGLU activation",
-        py::arg("input"), py::arg("quantizer"));
-  m.def("reglu", transformer_engine::pytorch::reglu, "ReGLU activation",
-        py::arg("input"), py::arg("quantizer"));
-  m.def("swiglu", transformer_engine::pytorch::swiglu, "SwiGLU activation",
-        py::arg("input"), py::arg("quantizer"));
-  m.def("qgelu", transformer_engine::pytorch::qgelu, "QuickGELU activation",
-        py::arg("input"), py::arg("quantizer"));
-  m.def("srelu", transformer_engine::pytorch::srelu, "Squared ReLU activation",
-        py::arg("input"), py::arg("quantizer"));
-  m.def("dgelu", transformer_engine::pytorch::dgelu, "Backward of GeLU",
-        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
-  m.def("drelu", transformer_engine::pytorch::drelu, "Backward of ReLU",
-        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
-  m.def("dgeglu", transformer_engine::pytorch::dgeglu, "Backward of GeGLU",
-        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
-  m.def("dreglu", transformer_engine::pytorch::dreglu, "Backward of ReGLU",
-        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
-  m.def("dswiglu", transformer_engine::pytorch::dswiglu, "Backward of SwiGLU",
-        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
-  m.def("dqgelu", transformer_engine::pytorch::dqgelu, "Backward of QuickGELU",
-        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
-  m.def("dsrelu", transformer_engine::pytorch::dsrelu, "Backward of Squared ReLU",
-        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("gelu", transformer_engine::pytorch::gelu, "GeLU activation", py::arg("input"),
+        py::arg("quantizer"));
+  m.def("relu", transformer_engine::pytorch::relu, "ReLU activation", py::arg("input"),
+        py::arg("quantizer"));
+  m.def("geglu", transformer_engine::pytorch::geglu, "GeGLU activation", py::arg("input"),
+        py::arg("quantizer"));
+  m.def("reglu", transformer_engine::pytorch::reglu, "ReGLU activation", py::arg("input"),
+        py::arg("quantizer"));
+  m.def("swiglu", transformer_engine::pytorch::swiglu, "SwiGLU activation", py::arg("input"),
+        py::arg("quantizer"));
+  m.def("qgelu", transformer_engine::pytorch::qgelu, "QuickGELU activation", py::arg("input"),
+        py::arg("quantizer"));
+  m.def("srelu", transformer_engine::pytorch::srelu, "Squared ReLU activation", py::arg("input"),
+        py::arg("quantizer"));
+  m.def("dgelu", transformer_engine::pytorch::dgelu, "Backward of GeLU", py::arg("grad"),
+        py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("drelu", transformer_engine::pytorch::drelu, "Backward of ReLU", py::arg("grad"),
+        py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dgeglu", transformer_engine::pytorch::dgeglu, "Backward of GeGLU", py::arg("grad"),
+        py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dreglu", transformer_engine::pytorch::dreglu, "Backward of ReGLU", py::arg("grad"),
+        py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dswiglu", transformer_engine::pytorch::dswiglu, "Backward of SwiGLU", py::arg("grad"),
+        py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dqgelu", transformer_engine::pytorch::dqgelu, "Backward of QuickGELU", py::arg("grad"),
+        py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dsrelu", transformer_engine::pytorch::dsrelu, "Backward of Squared ReLU", py::arg("grad"),
+        py::arg("fwd_input"), py::arg("quantizer"));
 
   m.def("dbias_dgelu", transformer_engine::pytorch::dbias_dgelu, "DGeLU + DBias + Quantize",
         py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
@@ -127,8 +119,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("dbias_dqgelu", transformer_engine::pytorch::dbias_dqgelu, "DQGeLU + DBias + Quantize",
         py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
   m.def("dbias_dsrelu", transformer_engine::pytorch::dbias_dsrelu,
-        "DSquaredReLU + DBias + Quantize",
-        py::arg("grad"), py::arg("fwd_input"), py::arg("quantizer"));
+        "DSquaredReLU + DBias + Quantize", py::arg("grad"), py::arg("fwd_input"),
+        py::arg("quantizer"));
 
   // Permutation functions
   m.def("moe_permute_fwd", moe_permute_fwd);
@@ -159,29 +151,27 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
 
   // Other granular functions
-  m.def("layernorm_fwd", &layernorm_fwd, "LayerNorm",
-        py::arg("input"), py::arg("weight"),
-        py::arg("bias"), py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"),
-        py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"));
-  m.def("layernorm_bwd", &layernorm_bwd, "Backward of LayerNorm");
-  m.def("rmsnorm_fwd", &rmsnorm_fwd, "RMSNorm",
-        py::arg("input"), py::arg("weight"),
-        py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), py::arg("otype"),
+  m.def("layernorm_fwd", &layernorm_fwd, "LayerNorm", py::arg("input"), py::arg("weight"),
+        py::arg("bias"), py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"), py::arg("otype"),
         py::arg("sm_margin"), py::arg("zero_centered_gamma"));
+  m.def("layernorm_bwd", &layernorm_bwd, "Backward of LayerNorm");
+  m.def("rmsnorm_fwd", &rmsnorm_fwd, "RMSNorm", py::arg("input"), py::arg("weight"), py::arg("eps"),
+        py::arg("ln_out"), py::arg("quantizer"), py::arg("otype"), py::arg("sm_margin"),
+        py::arg("zero_centered_gamma"));
   m.def("rmsnorm_bwd", &rmsnorm_bwd, "Backward of RMSNorm");
   m.def("fused_cast_transpose_noop", &fused_cast_transpose_noop,
         "Cast + Transpose with noop option", py::call_guard<py::gil_scoped_release>(),
         py::arg("input"), py::arg("noop"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("input_cast"), py::arg("input_transpose"), py::arg("otype"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("input_cast"), py::arg("input_transpose"), py::arg("otype"),
+        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_cast_transpose_bgrad", &fused_cast_transpose_bgrad, "Fused Cast + Transpose + BGRAD",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("scale"),
         py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
         py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_fp8_transpose_bgrad", &fused_fp8_transpose_bgrad, "Fused FP8 Transpose + BGRAD",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("grad_bias_type"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
+        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("grad_bias_type"),
+        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_cast_transpose_bgrad_dgelu", &fused_cast_transpose_bgrad_dgelu,
         "Fused Cast + Transpose + BGRAD + DGELU", py::call_guard<py::gil_scoped_release>(),
         py::arg("grad_output"), py::arg("gelu_input"), py::arg("scale"), py::arg("amax"),
@@ -193,9 +183,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("grad_input"), py::arg("grad_input_transpose"), py::arg("scale"), py::arg("amax"),
         py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
         py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("fused_multi_quantize", &fused_multi_quantize,
-        "Fused Multi-tensor Cast + Transpose", py::arg("input_list"), py::arg("output_list"), 
-        py::arg("quantizer_list"), py::arg("otype"));
+  m.def("fused_multi_quantize", &fused_multi_quantize, "Fused Multi-tensor Cast + Transpose",
+        py::arg("input_list"), py::arg("output_list"), py::arg("quantizer_list"), py::arg("otype"));
   m.def("te_general_grouped_gemm", &te_general_grouped_gemm, "Grouped GEMM");
   m.def("fused_attn_fwd_qkvpacked", &fused_attn_fwd_qkvpacked,
         "Fused Attention FP8/BF16/FP16 FWD with packed QKV");
@@ -209,10 +198,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "Fused Attention FP8/BF16/FP16 FWD with separate Q, K and V");
   m.def("fused_attn_bwd", &fused_attn_bwd,
         "Fused Attention FP8/BF16/FP16 BWD with separate Q, K and V");
-  m.def("fp8_transpose", &fp8_transpose, "Transpose with FP8 I/O",
-        py::arg("input"), py::arg("dtype"),
-        py::kw_only(), py::arg("out"),
-        py::call_guard<py::gil_scoped_release>());
+  m.def("fp8_transpose", &fp8_transpose, "Transpose with FP8 I/O", py::arg("input"),
+        py::arg("dtype"), py::kw_only(), py::arg("out"), py::call_guard<py::gil_scoped_release>());
   m.def("fp8_transpose_noalloc_noop", &fp8_transpose_noalloc_noop,
         "Transpose with FP8 I/O with noop option.", py::call_guard<py::gil_scoped_release>());
   m.def("fa_prepare_fwd", &fa_prepare_fwd, "Prepare QKV for Flash Attention",

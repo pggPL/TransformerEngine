@@ -100,8 +100,8 @@ void nvte_dgeglu(const NVTETensor grad, const NVTETensor input, NVTETensor outpu
 // TODO:: merge
 void nvte_dswiglu(const NVTETensor grad, const NVTETensor input, NVTETensor output,
                   cudaStream_t stream);
-void nvte_quantize_dswiglu(const NVTETensor grad, const NVTETensor gated_input,
-                           NVTETensor output, cudaStream_t stream);
+void nvte_quantize_dswiglu(const NVTETensor grad, const NVTETensor gated_input, NVTETensor output,
+                           cudaStream_t stream);
 
 void nvte_dreglu(const NVTETensor grad, const NVTETensor input, NVTETensor output,
                  cudaStream_t stream);

@@ -195,8 +195,8 @@ __global__ void __launch_bounds__(threads_per_block)
 
 }  // namespace
 
-void multi_cast_transpose(const std::vector<Tensor*> input_list,
-                          std::vector<Tensor*> output_list, cudaStream_t stream) {
+void multi_cast_transpose(const std::vector<Tensor*> input_list, std::vector<Tensor*> output_list,
+                          cudaStream_t stream) {
   // Check that number of tensors is valid
   NVTE_CHECK(output_list.size() == input_list.size(),
              "Number of input and output tensors must match");

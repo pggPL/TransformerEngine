@@ -57,9 +57,8 @@ void nvte_transpose(const NVTETensor input, NVTETensor transposed_output, cudaSt
  *  \param[out]    workspace      Workspace tensor.
  *  \param[in]     stream         CUDA stream used for the operation.
  */
-void nvte_cast_transpose_dbias(const NVTETensor input, NVTETensor output,
-                               NVTETensor dbias, NVTETensor workspace,
-                               cudaStream_t stream);
+void nvte_cast_transpose_dbias(const NVTETensor input, NVTETensor output, NVTETensor dbias,
+                               NVTETensor workspace, cudaStream_t stream);
 
 /*! \brief Transpose the FP8 input. Additionally, reduce the input along the first dimension.
  *
@@ -92,8 +91,7 @@ void nvte_fp8_transpose_dbias(const NVTETensor input, NVTETensor transposed_outp
  *  \param[in]     stream              CUDA stream used for the operation.
  */
 void nvte_multi_cast_transpose(size_t num_tensors, const NVTETensor* input_list,
-                               NVTETensor* output_list,
-                               cudaStream_t stream);
+                               NVTETensor* output_list, cudaStream_t stream);
 
 /*! \brief Compute backward of ActLU operation on the input, then cast and transpose. Additionally,
  *         reduce the result of the SiLU backward along the first dimension.
@@ -121,24 +119,24 @@ void nvte_multi_cast_transpose(size_t num_tensors, const NVTETensor* input_list,
  */
 
 void nvte_cast_transpose_dbias_dgelu(const NVTETensor input, const NVTETensor act_input,
-                                     NVTETensor output, NVTETensor dbias,
-                                     NVTETensor workspace, cudaStream_t stream);
+                                     NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                                     cudaStream_t stream);
 
 void nvte_cast_transpose_dbias_dsilu(const NVTETensor input, const NVTETensor act_input,
-                                     NVTETensor output, NVTETensor dbias,
-                                     NVTETensor workspace, cudaStream_t stream);
+                                     NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                                     cudaStream_t stream);
 
 void nvte_cast_transpose_dbias_drelu(const NVTETensor input, const NVTETensor act_input,
-                                     NVTETensor output, NVTETensor dbias,
-                                     NVTETensor workspace, cudaStream_t stream);
+                                     NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                                     cudaStream_t stream);
 
 void nvte_cast_transpose_dbias_dqgelu(const NVTETensor input, const NVTETensor act_input,
-                                      NVTETensor output, NVTETensor dbias,
-                                      NVTETensor workspace, cudaStream_t stream);
+                                      NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                                      cudaStream_t stream);
 
 void nvte_cast_transpose_dbias_dsrelu(const NVTETensor input, const NVTETensor act_input,
-                                      NVTETensor output, NVTETensor dbias,
-                                      NVTETensor workspace, cudaStream_t stream);
+                                      NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                                      cudaStream_t stream);
 
 /*! \brief Compute dGatedActivation of the input, additionally does
  *         cast and transpose the dGatedActivation output.
@@ -163,16 +161,16 @@ void nvte_dgeglu_cast_transpose(const NVTETensor input, const NVTETensor act_inp
                                 NVTETensor output, cudaStream_t stream);
 
 void nvte_dswiglu_cast_transpose(const NVTETensor input, const NVTETensor act_input,
-                                NVTETensor output, cudaStream_t stream);
+                                 NVTETensor output, cudaStream_t stream);
 
 void nvte_dreglu_cast_transpose(const NVTETensor input, const NVTETensor act_input,
                                 NVTETensor output, cudaStream_t stream);
 
 void nvte_dqgeglu_cast_transpose(const NVTETensor input, const NVTETensor act_input,
-                                NVTETensor output, cudaStream_t stream);
+                                 NVTETensor output, cudaStream_t stream);
 
 void nvte_dsreglu_cast_transpose(const NVTETensor input, const NVTETensor act_input,
-                                NVTETensor output, cudaStream_t stream);
+                                 NVTETensor output, cudaStream_t stream);
 
 #ifdef __cplusplus
 }  // extern "C"

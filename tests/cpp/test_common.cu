@@ -123,13 +123,13 @@ std::pair<scale_inv_meta, scale_inv_meta> get_scales(const NVTEShape& shape,
                "Invalid shape of the tensor. Expected 2 dimensions for fine granularity scaling.");
     scale_inv_meta ret_rowwise, ret_colwise;
 
-    auto block_alignment = std::vector<size_t>{4ul, 128ul};
+    auto block_alignment = std::vector<size_t>{128ul,4ul};
     {
-      auto alignment = block_alignment[1];
+      auto alignment = block_alignment[0];
       auto scale_dim_0 = DIVUP(DIVUP(shape.data[0],
                                      static_cast<size_t>(1)),
                                alignment) * alignment;
-      alignment = block_alignment[0];
+      alignment = block_alignment[1];
       auto scale_dim_1 = DIVUP(DIVUP(shape.data[1],
                                      static_cast<size_t>(32)),
                                alignment) * alignment;
@@ -137,17 +137,17 @@ std::pair<scale_inv_meta, scale_inv_meta> get_scales(const NVTEShape& shape,
     }
     {
       auto alignment = block_alignment[1];
-      auto scale_dim_0 = DIVUP(DIVUP(shape.data[1],
-                                     static_cast<size_t>(1)),
+      auto scale_dim_0 = DIVUP(DIVUP(shape.data[0],
+                                     static_cast<size_t>(32)),
                                alignment) * alignment;
       alignment = block_alignment[0];
-      auto scale_dim_1 = DIVUP(DIVUP(shape.data[0],
-                                     static_cast<size_t>(32)),
+      auto scale_dim_1 = DIVUP(DIVUP(shape.data[1],
+                                     static_cast<size_t>(1)),
                                alignment) * alignment;
       ret_colwise.shape = {scale_dim_0, scale_dim_1};
     }
-    ret_rowwise.type = DType::kByte;
-    ret_colwise.type = DType::kByte;
+    ret_rowwise.type = DType::kFloat8E8M0;
+    ret_colwise.type = DType::kFloat8E8M0;
     ret_rowwise.type_size = sizeof(uint8_t);
     ret_colwise.type_size = sizeof(uint8_t);
 

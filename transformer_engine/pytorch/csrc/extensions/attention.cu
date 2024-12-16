@@ -43,7 +43,7 @@ __global__ void __launch_bounds__(block_size)
 // fast zero-fills of tensors
 void mha_fill(const transformer_engine::TensorWrapper &self, const at::Tensor &start_index) {
   std::vector<size_t> shape = transformer_engine::pytorch::convertShape(self.shape());
-  
+
   auto max_tokens = shape[0];
   auto fcd_size = 1;
   for (int i = 1; i <= shape.size(); i++) {
@@ -60,8 +60,8 @@ void mha_fill(const transformer_engine::TensorWrapper &self, const at::Tensor &s
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND2(
       at::ScalarType::Half, at::ScalarType::BFloat16, scalar_type, "mha_fill", [&]() {
         mha_fill_kernel<<<dim_grid, dim_block, 0, at::cuda::getCurrentCUDAStream()>>>(
-            static_cast<scalar_t*>(self.get_rowwise_data().data_ptr), static_cast<int32_t *>(start_index.data_ptr()),
-            max_tokens);
+            static_cast<scalar_t *>(self.get_rowwise_data().data_ptr),
+            static_cast<int32_t *>(start_index.data_ptr()), max_tokens);
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       });
 }
@@ -96,7 +96,6 @@ std::vector<py::object> fused_attn_fwd_qkvpacked(
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread) {
   using namespace transformer_engine::pytorch;
   using namespace transformer_engine;
-
 
   TensorWrapper te_QKV, te_S, te_O, te_Bias, te_cu_seqlens, te_cu_seqlens_padded;
 
@@ -249,8 +248,8 @@ std::vector<py::object> fused_attn_bwd_qkvpacked(
     bool deterministic, const at::Tensor cu_seqlens, const py::handle QKV, const py::handle O,
     const py::handle dO, const transformer_engine::DType qkv_type,
     const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
-    const c10::optional<at::Tensor> cu_seqlens_padded, py::handle s_quantizer, py::handle dp_quantizer,
-    py::handle dqkv_quantizer) {
+    const c10::optional<at::Tensor> cu_seqlens_padded, py::handle s_quantizer,
+    py::handle dp_quantizer, py::handle dqkv_quantizer) {
   using namespace transformer_engine;
   using namespace transformer_engine::pytorch;
 
@@ -290,7 +289,6 @@ std::vector<py::object> fused_attn_bwd_qkvpacked(
     }
   }
   auto h = q_shape[q_shape.size() - 2];
-
 
   std::tie(te_dQKV, dQKV_python) = dQKV_quantizer->create_tensor(qkv_shape, dqkv_type);
 
@@ -389,15 +387,14 @@ std::vector<py::object> fused_attn_bwd_qkvpacked(
 }
 
 // fused attention FWD with packed KV
-std::vector<py::object>  fused_attn_fwd_kvpacked(
+std::vector<py::object> fused_attn_fwd_kvpacked(
     size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, float attn_scale, float p_dropout,
     bool set_zero, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
     NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
-    const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, py::handle Q,
-    py::handle KV, const transformer_engine::DType qkv_type,
-    const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded,
-    py::handle s_quantizer, py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
+    const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, py::handle Q, py::handle KV,
+    const transformer_engine::DType qkv_type, const c10::optional<at::Tensor> cu_seqlens_q_padded,
+    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
+    py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread) {
   using namespace transformer_engine;
   using namespace transformer_engine::pytorch;
@@ -406,7 +403,7 @@ std::vector<py::object>  fused_attn_fwd_kvpacked(
   auto none = py::none();
 
   std::unique_ptr<Quantizer> S_quantizer = convert_quantizer(s_quantizer);
-  std::unique_ptr<Quantizer> O_quantizer = convert_quantizer(o_quantizer);  
+  std::unique_ptr<Quantizer> O_quantizer = convert_quantizer(o_quantizer);
 
   te_Q = makeTransformerEngineTensor(Q, none);
   te_KV = makeTransformerEngineTensor(KV, none);
@@ -431,13 +428,13 @@ std::vector<py::object>  fused_attn_fwd_kvpacked(
       mha_fill(te_O, cu_seqlens_q.index({torch::indexing::Slice(-1, torch::indexing::None)}));
     } else {
       te_O.zero_(at::cuda::getCurrentCUDAStream());
-      }
-    } else if (qkv_type == DType::kBFloat16 || qkv_type == DType::kFloat16) {
-      if (nvte_get_qkv_format(qkv_layout) == NVTE_QKV_Format::NVTE_THD) {
-        te_O.zero_(at::cuda::getCurrentCUDAStream());
-      }
-      // BF16 or FP16
-    } else {
+    }
+  } else if (qkv_type == DType::kBFloat16 || qkv_type == DType::kFloat16) {
+    if (nvte_get_qkv_format(qkv_layout) == NVTE_QKV_Format::NVTE_THD) {
+      te_O.zero_(at::cuda::getCurrentCUDAStream());
+    }
+    // BF16 or FP16
+  } else {
     NVTE_ERROR("Fused attention only supports FP8 and BF16/FP16 data types. \n");
   }
   if ((bias_type != NVTE_NO_BIAS) && (bias_type != NVTE_ALIBI) && (Bias.has_value())) {
@@ -547,12 +544,12 @@ std::vector<py::object> fused_attn_bwd_kvpacked(
     size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float p_dropout, bool set_zero,
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
     const std::vector<int64_t> window_size, bool deterministic, const at::Tensor cu_seqlens_q,
-    const at::Tensor cu_seqlens_kv, py::handle Q, py::handle KV, py::handle O,
-    py::handle dO, const transformer_engine::DType qkv_type,
-    const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
+    const at::Tensor cu_seqlens_kv, py::handle Q, py::handle KV, py::handle O, py::handle dO,
+    const transformer_engine::DType qkv_type, const transformer_engine::DType dqkv_type,
+    const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded,
-    py::handle s_quantizer, py::handle dp_quantizer, py::handle dqkv_quantizer){
+    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
+    py::handle dp_quantizer, py::handle dqkv_quantizer) {
   using namespace transformer_engine;
   using namespace transformer_engine::pytorch;
   TensorWrapper te_Q, te_KV, te_O, te_S, te_dP;
@@ -574,7 +571,6 @@ std::vector<py::object> fused_attn_bwd_kvpacked(
   auto h_q = q_shape[q_shape.size() - 2];
   auto h_kv = k_shape[k_shape.size() - 2];
   auto d = q_shape[q_shape.size() - 1];
-
 
   py::object s_python, dp_python;
   std::unique_ptr<Quantizer> S_quantizer = convert_quantizer(s_quantizer);
@@ -598,7 +594,7 @@ std::vector<py::object> fused_attn_bwd_kvpacked(
       te_dQ.zero_(at::cuda::getCurrentCUDAStream());
       te_dKV.zero_(at::cuda::getCurrentCUDAStream());
     }
-    
+
   } else if (qkv_type == DType::kBFloat16 || qkv_type == DType::kFloat16) {
     if (nvte_get_qkv_format(qkv_layout) == NVTE_QKV_Format::NVTE_THD) {
       te_dQ.zero_(at::cuda::getCurrentCUDAStream());
@@ -707,8 +703,8 @@ std::vector<py::object> fused_attn_fwd(
     const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const py::handle Q,
     const py::handle K, const py::handle V, const transformer_engine::DType qkv_type,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded,
-    py::handle s_quantizer, py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
+    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
+    py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread) {
   using namespace transformer_engine;
   using namespace transformer_engine::pytorch;
@@ -717,27 +713,27 @@ std::vector<py::object> fused_attn_fwd(
   auto options = torch::TensorOptions().dtype(GetATenDType(qkv_type)).device(torch::kCUDA);
   std::unique_ptr<Quantizer> S_quantizer = convert_quantizer(s_quantizer);
   std::unique_ptr<Quantizer> O_quantizer = convert_quantizer(o_quantizer);
-  
+
   te_Q = makeTransformerEngineTensor(Q, none);
   te_K = makeTransformerEngineTensor(K, none);
   te_V = makeTransformerEngineTensor(V, none);
-
 
   std::vector<size_t> q_shape = convertShape(te_Q.shape());
   std::vector<size_t> k_shape = convertShape(te_K.shape());
   std::vector<size_t> v_shape = convertShape(te_V.shape());
 
   // create output tensor O
-  
+
   auto o_shape = std::vector<size_t>{q_shape.begin(), q_shape.end()};
   o_shape[o_shape.size() - 1] = v_shape[v_shape.size() - 1];
   py::object o_python, s_python;
   std::tie(te_O, o_python) = O_quantizer->create_tensor(o_shape, qkv_type);
   auto o_shape_int64 = std::vector<int64_t>{o_shape.begin(), o_shape.end()};
-  assert(te_O.get_columnwise_data().data_ptr == nullptr); // Cast to columnwise data is not working yet, because of the mha_fill.
+  assert(te_O.get_columnwise_data().data_ptr ==
+         nullptr);  // Cast to columnwise data is not working yet, because of the mha_fill.
 
   // construct NVTE tensors
-  TensorWrapper  te_Bias;
+  TensorWrapper te_Bias;
   TensorWrapper te_cu_seqlens_q, te_cu_seqlens_kv;
   TensorWrapper te_cu_seqlens_q_padded, te_cu_seqlens_kv_padded;
   if (qkv_type == DType::kFloat8E4M3 || qkv_type == DType::kFloat8E5M2) {
@@ -746,7 +742,7 @@ std::vector<py::object> fused_attn_fwd(
     auto d = q_shape[q_shape.size() - 1];
     if (set_zero && ((h * d) % block_size == 0) &&
         (nvte_get_qkv_format(qkv_layout) == NVTE_QKV_Format::NVTE_THD)) {
-       mha_fill(te_O, cu_seqlens_q.index({torch::indexing::Slice(-1, torch::indexing::None)}));
+      mha_fill(te_O, cu_seqlens_q.index({torch::indexing::Slice(-1, torch::indexing::None)}));
     } else {
       te_O.zero_(at::cuda::getCurrentCUDAStream());
     }
@@ -766,8 +762,10 @@ std::vector<py::object> fused_attn_fwd(
   std::vector<size_t> cu_seqlens_q_shape{cu_seqlens_q_sizes.begin(), cu_seqlens_q_sizes.end()};
   auto cu_seqlens_kv_sizes = cu_seqlens_kv.sizes().vec();
   std::vector<size_t> cu_seqlens_kv_shape{cu_seqlens_kv_sizes.begin(), cu_seqlens_kv_sizes.end()};
-  te_cu_seqlens_q = makeTransformerEngineTensor(cu_seqlens_q.data_ptr(), cu_seqlens_q_shape, DType::kInt32);
-  te_cu_seqlens_kv = makeTransformerEngineTensor(cu_seqlens_kv.data_ptr(), cu_seqlens_kv_shape, DType::kInt32);
+  te_cu_seqlens_q =
+      makeTransformerEngineTensor(cu_seqlens_q.data_ptr(), cu_seqlens_q_shape, DType::kInt32);
+  te_cu_seqlens_kv =
+      makeTransformerEngineTensor(cu_seqlens_kv.data_ptr(), cu_seqlens_kv_shape, DType::kInt32);
 
   if ((cu_seqlens_q_padded.has_value()) && (cu_seqlens_kv_padded.has_value())) {
     auto cu_seqlens_q_padded_sizes = cu_seqlens_q_padded.value().sizes().vec();
@@ -778,8 +776,8 @@ std::vector<py::object> fused_attn_fwd(
                                                    cu_seqlens_kv_padded_sizes.end()};
     te_cu_seqlens_q_padded = makeTransformerEngineTensor(cu_seqlens_q_padded.value().data_ptr(),
                                                          cu_seqlens_q_padded_shape, DType::kInt32);
-    te_cu_seqlens_kv_padded = makeTransformerEngineTensor(cu_seqlens_kv_padded.value().data_ptr(),
-                                                          cu_seqlens_kv_padded_shape, DType::kInt32);
+    te_cu_seqlens_kv_padded = makeTransformerEngineTensor(
+        cu_seqlens_kv_padded.value().data_ptr(), cu_seqlens_kv_padded_shape, DType::kInt32);
   }
 
   // extract rng seed and offset
@@ -797,8 +795,6 @@ std::vector<py::object> fused_attn_fwd(
 
   // create workspace
   TensorWrapper workspace;
-
-  
 
   // populate tensors with appropriate shapes and dtypes
   nvte_fused_attn_fwd(te_Q.data(), te_K.data(), te_V.data(), te_Bias.data(), te_S.data(),
@@ -842,7 +838,7 @@ std::vector<py::object> fused_attn_fwd(
     tensor->data.dptr = output_tensor.data_ptr();
   }
 
-   at::cuda::getCurrentCUDAStream().synchronize();
+  at::cuda::getCurrentCUDAStream().synchronize();
 
   // execute the kernel
   nvte_fused_attn_fwd(te_Q.data(), te_K.data(), te_V.data(), te_Bias.data(), te_S.data(),
@@ -860,8 +856,6 @@ std::vector<py::object> fused_attn_fwd(
   return output_tensors;
 }
 
-
-
 // fused attention BWD with separate Q, K and V
 std::vector<py::object> fused_attn_bwd(
     size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float p_dropout, bool set_zero,
@@ -871,8 +865,8 @@ std::vector<py::object> fused_attn_bwd(
     const py::handle O, py::handle dO, const transformer_engine::DType qkv_type,
     const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded,
-    py::handle s_quantizer, py::handle dp_quantizer, py::handle dqkv_quantizer) {
+    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
+    py::handle dp_quantizer, py::handle dqkv_quantizer) {
   using namespace transformer_engine;
   using namespace transformer_engine::pytorch;
   TensorWrapper te_Q, te_K, te_V, te_O, te_S, te_dP;
@@ -888,11 +882,10 @@ std::vector<py::object> fused_attn_bwd(
   std::unique_ptr<Quantizer> dP_quantizer = convert_quantizer(dp_quantizer);
   std::tie(te_dP, dp_python) = dP_quantizer->create_tensor({}, DType::kFloat32);
 
-
   std::vector<size_t> q_shape = convertShape(te_Q.shape());
   std::vector<size_t> k_shape = convertShape(te_K.shape());
   std::vector<size_t> v_shape = convertShape(te_V.shape());
-  
+
   auto h_q = q_shape[q_shape.size() - 2];
   auto h_kv = k_shape[k_shape.size() - 2];
   auto d_qk = q_shape[q_shape.size() - 1];
@@ -1026,8 +1019,8 @@ std::vector<py::object> fused_attn_bwd(
                                                    cu_seqlens_kv_padded_sizes.end()};
     te_cu_seqlens_q_padded = makeTransformerEngineTensor(cu_seqlens_q_padded.value().data_ptr(),
                                                          cu_seqlens_q_padded_shape, DType::kInt32);
-    te_cu_seqlens_kv_padded = makeTransformerEngineTensor(cu_seqlens_kv_padded.value().data_ptr(),
-                                                          cu_seqlens_kv_padded_shape, DType::kInt32);
+    te_cu_seqlens_kv_padded = makeTransformerEngineTensor(
+        cu_seqlens_kv_padded.value().data_ptr(), cu_seqlens_kv_padded_shape, DType::kInt32);
   }
 
   // convert auxiliary tensors from forward to NVTETensors

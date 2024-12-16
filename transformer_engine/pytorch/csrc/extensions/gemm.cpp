@@ -12,9 +12,9 @@
 #include "common/util/system.h"
 #include "extensions.h"
 #include "object.h"
+#include "pybind.h"
 #include "pytorch/csrc/common.h"
 #include "transformer_engine/transformer_engine.h"
-#include "pybind.h"
 
 namespace {
 
@@ -34,10 +34,8 @@ namespace transformer_engine::pytorch {
 
 namespace detail {
 
-std::vector<size_t> getGemmOutputShape(const NVTEShape& A_shape,
-                                       const bool transa,
-                                       const NVTEShape& B_shape,
-                                       const bool transb) {
+std::vector<size_t> getGemmOutputShape(const NVTEShape& A_shape, const bool transa,
+                                       const NVTEShape& B_shape, const bool transb) {
   // Flatten outer dims to get 2D matrices
   const size_t A0 = product(A_shape, 0, A_shape.ndim - 1);
   const size_t A1 = A_shape.data[A_shape.ndim - 1];
@@ -45,9 +43,8 @@ std::vector<size_t> getGemmOutputShape(const NVTEShape& A_shape,
   const size_t B1 = B_shape.data[B_shape.ndim - 1];
 
   // Check matrix dims
-  NVTE_CHECK((transa ? A1 : A0) == (transb ? B0 : B1),
-             "Invalid matrix dimensions for GEMM (A=(", A0, ",", A1, "), transa=",
-             transa, ", B=(", B0, ",", B1, "), transb=", transb, ")");
+  NVTE_CHECK((transa ? A1 : A0) == (transb ? B0 : B1), "Invalid matrix dimensions for GEMM (A=(",
+             A0, ",", A1, "), transa=", transa, ", B=(", B0, ",", B1, "), transb=", transb, ")");
 
   // Construct output dims
   std::vector<size_t> ret;
@@ -67,8 +64,7 @@ std::vector<size_t> getGemmOutputShape(const NVTEShape& A_shape,
   return ret;
 }
 
-bool checkGemmShape(const std::vector<size_t>& expected,
-                    const NVTEShape& actual) {
+bool checkGemmShape(const std::vector<size_t>& expected, const NVTEShape& actual) {
   if (expected.size() != actual.ndim) return false;
   for (size_t i = 0; i < expected.size(); ++i) {
     if (expected[i] != actual.data[i]) return false;
@@ -79,18 +75,15 @@ bool checkGemmShape(const std::vector<size_t>& expected,
 }  // namespace detail
 
 std::pair<TensorWrapper, py::object> createOutputTensor(const std::vector<size_t>& shape,
-                                                        DType dtype,
-                                                        py::handle quantizer) {
+                                                        DType dtype, py::handle quantizer) {
   std::unique_ptr<Quantizer> my_quantizer = convert_quantizer(quantizer);
   return my_quantizer->create_tensor(shape, dtype);
 }
 
-std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb,
-                             py::object D, py::handle quantizer,
-                             std::optional<DType> out_dtype,
-                             MaybeTensor bias, DType bias_type, bool gelu,
-                             bool grad, at::Tensor workspace, size_t workspaceSize,
-                             bool accumulate, bool use_split_accumulator) {
+std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb, py::object D,
+                             py::handle quantizer, std::optional<DType> out_dtype, MaybeTensor bias,
+                             DType bias_type, bool gelu, bool grad, at::Tensor workspace,
+                             size_t workspaceSize, bool accumulate, bool use_split_accumulator) {
   // Input tensors
   NVTE_CHECK(!A.is_none(), "Tensor A has not been provided");
   NVTE_CHECK(!B.is_none(), "Tensor B has not been provided");
@@ -115,13 +108,11 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   } else {
     D_tensor = makeTransformerEngineTensor(D, quantizer);
     NVTE_CHECK(detail::checkGemmShape(D_shape, D_tensor.shape()),
-               "GEMM output has invalid dims (expected ",
-               std::to_string(D_shape), ", got ",
+               "GEMM output has invalid dims (expected ", std::to_string(D_shape), ", got ",
                std::to_string(D_tensor.shape()), ")");
     if (out_dtype) {
-      NVTE_CHECK(*out_dtype == D_tensor.dtype(),
-                 "GEMM output has invalid dtype (expected ", int(*out_dtype),
-                 ", found ", int(D_tensor.dtype()), ")");
+      NVTE_CHECK(*out_dtype == D_tensor.dtype(), "GEMM output has invalid dtype (expected ",
+                 int(*out_dtype), ", found ", int(D_tensor.dtype()), ")");
     }
   }
 
@@ -153,7 +144,7 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
     pre_gelu_out = at::empty(torch_shape, opts);
   }
   const auto gelu_shape = gelu ? D_shape : std::vector<size_t>{0};
-  
+
   auto te_pre_gelu_out =
       makeTransformerEngineTensor(get_data_ptr(pre_gelu_out), gelu_shape, gelu_type);
 
@@ -167,18 +158,18 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   const int sm_count = transformer_engine::cuda::sm_count(device_id);
   int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
-  if(A_tensor.numel() != 0 && B_tensor.numel() != 0) {
+  if (A_tensor.numel() != 0 && B_tensor.numel() != 0) {
     // Launch GEMM
     nvte_cublas_gemm(A_tensor.data(), B_tensor.data(), D_tensor.data(), bias_tensor.data(),
-                   te_pre_gelu_out.data(), transa, transb, grad, te_workspace.data(), accumulate,
-                   use_split_accumulator, num_math_sms, at::cuda::getCurrentCUDAStream());
+                     te_pre_gelu_out.data(), transa, transb, grad, te_workspace.data(), accumulate,
+                     use_split_accumulator, num_math_sms, at::cuda::getCurrentCUDAStream());
   } else {
     if (D_tensor.numel() != 0 && !accumulate) {
       D_tensor.zero_(at::cuda::getCurrentCUDAStream());
     }
-    if(bias.has_value()) {
+    if (bias.has_value()) {
       if (bias->numel() != 0 && grad) {
-          bias_grad->zero_();
+        bias_grad->zero_();
       }
     }
     std::vector<py::object> out;
@@ -186,8 +177,7 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
     out.emplace_back(py::cast(bias_grad));
     if (gelu && !grad) {
       out.emplace_back(py::cast(*pre_gelu_out));
-    }
-    else { 
+    } else {
       out.emplace_back(py::none());
     }
     return out;
@@ -199,15 +189,13 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
   out.emplace_back(py::cast(bias_grad));
   if (gelu && !grad) {
     out.emplace_back(py::cast(*pre_gelu_out));
-  }
-  else { 
+  } else {
     out.emplace_back(py::none());
   }
   return out;
 }
 
 }  // namespace transformer_engine::pytorch
-
 
 void te_atomic_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine::DType A_type,
                     std::vector<int64_t> A_scaling_mode, bool transa, at::Tensor B,
@@ -257,21 +245,19 @@ void te_atomic_gemm(at::Tensor A, at::Tensor A_scale_inverse, transformer_engine
                           gemm_producer, te_counter.data(), at::cuda::getCurrentCUDAStream());
 }
 
-std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(std::vector<py::handle> A, bool transa, 
-                     std::vector<py::handle> B, bool transb, 
-                     std::optional<std::vector<at::Tensor>> D,
-                     transformer_engine::DType D_type, std::vector<int64_t> m_splits, 
-                     std::vector<at::Tensor> bias, transformer_engine::DType bias_type,  
-                     bool single_output, 
-                     std::vector<at::Tensor> pre_gelu_out,
-                     bool grad, std::vector<at::Tensor> workspace, size_t workspaceSize,
-                     bool accumulate, bool use_split_accumulator, int math_sm_count) {
+std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(
+    std::vector<py::handle> A, bool transa, std::vector<py::handle> B, bool transb,
+    std::optional<std::vector<at::Tensor>> D, transformer_engine::DType D_type,
+    std::vector<int64_t> m_splits, std::vector<at::Tensor> bias,
+    transformer_engine::DType bias_type, bool single_output, std::vector<at::Tensor> pre_gelu_out,
+    bool grad, std::vector<at::Tensor> workspace, size_t workspaceSize, bool accumulate,
+    bool use_split_accumulator, int math_sm_count) {
   using namespace transformer_engine;
   using namespace transformer_engine::pytorch;
-  std::vector<NVTETensor> te_A_vector, te_B_vector, te_D_vector, te_bias_vector, te_pre_gelu_out_vector, te_workspace_vector;
+  std::vector<NVTETensor> te_A_vector, te_B_vector, te_D_vector, te_bias_vector,
+      te_pre_gelu_out_vector, te_workspace_vector;
   std::vector<TensorWrapper> wrappers;
   std::vector<at::Tensor> D_vectors;
-
 
   auto none = py::none();
 
@@ -282,20 +268,19 @@ std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(std::vector<py::h
     NVTE_ERROR("not implemented, D should be allocated for single output case.");
   }
 
-
   void* output_data_ptr;
   if (single_output) {
-     output_data_ptr = (*D)[0].data_ptr();
+    output_data_ptr = (*D)[0].data_ptr();
   }
 
-    
   for (size_t i = 0; i < A.size(); i++) {
     auto te_A = makeTransformerEngineTensor(A[i], none);
     auto te_B = makeTransformerEngineTensor(B[i], none);
-    
+
     // if there is single output
     at::Tensor out_tensor;
-    auto size_t_shape = pytorch::detail::getGemmOutputShape(te_A.shape(), transa, te_B.shape(), transb);
+    auto size_t_shape =
+        pytorch::detail::getGemmOutputShape(te_A.shape(), transa, te_B.shape(), transb);
     std::vector<int64_t> D_shape;
     for (size_t t : size_t_shape) {
       D_shape.push_back(t);
@@ -303,18 +288,17 @@ std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(std::vector<py::h
     auto dtype = GetATenDType(D_type);
     auto opts = torch::TensorOptions().dtype(dtype).device(torch::kCUDA);
     if (single_output) {
-        out_tensor = at::from_blob(output_data_ptr, D_shape, opts);
-        char* char_ptr = reinterpret_cast<char*>(output_data_ptr);
-        char_ptr += m_splits[i] * te_A.size(0) * (*D)[0].element_size();
-        output_data_ptr = reinterpret_cast<void*>(char_ptr);
-        D_vectors.emplace_back(out_tensor);
+      out_tensor = at::from_blob(output_data_ptr, D_shape, opts);
+      char* char_ptr = reinterpret_cast<char*>(output_data_ptr);
+      char_ptr += m_splits[i] * te_A.size(0) * (*D)[0].element_size();
+      output_data_ptr = reinterpret_cast<void*>(char_ptr);
+      D_vectors.emplace_back(out_tensor);
     } else {
       if (D == std::nullopt) {
         auto opts = torch::TensorOptions().dtype(dtype).device(torch::kCUDA);
         out_tensor = at::empty(D_shape, opts);
         D_vectors.emplace_back(out_tensor);
-      }
-      else {
+      } else {
         out_tensor = (*D)[i];
       }
     }
@@ -328,26 +312,25 @@ std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(std::vector<py::h
       continue;
     }
 
-    
     auto te_D = makeTransformerEngineTensor(out_tensor);
     auto te_bias = makeTransformerEngineTensor(bias[i]);
     auto te_pre_gelu_out = makeTransformerEngineTensor(pre_gelu_out[i]);
 
     const auto gelu_shape = pre_gelu_out[i].data_ptr() == nullptr
-                            ? std::vector<size_t>{static_cast<size_t>(te_pre_gelu_out.size(0))}
-                            : std::vector<size_t>{static_cast<size_t>(te_pre_gelu_out.size(0)),
-                                                  static_cast<size_t>(te_pre_gelu_out.size(1))};
+                                ? std::vector<size_t>{static_cast<size_t>(te_pre_gelu_out.size(0))}
+                                : std::vector<size_t>{static_cast<size_t>(te_pre_gelu_out.size(0)),
+                                                      static_cast<size_t>(te_pre_gelu_out.size(1))};
 
     DType gelu_type = bias_type;
-    te_pre_gelu_out = 
-      makeTransformerEngineTensor(get_data_ptr(pre_gelu_out[i]), gelu_shape, gelu_type);
+    te_pre_gelu_out =
+        makeTransformerEngineTensor(get_data_ptr(pre_gelu_out[i]), gelu_shape, gelu_type);
 
     te_A_vector.emplace_back(te_A.data());
     te_B_vector.emplace_back(te_B.data());
     te_D_vector.emplace_back(te_D.data());
     te_bias_vector.emplace_back(te_bias.data());
     te_pre_gelu_out_vector.emplace_back(te_pre_gelu_out.data());
-    
+
     wrappers.emplace_back(std::move(te_A));
     wrappers.emplace_back(std::move(te_B));
     wrappers.emplace_back(std::move(te_D));
@@ -360,10 +343,10 @@ std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(std::vector<py::h
     wrappers.emplace_back(std::move(wsp));
   }
   // For now, we only have multi-stream cublas backend.
-  nvte_multi_stream_cublas_gemm(te_A_vector.data(), te_B_vector.data(), te_D_vector.data(), te_bias_vector.data(),
-                                te_pre_gelu_out_vector.data(), te_A_vector.size(), transa, transb, grad,
+  nvte_multi_stream_cublas_gemm(te_A_vector.data(), te_B_vector.data(), te_D_vector.data(),
+                                te_bias_vector.data(), te_pre_gelu_out_vector.data(),
+                                te_A_vector.size(), transa, transb, grad,
                                 te_workspace_vector.data(), accumulate, use_split_accumulator,
                                 math_sm_count, at::cuda::getCurrentCUDAStream());
   return bias;
 }
-

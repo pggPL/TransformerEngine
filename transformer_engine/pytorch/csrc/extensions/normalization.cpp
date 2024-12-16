@@ -7,24 +7,22 @@
 #include "extensions.h"
 
 namespace transformer_engine::pytorch {
-  std::pair<TensorWrapper, py::object> createOutputTensor(const NVTEShape& shape,
-                                                          DType dtype,
-                                                          py::handle quantizer) {
-    std::vector<size_t> shape_vec;
-    for (int i = 0; i < shape.ndim; i++) {
-      size_t t = shape.data[i];
-      shape_vec.push_back(t);
-    }
-    std::unique_ptr<Quantizer> my_quantizer = convert_quantizer(quantizer);
-    return my_quantizer->create_tensor(shape_vec, dtype);
+std::pair<TensorWrapper, py::object> createOutputTensor(const NVTEShape &shape, DType dtype,
+                                                        py::handle quantizer) {
+  std::vector<size_t> shape_vec;
+  for (int i = 0; i < shape.ndim; i++) {
+    size_t t = shape.data[i];
+    shape_vec.push_back(t);
   }
-  std::pair<TensorWrapper, py::object> createOutputTensor(std::vector<size_t>& shape,
-                                                          DType dtype,
-                                                          py::handle quantizer) {
-    std::unique_ptr<Quantizer> my_quantizer = convert_quantizer(quantizer);
-    return my_quantizer->create_tensor(shape, dtype);
-  }
+  std::unique_ptr<Quantizer> my_quantizer = convert_quantizer(quantizer);
+  return my_quantizer->create_tensor(shape_vec, dtype);
 }
+std::pair<TensorWrapper, py::object> createOutputTensor(std::vector<size_t> &shape, DType dtype,
+                                                        py::handle quantizer) {
+  std::unique_ptr<Quantizer> my_quantizer = convert_quantizer(quantizer);
+  return my_quantizer->create_tensor(shape, dtype);
+}
+}  // namespace transformer_engine::pytorch
 
 std::vector<py::object> layernorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                       const at::Tensor &mu, const at::Tensor &rsigma,
@@ -71,21 +69,21 @@ std::vector<py::object> layernorm_bwd(const at::Tensor &dz, const at::Tensor &x,
   return {py::cast(dx), py::cast(dgamma), py::cast(dbeta)};
 }
 
-std::vector<py::object> layernorm_fwd(
-    py::handle input, py::handle weight, MaybeTensor bias, float eps,
-    py::object ln_out, py::handle quantizer, DType out_dtype,
-    const int sm_margin, const bool zero_centered_gamma) {
+std::vector<py::object> layernorm_fwd(py::handle input, py::handle weight, MaybeTensor bias,
+                                      float eps, py::object ln_out, py::handle quantizer,
+                                      DType out_dtype, const int sm_margin,
+                                      const bool zero_centered_gamma) {
   using namespace transformer_engine::pytorch;
   using namespace transformer_engine;
 
   auto none = py::none();
-  const TensorWrapper& input_tensor = makeTransformerEngineTensor(input, none);
-  const TensorWrapper& weight_tensor = makeTransformerEngineTensor(weight, none);
+  const TensorWrapper &input_tensor = makeTransformerEngineTensor(input, none);
+  const TensorWrapper &weight_tensor = makeTransformerEngineTensor(weight, none);
 
   TensorWrapper bias_tensor;
   MaybeTensor bias_grad = std::nullopt;
   if (bias.has_value()) {
-      bias_tensor = makeTransformerEngineTensor(*bias);
+    bias_tensor = makeTransformerEngineTensor(*bias);
   }
 
   // Tensor dimensions
@@ -94,7 +92,7 @@ std::vector<py::object> layernorm_fwd(
   std::vector<size_t> size = {N, H};
 
   // Construct Transformer Engine tensors
-  at::Tensor mu  = at::empty({static_cast<int64_t>(N)}, at::CUDA(at::kFloat));
+  at::Tensor mu = at::empty({static_cast<int64_t>(N)}, at::CUDA(at::kFloat));
   at::Tensor rsigma = at::empty({static_cast<int64_t>(N)}, at::CUDA(at::kFloat));
 
   TensorWrapper ln_out_tensor;
@@ -106,7 +104,6 @@ std::vector<py::object> layernorm_fwd(
   }
   TensorWrapper mu_cu = makeTransformerEngineTensor(mu);
   TensorWrapper rsigma_cu = makeTransformerEngineTensor(rsigma);
-
 
   // Query workspace sizes
   transformer_engine::TensorWrapper workspace;
@@ -128,7 +125,6 @@ std::vector<py::object> layernorm_fwd(
 
   return {ln_out, py::cast(mu), py::cast(rsigma)};
 }
-
 
 std::vector<py::object> rmsnorm_bwd(const at::Tensor &dz, const at::Tensor &x,
                                     const at::Tensor &rsigma, const at::Tensor &gamma,
@@ -170,16 +166,16 @@ std::vector<py::object> rmsnorm_bwd(const at::Tensor &dz, const at::Tensor &x,
   return {py::cast(dx), py::cast(dgamma)};
 }
 
-std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &weight,
-                                    float eps, py::object ln_out, py::handle quantizer,
-                                    transformer_engine::DType otype,
-                                    const int sm_margin, const bool zero_centered_gamma) {
+std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &weight, float eps,
+                                    py::object ln_out, py::handle quantizer,
+                                    transformer_engine::DType otype, const int sm_margin,
+                                    const bool zero_centered_gamma) {
   using namespace transformer_engine::pytorch;
   using namespace transformer_engine;
 
   auto none = py::none();
-  const TensorWrapper& input_tensor = makeTransformerEngineTensor(input, none);
-  const TensorWrapper& weight_tensor = makeTransformerEngineTensor(weight, none);
+  const TensorWrapper &input_tensor = makeTransformerEngineTensor(input, none);
+  const TensorWrapper &weight_tensor = makeTransformerEngineTensor(weight, none);
 
   // Tensor dimensions
   size_t N = static_cast<size_t>(input_tensor.shape().data[0]);
@@ -187,7 +183,7 @@ std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &w
 
   // Construct Transformer Engine tensors
   auto rsigma = at::empty({static_cast<int64_t>(N)}, at::CUDA(at::kFloat));
-  std::vector<size_t> size = {N, H};  
+  std::vector<size_t> size = {N, H};
   TensorWrapper ln_out_tensor;
 
   if (ln_out.is_none()) {

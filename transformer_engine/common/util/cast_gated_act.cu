@@ -7,8 +7,8 @@
 #include <cuda.h>
 #include <cudaTypedefs.h>
 #include <cuda_runtime.h>
-#include <transformer_engine/cast.h>
 #include <transformer_engine/activation.h>
+#include <transformer_engine/cast.h>
 
 #include <cfloat>
 
@@ -284,8 +284,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
                              const __grid_constant__ CUtensorMap tensor_map_output_rowwise,
                              const __grid_constant__ CUtensorMap tensor_map_output_colwise,
                              e8m0_t *const scales_rowwise, e8m0_t *const scales_colwise,
-                             float *const amax_ptr,
-                             const size_t rows, const size_t cols,
+                             float *const amax_ptr, const size_t rows, const size_t cols,
                              const size_t scale_stride_rowwise, const size_t scale_stride_colwise) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
   constexpr bool USE_ROWWISE_SCALING = SCALE_DIM_X > 1;
@@ -670,8 +669,8 @@ void cast_fp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *outp
           alignas(64) CUtensorMap tensor_map_gated_input{};
           alignas(64) CUtensorMap tensor_map_output{};
 
-          create_2D_tensor_map(tensor_map_grad, grad.data, rows, cols,
-                               SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(IType));
+          create_2D_tensor_map(tensor_map_grad, grad.data, rows, cols, SHMEM_DIM_Y, SHMEM_DIM_X,
+                               sizeof(IType));
           create_2D_tensor_map(tensor_map_gated_input, gated_input.data, rows, cols * 2,
                                SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(IType));
           create_2D_tensor_map(tensor_map_output, output->data, rows, cols * 2, SHMEM_DIM_Y,
@@ -749,8 +748,8 @@ void cast_mxfp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *ou
                                        SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(IType));
 
                   if (USE_ROWWISE_SCALING) {
-                    create_2D_tensor_map(tensor_map_output_rowwise, output->data, rows,
-                                         cols * 2, SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(OType));
+                    create_2D_tensor_map(tensor_map_output_rowwise, output->data, rows, cols * 2,
+                                         SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(OType));
                   }
 
                   if (USE_COLWISE_SCALING) {
@@ -787,8 +786,8 @@ void cast_mxfp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *ou
                                            SCALE_DIM_X>
                   <<<grid_dim, block_dim, shmem_size, stream>>>(
                       tensor_map_grad, tensor_map_gated_input, tensor_map_output_rowwise,
-                      tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr,
-                      amax_ptr, rows, cols, scale_stride_rowwise,
+                      tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr, amax_ptr,
+                      rows, cols, scale_stride_rowwise,
                       scale_stride_colwise););  // NOLINT(*)
           );                                    // NOLINT(*)
       );                                        // NOLINT(*)

@@ -472,8 +472,7 @@ class FP8GlobalStateManager:
 
 
 @contextmanager
-def fp8_model_init(enabled: bool = True,
-                   recipe: Optional[Recipe] = None) -> None:
+def fp8_model_init(enabled: bool = True, recipe: Optional[Recipe] = None) -> None:
     """
     Context manager for FP8 initialization of parameters.
 
@@ -712,8 +711,7 @@ class RecipeState(abc.ABC):
         )
 
     @abc.abstractmethod
-    def make_quantizers(self) -> list:
-        ...
+    def make_quantizers(self) -> list: ...
 
 
 class DelayedScalingRecipeState(RecipeState):
@@ -751,6 +749,7 @@ class DelayedScalingRecipeState(RecipeState):
     def make_quantizers(self) -> list:
         # TODO(ksivamani); Find better design for this, adding here to avoid circular import.
         from .tensor.float8_tensor import Float8Quantizer
+
         return [
             Float8Quantizer(self.scale[i], self.amax_history[0][i].reshape((1,)), self.dtype)
             for i in range(self.num_quantizers)
@@ -783,6 +782,5 @@ class BlockScalingRecipeState(RecipeState):
     def make_quantizers(self) -> list:
         # TODO(ksivamani); Find better design for this, adding here to avoid circular import.
         from .tensor.mxfp8_tensor import MXFP8Quantizer
-        return [
-            MXFP8Quantizer(self.dtype) for i in range(self.num_quantizers)
-        ]
+
+        return [MXFP8Quantizer(self.dtype) for i in range(self.num_quantizers)]

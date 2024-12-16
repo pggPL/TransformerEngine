@@ -5631,10 +5631,7 @@ class FusedAttnFunc_qkvpacked(torch.autograd.Function):
                     qkv = qkv_c.dequantize()
                 if is_output_fp8:
                     out_save = out_fp8.dequantize()
-            fp8_tensors = (
-                qkv_fp8,
-                out_fp8
-            )
+            fp8_tensors = (qkv_fp8, out_fp8)
         else:
             out_ret, aux_ctx_tensors = fused_attn_fwd_qkvpacked(
                 is_training,
@@ -5658,7 +5655,6 @@ class FusedAttnFunc_qkvpacked(torch.autograd.Function):
             )
             fp8_tensors = (None, None, None, None)
             out_save = out_ret
-
 
         ctx.dQKV_quantizer = dQKV_quantizer
         ctx.dO_quantizer = dO_quantizer
@@ -5707,13 +5703,7 @@ class FusedAttnFunc_qkvpacked(torch.autograd.Function):
             d_out = d_out._data
 
         d_out = d_out.contiguous()
-        (
-            qkv,
-            out,
-            cu_seqlens,
-            cu_seqlens_padded,
-            *other_tensors
-        ) = ctx.saved_tensors
+        (qkv, out, cu_seqlens, cu_seqlens_padded, *other_tensors) = ctx.saved_tensors
         qkv_fp8, other_tensors = restore_from_saved(ctx.fp8_tensors_obj[0], other_tensors)
         out_fp8, other_tensors = restore_from_saved(ctx.fp8_tensors_obj[1], other_tensors)
         aux_ctx_tensors = other_tensors
@@ -5757,7 +5747,7 @@ class FusedAttnFunc_qkvpacked(torch.autograd.Function):
                         ctx.fp8_meta["recipe"], fprop_tensor=False
                     )
                     if ctx.is_output_fp8:
-                        d_out_fp8 = d_out                    
+                        d_out_fp8 = d_out
                     else:
                         d_out_fp8 = ctx.dO_quantizer(d_out)
                     dqkv_fp8, *rest = fused_attn_bwd_qkvpacked(
@@ -5977,11 +5967,7 @@ class FusedAttnFunc_kvpacked(torch.autograd.Function):
                     kv = kv_c.dequantize()
                 if is_output_fp8:
                     out_save = out_fp8.dequantize()
-            fp8_tensors = (
-                q_fp8,
-                kv_fp8,
-                out_fp8
-            )
+            fp8_tensors = (q_fp8, kv_fp8, out_fp8)
         else:
             out_ret, aux_ctx_tensors = fused_attn_fwd_kvpacked(
                 is_training,
@@ -6074,14 +6060,14 @@ class FusedAttnFunc_kvpacked(torch.autograd.Function):
             cu_seqlens_kv,
             cu_seqlens_q_padded,
             cu_seqlens_kv_padded,
-            *other_tensors
+            *other_tensors,
         ) = ctx.saved_tensors
 
         fp8_tensors = []
         for obj in ctx.fp8_tensors_obj:
             x, other_tensors = restore_from_saved(obj, other_tensors)
             fp8_tensors.append(x)
-        q_fp8, kv_fp8,  out_fp8 = fp8_tensors
+        q_fp8, kv_fp8, out_fp8 = fp8_tensors
         aux_ctx_tensors = other_tensors
 
         rest = [None]
@@ -6293,7 +6279,7 @@ class FusedAttnFunc(torch.autograd.Function):
         fp8_meta,
         quantizers,
         deterministic,
-    ):  
+    ):
         # pylint: disable=missing-function-docstring
         # "fp8_mha" decides outputs in fp8, while inputs are inferred from the real dtype
         is_input_fp8 = False
@@ -6313,7 +6299,6 @@ class FusedAttnFunc(torch.autograd.Function):
             dQKV_quantizer = quantizers["scaling_FWD"][META_DQKV]
             dO_quantizer = quantizers["scaling_FWD"][META_DO]
             dP_quantizer = quantizers["scaling_FWD"][META_DP]
-
 
             is_input_fp8 = isinstance(q, Float8Tensor)
             if is_input_fp8:
@@ -6350,7 +6335,7 @@ class FusedAttnFunc(torch.autograd.Function):
                 q_fp8,
                 k_fp8,
                 v_fp8,
-                q_fp8.dtype, #TODO - poimyslec o tym
+                q_fp8.dtype,  # TODO - poimyslec o tym
                 fused_attention_backend,
                 attn_bias,
                 cu_seqlens_q_padded,
@@ -6398,12 +6383,7 @@ class FusedAttnFunc(torch.autograd.Function):
                 if is_output_fp8:
                     out_save = out_fp8.dequantize()
 
-            fp8_tensors = (
-                q_fp8,
-                k_fp8,
-                v_fp8,
-                out_fp8
-            )
+            fp8_tensors = (q_fp8, k_fp8, v_fp8, out_fp8)
         else:
             out_ret, aux_ctx_tensors = fused_attn_fwd(
                 is_training,
@@ -6419,8 +6399,8 @@ class FusedAttnFunc(torch.autograd.Function):
                 attn_bias,
                 cu_seqlens_q_padded,
                 cu_seqlens_kv_padded,
-                None, # s_quantizer
-                None, # o_quantizer
+                None,  # s_quantizer
+                None,  # o_quantizer
                 attn_scale,
                 dropout_p,
                 fast_zero_fill,
@@ -6812,9 +6792,8 @@ class FusedAttention(torch.nn.Module):
         cp_comm_type: str = "p2p",
         fp8: bool = False,
         fp8_meta: Optional[Dict[str, Any]] = None,
-        quantizers = None,
+        quantizers=None,
     ) -> torch.Tensor:
-
         """fused attention fprop"""
         assert (
             fused_attention_backend != tex.NVTE_Fused_Attn_Backend.NVTE_No_Backend

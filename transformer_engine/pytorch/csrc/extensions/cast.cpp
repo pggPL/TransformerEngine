@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "transformer_engine/cast.h"
+
 #include "common.h"
 #include "extensions.h"
 #include "pybind.h"
@@ -12,16 +13,15 @@
 
 namespace transformer_engine::pytorch {
 
-py::object quantize(const at::Tensor& tensor, py::handle quantizer,
-                    const py::object& output, std::optional<at::Tensor> noop) {
+py::object quantize(const at::Tensor& tensor, py::handle quantizer, const py::object& output,
+                    std::optional<at::Tensor> noop) {
   init_extension();
   auto my_quantizer = convert_quantizer(quantizer);
   auto input_tensor = tensor.contiguous();
-  
+
   const TensorWrapper& te_input = makeTransformerEngineTensor(input_tensor);
   const auto& te_input_shape = te_input.shape();
-  std::vector<size_t> input_shape(te_input_shape.data,
-                                  te_input_shape.data + te_input_shape.ndim);
+  std::vector<size_t> input_shape(te_input_shape.data, te_input_shape.data + te_input_shape.ndim);
   auto fake_tensor_type = tensor.scalar_type();
   if (!detail::IsFloatingPointType(fake_tensor_type)) {
     fake_tensor_type = at::kFloat;
@@ -38,16 +38,16 @@ py::object quantize(const at::Tensor& tensor, py::handle quantizer,
   }
 
   TensorWrapper te_noop;
-  if(noop.has_value()) {
+  if (noop.has_value()) {
     te_noop = makeTransformerEngineTensor(*noop);
-  }
-  else {
+  } else {
     auto opts = torch::TensorOptions().dtype(at::kFloat).device(torch::kCUDA);
     te_noop = makeTransformerEngineTensor(at::empty({0}, opts));
   }
 
   if (te_output.numel() == 0) return out;
-  nvte_quantize_noop(te_input.data(), te_output.data(), te_noop.data(), at::cuda::getCurrentCUDAStream());
+  nvte_quantize_noop(te_input.data(), te_output.data(), te_noop.data(),
+                     at::cuda::getCurrentCUDAStream());
 
   return out;
 }
@@ -70,10 +70,9 @@ py::object dequantize(const py::handle& input, transformer_engine::DType otype) 
   return out;
 }
 
-template<void (*func)(const NVTETensor, const NVTETensor, NVTETensor,
-                      NVTETensor, NVTETensor, cudaStream_t)>
-std::vector<py::object> dbias_dact(const at::Tensor& grad_output,
-                                   const at::Tensor& act_input,
+template <void (*func)(const NVTETensor, const NVTETensor, NVTETensor, NVTETensor, NVTETensor,
+                       cudaStream_t)>
+std::vector<py::object> dbias_dact(const at::Tensor& grad_output, const at::Tensor& act_input,
                                    py::handle quantizer) {
   init_extension();
   auto my_quantizer = convert_quantizer(quantizer);
@@ -90,48 +89,42 @@ std::vector<py::object> dbias_dact(const at::Tensor& grad_output,
 
   // Query workspace size and allocate workspace
   transformer_engine::TensorWrapper workspace;
-  func(grad_tensor.data(), act_input_tensor.data(), dact_tensor.data(),
-       dbias_tensor.data(), workspace.data(), at::cuda::getCurrentCUDAStream());
+  func(grad_tensor.data(), act_input_tensor.data(), dact_tensor.data(), dbias_tensor.data(),
+       workspace.data(), at::cuda::getCurrentCUDAStream());
   auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
   workspace =
       makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
 
   // Launch kernel
-  func(grad_tensor.data(), act_input_tensor.data(), dact_tensor.data(),
-       dbias_tensor.data(), workspace.data(), at::cuda::getCurrentCUDAStream());
+  func(grad_tensor.data(), act_input_tensor.data(), dact_tensor.data(), dbias_tensor.data(),
+       workspace.data(), at::cuda::getCurrentCUDAStream());
 
   return {py::cast(grad_bias), dact};
 }
 
-
-std::vector<py::object> dbias_dgelu(const at::Tensor& grad_output,
-                                    const at::Tensor& act_input,
+std::vector<py::object> dbias_dgelu(const at::Tensor& grad_output, const at::Tensor& act_input,
                                     py::handle quantizer) {
   return dbias_dact<nvte_quantize_dbias_dgelu>(grad_output, act_input, quantizer);
 }
 
-std::vector<py::object> dbias_dsilu(const at::Tensor& grad_output,
-                                    const at::Tensor& act_input,
+std::vector<py::object> dbias_dsilu(const at::Tensor& grad_output, const at::Tensor& act_input,
                                     py::handle quantizer) {
   return dbias_dact<nvte_quantize_dbias_dsilu>(grad_output, act_input, quantizer);
 }
 
-std::vector<py::object> dbias_drelu(const at::Tensor& grad_output,
-                                    const at::Tensor& act_input,
+std::vector<py::object> dbias_drelu(const at::Tensor& grad_output, const at::Tensor& act_input,
                                     py::handle quantizer) {
   return dbias_dact<nvte_quantize_dbias_drelu>(grad_output, act_input, quantizer);
 }
 
-std::vector<py::object> dbias_dqgelu(const at::Tensor& grad_output,
-                                     const at::Tensor& act_input,
+std::vector<py::object> dbias_dqgelu(const at::Tensor& grad_output, const at::Tensor& act_input,
                                      py::handle quantizer) {
   return dbias_dact<nvte_quantize_dbias_dqgelu>(grad_output, act_input, quantizer);
 }
 
-std::vector<py::object> dbias_dsrelu(const at::Tensor& grad_output,
-                                     const at::Tensor& act_input,
+std::vector<py::object> dbias_dsrelu(const at::Tensor& grad_output, const at::Tensor& act_input,
                                      py::handle quantizer) {
   return dbias_dact<nvte_quantize_dbias_dsrelu>(grad_output, act_input, quantizer);
 }
 
-}  // transformer_engine::pytorch
+}  // namespace transformer_engine::pytorch

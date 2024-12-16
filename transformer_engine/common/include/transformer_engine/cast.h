@@ -65,14 +65,15 @@ void nvte_quantize(const NVTETensor input, NVTETensor output, cudaStream_t strea
  *  \param[out]     workspace        Workspace tensor.
  *  \param[in]      stream           CUDA stream used for the operation.
  */
-void nvte_quantize_noop(const NVTETensor input, NVTETensor output, NVTETensor noop, cudaStream_t stream);
+void nvte_quantize_noop(const NVTETensor input, NVTETensor output, NVTETensor noop,
+                        cudaStream_t stream);
 
 /*! \brief Cast tensor to MXFP8. Additionally, reduce the input along columns.
  *
  * TODO
  */
 void nvte_quantize_dbias(const NVTETensor input, NVTETensor output, NVTETensor dbias,
-                             NVTETensor workplace, cudaStream_t stream);
+                         NVTETensor workplace, cudaStream_t stream);
 
 /*! \brief Compute backward of ActLU operation on the input, then cast to MXFP8.
  *         Additionally, reduce the result of the ActLU backward along columns.
@@ -95,20 +96,20 @@ void nvte_quantize_dbias(const NVTETensor input, NVTETensor output, NVTETensor d
  *  Supported activations: GeLU, SiLU, ReLU, QuickGeLU, SquaredReLU
  */
 void nvte_quantize_dbias_dgelu(const NVTETensor input, const NVTETensor act_input,
-                                   NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                   cudaStream_t stream);
+                               NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                               cudaStream_t stream);
 void nvte_quantize_dbias_dsilu(const NVTETensor input, const NVTETensor act_input,
-                                   NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                   cudaStream_t stream);
+                               NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                               cudaStream_t stream);
 void nvte_quantize_dbias_drelu(const NVTETensor input, const NVTETensor act_input,
-                                   NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                   cudaStream_t stream);
+                               NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                               cudaStream_t stream);
 void nvte_quantize_dbias_dqgelu(const NVTETensor input, const NVTETensor act_input,
-                                    NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                    cudaStream_t stream);
+                                NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                                cudaStream_t stream);
 void nvte_quantize_dbias_dsrelu(const NVTETensor input, const NVTETensor act_input,
-                                    NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                    cudaStream_t stream);
+                                NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                                cudaStream_t stream);
 
 /*! \brief Cast tensor from reduced precision.
  *

@@ -893,13 +893,17 @@ def fused_attn_fwd(
             max_seqlen_q * max_seqlen_q + BACKEND_F16m512_FP8_THREADS_PER_CTA - 1
         ) // BACKEND_F16m512_FP8_THREADS_PER_CTA
 
-        assert s_quantizer is not None, "s_quantizer is required as an input for FP8 fused attention."
-        assert o_quantizer is not None, "o_quantizer is required as an input for FP8 fused attention."
+        assert (
+            s_quantizer is not None
+        ), "s_quantizer is required as an input for FP8 fused attention."
+        assert (
+            o_quantizer is not None
+        ), "o_quantizer is required as an input for FP8 fused attention."
     else:
         raise ValueError(f"Unsupported backend {fused_attention_backend}")
 
     # execute kernel
-    
+
     output_tensors = tex.fused_attn_fwd(
         max_seqlen_q,
         max_seqlen_kv,
@@ -946,8 +950,8 @@ def fused_attn_bwd(
     fused_attention_backend: tex.NVTE_Fused_Attn_Backend,
     cu_seqlens_q_padded: torch.Tensor = None,
     cu_seqlens_kv_padded: torch.Tensor = None,
-    s_quantizer: Quantizer = None, 
-    dp_quantizer: Quantizer = None, 
+    s_quantizer: Quantizer = None,
+    dp_quantizer: Quantizer = None,
     dqkv_quantizer: Quantizer = None,
     attn_scale: float = None,
     dropout: float = 0.0,
@@ -1101,7 +1105,7 @@ def fused_attn_bwd(
         cu_seqlens_kv_padded,
         s_quantizer,
         dp_quantizer,
-        dqkv_quantizer
+        dqkv_quantizer,
     )
 
     return output_tensors

@@ -17,9 +17,7 @@ from ..utils import get_default_init_method
 from ..tensor.quantized_tensor import QuantizedTensor
 
 
-def _get_normalization_func(
-    normalization: str,  forward: bool
-):
+def _get_normalization_func(normalization: str, forward: bool):
     fwd_normalization_funcs = {
         "LayerNorm": tex.layernorm_fwd,
         "RMSNorm": tex.rmsnorm_fwd,
@@ -50,7 +48,7 @@ def _apply_normalization(
     normalization_func = _get_normalization_func(normalization, True)
 
     inputs = (inputmat, ln_weight) if ln_bias is None else (inputmat, ln_weight, ln_bias)
-    
+
     output = normalization_func(
         *inputs,
         eps,
@@ -58,7 +56,7 @@ def _apply_normalization(
         output_quantizer,
         TE_DType[output_dtype] if output_dtype in TE_DType.keys() else output_dtype,
         fwd_ln_sm_margin,
-        zero_centered_gamma
+        zero_centered_gamma,
     )
 
     return output
@@ -182,7 +180,7 @@ class _ParameterInitMeta:
     init_fn: Optional[Callable] = get_default_init_method()
     get_rng_state_tracker: Optional[Callable] = None
     fp8_meta_index: Optional[int] = None
-    
+
     def __post_init__(self):
         """Safeguard reference to the parameter's parent module and initialization function."""
         if self.init_fn is None:

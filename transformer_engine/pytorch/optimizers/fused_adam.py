@@ -219,8 +219,10 @@ class FusedAdam(torch.optim.Optimizer):
         dtype = self.name_to_dtype_map[state_name]
         if dtype == torch.uint8:
             assert isinstance(scaled_state, Float8Tensor)
-            assert len(scaled_state._quantizer.scale) == 1, "Only scaling with one scaling factor\
-                per tensor is supported by the FusedAdam."
+            assert len(scaled_state._quantizer.scale) == 1, (
+                "Only scaling with one scaling factor                per tensor is supported by the"
+                " FusedAdam."
+            )
         else:
             assert scaled_state.dtype == dtype
 
@@ -305,9 +307,9 @@ class FusedAdam(torch.optim.Optimizer):
 
         if dtype == torch.uint8:
             quantizer = Float8Quantizer(
-                scale = torch.ones([1], dtype=torch.float32, device=param.device),
-                amax = torch.zeros([1], dtype=torch.float32, device=param.device),
-                fp8_dtype = tex.DType.kFloat8E4M3
+                scale=torch.ones([1], dtype=torch.float32, device=param.device),
+                amax=torch.zeros([1], dtype=torch.float32, device=param.device),
+                fp8_dtype=tex.DType.kFloat8E4M3,
             )
             self.state[param][state_name] = quantizer.make_empty(param.shape)
             self.state[param][state_name].quantize_(data.float())

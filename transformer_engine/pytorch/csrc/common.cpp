@@ -4,11 +4,11 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#include "c10/util/ArrayRef.h"
 #include "common.h"
 
-#include "transformer_engine/transformer_engine.h"
+#include "c10/util/ArrayRef.h"
 #include "pybind.h"
+#include "transformer_engine/transformer_engine.h"
 namespace transformer_engine::pytorch {
 
 std::vector<size_t> getTensorShape(at::Tensor t) {
@@ -24,8 +24,8 @@ std::unique_ptr<Quantizer> convert_quantizer(py::handle quantizer) {
   if (quantizer.is_none()) {
     return std::make_unique<NoneQuantizer>(quantizer);
   }
-  for (auto [_check_type, check_quantizer_type, _create_tensor, create_quantizer]:
-      detail::custom_types_converters) {
+  for (auto [_check_type, check_quantizer_type, _create_tensor, create_quantizer] :
+       detail::custom_types_converters) {
     if (check_quantizer_type(quantizer.ptr())) {
       return create_quantizer(quantizer);
     }
@@ -46,10 +46,10 @@ transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
 TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantizer) {
   NVTE_CHECK(!tensor.is_none(), "Tensor is not allocated!");
   std::unique_ptr<Quantizer> my_quantizer = convert_quantizer(quantizer);
-  for (auto [check_type, check_quantizer_type, create_tensor, _]: detail::custom_types_converters) {
+  for (auto [check_type, check_quantizer_type, create_tensor, _] :
+       detail::custom_types_converters) {
     if (check_type(tensor.ptr())) {
-      NVTE_CHECK(quantizer.is_none() ||
-                 check_quantizer_type(quantizer.ptr()),
+      NVTE_CHECK(quantizer.is_none() || check_quantizer_type(quantizer.ptr()),
                  "Unexpected quantization params type.");
       auto x = create_tensor(tensor, my_quantizer.get());
       return x;
@@ -101,17 +101,11 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
 }
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
-    void* data_ptr, void* columnwise_data_ptr,
-    const std::vector<size_t>& shape,
-    const std::vector<size_t>& columnwise_shape,
-    const transformer_engine::DType type,
-    void* amax_ptr,
-    void* scale_ptr,
-    void* scale_inv_ptr,
-    void* columnwise_scale_inv_ptr,
+    void* data_ptr, void* columnwise_data_ptr, const std::vector<size_t>& shape,
+    const std::vector<size_t>& columnwise_shape, const transformer_engine::DType type,
+    void* amax_ptr, void* scale_ptr, void* scale_inv_ptr, void* columnwise_scale_inv_ptr,
     const std::vector<size_t>& scale_inv_shape,
-    const std::vector<size_t>& columnwise_scale_inv_shape,
-    NVTEScalingMode scaling_mode) {
+    const std::vector<size_t>& columnwise_scale_inv_shape, NVTEScalingMode scaling_mode) {
   TensorWrapper ret(scaling_mode);
   ret.set_rowwise_data(data_ptr, type, shape);
   ret.set_columnwise_data(columnwise_data_ptr, type, columnwise_shape);
@@ -151,8 +145,7 @@ size_t product(const std::vector<size_t>& shape) {
 }
 
 size_t product(const NVTEShape& shape, size_t begin, size_t end) {
-  NVTE_CHECK(begin <= end && end <= shape.ndim,
-             "Attempted to access entries ", begin, " to ", end,
+  NVTE_CHECK(begin <= end && end <= shape.ndim, "Attempted to access entries ", begin, " to ", end,
              " in a shape with ", shape.ndim, " entries");
   size_t ret = 1;
   for (size_t i = begin; i < end; ++i) {

@@ -44,6 +44,7 @@ class _FromFloat8Func(torch.autograd.Function):
         # Assume that we want gradients in full precision
         return grad, None
 
+
 class Float8TensorBase:
     _data: Optional[torch.Tensor]
     _quantizer: Optional[Quantizer]
@@ -54,14 +55,15 @@ class Float8TensorBase:
     _transpose: Optional[torch.Tensor]
     _transpose_invalid: bool
 
-    def __new__(cls,
-                *args,
-                data: Optional[torch.Tensor],
-                fp8_scale_inv: torch.Tensor,
-                fp8_dtype: TE_DType,
-                data_transpose: Optional[torch.Tensor] = None,
-                quantizer: Optional[Quantizer] = None,
-                **kwargs
+    def __new__(
+        cls,
+        *args,
+        data: Optional[torch.Tensor],
+        fp8_scale_inv: torch.Tensor,
+        fp8_dtype: TE_DType,
+        data_transpose: Optional[torch.Tensor] = None,
+        quantizer: Optional[Quantizer] = None,
+        **kwargs,
     ):
         instance = super().__new__(cls, *args, **kwargs)
         instance._data = data
@@ -74,33 +76,33 @@ class Float8TensorBase:
         return instance
 
     def get_metadata(self) -> Dict[str, Any]:
-        return {"data": self._data,
-                "fp8_scale_inv": self._scale_inv,
-                "fp8_dtype": self._fp8_dtype,
-                "data_transpose": self._transpose,
-                "quantizer": self._quantizer,
+        return {
+            "data": self._data,
+            "fp8_scale_inv": self._scale_inv,
+            "fp8_dtype": self._fp8_dtype,
+            "data_transpose": self._transpose,
+            "quantizer": self._quantizer,
         }
 
     def prepare_for_saving(self) -> Tuple[list[Optional[torch.Tensor]], Float8TensorBase]:
         """Prepare the tensor base for saving for backward.
         After calling this, this tensor base does not hold any data."""
         tensors = [self._data, self._transpose]
-        #self._data = None
-        #self._transpose = None # TODO - why
+        # self._data = None
+        # self._transpose = None # TODO - why
         return tensors, self
 
-    def restore_from_saved(self,
-                           tensors: list[Optional[torch.Tensor]]) -> list[Optional[torch.Tensor]]:
+    def restore_from_saved(
+        self, tensors: list[Optional[torch.Tensor]]
+    ) -> list[Optional[torch.Tensor]]:
         """Restore the tensor base data from the saved tensors list."""
         self._data = tensors[0]
         self._transpose = tensors[1]
         return tensors[2:]
 
-    def dequantize(self,
-                   *,
-                   dtype: torch.dtype = torch.float32) -> torch.Tensor:
+    def dequantize(self, *, dtype: torch.dtype = torch.float32) -> torch.Tensor:
         return _FromFloat8Func.forward(None, self, dtype)
-    
+
     def size(self, *args, **kwargs):
         return self._data.size(*args, **kwargs)
 

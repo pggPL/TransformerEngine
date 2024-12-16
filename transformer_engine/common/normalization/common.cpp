@@ -13,9 +13,9 @@
 #include <cstdlib>
 #include <iostream>
 #include <numeric>
-#include "transformer_engine/transformer_engine.h"
 
 #include "transformer_engine/normalization.h"
+#include "transformer_engine/transformer_engine.h"
 
 /*
 

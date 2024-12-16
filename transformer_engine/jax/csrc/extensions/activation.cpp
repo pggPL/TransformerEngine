@@ -6,8 +6,8 @@
 #include "transformer_engine/activation.h"
 
 #include "extensions.h"
-#include "transformer_engine/transpose.h"
 #include "transformer_engine/cast.h"
+#include "transformer_engine/transpose.h"
 #include "xla/ffi/api/c_api.h"
 
 namespace transformer_engine {
@@ -343,9 +343,8 @@ pybind11::tuple GetDActDBiasCastTransposeWorkspaceSizes(size_t batch_size, size_
   TensorWrapper dummy_workspace;
 
   // For now, all dbias_dact(-s) have the same workspace size
-  nvte_quantize_dbias_dgelu(input_tensor.data(), dact_input_tensor.data(),
-                            output_tensor.data(), dbias_tensor.data(),
-                            dummy_workspace.data(), nullptr);
+  nvte_quantize_dbias_dgelu(input_tensor.data(), dact_input_tensor.data(), output_tensor.data(),
+                            dbias_tensor.data(), dummy_workspace.data(), nullptr);
 
   auto work_shape = MakeShapeVector(dummy_workspace.shape());
   return pybind11::make_tuple(std::make_pair(work_shape, dummy_workspace.dtype()));
@@ -394,29 +393,24 @@ void DActLuDBiasCastTranspose(cudaStream_t stream, void **buffers, const char *o
 
   switch (act_enum) {
     case NVTE_Activation_Type::GELU:
-      nvte_quantize_dbias_dgelu(input_tensor.data(), act_input_tensor.data(),
-                                output_tensor.data(), dbias_tensor.data(),
-                                workspace.data(), stream);
+      nvte_quantize_dbias_dgelu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                dbias_tensor.data(), workspace.data(), stream);
       break;
     case NVTE_Activation_Type::SILU:
-      nvte_quantize_dbias_dsilu(input_tensor.data(), act_input_tensor.data(),
-                                output_tensor.data(), dbias_tensor.data(),
-                                workspace.data(), stream);
+      nvte_quantize_dbias_dsilu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                dbias_tensor.data(), workspace.data(), stream);
       break;
     case NVTE_Activation_Type::RELU:
-      nvte_quantize_dbias_drelu(input_tensor.data(), act_input_tensor.data(),
-                                output_tensor.data(), dbias_tensor.data(),
-                                workspace.data(), stream);
+      nvte_quantize_dbias_drelu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                dbias_tensor.data(), workspace.data(), stream);
       break;
     case NVTE_Activation_Type::QGELU:
-      nvte_quantize_dbias_dqgelu(input_tensor.data(), act_input_tensor.data(),
-                                 output_tensor.data(), dbias_tensor.data(),
-                                 workspace.data(), stream);
+      nvte_quantize_dbias_dqgelu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                 dbias_tensor.data(), workspace.data(), stream);
       break;
     case NVTE_Activation_Type::SRELU:
-      nvte_quantize_dbias_dsrelu(input_tensor.data(), act_input_tensor.data(),
-                                 output_tensor.data(), dbias_tensor.data(),
-                                 workspace.data(), stream);
+      nvte_quantize_dbias_dsrelu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                 dbias_tensor.data(), workspace.data(), stream);
       break;
     default:
       NVTE_ERROR("Unsupported ActivationEnum");
@@ -478,29 +472,24 @@ Error_Type DActLuDBiasCastTransposeFFI(cudaStream_t stream, Buffer_Type input_bu
   auto act_type = static_cast<NVTE_Activation_Type>(act_enum);
   switch (act_type) {
     case NVTE_Activation_Type::GELU:
-      nvte_quantize_dbias_dgelu(input_tensor.data(), act_input_tensor.data(),
-                                output_tensor.data(), dbias_tensor.data(),
-                                workspace_tensor.data(), stream);
+      nvte_quantize_dbias_dgelu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                dbias_tensor.data(), workspace_tensor.data(), stream);
       break;
     case NVTE_Activation_Type::SILU:
-      nvte_quantize_dbias_dsilu(input_tensor.data(), act_input_tensor.data(),
-                                output_tensor.data(), dbias_tensor.data(),
-                                workspace_tensor.data(), stream);
+      nvte_quantize_dbias_dsilu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                dbias_tensor.data(), workspace_tensor.data(), stream);
       break;
     case NVTE_Activation_Type::RELU:
-      nvte_quantize_dbias_drelu(input_tensor.data(), act_input_tensor.data(),
-                                output_tensor.data(), dbias_tensor.data(),
-                                workspace_tensor.data(), stream);
+      nvte_quantize_dbias_drelu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                dbias_tensor.data(), workspace_tensor.data(), stream);
       break;
     case NVTE_Activation_Type::QGELU:
-      nvte_quantize_dbias_dqgelu(input_tensor.data(), act_input_tensor.data(),
-                                 output_tensor.data(),  dbias_tensor.data(),
-                                 workspace_tensor.data(), stream);
+      nvte_quantize_dbias_dqgelu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                 dbias_tensor.data(), workspace_tensor.data(), stream);
       break;
     case NVTE_Activation_Type::SRELU:
-      nvte_quantize_dbias_dsrelu(input_tensor.data(), act_input_tensor.data(),
-                                 output_tensor.data(),  dbias_tensor.data(),
-                                 workspace_tensor.data(), stream);
+      nvte_quantize_dbias_dsrelu(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                 dbias_tensor.data(), workspace_tensor.data(), stream);
       break;
     default:
       NVTE_ERROR("Unsupported ActivationEnum");
@@ -562,16 +551,16 @@ void DGatedActLuCastTranspose(cudaStream_t stream, void **buffers, const char *o
 
   switch (act_enum) {
     case NVTE_Activation_Type::GEGLU:
-      nvte_dgeglu_cast_transpose(input_tensor.data(), act_input_tensor.data(),
-                                 output_tensor.data(), stream);
+      nvte_dgeglu_cast_transpose(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                 stream);
       break;
     case NVTE_Activation_Type::SWIGLU:
       nvte_dswiglu_cast_transpose(input_tensor.data(), act_input_tensor.data(),
                                   output_tensor.data(), stream);
       break;
     case NVTE_Activation_Type::REGLU:
-      nvte_dreglu_cast_transpose(input_tensor.data(), act_input_tensor.data(),
-                                 output_tensor.data(), stream);
+      nvte_dreglu_cast_transpose(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                 stream);
       break;
     case NVTE_Activation_Type::QGEGLU:
       nvte_dqgeglu_cast_transpose(input_tensor.data(), act_input_tensor.data(),
@@ -630,16 +619,16 @@ Error_Type DGatedActLuCastTransposeFFI(cudaStream_t stream, Buffer_Type input_bu
   auto act_type = static_cast<NVTE_Activation_Type>(act_enum);
   switch (act_type) {
     case NVTE_Activation_Type::GEGLU:
-      nvte_dgeglu_cast_transpose(input_tensor.data(), act_input_tensor.data(),
-                                 output_tensor.data(), stream);
+      nvte_dgeglu_cast_transpose(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                 stream);
       break;
     case NVTE_Activation_Type::SWIGLU:
       nvte_dswiglu_cast_transpose(input_tensor.data(), act_input_tensor.data(),
                                   output_tensor.data(), stream);
       break;
     case NVTE_Activation_Type::REGLU:
-      nvte_dreglu_cast_transpose(input_tensor.data(), act_input_tensor.data(),
-                                 output_tensor.data(), stream);
+      nvte_dreglu_cast_transpose(input_tensor.data(), act_input_tensor.data(), output_tensor.data(),
+                                 stream);
       break;
     case NVTE_Activation_Type::QGEGLU:
       nvte_dqgeglu_cast_transpose(input_tensor.data(), act_input_tensor.data(),

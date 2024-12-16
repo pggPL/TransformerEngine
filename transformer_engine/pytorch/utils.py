@@ -12,7 +12,6 @@ import torch
 import transformer_engine.pytorch.cpp_extensions as ext
 
 
-
 def requires_grad(*tensors: Tuple[Optional[torch.Tensor], ...]) -> None:
     """Check if any of the given tensors require gradient."""
     for tensor in tensors:
@@ -252,7 +251,7 @@ def is_bf16_compatible() -> None:
 
 def non_tn_fp8_gemm_supported() -> bool:
     """Checks whether the device supports
-       non-TN layouts for FP8 GEMMs.
+    non-TN layouts for FP8 GEMMs.
     """
     return torch.cuda.get_device_capability() >= (10, 0)
 

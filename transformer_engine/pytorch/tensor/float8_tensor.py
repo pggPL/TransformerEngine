@@ -17,6 +17,7 @@ from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
 
 aten = torch.ops.aten
 
+
 class Float8Quantizer(Quantizer):
 
     scale: torch.Tensor
@@ -38,10 +39,7 @@ class Float8Quantizer(Quantizer):
         self.dtype = fp8_dtype
 
     def update_quantized(
-        self,
-        src: torch.Tensor,
-        dst: QuantizedTensor,
-        noop_flag: Optional[torch.Tensor]
+        self, src: torch.Tensor, dst: QuantizedTensor, noop_flag: Optional[torch.Tensor]
     ) -> QuantizedTensor:
         if not isinstance(dst, Float8Tensor):
             raise ValueError("Float8Quantizer can only update Float8Tensor")
@@ -129,9 +127,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
 
     """
 
-    def __repr__(self,
-                 *,
-                 tensor_contents = None):
+    def __repr__(self, *, tensor_contents=None):
         return (
             "Float8Tensor("
             f"fp8_dtype={self._fp8_dtype}, "
@@ -186,7 +182,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             float32 flag indicating whether to avoid performing update
 
         """
-        ### TODO Support noop_flag - (pgadzinski) - look also in base.py line 
+        ### TODO Support noop_flag - (pgadzinski) - look also in base.py line
         # "tex.quantize(tensor, quantizer, out)"
         # need to support this flag too
         if isinstance(tensor, QuantizedTensor):
@@ -206,11 +202,9 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         self._transpose_invalid = False
 
     def update_usage(self, rowwise_usage=True, columnwise_usage=True):
-        assert rowwise_usage or columnwise_usage, \
-               "Could not disable all usages of the tensor"
+        assert rowwise_usage or columnwise_usage, "Could not disable all usages of the tensor"
         if rowwise_usage:
-            assert self._data is not None, \
-                   "Rowwise usage of the tensor was already disabled"
+            assert self._data is not None, "Rowwise usage of the tensor was already disabled"
         else:
             if not non_tn_fp8_gemm_supported():
                 if self._transpose is None or self._transpose_invalid:
@@ -218,8 +212,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
                 self._data = None
         if columnwise_usage:
             if self._transpose is None or self._transpose_invalid:
-                assert self._data is not None, \
-                       "The tensor does not hold any data anymore"
+                assert self._data is not None, "The tensor does not hold any data anymore"
                 if not non_tn_fp8_gemm_supported():
                     self._create_transpose()
         else:
@@ -260,8 +253,9 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         """
         if self._data is not None and self._data.is_contiguous(memory_format=memory_format):
             return self
-        if (self._transpose is not None and
-            self._transpose.is_contiguous(memory_format=memory_format)):
+        if self._transpose is not None and self._transpose.is_contiguous(
+            memory_format=memory_format
+        ):
             return self
         raise ValueError("Float8Tensor does not support different memory formats!")
 
@@ -273,8 +267,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         self._transpose_invalid = True
 
     def clear(self):
-        """Deallocate this tensor's memory. Typically not needed and must be used carefully.
-        """
+        """Deallocate this tensor's memory. Typically not needed and must be used carefully."""
         self._data = torch.Tensor() if self._data is not None else None
         self._transpose = torch.Tensor() if self._transpose is not None else None
         self._transpose_invalid = True
@@ -401,6 +394,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
     # Cast to FP8 when setting Float8Tensor.data
     data = property(_get_data, _set_data)
 
+
 class _ViewFunc(torch.autograd.Function):
     """View function
 
@@ -423,10 +417,7 @@ class _ViewFunc(torch.autograd.Function):
         out_transpose = None if tensor._transpose_invalid else tensor._transpose
         if out_transpose is not None:
             out_transpose_shape = out_transpose.size()
-            if (
-                out_transpose_shape[0] != out_shape[-1]
-                or out_transpose_shape[1:] != out_shape[:-1]
-            ):
+            if out_transpose_shape[0] != out_shape[-1] or out_transpose_shape[1:] != out_shape[:-1]:
                 out_transpose = None
         return Float8Tensor(
             shape=out_shape,
@@ -470,10 +461,7 @@ class _ReshapeFunc(torch.autograd.Function):
         out_transpose = None if tensor._transpose_invalid else tensor._transpose
         if out_transpose is not None:
             out_transpose_shape = out_transpose.size()
-            if (
-                out_transpose_shape[0] != out_shape[-1]
-                or out_transpose_shape[1:] != out_shape[:-1]
-            ):
+            if out_transpose_shape[0] != out_shape[-1] or out_transpose_shape[1:] != out_shape[:-1]:
                 out_transpose = None
         return Float8Tensor(
             shape=out_shape,

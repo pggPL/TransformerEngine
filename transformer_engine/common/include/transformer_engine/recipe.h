@@ -39,9 +39,8 @@ extern "C" {
  *  \param[in] stream                   CUDA stream.
  */
 void nvte_delayed_scaling_recipe_amax_and_scale_update(
-    const NVTETensor amax_history, const NVTETensor scale,
-    NVTETensor updated_amax_history, NVTETensor updated_scale,
-    const char* amax_compute_algo, NVTEDType fp8_dtype, float margin,
+    const NVTETensor amax_history, const NVTETensor scale, NVTETensor updated_amax_history,
+    NVTETensor updated_scale, const char* amax_compute_algo, NVTEDType fp8_dtype, float margin,
     cudaStream_t stream);
 
 /*! \brief Bulk-update FP8 scaling factors with delayed scaling recipe after amax reduction.
@@ -71,8 +70,8 @@ void nvte_delayed_scaling_recipe_amax_and_scale_update(
  */
 void nvte_delayed_scaling_recipe_amax_and_scale_update_after_reduction(
     const NVTETensor amax_reduction_buffer, std::vector<NVTETensor> amax_histories,
-    std::vector<NVTETensor> scales,
-    const char* amax_compute_algo, NVTEDType fp8_dtype, float margin, cudaStream_t stream);
+    std::vector<NVTETensor> scales, const char* amax_compute_algo, NVTEDType fp8_dtype,
+    float margin, cudaStream_t stream);
 
 #ifdef __cplusplus
 }  // extern "C"

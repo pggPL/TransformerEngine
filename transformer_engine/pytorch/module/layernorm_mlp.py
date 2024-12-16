@@ -62,7 +62,7 @@ from ..tensor.quantized_tensor import (
     QuantizedTensor,
     Quantizer,
     prepare_for_saving,
-    restore_from_saved
+    restore_from_saved,
 )
 from ..cpp_extensions import (
     general_gemm,
@@ -163,7 +163,7 @@ class _LayerNormMLP(torch.autograd.Function):
         if ln_bias is not None:
             ln_bias = cast_if_needed(ln_bias, activation_dtype)
 
-        quantize_layernorm_output = (fp8 and not return_layernorm_output)
+        quantize_layernorm_output = fp8 and not return_layernorm_output
 
         tp_world_size = get_distributed_world_size(tp_group)
         if ub_overlap_ag:
@@ -326,8 +326,10 @@ class _LayerNormMLP(torch.autograd.Function):
             fc1_weightmat,
             ln_out_total,
             get_workspace(),
-            quantization_params=fc2_input_quantizer if activation == "gelu" and gemm_gelu_fusion else None, 
-            out_dtype=activation_dtype, # change for bias gelu fusion
+            quantization_params=(
+                fc2_input_quantizer if activation == "gelu" and gemm_gelu_fusion else None
+            ),
+            out_dtype=activation_dtype,  # change for bias gelu fusion
             bias=fc1_bias if not bias_gelu_nvfusion else None,
             gelu=gelu,
             ub_algo=tex.CommOverlapAlgo.SPLIT_PIPELINED_AG_P2P if ub_overlap_ag else None,
@@ -351,9 +353,7 @@ class _LayerNormMLP(torch.autograd.Function):
 
             else:
                 fc1_out, _, _ = fc1_outputs
-                act_out = activation_func(
-                    fc1_out, fc2_input_quantizer
-                )
+                act_out = activation_func(fc1_out, fc2_input_quantizer)
         if not is_grad_enabled:
             clear_tensor_data(fc1_out)
 
@@ -430,17 +430,22 @@ class _LayerNormMLP(torch.autograd.Function):
                 fc2_weightmat if fp8 and not isinstance(fc2_weight, Float8Tensor) else None,
             )
 
-
             saved_input_tensors, saved_input = prepare_for_saving(inputmat)
             saved_ln_weight_tensors, saved_ln_weight = prepare_for_saving(ln_weight)
             saved_ln_bias_tensors, saved_ln_bias = prepare_for_saving(ln_bias)
-            saved_ln_out_tensors, saved_ln_out = prepare_for_saving(ln_out) if fc1_weight.requires_grad else ([None], None)
+            saved_ln_out_tensors, saved_ln_out = (
+                prepare_for_saving(ln_out) if fc1_weight.requires_grad else ([None], None)
+            )
             saved_fc1_weight_tensors, saved_fc1_weight = prepare_for_saving(fc1_weightmat)
             saved_fc1_bias_tensors, saved_fc1_bias = prepare_for_saving(fc1_bias)
             saved_fc1_out_tensors, saved_fc1_out = prepare_for_saving(fc1_out)
-            saved_fc1_out_without_bias_tensors, saved_fc1_out_without_bias = prepare_for_saving(fc1_out_without_bias)
+            saved_fc1_out_without_bias_tensors, saved_fc1_out_without_bias = prepare_for_saving(
+                fc1_out_without_bias
+            )
 
-            saved_act_out_tensors, saved_act_out = prepare_for_saving(act_out) if fc2_weight.requires_grad else ([None], None)
+            saved_act_out_tensors, saved_act_out = (
+                prepare_for_saving(act_out) if fc2_weight.requires_grad else ([None], None)
+            )
 
             saved_fc2_weight_tensors, saved_fc2_weight = prepare_for_saving(fc2_weightmat)
             saved_fc2_bias_tensors, saved_fc2_bias = prepare_for_saving(fc2_bias)
@@ -514,7 +519,9 @@ class _LayerNormMLP(torch.autograd.Function):
             ctx.ub_overlap_rs_dgrad = ub_overlap_rs_dgrad
             ctx.ub_overlap_ag = ub_overlap_ag
 
-            ctx.requires_dgrad = inp.requires_grad or ln_weight.requires_grad or ln_bias.requires_grad
+            ctx.requires_dgrad = (
+                inp.requires_grad or ln_weight.requires_grad or ln_bias.requires_grad
+            )
             ctx.normalization = normalization
             ctx.reduce_and_update_bwd_fp8_tensors = False
             if ctx.fp8 and requires_grad(
@@ -559,21 +566,35 @@ class _LayerNormMLP(torch.autograd.Function):
             fc1_weight, saved_tensors = restore_from_saved(ctx.saved_fc1_weight, saved_tensors)
             fc1_bias, saved_tensors = restore_from_saved(ctx.saved_fc1_bias, saved_tensors)
             fc1_out, saved_tensors = restore_from_saved(ctx.saved_fc1_out, saved_tensors)
-            fc1_out_without_bias, saved_tensors = restore_from_saved(ctx.saved_fc1_out_without_bias, saved_tensors)
+            fc1_out_without_bias, saved_tensors = restore_from_saved(
+                ctx.saved_fc1_out_without_bias, saved_tensors
+            )
             act_out, saved_tensors = restore_from_saved(ctx.saved_act_out, saved_tensors)
             fc2_weight, saved_tensors = restore_from_saved(ctx.saved_fc2_weight, saved_tensors)
             fc2_bias, saved_tensors = restore_from_saved(ctx.saved_fc2_bias, saved_tensors)
             fc1_weight_main_grad, fc2_weight_main_grad, mu, rsigma = saved_tensors
 
             # Since main_grad can be modified inplace, it should not be a part of saved_tensors
-            fc1_weight_main_grad = ctx.fc1_main_grad if fc1_weight is not None and ctx.fuse_wgrad_accumulation and ctx.fc1_weight_requires_grad else None
-            fc2_weight_main_grad = ctx.fc2_main_grad if fc2_weight is not None and ctx.fuse_wgrad_accumulation and ctx.fc2_weight_requires_grad else None
+            fc1_weight_main_grad = (
+                ctx.fc1_main_grad
+                if fc1_weight is not None
+                and ctx.fuse_wgrad_accumulation
+                and ctx.fc1_weight_requires_grad
+                else None
+            )
+            fc2_weight_main_grad = (
+                ctx.fc2_main_grad
+                if fc2_weight is not None
+                and ctx.fuse_wgrad_accumulation
+                and ctx.fc2_weight_requires_grad
+                else None
+            )
 
             # TODO: Fix this
             # Gather saved autograd context tensors when running with FSDP
             # NOTE: weight_fp8 = weight when ctx.fp8 == False and torch.disttributed.FSDP already
             #       shards/unshards the base weights so we don't do it ourselves
-            #_fsdp_gather_tensors(
+            # _fsdp_gather_tensors(
             #    ctx.fsdp_group,
             #    ctx.fsdp_shapes,
             #    mu,
@@ -583,9 +604,9 @@ class _LayerNormMLP(torch.autograd.Function):
             #    gelu_out,
             #    fc1_weight_fp8 if ctx.fp8 and not isinstance(fc1_weight, Float8Tensor) else None,
             #    fc2_weight_fp8 if ctx.fp8 and not isinstance(fc2_weight, Float8Tensor) else None,
-            #)
+            # )
 
-            #if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
+            # if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
             #    fc1_weight = Parameter(fc1_weight, fc1_weight.requires_grad)
             #    fc2_weight = Parameter(fc2_weight, fc2_weight.requires_grad)
             #
@@ -602,7 +623,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     ctx.ub_overlap_rs_dgrad = False
             if ctx.ub_bulk_dgrad:
                 tp_world_size = get_distributed_world_size(ctx.tp_group)
-                if tp_world_size == 1 or not ctx.fc1_weight_requires_grad :
+                if tp_world_size == 1 or not ctx.fc1_weight_requires_grad:
                     ctx.ub_bulk_dgrad = False
             if ctx.ub_bulk_dgrad:
                 dim_size = list(ln_out.size())
@@ -629,18 +650,20 @@ class _LayerNormMLP(torch.autograd.Function):
             if ctx.grad_fc2_output_quantizer is not None:
                 ctx.grad_fc2_output_quantizer.set_usage(
                     rowwise=True,
-                    columnwise=True, # TODO(pgadzinski) - remove
+                    columnwise=True,  # TODO(pgadzinski) - remove
                 )
             ctx.use_bias = fc1_bias is not None  # For grad_output_preprocess
             (
                 grad_output,
                 fc2_bias_grad,
-            ) = TransformerEngineBaseModule.grad_output_preprocess(ctx, grad_outputs[0], True, ctx.grad_fc2_output_quantizer)
+            ) = TransformerEngineBaseModule.grad_output_preprocess(
+                ctx, grad_outputs[0], True, ctx.grad_fc2_output_quantizer
+            )
 
             if ctx.ub_bulk_wgrad:
                 raise NotImplementedError
                 tp_world_size = get_distributed_world_size(ctx.tp_group)
-                if tp_world_size == 1 or not ctx.fc1_weight_requires_grad :
+                if tp_world_size == 1 or not ctx.fc1_weight_requires_grad:
                     ctx.ub_bulk_wgrad = False
 
             # Prepare FC1 GEMM input
@@ -677,13 +700,11 @@ class _LayerNormMLP(torch.autograd.Function):
                 get_workspace(),
                 layout="NN",
                 grad=True,
-                quantization_params = None, # high precision to activation
-                out_dtype = ctx.activation_dtype,
+                quantization_params=None,  # high precision to activation
+                out_dtype=ctx.activation_dtype,
                 gelu=(not ctx.bias_gelu_nvfusion) and (ctx.activation == "gelu"),
                 use_split_accumulator=_2X_ACC_DGRAD,
-                ub_algo=(
-                    tex.CommOverlapAlgo.SPLIT_PIPELINED_AG_P2P if ctx.ub_overlap_ag else None
-                ),
+                ub_algo=(tex.CommOverlapAlgo.SPLIT_PIPELINED_AG_P2P if ctx.ub_overlap_ag else None),
                 ub=ctx.ub_obj_gradout if ctx.ub_overlap_ag else None,
             )
 
@@ -695,8 +716,12 @@ class _LayerNormMLP(torch.autograd.Function):
                     act_out,
                     grad_output,
                     get_workspace(),
-                    out_dtype=fc2_weight_main_grad if ctx.fuse_wgrad_accumulation else ctx.activation_dtype,
-                    quantization_params = None, # wgrad in high precision
+                    out_dtype=(
+                        fc2_weight_main_grad
+                        if ctx.fuse_wgrad_accumulation
+                        else ctx.activation_dtype
+                    ),
+                    quantization_params=None,  # wgrad in high precision
                     layout="NT",
                     grad=True,
                     accumulate=accumulate_wgrad_into_param_main_grad,
@@ -711,27 +736,27 @@ class _LayerNormMLP(torch.autograd.Function):
             # bias computation
             fc1_bias_grad = None
             if ctx.bias_gelu_nvfusion and ctx.activation == "gelu":
-               fc1_bias_grad, dact = bgrad_dgelu_fused(fc2_dgrad, fc1_out_without_bias, fc1_bias)
-               if ctx.grad_fc1_output_quantizer is not None:
+                fc1_bias_grad, dact = bgrad_dgelu_fused(fc2_dgrad, fc1_out_without_bias, fc1_bias)
+                if ctx.grad_fc1_output_quantizer is not None:
                     dact = ctx.grad_fc1_output_quantizer(dact)
-               fuse_gemm_and_bias_wgrad = False
+                fuse_gemm_and_bias_wgrad = False
             else:
-                #if ctx.activation != "gelu":
+                # if ctx.activation != "gelu":
 
-                dact = activation_func(fc2_dgrad, fc1_out.to(ctx.activation_dtype), None) # activation in high precision
+                dact = activation_func(
+                    fc2_dgrad, fc1_out.to(ctx.activation_dtype), None
+                )  # activation in high precision
 
                 if ctx.fp8:
                     fc1_bias_grad, dact = tex.bgrad_quantize(dact, ctx.grad_fc1_output_quantizer)
                 fuse_gemm_and_bias_wgrad = not ctx.fp8
                 # TODO - add fused quantization for the GELU
 
-
                 # For non-fp8 execution, FC1 bias gradient is fused with FC1 wgrad GEMM
                 # and will not be calculated in case wgrad is not required.
                 if fc1_bias is not None:
                     if not ctx.fc1_weight_requires_grad and fc1_bias.requires_grad and not ctx.fp8:
                         fc1_bias_grad = fc2_dgrad.sum(dim=0)
-                   
 
             # Overwrite data. Deleting the tensor does not release underlying memory.
             clear_tensor_data(fc1_out)
@@ -776,7 +801,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 grad=True,
                 ub_algo=ub_algo,
                 ub=ub_obj,
-                #extra_output_tensor=rs_out if ctx.ub_overlap_rs_dgrad else None,
+                # extra_output_tensor=rs_out if ctx.ub_overlap_rs_dgrad else None,
             )
             if ctx.ub_bulk_dgrad:
                 raise NotImplementedError
@@ -797,21 +822,25 @@ class _LayerNormMLP(torch.autograd.Function):
 
             # FC1 WGRAD
             fc1_wgrad = None
-            if ctx.fc1_weight_requires_grad :
+            if ctx.fc1_weight_requires_grad:
 
                 # Synchronize tensor-parallel communication
                 if ln_out_total_work is not None:
                     ln_out_total_work.wait()
                     ln_out_total_work = None
-                
+
                 if hasattr(ln_out_total, "_create_transpose"):
-                    ln_out_total._create_transpose() # TODO(pgadzinski) - temporary
+                    ln_out_total._create_transpose()  # TODO(pgadzinski) - temporary
 
                 fc1_wgrad_outputs = general_gemm(
                     ln_out_total,
                     dact,
                     get_workspace(),
-                    out_dtype=fc1_weight_main_grad if ctx.fuse_wgrad_accumulation else ctx.activation_dtype,
+                    out_dtype=(
+                        fc1_weight_main_grad
+                        if ctx.fuse_wgrad_accumulation
+                        else ctx.activation_dtype
+                    ),
                     layout="NT",
                     grad=True,
                     bias=fc1_bias if fuse_gemm_and_bias_wgrad else None,
@@ -869,7 +898,7 @@ class _LayerNormMLP(torch.autograd.Function):
         clear_tensor_data(mu)
         clear_tensor_data(rsigma)
 
-        if ctx.fc1_weight_requires_grad :
+        if ctx.fc1_weight_requires_grad:
             # Handle custom DDP from mcore.
             if ctx.fuse_wgrad_accumulation and hasattr(fc1_weight, "grad_added_to_main_grad"):
                 fc1_weight.grad_added_to_main_grad = True
@@ -892,7 +921,7 @@ class _LayerNormMLP(torch.autograd.Function):
         else:
             fc1_wgrad = None
 
-        if ctx.fc2_weight_requires_grad :
+        if ctx.fc2_weight_requires_grad:
             # Handle custom DDP from mcore.
             if ctx.fuse_wgrad_accumulation and hasattr(fc2_weight, "grad_added_to_main_grad"):
                 fc2_weight.grad_added_to_main_grad = True
@@ -917,7 +946,6 @@ class _LayerNormMLP(torch.autograd.Function):
 
         if ctx.reduce_and_update_bwd_fp8_tensors and not is_graph_capturing():
             FP8GlobalStateManager.reduce_and_update_fp8_tensors(forward=False)
-
 
         # FIX THIS
         # Scatter Fp8 tranposed-weight buffers
@@ -1306,27 +1334,50 @@ class LayerNormMLP(TransformerEngineBaseModule):
         with self.prepare_forward(inp, num_gemms=2) as inp:
 
             # Get quantizers
-            fc1_input_quantizer, fc1_weight_quantizer, fc2_input_quantizer, fc2_weight_quantizer, output_quantizer = None, None, None, None, None
-            grad_fc1_output_quantizer, grad_fc2_output_quantizer, grad_input_quantizer = None, None, None
+            (
+                fc1_input_quantizer,
+                fc1_weight_quantizer,
+                fc2_input_quantizer,
+                fc2_weight_quantizer,
+                output_quantizer,
+            ) = (None, None, None, None, None)
+            grad_fc1_output_quantizer, grad_fc2_output_quantizer, grad_input_quantizer = (
+                None,
+                None,
+                None,
+            )
             if self.fp8:
                 fc1_input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_INPUT]
                 fc1_input_quantizer.internal = False
-                fc1_weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
+                fc1_weight_quantizer = self.quantizers["scaling_fwd"][
+                    tex.FP8FwdTensors.GEMM1_WEIGHT
+                ]
                 fc1_weight_quantizer.internal = True
                 fc2_input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM2_INPUT]
                 fc2_input_quantizer.internal = False
-                fc2_weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM2_WEIGHT]
+                fc2_weight_quantizer = self.quantizers["scaling_fwd"][
+                    tex.FP8FwdTensors.GEMM2_WEIGHT
+                ]
                 fc2_weight_quantizer.internal = True
                 if torch.is_grad_enabled():
-                    grad_fc2_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
+                    grad_fc2_output_quantizer = self.quantizers["scaling_bwd"][
+                        tex.FP8BwdTensors.GRAD_OUTPUT1
+                    ]
                     grad_fc2_output_quantizer.internal = True
-                    grad_fc2_output_quantizer.set_usage(rowwise=True, columnwise=True) # TODO(pgadzinski) - remove
-                    grad_fc1_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT1]
+                    grad_fc2_output_quantizer.set_usage(
+                        rowwise=True, columnwise=True
+                    )  # TODO(pgadzinski) - remove
+                    grad_fc1_output_quantizer = self.quantizers["scaling_bwd"][
+                        tex.FP8BwdTensors.GRAD_INPUT1
+                    ]
                     grad_fc1_output_quantizer.internal = True
-                    grad_fc1_output_quantizer.set_usage(rowwise=True, columnwise=True)  # TODO(pgadzinski) - remove
-                    grad_input_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT2]
+                    grad_fc1_output_quantizer.set_usage(
+                        rowwise=True, columnwise=True
+                    )  # TODO(pgadzinski) - remove
+                    grad_input_quantizer = self.quantizers["scaling_bwd"][
+                        tex.FP8BwdTensors.GRAD_INPUT2
+                    ]
                     grad_input_quantizer.internal = True
-
 
             # Get weight tensors
             fc1_weight = self.fc1_weight
@@ -1338,7 +1389,6 @@ class LayerNormMLP(TransformerEngineBaseModule):
                     fc1_weight = fc1_weight.from_float8()
                 if isinstance(fc2_weight, Float8Tensor):
                     fc2_weight = fc2_weight.from_float8()
-
 
             # Disable bias_gelu_nvfusion for determinism checkpointing in non-reentrant mode
             if self.bias_gelu_nvfusion and not use_reentrant_activation_recompute():

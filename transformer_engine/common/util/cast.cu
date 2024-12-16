@@ -13,12 +13,12 @@
 #include <limits>
 
 #include "../common.h"
+#include "../transpose/cast_transpose.h"
 #include "../util/vectorized_pointwise.h"
 #include "../utils.cuh"
 #include "math.h"
 #include "ptx.cuh"
 #include "transformer_engine/transpose.h"
-#include "../transpose/cast_transpose.h"
 
 namespace transformer_engine {
 
@@ -56,9 +56,9 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
                          const __grid_constant__ CUtensorMap tensor_map_output_rowwise,
                          const __grid_constant__ CUtensorMap tensor_map_output_colwise,
                          e8m0_t *const scales_rowwise, e8m0_t *const scales_colwise,
-                         float *const dbias_workspace, float *const amax_ptr,
-                         const size_t rows, const size_t cols,
-                         const size_t scale_stride_rowwise, const size_t scale_stride_colwise) {
+                         float *const dbias_workspace, float *const amax_ptr, const size_t rows,
+                         const size_t cols, const size_t scale_stride_rowwise,
+                         const size_t scale_stride_colwise) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
   constexpr bool USE_ROWWISE_SCALING = SCALE_DIM_X > 1;
   constexpr bool USE_COLWISE_SCALING = SCALE_DIM_Y > 1;
@@ -870,8 +870,10 @@ void cast_fp8_1D(const Tensor &input, Tensor *output, cudaStream_t stream) {
   const dim3 block(THREADS_PER_BLOCK);
   const dim3 grid(blocks);
 
-  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.dtype(), IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->dtype(), OType,
+  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+      input.dtype(), IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+          output->dtype(), OType,
           const IType *input_ptr = reinterpret_cast<const IType *>(input.data.dptr);
           OType *output_ptr = reinterpret_cast<OType *>(output->data.dptr);
 
@@ -931,11 +933,10 @@ void cast_fp8_2D(const Tensor &input, const Tensor *act_input, Tensor *output, T
                                FP8_SHMEM_DIM_X, sizeof(IType));
 
           if constexpr (IS_DACT) {
-            create_2D_tensor_map(tensor_map_act_input, act_input->data, rows, cols,
-                                 FP8_SHMEM_DIM_Y, FP8_SHMEM_DIM_X, sizeof(IType));
-          }
-          create_2D_tensor_map(tensor_map_output, output->data, rows, cols, FP8_SHMEM_DIM_Y,
-                               FP8_SHMEM_DIM_X, sizeof(OType));
+            create_2D_tensor_map(tensor_map_act_input, act_input->data, rows, cols, FP8_SHMEM_DIM_Y,
+                                 FP8_SHMEM_DIM_X, sizeof(IType));
+          } create_2D_tensor_map(tensor_map_output, output->data, rows, cols, FP8_SHMEM_DIM_Y,
+                                 FP8_SHMEM_DIM_X, sizeof(OType));
 
           cast_fp8_2D_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType>
           <<<grid, block, 0, stream>>>(tensor_map_input, tensor_map_act_input, tensor_map_output,
@@ -948,15 +949,14 @@ void cast_fp8_2D(const Tensor &input, const Tensor *act_input, Tensor *output, T
   );           // NOLINT(*)
 }
 
-template <bool IS_DBIAS, bool IS_DACT, typename ParamOP,
-          float (*OP)(float, const ParamOP &)>
-void mxfp8_quantize(const Tensor &input, const Tensor *act_input, Tensor *output,
-                    Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
+template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
+void mxfp8_quantize(const Tensor &input, const Tensor *act_input, Tensor *output, Tensor *dbias,
+                    Tensor *workspace, cudaStream_t stream) {
   bool use_rowwise_scaling = output->has_data();
   bool use_colwise_scaling = output->has_columnwise_data();
   checkCuDriverContext(stream);
   NVTE_CHECK(input.has_data(), "Cannot quantize tensor without rowwise data.");
-  const auto& input_shape = input.data.shape;
+  const auto &input_shape = input.data.shape;
   NVTE_CHECK(input_shape.size() >= 2, "Input must have at least 2 dimensions.");
 
   // TODO: Make more general
@@ -1000,46 +1000,40 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input, Tensor *output
   const dim3 block(MXFP8_THREADS_PER_CHUNK);
   const dim3 grid(blocks_X, blocks_Y);
 
-  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_Y_colwise, SCALE_DIM_Y,
-      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_X_rowwise, SCALE_DIM_X,
-          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.dtype(), IType,
-              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->dtype(), OType,
+  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
+      scale_dim_Y_colwise, SCALE_DIM_Y,
+      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
+          scale_dim_X_rowwise, SCALE_DIM_X,
+          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
+              input.dtype(), IType,
+              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+                  output->dtype(), OType,
 
                   alignas(64) CUtensorMap tensor_map_input{};
                   alignas(64) CUtensorMap tensor_map_act_input{};
                   alignas(64) CUtensorMap tensor_map_output_rowwise{};
                   alignas(64) CUtensorMap tensor_map_output_colwise{};
 
-                  create_2D_tensor_map(tensor_map_input, input.data,
-                                       rows, cols,
-                                       MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X,
-                                       sizeof(IType));
+                  create_2D_tensor_map(tensor_map_input, input.data, rows, cols, MXFP8_SHMEM_DIM_Y,
+                                       MXFP8_SHMEM_DIM_X, sizeof(IType));
 
                   if constexpr (IS_DACT) {
-                    create_2D_tensor_map(tensor_map_act_input, act_input->data,
-                                         rows, cols,
-                                         MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X,
-                                         sizeof(IType));
-                  }
-                  if (use_rowwise_scaling) {
-                    create_2D_tensor_map(tensor_map_output_rowwise, output->data,
-                                         rows, cols,
-                                         MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X,
-                                         sizeof(OType));
-                  }
-                  if (use_colwise_scaling) {
-                    create_2D_tensor_map(tensor_map_output_colwise, output->columnwise_data,
-                                         rows, cols,
-                                         MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X,
-                                         sizeof(OType));
+                    create_2D_tensor_map(tensor_map_act_input, act_input->data, rows, cols,
+                                         MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X, sizeof(IType));
+                  } if (use_rowwise_scaling) {
+                    create_2D_tensor_map(tensor_map_output_rowwise, output->data, rows, cols,
+                                         MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X, sizeof(OType));
+                  } if (use_colwise_scaling) {
+                    create_2D_tensor_map(tensor_map_output_colwise, output->columnwise_data, rows,
+                                         cols, MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X, sizeof(OType));
                   }
 
                   cast_mxfp8_2D_kernel<IS_DBIAS, IS_DACT, ParamOP, OP, IType, OType, SCALE_DIM_Y,
                                        SCALE_DIM_X><<<grid, block, 0, stream>>>(
                       tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
                       tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr,
-                      workspace_ptr, amax_ptr, rows, cols,
-                      scale_stride_rowwise, scale_stride_colwise);
+                      workspace_ptr, amax_ptr, rows, cols, scale_stride_rowwise,
+                      scale_stride_colwise);
 
                   if constexpr (IS_DBIAS) {
                     reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
@@ -1066,8 +1060,8 @@ __device__ inline float dequantize_func(float value, const DequantizeParam &para
 }  // namespace detail
 
 // Supported by the Arch < 10.0
-void CastVectorizedUnaryKernelLauncher(const Tensor &input, Tensor *output,
-                                       Tensor *workspace, cudaStream_t stream) {
+void CastVectorizedUnaryKernelLauncher(const Tensor &input, Tensor *output, Tensor *workspace,
+                                       cudaStream_t stream) {
   const size_t N = product(input.data.shape);
   TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(
       input.data.dtype, IType,
@@ -1088,12 +1082,11 @@ void CastVectorizedUnaryKernelLauncher(const Tensor &input, Tensor *output,
 // Supported by the Arch >= 10.0
 template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
 void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor *act_input, Tensor *output,
-                              Tensor *dbias, Tensor *workspace, cudaStream_t stream)
-{
+                              Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
   if (is_mxfp_scaling(output->scaling_mode)) {
     // MXFP8 Scaling
-    mxfp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(
-        input, act_input, output, dbias, workspace, stream);
+    mxfp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
+                                                   stream);
   } else if (is_delayed_tensor_scaling(output->scaling_mode)) {
     // Regular FP8 Scaling
     if (!IS_DBIAS && !IS_DACT) {
@@ -1154,8 +1147,7 @@ void fp8_quantize(const Tensor &input, const Tensor *act_input, Tensor *output, 
                                                              workspace, stream);
   } else {
     // Supported by the Arch < 10.0
-    fp8_quantize_arch_l_100<IS_DBIAS, IS_DACT>
-      (input, act_input, output, dbias, workspace, stream);
+    fp8_quantize_arch_l_100<IS_DBIAS, IS_DACT>(input, act_input, output, dbias, workspace, stream);
   }
 }
 
@@ -1186,20 +1178,15 @@ void fp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
 
 namespace detail {
 
-template <bool IS_DBIAS, bool IS_DACT, typename ParamOP,
-          float (*OP)(float, const ParamOP &)>
-void quantize_helper(const NVTETensor input,
-                     const NVTETensor activation_input,
-                     const NVTETensor noop,
-                     NVTETensor output,
-                     NVTETensor dbias,
-                     NVTETensor workspace,
-                     cudaStream_t stream) {
-  const auto& input_tensor = *(reinterpret_cast<const Tensor*>(input));
-  auto output_tensor = reinterpret_cast<Tensor*>(output);
-  const auto activation_tensor = reinterpret_cast<const Tensor*>(activation_input);
-  auto dbias_tensor = reinterpret_cast<Tensor*>(dbias);
-  auto workspace_tensor = reinterpret_cast<Tensor*>(workspace);
+template <bool IS_DBIAS, bool IS_DACT, typename ParamOP, float (*OP)(float, const ParamOP &)>
+void quantize_helper(const NVTETensor input, const NVTETensor activation_input,
+                     const NVTETensor noop, NVTETensor output, NVTETensor dbias,
+                     NVTETensor workspace, cudaStream_t stream) {
+  const auto &input_tensor = *(reinterpret_cast<const Tensor *>(input));
+  auto output_tensor = reinterpret_cast<Tensor *>(output);
+  const auto activation_tensor = reinterpret_cast<const Tensor *>(activation_input);
+  auto dbias_tensor = reinterpret_cast<Tensor *>(dbias);
+  auto workspace_tensor = reinterpret_cast<Tensor *>(workspace);
 
   if (is_tensor_scaling(output_tensor->scaling_mode)) {
     if (output_tensor->has_columnwise_data()) {
@@ -1209,31 +1196,25 @@ void quantize_helper(const NVTETensor input,
       // cast+transpose
       // TODO: handle noop
       if constexpr (!IS_DBIAS && !IS_DACT) {
-        const auto noop_tensor = noop != nullptr ? *(reinterpret_cast<const Tensor*>(noop))
-                                                 : Tensor();
+        const auto noop_tensor =
+            noop != nullptr ? *(reinterpret_cast<const Tensor *>(noop)) : Tensor();
         cast_transpose(input_tensor, noop_tensor, output_tensor, stream);
       }
       if constexpr (IS_DBIAS) {
-        cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(input_tensor, activation_tensor,
-                                                                    output_tensor, dbias_tensor,
-                                                                    workspace_tensor, stream);
+        cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(
+            input_tensor, activation_tensor, output_tensor, dbias_tensor, workspace_tensor, stream);
       }
       if constexpr (!IS_DBIAS && IS_DACT) {
         NVTE_ERROR("Not implemented yet!");
       }
     } else if (output_tensor->has_data()) {
-      fp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(
-          input_tensor,
-          activation_tensor,
-          output_tensor,
-          dbias_tensor,
-          workspace_tensor, stream);
+      fp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(input_tensor, activation_tensor, output_tensor,
+                                                   dbias_tensor, workspace_tensor, stream);
     }
   } else {
     // MX scaling
-    mxfp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(input_tensor, activation_tensor,
-                                                   output_tensor, dbias_tensor,
-                                                   workspace_tensor, stream);
+    mxfp8_quantize<IS_DBIAS, IS_DACT, ParamOP, OP>(input_tensor, activation_tensor, output_tensor,
+                                                   dbias_tensor, workspace_tensor, stream);
   }
 }
 
@@ -1251,16 +1232,12 @@ void nvte_quantize(const NVTETensor input, NVTETensor output, cudaStream_t strea
   constexpr NVTETensor workspace = nullptr;
   constexpr const NVTETensor activation_input = nullptr;
 
-  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, nullptr>(input,
-                                                             activation_input,
-                                                             nullptr,
-                                                             output,
-                                                             dbias,
-                                                             workspace,
-                                                             stream);
+  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, nullptr>(input, activation_input, nullptr,
+                                                             output, dbias, workspace, stream);
 }
 
-void nvte_quantize_noop(const NVTETensor input, NVTETensor output, NVTETensor noop, cudaStream_t stream) {
+void nvte_quantize_noop(const NVTETensor input, NVTETensor output, NVTETensor noop,
+                        cudaStream_t stream) {
   NVTE_API_CALL(nvte_quantize);
   using namespace transformer_engine;
 
@@ -1270,17 +1247,12 @@ void nvte_quantize_noop(const NVTETensor input, NVTETensor output, NVTETensor no
   constexpr NVTETensor workspace = nullptr;
   constexpr const NVTETensor activation_input = nullptr;
 
-  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, nullptr>(input,
-                                                             activation_input,
-                                                             noop,
-                                                             output,
-                                                             dbias,
-                                                             workspace,
-                                                             stream);
+  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, nullptr>(input, activation_input, noop, output,
+                                                             dbias, workspace, stream);
 }
 
 void nvte_quantize_dbias(const NVTETensor input, NVTETensor output, NVTETensor dbias,
-                             NVTETensor workspace, cudaStream_t stream) {
+                         NVTETensor workspace, cudaStream_t stream) {
   NVTE_API_CALL(nvte_quantize_dbias);
   using namespace transformer_engine;
 
@@ -1288,103 +1260,73 @@ void nvte_quantize_dbias(const NVTETensor input, NVTETensor output, NVTETensor d
   constexpr bool IS_DACT = false;
   constexpr const NVTETensor activation_input = nullptr;
 
-  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, nullptr>(input,
-                                                             activation_input,
-                                                             nullptr,
-                                                             output,
-                                                             dbias,
-                                                             workspace,
-                                                             stream);
+  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, nullptr>(input, activation_input, nullptr,
+                                                             output, dbias, workspace, stream);
 }
 
 void nvte_quantize_dbias_dgelu(const NVTETensor input, const NVTETensor activation_input,
-                                   NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                   cudaStream_t stream) {
+                               NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                               cudaStream_t stream) {
   NVTE_API_CALL(nvte_quantize_dbias_dgelu);
   using namespace transformer_engine;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
-  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, dgelu<fp32, fp32>>(input,
-                                                                       activation_input,
-                                                                       nullptr,
-                                                                       output,
-                                                                       dbias,
-                                                                       workspace,
-                                                                       stream);
+  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, dgelu<fp32, fp32>>(
+      input, activation_input, nullptr, output, dbias, workspace, stream);
 }
 
 void nvte_quantize_dbias_dsilu(const NVTETensor input, const NVTETensor activation_input,
-                                   NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                   cudaStream_t stream) {
+                               NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                               cudaStream_t stream) {
   NVTE_API_CALL(nvte_quantize_dbias_dsilu);
   using namespace transformer_engine;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
-  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, dsilu<fp32, fp32>>(input,
-                                                                       activation_input,
-                                                                       nullptr,
-                                                                       output,
-                                                                       dbias,
-                                                                       workspace,
-                                                                       stream);
+  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, dsilu<fp32, fp32>>(
+      input, activation_input, nullptr, output, dbias, workspace, stream);
 }
 
 void nvte_quantize_dbias_drelu(const NVTETensor input, const NVTETensor activation_input,
-                                   NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                   cudaStream_t stream) {
+                               NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                               cudaStream_t stream) {
   NVTE_API_CALL(nvte_quantize_dbias_drelu);
   using namespace transformer_engine;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
-  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, drelu<fp32, fp32>>(input,
-                                                                       activation_input,
-                                                                       nullptr,
-                                                                       output,
-                                                                       dbias,
-                                                                       workspace,
-                                                                       stream);
+  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, drelu<fp32, fp32>>(
+      input, activation_input, nullptr, output, dbias, workspace, stream);
 }
 
 void nvte_quantize_dbias_dqgelu(const NVTETensor input, const NVTETensor activation_input,
-                                    NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                    cudaStream_t stream) {
+                                NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                                cudaStream_t stream) {
   NVTE_API_CALL(nvte_quantize_dbias_dqgelu);
   using namespace transformer_engine;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
-  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, dqgelu<fp32, fp32>>(input,
-                                                                        activation_input,
-                                                                        nullptr,
-                                                                        output,
-                                                                        dbias,
-                                                                        workspace,
-                                                                        stream);
+  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, dqgelu<fp32, fp32>>(
+      input, activation_input, nullptr, output, dbias, workspace, stream);
 }
 
 void nvte_quantize_dbias_dsrelu(const NVTETensor input, const NVTETensor activation_input,
-                                    NVTETensor output, NVTETensor dbias, NVTETensor workspace,
-                                    cudaStream_t stream) {
+                                NVTETensor output, NVTETensor dbias, NVTETensor workspace,
+                                cudaStream_t stream) {
   NVTE_API_CALL(nvte_quantize_dbias_dsrelu);
   using namespace transformer_engine;
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
 
-  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, dsrelu<fp32, fp32>>(input,
-                                                                        activation_input,
-                                                                        nullptr,
-                                                                        output,
-                                                                        dbias,
-                                                                        workspace,
-                                                                        stream);
+  detail::quantize_helper<IS_DBIAS, IS_DACT, Empty, dsrelu<fp32, fp32>>(
+      input, activation_input, nullptr, output, dbias, workspace, stream);
 }
 
 void nvte_dequantize(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
