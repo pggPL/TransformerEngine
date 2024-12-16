@@ -12,11 +12,6 @@ namespace transformer_engine {
 struct Empty {};
 
 template <typename OType, typename IType>
-__device__ inline OType identity(const IType val, const Empty&) {
-  return val;
-}
-
-template <typename OType, typename IType>
 __device__ inline OType gelu(const IType val, const Empty&) {
   const float cval = val;
   return cval * (0.5F + 0.5F * tanhf(cval * (0.79788456F + 0.03567741F * cval * cval)));

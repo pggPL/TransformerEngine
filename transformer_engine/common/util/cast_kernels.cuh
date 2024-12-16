@@ -1138,7 +1138,7 @@ void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor *act_input, Tens
       } else {
         // Unaligned
         if constexpr (OP == nullptr) {
-          CastVectorizedUnaryKernelLauncher<ParamOP, identity<fp32,fp32>>(input, output, workspace, stream);
+          CastVectorizedUnaryKernelLauncher<ParamOP, detail::identity>(input, output, workspace, stream);
         } else {
           CastVectorizedUnaryKernelLauncher<ParamOP, OP>(input, output, workspace, stream);
         }
