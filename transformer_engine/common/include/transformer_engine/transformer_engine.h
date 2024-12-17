@@ -217,6 +217,14 @@ float *nvte_tensor_scale_inv(const NVTETensor tensor);
  */
 NVTEShape nvte_tensor_scale_inv_shape(const NVTETensor tensor);
 
+/*! \brief Reset tensor value to zero.
+ *
+ *  \param[in] tensor Tensor.
+ *
+ *  \return A scale_inv shape of the input tensor.
+ */
+void nvte_zero_tensor(const NVTETensor tensor, cudaStream_t stream);
+
 /*! \brief Set a parameter of the tensor.
  *
  *  \param[in/out] tensor Tensor.
@@ -592,35 +600,7 @@ class TensorWrapper {
   }
 
   void zero_(cudaStream_t stream) {
-    // Zero out tensor data if allocated
-    if (dptr() != nullptr) {
-      size_t size_in_bytes = bytes();
-      cudaMemsetAsync(dptr(), 0, size_in_bytes, stream);
-    }
-    // Set amax to 0 if allocated
-    if (amax() != nullptr) {
-      float zero = 0.0f;
-      cudaMemcpyAsync(amax(), &zero, sizeof(float), cudaMemcpyHostToDevice, stream);
-    }
-
-    // Set scale to 1 if allocated
-    if (scale() != nullptr) {
-      float one = 1.0f;
-      cudaMemcpyAsync(scale(), &one, sizeof(float), cudaMemcpyHostToDevice, stream);
-    }
-
-    // Set scale_inv to 1 if allocated
-    if (scale_inv() != nullptr) {
-      const NVTEShape s_inv_shape = scale_inv_shape();
-      size_t numel = 1;
-      for (size_t i = 0; i < s_inv_shape.ndim; ++i) {
-        numel *= s_inv_shape.data[i];
-      }
-      // Create a host vector of ones
-      std::vector<float> ones(numel, 1.0f);
-      cudaMemcpyAsync(scale_inv(), ones.data(), numel * sizeof(float), cudaMemcpyHostToDevice,
-                      stream);
-    }
+      nvte_zero_tensor(tensor_, stream);
   }
 
   static constexpr size_t defaultData = 1;

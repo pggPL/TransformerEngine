@@ -29,10 +29,6 @@ from transformer_engine.pytorch.cpp_extensions import (
     cast_from_fp8,
 )
 from transformer_engine.pytorch.cpp_extensions.fused_attn import (
-    fused_attn_fwd_qkvpacked,
-    fused_attn_bwd_qkvpacked,
-    fused_attn_fwd_kvpacked,
-    fused_attn_bwd_kvpacked,
     fused_attn_fwd,
     fused_attn_bwd,
     QKVLayout,
@@ -1637,6 +1633,35 @@ def flash_attn_a2a_communicate(
     return a2a_outputs[0] if len(a2a_inputs) == 1 else a2a_outputs
 
 
+def get_attention_quantizers(fp8, quantizers, cp_specific_quantizers = False):
+    if not fp8:
+        num_of_nones = 8 if cp_specific_quantizers else 6
+        return [None] * num_of_nones
+    QKV_quantizer = quantizers["scaling_fwd"][META_QKV]
+    QKV_quantizer.set_usage(rowwise=True, columnwise=False)
+    O_quantizer = quantizers["scaling_fwd"][META_O]
+    O_quantizer.set_usage(rowwise=True, columnwise=False)
+    S_quantizer = quantizers["scaling_fwd"][META_S]
+    S_quantizer.set_usage(rowwise=True, columnwise=False)
+    dQKV_quantizer = quantizers["scaling_bwd"][META_DQKV]
+    dQKV_quantizer.set_usage(rowwise=True, columnwise=False)
+    dO_quantizer = quantizers["scaling_bwd"][META_DO]
+    dO_quantizer.set_usage(rowwise=True, columnwise=False)
+    dP_quantizer = quantizers["scaling_bwd"][META_DP]
+    dP_quantizer.set_usage(rowwise=True, columnwise=False)
+    dQKV_CP_quantizer = quantizers["scaling_bwd"][META_DQKV_CP]
+    dQKV_CP_quantizer.set_usage(rowwise=True, columnwise=False)
+    O_CP_quantizer = quantizers["scaling_fwd"][META_O_CP]
+    O_CP_quantizer.set_usage(rowwise=True, columnwise=False)
+
+    if cp_specific_quantizers:
+        return QKV_quantizer, O_quantizer, O_CP_quantizer, S_quantizer,\
+            dQKV_quantizer, dQKV_CP_quantizer, dO_quantizer, dP_quantizer
+
+    return QKV_quantizer, O_quantizer, S_quantizer,\
+        dQKV_quantizer, dO_quantizer, dP_quantizer
+
+
 class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
     """
     Attention implementation with context parallelism. Exchange KV between CP ranks
@@ -1675,6 +1700,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         cp_group,
         cp_global_ranks,
         cp_stream,
+        quantizers
     ):
         # pylint: disable=missing-function-docstring
         if softmax_scale is None:
@@ -1724,43 +1750,35 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
 
         fused_attn_qkv_dtype = None
         fused_attn_backend = None
-        amax_per_step = None
         qkv_dtype = q.dtype
         # "fp8_mha" decides outputs in fp8, while inputs are inferred from the real dtype
         is_input_fp8 = False
         is_output_fp8 = fp8_meta is not None and fp8_meta["recipe"].fp8_mha
+
+
+        QKV_quantizer, O_quantizer, O_CP_quantizer, S_quantizer,\
+            dQKV_quantizer, dQKV_CP_quantizer, dO_quantizer, dP_quantizer = \
+                get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=True)
+
         if fp8:
             if use_fused_attention:
-                fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
-                fused_attn_qkv_dtype = fp8_dtype_forward
                 fused_attn_backend = FusedAttnBackend["FP8"]
+
                 assert isinstance(k, q.__class__) and isinstance(
                     v, q.__class__
                 ), "q, k, and v must have the same type."
                 is_input_fp8 = isinstance(q, Float8Tensor)
                 if is_input_fp8:
-                    fp8_meta["scaling_fwd"].scale_inv[META_QKV] = q._scale_inv
                     q_fp8, k_fp8, v_fp8 = q, k, v
-                    q, k, v = q_fp8._data, k_fp8._data, v_fp8._data
                 else:
                     q_f16, k_f16, v_f16 = q, k, v
                     if cp_size_a2a == 1 or int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
-                        q = cast_to_fp8(q_f16, fp8_meta["scaling_fwd"], META_QKV, fp8_dtype_forward)
+                        q = QKV_quantizer(q_f16)
                     if int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
-                        k, v = [
-                            cast_to_fp8(x, fp8_meta["scaling_fwd"], META_QKV, fp8_dtype_forward)
-                            for x in [k_f16, v_f16]
-                        ]
+                        k, v = [QKV_quantizer(x) for x in [k_f16, v_f16] ]
                 fp8_meta_kwargs = {}
-                fp8_meta_kwargs["d_scale_qkv"] = fp8_meta["scaling_fwd"].scale_inv
-                fp8_meta_kwargs["d_scale_qkv_offset"] = META_QKV
-                fp8_meta_kwargs["d_scale_s"] = fp8_meta["scaling_fwd"].scale_inv
-                fp8_meta_kwargs["d_scale_s_offset"] = META_S
-                fp8_meta_kwargs["q_scale_s"] = fp8_meta["scaling_fwd"].scale
-                fp8_meta_kwargs["q_scale_s_offset"] = META_S
-                fp8_meta_kwargs["q_scale_o"] = fp8_meta["scaling_fwd"].scale
-                fp8_meta_kwargs["q_scale_o_offset"] = META_O_CP
-                amax_per_step = torch.zeros((2, cp_size), dtype=torch.float32, device=q.device)
+                fp8_meta_kwargs["s_quantizer"] = S_quantizer
+                fp8_meta_kwargs["o_quantizer"] = O_CP_quantizer # partial result quantizer
             else:
                 assert False, "FP8 is only supported with Fused Attention!"
         else:
@@ -1779,7 +1797,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                 q_f16 = q
             elif not is_input_fp8 and not int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
                 q_f16 = q
-                q = cast_to_fp8(q_f16, fp8_meta["scaling_fwd"], META_QKV, fp8_dtype_forward)
+                q = QKV_quantizer(q_f16)
 
         assert qkv_format == "thd" or (
             q.shape[seq_dim] % 2 == 0 and k.shape[seq_dim] % 2 == 0
@@ -1883,17 +1901,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                         kv_inputs[i % 2] = p2p_comm_buffers[i]
                     else:
                         # KV exchange is in BF16/FP16, cast received KV in each step
-                        kv_inputs[i % 2] = cast_to_fp8(
-                            p2p_comm_buffers[i],
-                            fp8_meta["scaling_fwd"],
-                            META_QKV,
-                            fp8_dtype_forward,
-                        )
-                    if fp8 and use_fused_attention:
-                        fp8_meta_kwargs["amax_s"] = amax_per_step
-                        fp8_meta_kwargs["amax_s_offset"] = i
-                        fp8_meta_kwargs["amax_o"] = amax_per_step
-                        fp8_meta_kwargs["amax_o_offset"] = cp_size + i
+                        kv_inputs[i % 2] = QKV_quantizer(p2p_comm_buffers[i])
                     if causal:
                         if i == 0:
                             if pad_between_seqs_q:
@@ -2308,13 +2316,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
 
                 with torch.cuda.stream(flash_attn_streams[(i - 1) % 2]):
                     if fp8:
-                        out_per_step[i - 1] = cast_from_fp8(
-                            out_per_step[i - 1],
-                            fp8_meta["scaling_fwd"],
-                            META_O_CP,
-                            fp8_dtype_forward,
-                            TE_DType[torch.float32],
-                        )
+                        out_per_step[i - 1] = out_per_step[i - 1].dequantize()
                     if i == 1:
                         out = torch.zeros_like(q if not fp8 else out_per_step[0]).view(q.shape)
                         softmax_lse = torch.clone(softmax_lse_per_step[0]).to(torch.double)
@@ -2425,70 +2427,54 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         elif not use_fused_attention:
             out = out.view(-1, *out.shape[-2:])
 
-        if fp8 and use_fused_attention:
-            amax_cp_fwd = amax_per_step.amax(dim=1)
-            fp8_meta["scaling_fwd"].amax_history[0][META_S] = amax_cp_fwd[0]
-            fp8_meta["scaling_fwd"].amax_history[0][META_O_CP] = amax_cp_fwd[1]
 
         out_fp8 = None
         out_f16 = out.to(qkv_dtype)
         if fp8 and (is_output_fp8 or int(os.getenv("NVTE_FP8_DPA_BWD", "1"))):
-            out_fp8 = cast_to_fp8(out_f16, fp8_meta["scaling_fwd"], META_O, fp8_dtype_forward)
+            out_fp8 = O_quantizer(out_f16) # final result
 
-        if fp8 and is_output_fp8:
-            out_ret = Float8Tensor(
-                data=out_fp8,
-                fp8_meta=fp8_meta,
-                fp8_meta_forward=True,
-                fp8_meta_index=META_O,
-                fp8_dtype=fp8_dtype_forward,
-                dtype=qkv_dtype,
-            )
-        else:
-            out_ret = out_f16
+        
+        out_ret = out_fp8 if (fp8 and is_output_fp8) else out_f16
 
         if fp8 and int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
             q_save, kv_save, out_save = q, kv, out_fp8
-            fp8_fwd_scales = fp8_meta["scaling_fwd"].scale.clone()
-            fp8_fwd_scale_invs = fp8_meta["scaling_fwd"].scale_inv.clone()
         elif fp8 and is_input_fp8:
-            q_fp8 = Float8Tensor(
-                data=q,
-                fp8_meta=fp8_meta,
-                fp8_meta_forward=True,
-                fp8_meta_index=META_QKV,
-                fp8_dtype=fp8_dtype_forward,
-                dtype=q_fp8.dtype,
-            )
-            kv_fp8 = Float8Tensor(
-                data=kv,
-                fp8_meta=fp8_meta,
-                fp8_meta_forward=True,
-                fp8_meta_index=META_QKV,
-                fp8_dtype=fp8_dtype_forward,
-                dtype=k_fp8.dtype,
-            )
-            q_save, kv_save, out_save = q_fp8, kv_fp8, out_f16
-            fp8_fwd_scales, fp8_fwd_scale_invs = None, None
+            q_save, kv_save, out_save = q, k, out_f16
         else:
             q_f16 = q_f16.view(q.shape)
             q_save, kv_save, out_save = q_f16, kv, out_f16
-            fp8_fwd_scales, fp8_fwd_scale_invs = None, None
+
+        saved_q_tensors, saved_q = prepare_for_saving(q_save)
+        saved_kv_tensors, saved_kv = prepare_for_saving(kv_save)
+        saved_out_tensors, saved_out = prepare_for_saving(out_save)
 
         ctx.save_for_backward(
-            q_save,
-            kv_save,
-            out_save,
+            *saved_q_tensors,
+            *saved_kv_tensors,
+            *saved_out_tensors,
             softmax_lse,
             cu_seqlens_q_padded,
             cu_seqlens_kv_padded,
-            fp8_fwd_scales,
-            fp8_fwd_scale_invs,
             *cu_seqlens_q_per_step,
             *cu_seqlens_kv_per_step,
             *rng_states,
             *attn_biases,
         )
+
+        ctx.saved_q = saved_q
+        ctx.saved_kv = saved_kv
+        ctx.saved_out = saved_out
+
+        ctx.QKV_quantizer = QKV_quantizer
+        ctx.O_quantizer = O_quantizer
+        ctx.O_CP_quantizer = O_CP_quantizer
+        ctx.S_quantizer = S_quantizer
+        ctx.dQKV_quantizer = dQKV_quantizer
+        ctx.dQKV_CP_quantizer = dQKV_CP_quantizer
+        ctx.dO_quantizer = dO_quantizer
+        ctx.dP_quantizer = dP_quantizer
+
+
         ctx.cp_group_a2a = cp_group_a2a
         ctx.cp_size_a2a = cp_size_a2a
         ctx.rank_a2a = rank_a2a
@@ -2524,13 +2510,15 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         recv_src = ctx.cp_global_ranks[(rank + 1) % cp_size * cp_size_a2a + rank_a2a]
         batch_p2p_comm = int(os.getenv("NVTE_BATCH_MHA_P2P_COMM", "0")) or (cp_size == 2)
 
-        (*saved_tensors,) = ctx.saved_tensors
-        (q, kv, out, softmax_lse, cu_seqlens_q_padded, cu_seqlens_kv_padded) = saved_tensors[:6]
-        (fp8_fwd_scales, fp8_fwd_scale_invs) = saved_tensors[6:8]
-        cu_seqlens_q_per_step = saved_tensors[8 : 8 + cp_size]
-        cu_seqlens_kv_per_step = saved_tensors[8 + cp_size : 8 + cp_size * 2]
-        rng_states = saved_tensors[8 + cp_size * 2 : 8 + cp_size * 3]
-        attn_biases = saved_tensors[8 + cp_size * 3 : 8 + cp_size * 4]
+        saved_tensors = ctx.saved_tensors
+        q, saved_tensors = restore_from_saved(ctx.saved_q, saved_tensors)
+        kv, saved_tensors = restore_from_saved(ctx.saved_kv, saved_tensors)
+        out, saved_tensors = restore_from_saved(ctx.saved_out, saved_tensors)
+        (softmax_lse, cu_seqlens_q_padded, cu_seqlens_kv_padded) = saved_tensors[:3]
+        cu_seqlens_q_per_step = saved_tensors[3 : 3 + cp_size]
+        cu_seqlens_kv_per_step = saved_tensors[3 + cp_size : 3 + cp_size * 2]
+        rng_states = saved_tensors[3 + cp_size * 2 : 3 + cp_size * 3]
+        attn_biases = saved_tensors[3 + cp_size * 3 : 3 + cp_size * 4]
 
         causal = "causal" in ctx.attn_mask_type
         padding = "padding" in ctx.attn_mask_type
@@ -2579,16 +2567,9 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
 
         dout_dtype = dout.dtype
         fused_attn_backend = None
-        fused_attn_qkv_dtype = None
-        fused_attn_dqkv_dtype = None
-        amax_per_step = None
         dout_fp8_dtype = None
         if ctx.fp8:
             if ctx.use_fused_attention:
-                fp8_dtype_forward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=True)
-                fp8_dtype_backward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=False)
-                fused_attn_qkv_dtype = fp8_dtype_forward
-                fused_attn_dqkv_dtype = fp8_dtype_backward
                 fused_attn_backend = FusedAttnBackend["FP8"]
                 dq_fp8 = torch.empty((cp_size, *q.shape), dtype=q.dtype, device=q.device)
                 dkv_fp8 = torch.empty((cp_size, *kv.shape), dtype=kv.dtype, device=kv.device)
@@ -2598,20 +2579,12 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                     ctx.fp8_meta["scaling_bwd"].scale_inv[META_DO] = dout._scale_inv
                     dout = dout._data
                 else:
-                    dout = cast_to_fp8(
-                        dout, ctx.fp8_meta["scaling_bwd"], META_DO, fp8_dtype_backward
-                    )
+                    dout = ctx.dO_Quantizer(dout)
                 p2p_comm_buffers = [[kv, dkv_fp8], [torch.empty_like(kv), dkv_fp8_]]
                 fp8_meta_kwargs = {}
-                fp8_meta_kwargs["d_scale_qkv"] = fp8_fwd_scale_invs[META_QKV]
-                fp8_meta_kwargs["d_scale_s"] = fp8_fwd_scale_invs[META_S]
-                fp8_meta_kwargs["d_scale_o"] = fp8_fwd_scale_invs[META_O]
-                fp8_meta_kwargs["d_scale_do"] = ctx.fp8_meta["scaling_bwd"].scale_inv[META_DO]
-                fp8_meta_kwargs["d_scale_dp"] = ctx.fp8_meta["scaling_bwd"].scale_inv[META_DP]
-                fp8_meta_kwargs["q_scale_s"] = fp8_fwd_scales[META_S]
-                fp8_meta_kwargs["q_scale_dp"] = ctx.fp8_meta["scaling_bwd"].scale[META_DP]
-                fp8_meta_kwargs["q_scale_dqkv"] = ctx.fp8_meta["scaling_bwd"].scale[META_DQKV_CP]
-                amax_per_step = torch.zeros((2, cp_size), dtype=torch.float32, device=q.device)
+                fp8_meta_kwargs['s_quantizer'] = ctx.S_quantizer
+                fp8_meta_kwargs['dp_quantizer'] = ctx.dP_quantizer
+                fp8_meta_kwargs['dqkv_quantizer'] = ctx.dQKV_CP_quantizer
             else:
                 assert False, "FP8 is only supported with Fused Attention!"
         else:
@@ -2652,14 +2625,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                 True,
             )
             if not ctx.fp8 and ctx.fp8_meta is not None and ctx.is_output_fp8:
-                dout = cast_from_fp8(
-                    dout,
-                    None,
-                    None,
-                    dout_fp8_dtype,
-                    TE_DType[dout_dtype],
-                    scale_inv=dout_scale_inv,  # pylint: disable=used-before-assignment
-                )
+                dout = dout.dequantize()
 
         out = out.view(*q.shape)
         dout = dout.view(*q.shape)
@@ -2718,9 +2684,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
 
             kv = p2p_comm_buffers[i % 2][0]
             dk_, dv_ = None, None
-            if ctx.fp8 and ctx.use_fused_attention:
-                fp8_meta_kwargs["amax_dp"] = amax_per_step[0][i]
-                fp8_meta_kwargs["amax_dqkv"] = amax_per_step[0][i]
             # In reversed order of fwd
             if causal:
                 if i == (cp_size - 1):
@@ -2763,7 +2726,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                             kv_[..., 1, :, :] if ctx.qkv_format in ["bshd", "sbhd"] else kv_[1],
                             out_,
                             dout_,
-                            fused_attn_qkv_dtype,
                             fused_attn_dqkv_dtype,
                             aux_ctx_tensors,
                             fused_attn_backend,
@@ -2850,7 +2812,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                             kv_[..., 1, :, :] if ctx.qkv_format in ["bshd", "sbhd"] else kv_[1],
                             out_,
                             dout_,
-                            fused_attn_qkv_dtype,
                             fused_attn_dqkv_dtype,
                             aux_ctx_tensors,
                             fused_attn_backend,
@@ -2945,7 +2906,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                             kv_[..., 1, :, :] if ctx.qkv_format in ["bshd", "sbhd"] else kv_[1],
                             out_,
                             dout_,
-                            fused_attn_qkv_dtype,
                             fused_attn_dqkv_dtype,
                             aux_ctx_tensors,
                             fused_attn_backend,
@@ -3018,7 +2978,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                         kv[..., 1, :, :] if ctx.qkv_format in ["bshd", "sbhd"] else kv[1],
                         out,
                         dout,
-                        fused_attn_qkv_dtype,
                         fused_attn_dqkv_dtype,
                         aux_ctx_tensors,
                         fused_attn_backend,
@@ -3219,23 +3178,11 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                     dkv.add_(dkv_)
 
         if ctx.fp8 and ctx.use_fused_attention:
-            amax_cp_bwd = amax_per_step.amax(dim=1)
-            ctx.fp8_meta["scaling_bwd"].amax_history[0][META_DP] = amax_cp_bwd[0]
-            ctx.fp8_meta["scaling_bwd"].amax_history[0][META_DQKV_CP] = amax_cp_bwd[1]
             if ctx.qkv_format in ["bshd", "sbhd"]:
                 # [cp, b, 2, sk//2, 2, np, hn] -> [cp, 2, b, 2, sk//2, np, hn] or
                 # [cp, 2, sk//2, b, 2, np, hn] -> [cp, 2, 2, sk//2, b, np, hn]
                 dkv_fp8 = dkv_fp8.view(cp_size, 2, *dkv_fp8.shape[1:-3], *dkv_fp8.shape[-2:])
-            dq, dkv = [
-                cast_from_fp8(
-                    x,
-                    ctx.fp8_meta["scaling_bwd"],
-                    META_DQKV_CP,
-                    fp8_dtype_backward,
-                    TE_DType[torch.float32],
-                )
-                for x in [dq_fp8, dkv_fp8]
-            ]
+            dq, dkv = [x.dequantize() for x in [dq_fp8, dkv_fp8]]
             dq, dkv = [x.sum(dim=0).to(dout_dtype) for x in [dq, dkv]]
 
         if causal:
@@ -3259,10 +3206,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
             dkv = dkv_
 
         if ctx.fp8 and ctx.is_input_fp8:
-            dq, dkv = [
-                cast_to_fp8(x, ctx.fp8_meta["scaling_bwd"], META_DQKV, fp8_dtype_backward)
-                for x in [dq, dkv]
-            ]
+            dq, dkv = [ctx.dQKV_quantizer(x) for x in [dq, dkv]]
         dk, dv = dkv[0], dkv[1]
 
         if cp_size_a2a > 1:
@@ -3280,19 +3224,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                 dq, dk, dv = [x.view(ctx.batch_size, -1, *x.shape[-2:]) for x in [dq, dk, dv]]
             elif ctx.qkv_format == "sbhd":
                 dq, dk, dv = [x.view(-1, ctx.batch_size, *x.shape[-2:]) for x in [dq, dk, dv]]
-
-        if ctx.fp8 and ctx.is_input_fp8:
-            dq, dk, dv = [
-                Float8Tensor(
-                    data=x,
-                    fp8_meta=ctx.fp8_meta,
-                    fp8_meta_forward=False,
-                    fp8_meta_index=META_DQKV,
-                    fp8_dtype=fp8_dtype_backward,
-                    dtype=dout_dtype,
-                )
-                for x in [dq, dk, dv]
-            ]
 
         if attn_dbias is not None:
             # [b, np, sq, 2*cp, sk//(2*cp)] -> [b, np, sq, sk]
@@ -3322,6 +3253,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
             None,
             None,
             None,
+            None
         )
 
 
@@ -3379,7 +3311,7 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
         use_fused_attention,
         window_size,
         cp_group,
-        cp_stream,
+        cp_stream
     ):
         # pylint: disable=missing-function-docstring
         if softmax_scale is None:
@@ -3495,7 +3427,6 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
                             q_,
                             k_,
                             v_,
-                            TE_DType[q.dtype],
                             tex.NVTE_Fused_Attn_Backend.NVTE_F16_arbitrary_seqlen,
                             attn_scale=softmax_scale,
                             dropout=dropout_p,
@@ -3658,7 +3589,6 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
                             v_,
                             out_,
                             dout_,
-                            TE_DType[q.dtype],
                             TE_DType[dout.dtype],
                             aux_ctx_tensors,
                             tex.NVTE_Fused_Attn_Backend.NVTE_F16_arbitrary_seqlen,
@@ -3802,6 +3732,7 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
         fp8_meta,
         cp_group,
         cp_stream,
+        quantizers
     ):
         # pylint: disable=missing-function-docstring
         if softmax_scale is None:
@@ -3851,44 +3782,34 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
             q.shape[seq_dim] % 2 == 0 and k.shape[seq_dim] % 2 == 0
         ), "Sequence length per GPU needs to be divisible by 2!"
 
-        qkv_dtype = q.dtype
         fused_attn_backend = None
-        fused_attn_qkv_dtype = None
         # "fp8_mha" decides outputs in fp8, while inputs are inferred from the real dtype
         is_input_fp8 = False
         is_output_fp8 = fp8_meta is not None and fp8_meta["recipe"].fp8_mha
+
+        QKV_quantizer, O_quantizer, S_quantizer,\
+            dQKV_quantizer, dO_quantizer, dP_quantizer = \
+                get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=False)
         if fp8:
             if use_fused_attention:
-                fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
-                fused_attn_qkv_dtype = fp8_dtype_forward
+
                 fused_attn_backend = FusedAttnBackend["FP8"]
                 assert isinstance(k, q.__class__) and isinstance(
                     v, q.__class__
                 ), "q, k, and v must have the same type."
                 is_input_fp8 = isinstance(q, Float8Tensor)
                 if is_input_fp8:
-                    fp8_meta["scaling_fwd"].scale_inv[META_QKV] = q._scale_inv
                     q_fp8, k_fp8, v_fp8 = q, k, v
                     q, k, v = q_fp8._data, k_fp8._data, v_fp8._data
                 elif int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
                     q_f16, k_f16, v_f16 = q, k, v
                     q, k, v = [
-                        cast_to_fp8(x, fp8_meta["scaling_fwd"], META_QKV, fp8_dtype_forward)
+                        QKV_quantizer(x)
                         for x in [q_f16, k_f16, v_f16]
                     ]
                 fp8_meta_kwargs = {}
-                fp8_meta_kwargs["d_scale_qkv"] = fp8_meta["scaling_fwd"].scale_inv
-                fp8_meta_kwargs["d_scale_qkv_offset"] = META_QKV
-                fp8_meta_kwargs["d_scale_s"] = fp8_meta["scaling_fwd"].scale_inv
-                fp8_meta_kwargs["d_scale_s_offset"] = META_S
-                fp8_meta_kwargs["q_scale_s"] = fp8_meta["scaling_fwd"].scale
-                fp8_meta_kwargs["q_scale_s_offset"] = META_S
-                fp8_meta_kwargs["q_scale_o"] = fp8_meta["scaling_fwd"].scale
-                fp8_meta_kwargs["q_scale_o_offset"] = META_O
-                fp8_meta_kwargs["amax_s"] = fp8_meta["scaling_fwd"].amax_history
-                fp8_meta_kwargs["amax_s_offset"] = META_S
-                fp8_meta_kwargs["amax_o"] = fp8_meta["scaling_fwd"].amax_history
-                fp8_meta_kwargs["amax_o_offset"] = META_O
+                fp8_meta_kwargs["s_quantizer"] = S_quantizer
+                fp8_meta_kwargs["o_quantizer"] = O_quantizer # partial result quantizer
             else:
                 assert False, "FP8 is only supported with Fused Attention!"
         else:
@@ -3904,10 +3825,7 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
 
         if fp8 and not is_input_fp8 and not int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
             q_f16, k_f16, v_f16 = q, k, v
-            q, k, v = [
-                cast_to_fp8(x, fp8_meta["scaling_fwd"], META_QKV, fp8_dtype_forward)
-                for x in [q_f16, k_f16, v_f16]
-            ]
+            q, k, v = [QKV_quantizer(x) for x in [q_f16, k_f16, v_f16]]
 
         batch_size = q.shape[batch_dim]
         if use_fused_attention:
@@ -3920,7 +3838,6 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
                 q,
                 k,
                 v,
-                fused_attn_qkv_dtype,
                 fused_attn_backend,
                 attn_scale=softmax_scale,
                 dropout=dropout_p,
@@ -3968,24 +3885,10 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
 
         if fp8:
             if is_output_fp8:
-                out_fp8 = Float8Tensor(
-                    data=out,
-                    fp8_meta=fp8_meta,
-                    fp8_meta_forward=True,
-                    fp8_meta_index=META_O,
-                    fp8_dtype=fp8_dtype_forward,
-                    dtype=qkv_dtype,
-                )
-                out = out_fp8._data
-                out_ret = out_fp8
+                out_ret = out
+                out = out._data
             else:
-                out_f16 = cast_from_fp8(
-                    out,
-                    fp8_meta["scaling_fwd"],
-                    META_O,
-                    fp8_dtype_forward,
-                    TE_DType[q_f16.dtype],
-                )
+                out_f16 = O_quantizer(out)
                 out_ret = out_f16
         else:
             out_ret = out
@@ -3994,42 +3897,46 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
             if int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
                 q_save, k_save, v_save, out_save = q, k, v, out
             elif is_input_fp8:
-                q_fp8, k_fp8, v_fp8 = [
-                    Float8Tensor(
-                        data=x,
-                        fp8_meta=fp8_meta,
-                        fp8_meta_forward=True,
-                        fp8_meta_index=META_QKV,
-                        fp8_dtype=fp8_dtype_forward,
-                        dtype=out_fp8.dtype,
-                    )
-                    for x in [q, k, v]
-                ]
-                q_save, k_save, v_save, out_save = q_fp8, k_fp8, v_fp8, out_fp8
+                q_fp8, k_fp8, v_fp8 = q, k, v
+                q_save, k_save, v_save, out_save = q_fp8, k_fp8, v_fp8, out
             else:
                 q_save, k_save, v_save, out_save = q_f16, k_f16, v_f16, out_f16
         else:
             q_save, k_save, v_save, out_save = q, k, v, out
 
-        if fp8 and int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
-            fp8_fwd_scales = fp8_meta["scaling_fwd"].scale.clone()
-            fp8_fwd_scale_invs = fp8_meta["scaling_fwd"].scale_inv.clone()
-        else:
-            fp8_fwd_scales, fp8_fwd_scale_invs = None, None
+
+        saved_q_tensors, saved_q = prepare_for_saving(q_save)
+        saved_k_tensors, saved_k = prepare_for_saving(k_save)
+        saved_v_tensors, saved_v = prepare_for_saving(v_save)
+        saved_out_tensors, saved_out = prepare_for_saving(out_save)
 
         ctx.save_for_backward(
-            q_save,
-            k_save,
-            v_save,
+            *saved_q_tensors,
+            *saved_k_tensors,
+            *saved_v_tensors,
+            *saved_out_tensors,
             out_save,
             cu_seqlens_q,
             cu_seqlens_kv,
             cu_seqlens_q_padded,
             cu_seqlens_kv_padded,
-            fp8_fwd_scales,
-            fp8_fwd_scale_invs,
             *aux_ctx_tensors,
         )
+
+
+        ctx.saved_q = saved_q
+        ctx.saved_k = saved_k
+        ctx.saved_v = saved_v
+        ctx.saved_out = saved_out
+
+        ctx.QKV_quantizer = QKV_quantizer
+        ctx.O_quantizer = O_quantizer
+        ctx.S_quantizer = S_quantizer
+        ctx.dQKV_quantizer = dQKV_quantizer
+        ctx.dO_quantizer = dO_quantizer
+        ctx.dP_quantizer = dP_quantizer
+
+
         ctx.batch_size = batch_size
         ctx.cp_group = cp_group
         ctx.cp_stream = cp_stream
@@ -4065,39 +3972,21 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
         seq_dim = ctx.qkv_format.index("s")
 
         fused_attn_backend = None
-        fused_attn_dqkv_dtype = None
-        fused_attn_qkv_dtype = None
         dout_dtype = dout.dtype
         if ctx.fp8:
             if ctx.use_fused_attention:
-                fp8_dtype_forward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=True)
-                fp8_dtype_backward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=False)
-                fused_attn_qkv_dtype = fp8_dtype_forward
-                fused_attn_dqkv_dtype = fp8_dtype_backward
                 fused_attn_backend = FusedAttnBackend["FP8"]
                 if ctx.is_output_fp8:
                     assert isinstance(dout, Float8Tensor), "dout must be Float8Tensors for FP8 MHA!"
-                    ctx.fp8_meta["scaling_bwd"].scale_inv[META_DO] = dout._scale_inv
                     dout_fp8 = dout
                     dout = dout_fp8._data
                 else:
                     dout_f16 = dout
-                    dout = cast_to_fp8(
-                        dout_f16, ctx.fp8_meta["scaling_bwd"], META_DO, fp8_dtype_backward
-                    )
+                    dout = ctx.dO_quantizer(dout_f16)
                 fp8_meta_kwargs = {}
-                fp8_meta_kwargs["d_scale_qkv"] = fp8_fwd_scale_invs[META_QKV]
-                fp8_meta_kwargs["d_scale_s"] = fp8_fwd_scale_invs[META_S]
-                fp8_meta_kwargs["d_scale_o"] = fp8_fwd_scale_invs[META_O]
-                fp8_meta_kwargs["d_scale_do"] = ctx.fp8_meta["scaling_bwd"].scale_inv[META_DO]
-                fp8_meta_kwargs["d_scale_dp"] = ctx.fp8_meta["scaling_bwd"].scale_inv[META_DP]
-                fp8_meta_kwargs["q_scale_s"] = fp8_fwd_scales[META_S]
-                fp8_meta_kwargs["q_scale_dp"] = ctx.fp8_meta["scaling_bwd"].scale[META_DP]
-                fp8_meta_kwargs["q_scale_dqkv"] = ctx.fp8_meta["scaling_bwd"].scale[META_DQKV]
-                fp8_meta_kwargs["amax_dp"] = ctx.fp8_meta["scaling_bwd"].amax_history[0][META_DP]
-                fp8_meta_kwargs["amax_dqkv"] = ctx.fp8_meta["scaling_bwd"].amax_history[0][
-                    META_DQKV
-                ]
+                fp8_meta_kwargs['s_quantizer'] = ctx.S_quantizer
+                fp8_meta_kwargs['dp_quantizer'] = ctx.dP_quantizer
+                fp8_meta_kwargs['dqkv_quantizer'] = ctx.dQKV_quantizer
             else:
                 assert False, "FP8 is only supported with Fused Attention!"
         else:
@@ -4147,7 +4036,6 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
                 v,
                 out,
                 dout,
-                fused_attn_qkv_dtype,
                 fused_attn_dqkv_dtype,
                 aux_ctx_tensors,
                 fused_attn_backend,
@@ -4198,35 +4086,15 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
             dq, dk, dv = [x.view(-1, ctx.batch_size, *x.shape[-2:]) for x in [dq, dk, dv]]
 
         if ctx.fp8:
-            if ctx.is_input_fp8:
-                dq, dk, dv = [
-                    Float8Tensor(
-                        data=x,
-                        fp8_meta=ctx.fp8_meta,
-                        fp8_meta_forward=False,
-                        fp8_meta_index=META_DQKV,
-                        fp8_dtype=fp8_dtype_backward,
-                        dtype=dout_dtype,
-                    )
-                    for x in [dq, dk, dv]
-                ]
-            else:
-                dq, dk, dv = [
-                    cast_from_fp8(
-                        x,
-                        ctx.fp8_meta["scaling_bwd"],
-                        META_DQKV,
-                        fp8_dtype_backward,
-                        TE_DType[dout_dtype],
-                    )
-                    for x in [dq, dk, dv]
-                ]
+            if not ctx.is_input_fp8:
+                dq, dk, dv = [x.dequantize() for x in [dq, dk, dv]]
 
         return (
             None,
             dq,
             dk,
             dv,
+            None,
             None,
             None,
             None,
@@ -4276,6 +4144,7 @@ def attn_forward_func_with_cp(
     window_size=None,
     fp8=False,
     fp8_meta=None,
+    quantizers=None
 ) -> torch.Tensor:
     """
     Attention implementation with context parallelism.
@@ -4344,7 +4213,7 @@ def attn_forward_func_with_cp(
     ]
 
     if cp_comm_type in ["p2p", "a2a+p2p"]:
-        args += [fp8, fp8_meta, cp_group, cp_global_ranks, cp_stream]
+        args += [fp8, fp8_meta, cp_group, cp_global_ranks, cp_stream, quantizers]
         out = AttnFuncWithCPAndKVP2P.apply(*args)
     elif cp_comm_type == "all_gather":
         args.pop(5)
@@ -4352,7 +4221,7 @@ def attn_forward_func_with_cp(
         args += [window_size, cp_group, cp_stream]
         out = AttnFuncWithCPAndKVAllGather.apply(*args)
     elif cp_comm_type == "a2a":
-        args += [window_size, fp8, fp8_meta, cp_group, cp_stream]
+        args += [window_size, fp8, fp8_meta, cp_group, cp_stream, quantizers]
         out = AttnFuncWithCPAndQKVOA2A.apply(*args)
     else:
         raise ValueError(f"Unsupported communication type: {cp_comm_type}!")
@@ -4584,6 +4453,7 @@ class _SplitAlongDim(torch.autograd.Function):
         mixed_x_layer: torch.Tensor,
         split_dim: int,
         split_size_or_sections: Union[int, List[int], Tuple[int]],
+        squeeze = False
     ) -> Tuple[torch.Tensor, ...]:
         # pylint: disable=missing-function-docstring
         ctx.split_dim = split_dim
@@ -4592,7 +4462,8 @@ class _SplitAlongDim(torch.autograd.Function):
             return tuple(
                 Float8Tensor.make_like(
                     mixed_x_layer,
-                    data=x,
+                    data=x.squeeze(split_dim) if squeeze else x,
+                    shape=x.squeeze(split_dim).shape if squeeze else x.shape
                 )
                 for x in torch.split(
                     mixed_x_layer._data,
@@ -4600,7 +4471,10 @@ class _SplitAlongDim(torch.autograd.Function):
                     dim=split_dim,
                 )
             )
-        return torch.split(mixed_x_layer, split_size_or_sections, dim=split_dim)
+        out_list = torch.split(mixed_x_layer, split_size_or_sections, dim=split_dim)
+        if squeeze:
+            out_list = [x.squeeze(split_dim) for x in out_list]
+        return out_list
 
     @staticmethod
     def backward(ctx, *grad_outputs):
@@ -4653,6 +4527,7 @@ class _SplitAlongDim(torch.autograd.Function):
                 Float8Tensor.make_like(
                     grad_outputs[0], data=torch.cat(grad_outputs_data, dim=split_dim)
                 ),
+                None,
                 None,
                 None,
             )
@@ -5221,6 +5096,7 @@ class FlashAttention(torch.nn.Module):
         cp_comm_type: str = "p2p",
         fp8: bool = False,
         fp8_meta: Optional[Dict[str, Any]] = None,
+        quantizers = None
     ) -> torch.Tensor:
         """flash-attn fprop"""
 
@@ -5374,6 +5250,7 @@ class FlashAttention(torch.nn.Module):
                     attn_mask_type=attn_mask_type,
                     deterministic=self.deterministic,
                     window_size=window_size,
+                    quantizers=quantizers,
                 )
         else:
 
@@ -5412,9 +5289,8 @@ class FlashAttention(torch.nn.Module):
                     fa_3_optional_forward_kwargs = {}
                     fa_3_optional_forward_kwargs["window_size"] = window_size
                     fa_3_optional_forward_kwargs["deterministic"] = self.deterministic
-                    activation_dtype = query_layer.dtype
                     if fp8:
-                        fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
+                        QKV_quantizer = quantizers["scaling_fwd"][META_QKV]
                         torch_dtype = get_fp8_torch_dtype(fp8_meta["recipe"], fprop_tensor=True)
 
                         def convert_to_torch_float8(tensor, dtype):
@@ -5432,12 +5308,9 @@ class FlashAttention(torch.nn.Module):
                         assert isinstance(key_layer, query_layer.__class__) and isinstance(
                             value_layer, query_layer.__class__
                         ), "q, k, and v must have the same type."
-                        if isinstance(query_layer, Float8Tensor):
-                            fp8_meta["scaling_fwd"].scale_inv[META_QKV] = query_layer._scale_inv
-                        else:
+                        if not isinstance(query_layer, Float8Tensor):
                             query_layer, key_layer, value_layer = (
-                                Float8Tensor.to_float8(x, fp8_dtype=fp8_dtype_forward)
-                                for x in [query_layer, key_layer, value_layer]
+                                QKV_quantizer(x) for x in [query_layer, key_layer, value_layer]
                             )
                         fa_3_optional_forward_kwargs["descale_q"] = query_layer._scale_inv
                         fa_3_optional_forward_kwargs["descale_k"] = key_layer._scale_inv
@@ -5467,20 +5340,8 @@ class FlashAttention(torch.nn.Module):
                         raise
 
                     if fp8 and fp8_meta["recipe"].fp8_mha:
-                        output = cast_to_fp8(
-                            output,
-                            fp8_meta["scaling_fwd"],
-                            META_O,
-                            fp8_dtype_forward,
-                        )
-                        output = Float8Tensor(
-                            data=output,
-                            fp8_meta=fp8_meta,
-                            fp8_meta_forward=True,
-                            fp8_meta_index=META_O,
-                            fp8_dtype=fp8_dtype_forward,
-                            dtype=activation_dtype,
-                        )
+                        O_quantizer = quantizers["scaling_fwd"][META_O]
+                        output = O_quantizer(output)
                 else:
                     output = func(
                         query_layer,
@@ -5546,707 +5407,6 @@ def _combine_tensors(
     return combined_tensor
 
 
-class FusedAttnFunc_qkvpacked(torch.autograd.Function):
-    """Function for FusedAttention with packed QKV input"""
-
-    @staticmethod
-    def forward(
-        ctx,
-        is_training,
-        max_seqlen,
-        cu_seqlens,
-        cu_seqlens_padded,
-        qkv,
-        qkv_dtype,
-        attn_bias,
-        attn_scale,
-        dropout_p,
-        fast_zero_fill,
-        qkv_layout,
-        attn_bias_type,
-        attn_mask_type,
-        window_size,
-        rng_gen,
-        fused_attention_backend,
-        use_FAv2_bwd,
-        fp8,
-        fp8_meta,
-        quantizers,
-        deterministic,
-    ):
-        # pylint: disable=missing-function-docstring
-        # "fp8_mha" decides outputs in fp8, while inputs are inferred from the real dtype
-        is_input_fp8 = False
-        is_output_fp8 = fp8_meta["recipe"].fp8_mha
-        QKV_quantizer, O_quantizer, S_quantizer = None, None, None
-        dQKV_quantizer, dO_quantizer, dP_quantizer = None, None, None
-        if fp8:
-            is_input_fp8 = isinstance(qkv, Float8Tensor)
-            fused_attention_backend = FusedAttnBackend["FP8"]
-            fp8_dtype_forward = get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
-
-            QKV_quantizer = quantizers["scaling_FWD"][META_QKV]
-            O_quantizer = quantizers["scaling_FWD"][META_O]
-            S_quantizer = quantizers["scaling_FWD"][META_S]
-            dQKV_quantizer = quantizers["scaling_FWD"][META_DQKV]
-            dO_quantizer = quantizers["scaling_FWD"][META_DO]
-            dP_quantizer = quantizers["scaling_FWD"][META_DP]
-            # 1: qkv packed, 2: kv packed, 3: qkv separate
-            qkv_group = len(qkv_layout.split("_"))
-            assert (
-                qkv_group == 1
-            ), f"qkv layout should conform to 3hd or h3d, e.g. sb3hd, but found {qkv_layout}."
-            if not is_input_fp8:
-                qkv_fp8 = qkv._data
-                qkv_c = qkv.view(-1, qkv.shape[-3] * qkv.shape[-2] * qkv.shape[-1])
-                qkv_fp8 = QKV_quantizer(qkv_fp8)
-            out_fp8, aux_ctx_tensors = fused_attn_fwd_qkvpacked(
-                is_training,
-                max_seqlen,
-                cu_seqlens,
-                qkv_fp8,
-                fp8_dtype_forward,
-                fused_attention_backend,
-                attn_bias,
-                cu_seqlens_padded,
-                S_quantizer,
-                O_quantizer,
-                attn_scale,
-                dropout_p,
-                fast_zero_fill,
-                qkv_layout,
-                attn_bias_type,
-                attn_mask_type,
-                window_size,
-                rng_gen,
-            )
-            if is_output_fp8:
-                out_ret = out_fp8
-            else:
-                out_ret = out_fp8.dequantize()
-            out_save = out_ret
-            if not int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
-                if is_input_fp8:
-                    qkv_c = qkv.view(-1, qkv.shape[-3] * qkv.shape[-2] * qkv.shape[-1])
-                    qkv = qkv_c.dequantize()
-                if is_output_fp8:
-                    out_save = out_fp8.dequantize()
-            fp8_tensors = (qkv_fp8, out_fp8)
-        else:
-            out_ret, aux_ctx_tensors = fused_attn_fwd_qkvpacked(
-                is_training,
-                max_seqlen,
-                cu_seqlens,
-                qkv,
-                qkv_dtype,
-                fused_attention_backend,
-                attn_bias,
-                cu_seqlens_padded,
-                None,
-                None,
-                attn_scale,
-                dropout_p,
-                fast_zero_fill,
-                qkv_layout,
-                attn_bias_type,
-                attn_mask_type,
-                window_size,
-                rng_gen,
-            )
-            fp8_tensors = (None, None, None, None)
-            out_save = out_ret
-
-        ctx.dQKV_quantizer = dQKV_quantizer
-        ctx.dO_quantizer = dO_quantizer
-        ctx.dP_quantizer = dP_quantizer
-        ctx.S_quantizer = S_quantizer
-
-        ctx.fp8 = fp8 and int(os.getenv("NVTE_FP8_DPA_BWD", "1"))
-        ctx.is_input_fp8 = is_input_fp8
-        ctx.is_output_fp8 = is_output_fp8
-        qkvo_tensors = (qkv, out_save) if not ctx.fp8 else (None, None)
-        fp8_tensors = []
-        ctx.fp8_tensors_obj = []
-        for tensor in fp8_tensors:
-            x, x_obj = prepare_for_saving(tensor)
-            fp8_tensors.extend(x)
-            ctx.fp8_tensors_obj.append(x_obj)
-        ctx.save_for_backward(
-            *qkvo_tensors, cu_seqlens, cu_seqlens_padded, *fp8_tensors, *aux_ctx_tensors
-        )
-        ctx.fp8_meta = fp8_meta
-        ctx.max_seqlen = max_seqlen
-        ctx.qkv_dtype = qkv_dtype
-        ctx.attn_scale = attn_scale
-        ctx.dropout_p = dropout_p
-        ctx.fast_zero_fill = fast_zero_fill
-        ctx.qkv_layout = qkv_layout
-        ctx.attn_bias_type = attn_bias_type
-        ctx.attn_mask_type = attn_mask_type
-        ctx.window_size = window_size
-        ctx.fused_attention_backend = (
-            fused_attention_backend if ctx.fp8 else FusedAttnBackend["F16_arbitrary_seqlen"]
-        )
-        ctx.use_FAv2_bwd = use_FAv2_bwd
-        ctx.deterministic = deterministic
-
-        return out_ret
-
-    @staticmethod
-    def backward(ctx, d_out):
-        # pylint: disable=missing-function-docstring
-        if ctx.is_output_fp8:
-            assert isinstance(
-                d_out, Float8Tensor
-            ), "Gradient of the DPA output must be in Float8Tensor type for FP8 MHA."
-            d_out_f8tensor = d_out
-            d_out = d_out._data
-
-        d_out = d_out.contiguous()
-        (qkv, out, cu_seqlens, cu_seqlens_padded, *other_tensors) = ctx.saved_tensors
-        qkv_fp8, other_tensors = restore_from_saved(ctx.fp8_tensors_obj[0], other_tensors)
-        out_fp8, other_tensors = restore_from_saved(ctx.fp8_tensors_obj[1], other_tensors)
-        aux_ctx_tensors = other_tensors
-
-        rest = [None]
-        if not aux_ctx_tensors[0].is_contiguous():
-            aux_ctx_tensors[0] = aux_ctx_tensors[0].contiguous()
-        if ctx.use_FAv2_bwd:
-            softmax_lse, rng_state = aux_ctx_tensors
-            dqkv = torch.empty_like(qkv)
-            d_out, q, k, v, out = [
-                maybe_contiguous(x) for x in (d_out, qkv[:, 0], qkv[:, 1], qkv[:, 2], out)
-            ]
-            flash_attn_cuda_bwd(
-                d_out,
-                q,
-                k,
-                v,
-                out,
-                softmax_lse,
-                dqkv[:, 0],
-                dqkv[:, 1],
-                dqkv[:, 2],
-                cu_seqlens,
-                cu_seqlens,
-                ctx.max_seqlen,
-                ctx.max_seqlen,
-                ctx.dropout_p,
-                ctx.attn_scale,
-                False,
-                "causal" in ctx.attn_mask_type,
-                None,
-                rng_state,
-            )
-            dqkv = dqkv[..., : d_out.shape[-1]]
-        else:
-            with torch.cuda.nvtx.range("_FusedAttn_qkvpacked"):
-                if ctx.fp8:
-                    fp8_dtype_forward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=True)
-                    fp8_dtype_backward = get_fp8_te_dtype(
-                        ctx.fp8_meta["recipe"], fprop_tensor=False
-                    )
-                    if ctx.is_output_fp8:
-                        d_out_fp8 = d_out
-                    else:
-                        d_out_fp8 = ctx.dO_quantizer(d_out)
-                    dqkv_fp8, *rest = fused_attn_bwd_qkvpacked(
-                        ctx.max_seqlen,
-                        cu_seqlens,
-                        qkv_fp8,
-                        out_fp8,
-                        d_out_fp8,
-                        fp8_dtype_forward,
-                        fp8_dtype_backward,
-                        aux_ctx_tensors,
-                        ctx.fused_attention_backend,
-                        cu_seqlens_padded,
-                        ctx.S_quantizer,
-                        ctx.dP_quantizer,
-                        ctx.dQKV_quantizer,
-                        ctx.attn_scale,
-                        ctx.dropout_p,
-                        ctx.fast_zero_fill,
-                        ctx.qkv_layout,
-                        ctx.attn_bias_type,
-                        ctx.attn_mask_type,
-                        ctx.window_size,
-                        ctx.deterministic,
-                    )
-                    if ctx.is_input_fp8:
-                        dqkv = Float8Tensor(
-                            data=dqkv_fp8,
-                            fp8_meta=ctx.fp8_meta,
-                            fp8_meta_forward=False,
-                            fp8_meta_index=META_DQKV,
-                            fp8_dtype=fp8_dtype_backward,
-                            dtype=d_out_f8tensor.dtype,
-                        )
-                    else:
-                        dqkv_c_fp8 = dqkv_fp8.view(
-                            -1, dqkv_fp8.shape[-3] * dqkv_fp8.shape[-2] * dqkv_fp8.shape[-1]
-                        )
-                        dqkv = dqkv_c_fp8.dequantize()
-                else:
-                    if isinstance(d_out, QuantizedTensor):
-                        d_out = d_out.dequantize()
-                    dqkv, *rest = fused_attn_bwd_qkvpacked(
-                        ctx.max_seqlen,
-                        cu_seqlens,
-                        qkv,
-                        out,
-                        d_out,
-                        ctx.qkv_dtype,
-                        ctx.qkv_dtype,
-                        aux_ctx_tensors,
-                        ctx.fused_attention_backend,
-                        cu_seqlens_padded,
-                        None,
-                        None,
-                        ctx.attn_scale,
-                        ctx.dropout_p,
-                        ctx.fast_zero_fill,
-                        ctx.qkv_layout,
-                        ctx.attn_bias_type,
-                        ctx.attn_mask_type,
-                        ctx.window_size,
-                        ctx.deterministic,
-                    )
-
-        # if no_bias or alibi, return dqkv
-        if ctx.attn_bias_type in ["no_bias", "alibi"]:
-            return (
-                None,
-                None,
-                None,
-                None,
-                dqkv,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-        # else, return (dqkv, dbias)
-        return (
-            None,
-            None,
-            None,
-            None,
-            dqkv,
-            None,
-            rest[0],
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-
-
-class FusedAttnFunc_kvpacked(torch.autograd.Function):
-    """Function for FusedAttention with packed KV input"""
-
-    @staticmethod
-    def forward(
-        ctx,
-        is_training,
-        max_seqlen_q,
-        max_seqlen_kv,
-        cu_seqlens_q,
-        cu_seqlens_kv,
-        cu_seqlens_q_padded,
-        cu_seqlens_kv_padded,
-        q,
-        kv,
-        qkv_dtype,
-        attn_bias,
-        attn_scale,
-        dropout_p,
-        fast_zero_fill,
-        qkv_layout,
-        attn_bias_type,
-        attn_mask_type,
-        window_size,
-        rng_gen,
-        fused_attention_backend,
-        use_FAv2_bwd,
-        fp8,
-        fp8_meta,
-        quantizers,
-        deterministic,
-    ):
-        # pylint: disable=missing-function-docstring
-        # "fp8_mha" decides outputs in fp8, while inputs are inferred from the real dtype
-        is_input_fp8 = False
-        is_output_fp8 = fp8_meta["recipe"].fp8_mha
-
-        QKV_quantizer, O_quantizer, S_quantizer = None, None, None
-        dQKV_quantizer, dO_quantizer, dP_quantizer = None, None, None
-
-        if fp8:
-            assert isinstance(kv, q.__class__), "q and kv must have the same type."
-            is_input_fp8 = isinstance(q, Float8Tensor)
-            fused_attention_backend = FusedAttnBackend["FP8"]
-
-            QKV_quantizer = quantizers["scaling_FWD"][META_QKV]
-            O_quantizer = quantizers["scaling_FWD"][META_O]
-            S_quantizer = quantizers["scaling_FWD"][META_S]
-            dQKV_quantizer = quantizers["scaling_FWD"][META_DQKV]
-            dO_quantizer = quantizers["scaling_FWD"][META_DO]
-            dP_quantizer = quantizers["scaling_FWD"][META_DP]
-
-            if is_input_fp8:
-                q_fp8, kv_fp8 = q, kv
-            else:
-                # 1: qkv packed, 2: kv packed, 3: qkv separate
-                qkv_group = len(qkv_layout.split("_"))
-                assert qkv_group == 2, (
-                    "qkv layout should conform to hd_2hd or hd_h2d, e.g. sbhd_sb2hd, "
-                    f"but found {qkv_layout}."
-                )
-                q_fp8 = QKV_quantizer(q)
-                kv_c = kv.view(-1, kv.shape[-3] * kv.shape[-2] * kv.shape[-1])
-                kv_fp8 = QKV_quantizer(kv_c)
-            out_fp8, aux_ctx_tensors = fused_attn_fwd_kvpacked(
-                is_training,
-                max_seqlen_q,
-                max_seqlen_kv,
-                cu_seqlens_q,
-                cu_seqlens_kv,
-                q_fp8,
-                kv_fp8,
-                q_fp8.dtype,
-                fused_attention_backend,
-                attn_bias,
-                cu_seqlens_q_padded,
-                cu_seqlens_kv_padded,
-                S_quantizer,
-                O_quantizer,
-                attn_scale,
-                dropout_p,
-                fast_zero_fill,
-                qkv_layout,
-                attn_bias_type,
-                attn_mask_type,
-                window_size,
-                rng_gen,
-            )
-            if is_output_fp8:
-                out_ret = out_fp8
-            else:
-                out_ret = out_fp8.dequantize()
-            out_save = out_ret
-            if not int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
-                if is_input_fp8:
-                    q = q.dequantize()
-                    kv_c = kv.view(-1, kv.shape[-3] * kv.shape[-2] * kv.shape[-1])
-                    kv = kv_c.dequantize()
-                if is_output_fp8:
-                    out_save = out_fp8.dequantize()
-            fp8_tensors = (q_fp8, kv_fp8, out_fp8)
-        else:
-            out_ret, aux_ctx_tensors = fused_attn_fwd_kvpacked(
-                is_training,
-                max_seqlen_q,
-                max_seqlen_kv,
-                cu_seqlens_q,
-                cu_seqlens_kv,
-                q,
-                kv,
-                qkv_dtype,
-                fused_attention_backend,
-                attn_bias,
-                cu_seqlens_q_padded,
-                cu_seqlens_kv_padded,
-                None,
-                None,
-                attn_scale,
-                dropout_p,
-                fast_zero_fill,
-                qkv_layout,
-                attn_bias_type,
-                attn_mask_type,
-                window_size,
-                rng_gen,
-            )
-            out_save = out_ret
-            fp8_tensors = (None, None, None)
-
-        ctx.fp8 = fp8 and int(os.getenv("NVTE_FP8_DPA_BWD", "1"))
-        ctx.is_input_fp8 = is_input_fp8
-        ctx.is_output_fp8 = is_output_fp8
-        qkvo_tensors = (q, kv, out_save) if not ctx.fp8 else (None, None, None)
-
-        save_fp8_tensors = []
-        ctx.fp8_tensors_obj = []
-        for tensor in fp8_tensors:
-            x, x_obj = prepare_for_saving(tensor)
-            save_fp8_tensors.extend(x)
-            ctx.fp8_tensors_obj.append(x_obj)
-        ctx.save_for_backward(
-            *qkvo_tensors,
-            cu_seqlens_q,
-            cu_seqlens_kv,
-            cu_seqlens_q_padded,
-            cu_seqlens_kv_padded,
-            *save_fp8_tensors,
-            *aux_ctx_tensors,
-        )
-        ctx.fp8_meta = fp8_meta
-
-        ctx.dQKV_quantizer = dQKV_quantizer
-        ctx.dO_quantizer = dO_quantizer
-        ctx.dP_quantizer = dP_quantizer
-        ctx.S_quantizer = S_quantizer
-
-        ctx.max_seqlen_q = max_seqlen_q
-        ctx.max_seqlen_kv = max_seqlen_kv
-        ctx.qkv_dtype = qkv_dtype
-        ctx.attn_scale = attn_scale
-        ctx.dropout_p = dropout_p
-        ctx.fast_zero_fill = fast_zero_fill
-        ctx.qkv_layout = qkv_layout
-        ctx.attn_bias_type = attn_bias_type
-        ctx.attn_mask_type = attn_mask_type
-        ctx.window_size = window_size
-        ctx.fused_attention_backend = (
-            fused_attention_backend if ctx.fp8 else FusedAttnBackend["F16_arbitrary_seqlen"]
-        )
-        ctx.use_FAv2_bwd = use_FAv2_bwd
-        ctx.deterministic = deterministic
-
-        return out_ret
-
-    @staticmethod
-    def backward(ctx, d_out):
-        # pylint: disable=missing-function-docstring
-        if ctx.is_output_fp8:
-            assert isinstance(
-                d_out, Float8Tensor
-            ), "Gradient of the DPA output must be in Float8Tensor type for FP8 MHA."
-            d_out_f8tensor = d_out
-            d_out = d_out._data
-
-        d_out = d_out.contiguous()
-        (
-            q,
-            kv,
-            out,
-            cu_seqlens_q,
-            cu_seqlens_kv,
-            cu_seqlens_q_padded,
-            cu_seqlens_kv_padded,
-            *other_tensors,
-        ) = ctx.saved_tensors
-
-        fp8_tensors = []
-        for obj in ctx.fp8_tensors_obj:
-            x, other_tensors = restore_from_saved(obj, other_tensors)
-            fp8_tensors.append(x)
-        q_fp8, kv_fp8, out_fp8 = fp8_tensors
-        aux_ctx_tensors = other_tensors
-
-        rest = [None]
-        if not aux_ctx_tensors[0].is_contiguous():
-            aux_ctx_tensors[0] = aux_ctx_tensors[0].contiguous()
-        if ctx.use_FAv2_bwd:
-            softmax_lse, rng_state = aux_ctx_tensors
-            dq = torch.empty_like(q)
-            dkv = torch.empty_like(kv)
-            d_out, q, k, v, out = [maybe_contiguous(x) for x in (d_out, q, kv[:, 0], kv[:, 1], out)]
-            flash_attn_cuda_bwd(
-                d_out,
-                q,
-                k,
-                v,
-                out,
-                softmax_lse,
-                dq,
-                dkv[:, 0],
-                dkv[:, 1],
-                cu_seqlens_q,
-                cu_seqlens_kv,
-                ctx.max_seqlen_q,
-                ctx.max_seqlen_kv,
-                ctx.dropout_p,
-                ctx.attn_scale,
-                False,
-                "causal" in ctx.attn_mask_type,
-                None,
-                rng_state,
-            )
-            dq = dq[..., : d_out.shape[-1]]
-            dkv = dkv[..., : d_out.shape[-1]]
-        else:
-            with torch.cuda.nvtx.range("_FusedAttn_kvpacked"):
-                if ctx.fp8:
-                    fp8_dtype_forward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=True)
-                    fp8_dtype_backward = get_fp8_te_dtype(
-                        ctx.fp8_meta["recipe"], fprop_tensor=False
-                    )
-                    if ctx.is_output_fp8:
-                        d_out_fp8 = d_out
-                        ctx.fp8_meta["scaling_bwd"].scale_inv[META_DO] = d_out_f8tensor._scale_inv
-                    else:
-                        d_out_fp8 = cast_to_fp8(
-                            d_out.view(-1, d_out.shape[-2] * d_out.shape[-1]),
-                            ctx.fp8_meta["scaling_bwd"],
-                            META_DO,
-                            fp8_dtype_backward,
-                        ).view(d_out.shape)
-                    dq_fp8, dkv_fp8, *rest = fused_attn_bwd_kvpacked(
-                        ctx.max_seqlen_q,
-                        ctx.max_seqlen_kv,
-                        cu_seqlens_q,
-                        cu_seqlens_kv,
-                        q_fp8,
-                        kv_fp8,
-                        out_fp8,
-                        d_out_fp8,
-                        fp8_dtype_forward,
-                        fp8_dtype_backward,
-                        aux_ctx_tensors,
-                        ctx.fused_attention_backend,
-                        cu_seqlens_q_padded,
-                        cu_seqlens_kv_padded,
-                        ctx.S_quantizer,
-                        ctx.dP_quantizer,
-                        ctx.dQKV_quantizer,
-                        ctx.attn_scale,
-                        ctx.dropout_p,
-                        ctx.fast_zero_fill,
-                        ctx.qkv_layout,
-                        ctx.attn_bias_type,
-                        ctx.attn_mask_type,
-                        ctx.window_size,
-                        ctx.deterministic,
-                    )
-                    if ctx.is_input_fp8:
-                        dq = dq_fp8
-                        dkv = dkv_fp8
-                    else:
-                        dq = dq_fp8.dequantize()
-                        dkv_c_fp8 = dkv_fp8.view(
-                            -1, dkv_fp8.shape[-3] * dkv_fp8.shape[-2] * dkv_fp8.shape[-1]
-                        )
-                        dkv = dkv_c_fp8.dequantize()
-                else:
-                    if isinstance(d_out, QuantizedTensor):
-                        d_out = d_out.dequantize()
-                    dq, dkv, *rest = fused_attn_bwd_kvpacked(
-                        ctx.max_seqlen_q,
-                        ctx.max_seqlen_kv,
-                        cu_seqlens_q,
-                        cu_seqlens_kv,
-                        q,
-                        kv,
-                        out,
-                        d_out,
-                        ctx.qkv_dtype,
-                        ctx.qkv_dtype,
-                        aux_ctx_tensors,
-                        ctx.fused_attention_backend,
-                        cu_seqlens_q_padded,
-                        cu_seqlens_kv_padded,
-                        None,
-                        None,
-                        ctx.attn_scale,
-                        ctx.dropout_p,
-                        ctx.fast_zero_fill,
-                        ctx.qkv_layout,
-                        ctx.attn_bias_type,
-                        ctx.attn_mask_type,
-                        ctx.window_size,
-                        ctx.deterministic,
-                    )
-
-        # if no_bias or alibi, return dqkv
-        if ctx.attn_bias_type in ["no_bias", "alibi"]:
-            return (
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                dq,
-                dkv,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-        # else, return (dqkv, dbias)
-        return (
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            dq,
-            dkv,
-            None,
-            rest[0],
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-
-
 class FusedAttnFunc(torch.autograd.Function):
     """Function for FusedAttention with separate Q, K, V tensors"""
 
@@ -6285,25 +5445,20 @@ class FusedAttnFunc(torch.autograd.Function):
         is_input_fp8 = False
         is_output_fp8 = fp8_meta["recipe"].fp8_mha if "recipe" in fp8_meta else False
 
-        QKV_quantizer, O_quantizer, S_quantizer = None, None, None
-        dQKV_quantizer, dO_quantizer, dP_quantizer = None, None, None
+        
+        QKV_quantizer, O_quantizer, S_quantizer,\
+            dQKV_quantizer, dO_quantizer, dP_quantizer = \
+                get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=False)
         if fp8:
             fused_attention_backend = FusedAttnBackend["FP8"]
             assert isinstance(k, q.__class__) and isinstance(
                 v, q.__class__
             ), "q, k, and v must have the same type."
 
-            QKV_quantizer = quantizers["scaling_FWD"][META_QKV]
-            O_quantizer = quantizers["scaling_FWD"][META_O]
-            S_quantizer = quantizers["scaling_FWD"][META_S]
-            dQKV_quantizer = quantizers["scaling_FWD"][META_DQKV]
-            dO_quantizer = quantizers["scaling_FWD"][META_DO]
-            dP_quantizer = quantizers["scaling_FWD"][META_DP]
 
             is_input_fp8 = isinstance(q, Float8Tensor)
             if is_input_fp8:
-                fp8_meta["scaling_fwd"].scale_inv[META_QKV] = q._scale_inv
-                q_fp8, k_fp8, v_fp8 = q._data, k._data, v._data
+                q_fp8, k_fp8, v_fp8 = q, k, v
             else:
                 # 1: qkv packed, 2: kv packed, 3: qkv separate
                 qkv_group = len(qkv_layout.split("_"))
@@ -6312,16 +5467,14 @@ class FusedAttnFunc(torch.autograd.Function):
                     qkv = _combine_tensors([q, k, v], dim)
                     qkv_c = qkv.view(-1, qkv.shape[-3] * qkv.shape[-2] * qkv.shape[-1])
                     qkv_fp8 = QKV_quantizer(qkv)
-                    q_fp8, k_fp8, v_fp8 = _SplitAlongDim.apply(qkv_fp8, dim, [1, 1, 1])
-                    q_fp8, k_fp8, v_fp8 = [x.squeeze(dim) for x in [q_fp8, k_fp8, v_fp8]]
+                    q_fp8, k_fp8, v_fp8 = _SplitAlongDim.apply(qkv_fp8, dim, [1, 1, 1], True)
                 if qkv_group == 2:
                     q_fp8 = QKV_quantizer(q)
                     dim = qkv_layout.split("_")[1].find("2")
                     kv = _combine_tensors([k, v], dim)
                     kv_c = kv.view(-1, kv.shape[-3] * kv.shape[-2] * kv.shape[-1])
                     kv_fp8 = QKV_quantizer(kv_c)
-                    k_fp8, v_fp8 = _SplitAlongDim.apply(kv_fp8, dim, [1, 1])
-                    k_fp8, v_fp8 = [x.squeeze(dim) for x in [k_fp8, v_fp8]]
+                    k_fp8, v_fp8 = _SplitAlongDim.apply(kv_fp8, dim, [1, 1], True)
                 if qkv_group == 3:
                     q_fp8 = QKV_quantizer(q)
                     k_fp8 = QKV_quantizer(k)
@@ -6335,7 +5488,6 @@ class FusedAttnFunc(torch.autograd.Function):
                 q_fp8,
                 k_fp8,
                 v_fp8,
-                q_fp8.dtype,  # TODO - poimyslec o tym
                 fused_attention_backend,
                 attn_bias,
                 cu_seqlens_q_padded,
@@ -6366,16 +5518,14 @@ class FusedAttnFunc(torch.autograd.Function):
                         qkv = _combine_tensors([q, k, v], dim)
                         qkv_c = qkv.view(-1, qkv.shape[-3] * qkv.shape[-2] * qkv.shape[-1])
                         qkv_no_fp8 = qkv_c.dequantize().view(qkv.shape)
-                        q, k, v = _SplitAlongDim.apply(qkv_no_fp8, dim, [1, 1, 1])
-                        q, k, v = [x.squeeze(dim) for x in [q, k, v]]
+                        q, k, v = _SplitAlongDim.apply(qkv_no_fp8, dim, [1, 1, 1], True)
                     if qkv_group == 2:
                         q = q.dequantize()
                         dim = qkv_layout.split("_")[1].find("2")
                         kv = _combine_tensors([k, v], dim)
                         kv_c = kv.view(-1, kv.shape[-3] * kv.shape[-2] * kv.shape[-1])
                         kv_no_fp8 = kv.dequanize()
-                        k, v = _SplitAlongDim.apply(kv_no_fp8, dim, [1, 1])
-                        k, v = [x.squeeze(dim) for x in [k, v]]
+                        k, v = _SplitAlongDim.apply(kv_no_fp8, dim, [1, 1], True)
                     if qkv_group == 3:
                         q = q.dequantize()
                         k = k.dequantize()
@@ -6394,7 +5544,6 @@ class FusedAttnFunc(torch.autograd.Function):
                 q,
                 k,
                 v,
-                qkv_dtype,
                 fused_attention_backend,
                 attn_bias,
                 cu_seqlens_q_padded,
@@ -6537,10 +5686,6 @@ class FusedAttnFunc(torch.autograd.Function):
         else:
             with torch.cuda.nvtx.range("_FusedAttn"):
                 if ctx.fp8:
-                    fp8_dtype_forward = get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=True)
-                    fp8_dtype_backward = get_fp8_te_dtype(
-                        ctx.fp8_meta["recipe"], fprop_tensor=False
-                    )
                     if ctx.is_output_fp8:
                         d_out_fp8 = d_out
                     else:
@@ -6555,8 +5700,7 @@ class FusedAttnFunc(torch.autograd.Function):
                         v_fp8,
                         out_fp8,
                         d_out_fp8,
-                        fp8_dtype_forward,
-                        fp8_dtype_backward,
+                        ctx.dQKV_quantizer.dtype,
                         aux_ctx_tensors,
                         ctx.fused_attention_backend,
                         cu_seqlens_q_padded,
@@ -6571,20 +5715,17 @@ class FusedAttnFunc(torch.autograd.Function):
                         ctx.attn_bias_type,
                         ctx.attn_mask_type,
                         ctx.window_size,
-                        ctx.deterministic,
+                        ctx.deterministic
                     )
 
                     if not ctx.is_input_fp8:
                         qkv_group = len(ctx.qkv_layout.split("_"))
                         if qkv_group == 1:
                             dim = ctx.qkv_layout.find("3")
-                            dqkv_fp8 = _combine_tensors([dq_fp8, dk_fp8, dv_fp8], dim)
-                            dqkv_c_fp8 = dqkv_fp8.view(
-                                -1, dqkv_fp8.shape[-3] * dqkv_fp8.shape[-2] * dqkv_fp8.shape[-1]
-                            )
-                            dqkv = dqkv_c_fp8.dequantize()
-                            dq, dk, dv = _SplitAlongDim.apply(dqkv, dim, [1, 1, 1])
-                            dq, dk, dv = [x.squeeze(dim) for x in [dq, dk, dv]]
+                            dqkv_fp8_data = _combine_tensors([dq_fp8._data, dk_fp8._data, dv_fp8._data], dim)
+                            dqkv_fp8 = dq_fp8.make_like(tensor=dq_fp8, data=dqkv_fp8_data, shape=dqkv_fp8_data.shape)
+                            dqkv = dqkv_fp8.dequantize()
+                            dq, dk, dv = _SplitAlongDim.apply(dqkv, dim, [1, 1, 1], True)
                         if qkv_group == 2:
                             dq = dq_fp8.dequantize()
                             dim = ctx.qkv_layout.split("_")[1].find("2")
@@ -6593,12 +5734,11 @@ class FusedAttnFunc(torch.autograd.Function):
                                 -1, dkv_fp8.shape[-3] * dkv_fp8.shape[-2] * dkv_fp8.shape[-1]
                             )
                             dkv = dkv_c_fp8.dequantize()
-                            dk, dv = _SplitAlongDim.apply(dkv, dim, [1, 1])
-                            dk, dv = [x.squeeze(dim) for x in [dk, dv]]
+                            dk, dv = _SplitAlongDim.apply(dkv, dim, [1, 1], True)
                         if qkv_group == 3:
-                            dq = dq.dequantize()
-                            dk = dk.dequantize()
-                            dv = dv.dequantize()
+                            dq = dq_fp8.dequantize()
+                            dk = dk_fp8.dequantize()
+                            dv = dv_fp8.dequantize()
                 else:
                     if isinstance(d_out, QuantizedTensor):
                         d_out = d_out.dequantize()
@@ -6612,7 +5752,6 @@ class FusedAttnFunc(torch.autograd.Function):
                         v,
                         out,
                         d_out,
-                        ctx.qkv_dtype,
                         ctx.qkv_dtype,
                         aux_ctx_tensors,
                         ctx.fused_attention_backend,
@@ -7899,6 +7038,7 @@ class DotProductAttention(TransformerEngineBaseModule):
                     max_seqlen_kv=max_seqlen_kv,
                     fp8=self.fp8 and self.fp8_meta["recipe"].fp8_dpa,
                     fp8_meta=self.fp8_meta,
+                    quantizers=self.quantizers
                 )
 
             if use_fused_attention:
@@ -8808,7 +7948,6 @@ class MultiheadAttention(torch.nn.Module):
         # ===================
         # Output. [sq, b, h]
         # ===================
-
         projection_output = self.proj(
             context_layer,
             is_first_microbatch=is_first_microbatch,
