@@ -39,6 +39,10 @@ Compute always in FP32
 namespace transformer_engine {
 namespace normalization {
 
+cudnn_frontend::NormFwdPhase_t get_cudnn_forward_phase(const bool columnwise){
+  return columnwise ? cudnn_frontend::NormFwdPhase_t::TRAINING : cudnn_frontend::NormFwdPhase_t::INFERENCE;
+}
+
 TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
                      NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype, DType ctype,
                      uint64_t batch_size, uint64_t hidden_size, bool zero_centered_gamma,
@@ -262,7 +266,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
                                 .set_stride({hidden_dim, 1, hidden_dim, hidden_dim})
                                 .set_data_type(get_cudnn_fe_dtype(wtype)));
       auto norm_options = fe::graph::Layernorm_attributes()
-                              .set_forward_phase(fe::NormFwdPhase_t::TRAINING)
+                              .set_forward_phase(get_cudnn_forward_phase(_columnwise))
                               .set_epsilon(_eps)
                               .set_compute_data_type(get_cudnn_fe_dtype(ctype));
       auto ret = _graph.layernorm(_x, _gamma, _beta, norm_options);
@@ -270,7 +274,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
       _mean->set_output(true).set_data_type(get_cudnn_fe_dtype(ctype));
     } else if (NormType == NVTE_Norm_Type::RMSNorm) {
       auto norm_options = fe::graph::Rmsnorm_attributes()
-                              .set_forward_phase(fe::NormFwdPhase_t::TRAINING)
+                              .set_forward_phase(get_cudnn_forward_phase(_columnwise))
                               .set_epsilon(_eps)
                               .set_compute_data_type(get_cudnn_fe_dtype(ctype));
       auto ret = _graph.rmsnorm(_x, _gamma, norm_options);
