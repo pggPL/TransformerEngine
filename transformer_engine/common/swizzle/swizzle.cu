@@ -213,9 +213,9 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
   // 1D block scaling, row-wise or colum-wise
   if (scaling_mode == NVTE_MXFP8_1D_SCALING) {
     const int m =
-        input->has_data() ? input->scale_inv.shape[0] : input->columnwise_scale_inv.shape[0];
+        input->has_data() ? input->scale_inv.shape[0] : input->columnwise_scale_inv.shape[1];
     const int k =
-        input->has_data() ? input->scale_inv.shape[1] : input->columnwise_scale_inv.shape[1];
+        input->has_data() ? input->scale_inv.shape[1] : input->columnwise_scale_inv.shape[0];
 
     constexpr int SF_TILE_DIM_M = 128;
     constexpr int SF_TILE_DIM_K = 4;
