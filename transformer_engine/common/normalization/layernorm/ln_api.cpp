@@ -56,7 +56,9 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
 
   NVTE_Norm_Backend norm_backend;
   bool is_aligned = true;
-  if (use_cudnn_norm_fwd() || is_block_scaling(z->scaling_mode)) {
+  bool cudnn_backend = use_cudnn_norm_fwd() || is_block_scaling(z->scaling_mode);
+
+  if (cudnn_backend) {
     // TODO: add check for GPU ARCH
     norm_backend = NVTE_Norm_Backend::Cudnn;
   } else {
@@ -64,25 +66,41 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
     is_aligned = is_ptr_aligned(z->data.dptr, x.data.dptr, gamma.data.dptr, beta.data.dptr,
                                 mu->data.dptr, rsigma->data.dptr);
   }
+
+  bool rowwise = (z->data).dptr != nullptr && is_block_scaling(z->scaling_mode);
+  bool columnwise = (z->columnwise_data).dptr != nullptr && is_block_scaling(z->scaling_mode);
+
+  NVTE_CHECK(!rowwise || (z->scale_inv).dptr != nullptr,
+             "Rowwise scale_inv is empty!");
+  NVTE_CHECK(!columnwise || (z->columnwise_scale_inv).dptr != nullptr,
+             "Columnwise scale_inv is empty!");
+
   auto plan = NormalizationPlanRegistry::getInstance().getNormalizationPlan(
-      norm_backend, NVTE_Norm_Type::LayerNorm, NVTE_Norm_Stage::Forward,
+      norm_backend,
+      NVTE_Norm_Type::LayerNorm,
+      NVTE_Norm_Stage::Forward,
       gamma.data.dtype,  // wtype
       x.data.dtype,      // itype
       z->data.dtype,     // otype
       x.data.shape[0],   // batch_size
       x.data.shape[1],   // hidden_size
-      multiprocessorCount, zero_centered_gamma, is_aligned, z->scaling_mode);
+      multiprocessorCount,
+      zero_centered_gamma,
+      is_aligned,
+      z->scaling_mode,
+      rowwise,
+      columnwise);
 
   if (workspace->data.shape.empty()) {
     workspace->data.shape = plan->getWorkspaceShape();
     workspace->data.dtype = DType::kByte;
     return;
-  } else {
-    NVTE_CHECK(workspace->data.shape == plan->getWorkspaceShape());
-    plan->execute(z, x.data.dptr, gamma.data.dptr, beta.data.dptr, mu->data.dptr,
-                  reinterpret_cast<void*>(const_cast<float*>(&epsilon)), rsigma->data.dptr,
-                  workspace->data.dptr, stream);
   }
+
+  NVTE_CHECK(workspace->data.shape == plan->getWorkspaceShape());
+  plan->execute(z, x.data.dptr, gamma.data.dptr, beta.data.dptr, mu->data.dptr,
+                reinterpret_cast<void*>(const_cast<float*>(&epsilon)), rsigma->data.dptr,
+                workspace->data.dptr, stream);
   return;
 }
 
