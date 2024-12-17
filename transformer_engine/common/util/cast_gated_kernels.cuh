@@ -4,6 +4,13 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+/*! \file cast_gated_kernels.cuh
+ *  \brief CUDA gated activations kernels to cast to/from FP8/MXFP8.
+ */
+
+#ifndef TRANSFORMER_ENGINE_CAST_GATED_KERNELS_CUH_
+#define TRANSFORMER_ENGINE_CAST_GATED_KERNELS_CUH_
+
 #include <cuda.h>
 #include <cudaTypedefs.h>
 #include <cuda_runtime.h>
@@ -19,6 +26,14 @@
 #include "ptx.cuh"
 
 namespace transformer_engine {
+
+template <typename T1, typename T2>
+__device__ __host__ __forceinline__
+uint64_t DIVUP_TO_MULTIPLE(T1 N, T2 M) {
+  return DIVUP(static_cast<uint64_t>(N), static_cast<uint64_t>(M)) * M;
+}
+
+namespace gated_kernels {
 
 constexpr size_t ALIGNMENT_SIZE = 128;
 constexpr size_t CHUNK_DIM_Y = 128;
@@ -38,14 +53,14 @@ static_assert(ITERATIONS >= 1);
 
 __device__ inline float sigmoidf(const float x) { return __frcp_rn(1.0f + __expf(-x)); }
 
-template <typename ParamOP, float (*ActOP)(float, const ParamOP &),
+template <bool IS_DGATED, typename ParamOP, float (*ActOP)(float, const ParamOP &),
           float (*DActOP)(float, const ParamOP &), typename IType, typename OType>
 __global__ void __launch_bounds__(THREADS_PER_CHUNK)
-    cast_fp8_dgated_kernel(const __grid_constant__ CUtensorMap tensor_map_grad,
-                           const __grid_constant__ CUtensorMap tensor_map_gated_input,
-                           const __grid_constant__ CUtensorMap tensor_map_output,
-                           float *const amax_ptr, float *const scale_inv_ptr,
-                           const float *const scale_ptr, const size_t rows, const size_t cols) {
+    cast_fp8_gated_kernel(const __grid_constant__ CUtensorMap tensor_map_grad,
+                          const __grid_constant__ CUtensorMap tensor_map_gated_input,
+                          const __grid_constant__ CUtensorMap tensor_map_output,
+                          float *const amax_ptr, float *const scale_inv_ptr,
+                          const float *const scale_ptr, const size_t rows, const size_t cols) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 
   const int chunk_offset_Y = blockIdx.y * CHUNK_DIM_Y;
@@ -73,7 +88,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   const size_t buff_size_aligned_out =
       DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
 
-  const size_t grad_mem = buff_size_aligned_in;
+  const size_t grad_mem = IS_DGATED ? buff_size_aligned_in : 0;
 
   const size_t in_act_mem = buff_size_aligned_in;
   const size_t in_gate_mem = buff_size_aligned_in;
@@ -84,7 +99,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   const size_t out_mem = out_act_mem + out_gate_mem;
 
   // const size_t in_transaction_size = grad_mem + in_mem;
-  const size_t in_transaction_size = 3 * buff_elems * sizeof(IType);
+  const size_t in_transaction_size = (IS_DGATED ? 3 : 2) * buff_elems * sizeof(IType);
 
   // The destination shared memory buffer of a bulk tensor operation should be 16-byte aligned
   IType *in_grad_sh = reinterpret_cast<IType *>(dshmem);
@@ -120,10 +135,12 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   // Prefetch data of the first stage
   if (is_master_thread) {
     // Initiate bulk tensor copy
-    // Grad
-    ptx::cp_async_bulk_tensor_2d_global_to_shared(reinterpret_cast<uint64_t *>(&in_grad_sh[0]),
-                                                  TMAP_grad_in, chunk_offset_X, chunk_offset_Y,
-                                                  &mbar[0]);
+    if constexpr (IS_DGATED) {
+      // Grad
+      ptx::cp_async_bulk_tensor_2d_global_to_shared(reinterpret_cast<uint64_t *>(&in_grad_sh[0]),
+                                                    TMAP_grad_in, chunk_offset_X, chunk_offset_Y,
+                                                    &mbar[0]);
+    }
 
     // Act
     ptx::cp_async_bulk_tensor_2d_global_to_shared(reinterpret_cast<uint64_t *>(&in_act_sh[0]),
@@ -152,10 +169,12 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
         const int chunk_it_offset_y = chunk_offset_Y + next_it * BUFFER_DIM_Y;
         const int chunk_it_offset_x = chunk_offset_X;
         // Initiate bulk tensor copy
-        // Grad
-        ptx::cp_async_bulk_tensor_2d_global_to_shared(
-            reinterpret_cast<uint64_t *>(&in_grad_sh[next_buff * buff_elems]), TMAP_grad_in,
-            chunk_it_offset_x, chunk_it_offset_y, &mbar[next_it]);
+        if constexpr (IS_DGATED) {
+          // Grad
+          ptx::cp_async_bulk_tensor_2d_global_to_shared(
+              reinterpret_cast<uint64_t *>(&in_grad_sh[next_buff * buff_elems]), TMAP_grad_in,
+              chunk_it_offset_x, chunk_it_offset_y, &mbar[next_it]);
+        }
         // Act
         ptx::cp_async_bulk_tensor_2d_global_to_shared(
             reinterpret_cast<uint64_t *>(&in_act_sh[next_buff * buff_elems]), TMAP_gate_in,
@@ -191,31 +210,38 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
       const int shmem_offset_x = thread_offset_X;
       const int shmem_idx = shmem_offset_y * SHMEM_DIM_X + shmem_offset_x;
 
-      float grad_elt = static_cast<float>(in_grad_sh_curr[shmem_idx]);
       float act_elt = static_cast<float>(in_act_sh_curr[shmem_idx]);
       float gate_elt = static_cast<float>(in_gate_sh_curr[shmem_idx]);
 
-      const float x = act_elt;
-      float act_x;
-      float dact_x;
+      if constexpr (IS_DGATED) {
+        float grad_elt = static_cast<float>(in_grad_sh_curr[shmem_idx]);
 
-      if constexpr ((ActOP == &silu<fp32, fp32>) && (DActOP == &dsilu<fp32, fp32>)) {
-        const float s = sigmoidf(x);
-        act_x = x * s;
-        dact_x = x * s * (1 - s) + s;
+        const float x = act_elt;
+        float act_x;
+        float dact_x;
+
+        if constexpr ((ActOP == &silu<fp32, fp32>) && (DActOP == &dsilu<fp32, fp32>)) {
+          const float s = sigmoidf(x);
+          act_x = x * s;
+          dact_x = x * s * (1 - s) + s;
+        } else {
+          act_x = ActOP(x, {});
+          dact_x = DActOP(x, {});
+        }
+
+        float after_dact = dact_x * grad_elt * gate_elt;
+        float after_dgate = act_x * grad_elt;
+
+        out_act_sh_curr[shmem_idx] = static_cast<OType>(scale * after_dact);
+        out_gate_sh_curr[shmem_idx] = static_cast<OType>(scale * after_dgate);
+
+        amax = fmaxf(amax, fabsf(after_dact));
+        amax = fmaxf(amax, fabsf(after_dgate));
       } else {
-        act_x = ActOP(x);
-        dact_x = DActOP(x);
+        const float after_act = ActOP(act_elt, {}) * gate_elt;
+        out_act_sh_curr[shmem_idx] = static_cast<OType>(scale * after_act);
+        amax = fmaxf(amax, fabsf(after_act));
       }
-
-      float after_dact = dact_x * grad_elt * gate_elt;
-      float after_dgate = act_x * grad_elt;
-
-      out_act_sh_curr[shmem_idx] = static_cast<OType>(scale * after_dact);
-      out_gate_sh_curr[shmem_idx] = static_cast<OType>(scale * after_dgate);
-
-      amax = fmaxf(amax, fabsf(after_dact));
-      amax = fmaxf(amax, fabsf(after_dgate));
     }
 
     // Wait for shared memory writes to be visible to TMA engine (cross-proxy fence)
@@ -233,10 +259,12 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
                                                     chunk_it_offset_y,
                                                     reinterpret_cast<uint64_t *>(out_act_sh_curr));
 
-      // dGate
-      ptx::cp_async_bulk_tensor_2d_shared_to_global(TMAP_output, chunk_it_offset_x + cols,
-                                                    chunk_it_offset_y,
-                                                    reinterpret_cast<uint64_t *>(out_gate_sh_curr));
+      if constexpr (IS_DGATED) {
+        // dGate
+        ptx::cp_async_bulk_tensor_2d_shared_to_global(TMAP_output, chunk_it_offset_x + cols,
+                                                      chunk_it_offset_y,
+                                                      reinterpret_cast<uint64_t *>(out_gate_sh_curr));
+      }
 
       // Create a "bulk async-group" out of the previous bulk copy operation.
       ptx::cp_async_bulk_commit_group();
@@ -275,18 +303,18 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-template <typename ParamOP, float (*ActOP)(float, const ParamOP &),
+template <bool IS_DGATED, typename ParamOP, float (*ActOP)(float, const ParamOP &),
           float (*DActOP)(float, const ParamOP &), typename IType, typename OType,
           size_t SCALE_DIM_Y, size_t SCALE_DIM_X>
 __global__ void __launch_bounds__(THREADS_PER_CHUNK)
-    cast_mxfp8_dgated_kernel(const __grid_constant__ CUtensorMap tensor_map_grad,
-                             const __grid_constant__ CUtensorMap tensor_map_gated_input,
-                             const __grid_constant__ CUtensorMap tensor_map_output_rowwise,
-                             const __grid_constant__ CUtensorMap tensor_map_output_colwise,
-                             e8m0_t *const scales_rowwise, e8m0_t *const scales_colwise,
-                             float *const amax_ptr,
-                             const size_t rows, const size_t cols,
-                             const size_t scale_stride_rowwise, const size_t scale_stride_colwise) {
+    cast_mxfp8_gated_kernel(const __grid_constant__ CUtensorMap tensor_map_grad,
+                            const __grid_constant__ CUtensorMap tensor_map_gated_input,
+                            const __grid_constant__ CUtensorMap tensor_map_output_rowwise,
+                            const __grid_constant__ CUtensorMap tensor_map_output_colwise,
+                            e8m0_t *const scales_rowwise, e8m0_t *const scales_colwise,
+                            float *const amax_ptr,
+                            const size_t rows, const size_t cols,
+                            const size_t scale_stride_rowwise, const size_t scale_stride_colwise) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
   constexpr bool USE_ROWWISE_SCALING = SCALE_DIM_X > 1;
   constexpr bool USE_COLWISE_SCALING = SCALE_DIM_Y > 1;
@@ -322,12 +350,10 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 
   const size_t buff_elems = SHMEM_DIM_Y * SHMEM_DIM_X;
   const size_t buff_elems_total = BUFFERS_NUM * buff_elems;
-  const size_t buff_size_aligned_in =
-      DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
-  const size_t buff_size_aligned_out =
-      DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+  const size_t buff_size_aligned_in = DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+  const size_t buff_size_aligned_out = DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
 
-  const size_t grad_mem = buff_size_aligned_in;
+  const size_t grad_mem = (IS_DGATED ? buff_size_aligned_in : 0);
 
   const size_t in_act_mem = buff_size_aligned_in;
   const size_t in_gate_mem = buff_size_aligned_in;
@@ -338,7 +364,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   const size_t out_mem = out_act_mem + out_gate_mem;
 
   // const size_t in_transaction_size = grad_mem + in_mem;
-  const size_t in_transaction_size = 3 * buff_elems * sizeof(IType);
+  const size_t in_transaction_size = (IS_DGATED ? 3 : 2) * buff_elems * sizeof(IType);
 
   // The destination shared memory buffer of a bulk tensor operation should be 16-byte aligned
   IType *in_grad_sh = reinterpret_cast<IType *>(dshmem);
@@ -353,16 +379,13 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 
   if constexpr (USE_ROWWISE_SCALING && USE_COLWISE_SCALING) {
     out_act_colwise_sh = reinterpret_cast<OType *>(dshmem + grad_mem + in_mem + out_mem);
-    out_gate_colwise_sh =
-        reinterpret_cast<OType *>(dshmem + grad_mem + in_mem + out_mem + out_act_mem);
+    out_gate_colwise_sh = reinterpret_cast<OType *>(dshmem + grad_mem + in_mem + out_mem + out_act_mem);
   }
 
   const uint64_t *TMAP_grad_in = reinterpret_cast<const uint64_t *>(&tensor_map_grad);
   const uint64_t *TMAP_gate_in = reinterpret_cast<const uint64_t *>(&tensor_map_gated_input);
-  const uint64_t *TMAP_output_rowwise =
-      reinterpret_cast<const uint64_t *>(&tensor_map_output_rowwise);
-  const uint64_t *TMAP_output_colwise =
-      reinterpret_cast<const uint64_t *>(&tensor_map_output_colwise);
+  const uint64_t *TMAP_output_rowwise = reinterpret_cast<const uint64_t *>(&tensor_map_output_rowwise);
+  const uint64_t *TMAP_output_colwise = reinterpret_cast<const uint64_t *>(&tensor_map_output_colwise);
 
   __shared__ float stage_amax_sh[THREADS_PER_CHUNK_Y][CHUNK_DIM_X];
 
@@ -389,9 +412,11 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   if (is_master_thread) {
     // Initiate bulk tensor copy
     // Grad
-    ptx::cp_async_bulk_tensor_2d_global_to_shared(reinterpret_cast<uint64_t *>(&in_grad_sh[0]),
-                                                  TMAP_grad_in, chunk_offset_X, chunk_offset_Y,
-                                                  &mbar[0]);
+    if constexpr (IS_DGATED) {
+      ptx::cp_async_bulk_tensor_2d_global_to_shared(reinterpret_cast<uint64_t *>(&in_grad_sh[0]),
+                                                    TMAP_grad_in, chunk_offset_X, chunk_offset_Y,
+                                                    &mbar[0]);
+    }
 
     // Act
     ptx::cp_async_bulk_tensor_2d_global_to_shared(reinterpret_cast<uint64_t *>(&in_act_sh[0]),
@@ -420,10 +445,12 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
         const int chunk_it_offset_y = chunk_offset_Y + next_it * BUFFER_DIM_Y;
         const int chunk_it_offset_x = chunk_offset_X;
         // Initiate bulk tensor copy
-        // Grad
-        ptx::cp_async_bulk_tensor_2d_global_to_shared(
-            reinterpret_cast<uint64_t *>(&in_grad_sh[next_buff * buff_elems]), TMAP_grad_in,
-            chunk_it_offset_x, chunk_it_offset_y, &mbar[next_it]);
+        if constexpr (IS_DGATED) {
+          // Grad
+          ptx::cp_async_bulk_tensor_2d_global_to_shared(
+              reinterpret_cast<uint64_t *>(&in_grad_sh[next_buff * buff_elems]), TMAP_grad_in,
+              chunk_it_offset_x, chunk_it_offset_y, &mbar[next_it]);
+        }
         // Act
         ptx::cp_async_bulk_tensor_2d_global_to_shared(
             reinterpret_cast<uint64_t *>(&in_act_sh[next_buff * buff_elems]), TMAP_gate_in,
@@ -469,27 +496,32 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
       const int shmem_offset_x = thread_offset_X;
       const int shmem_idx = shmem_offset_y * SHMEM_DIM_X + shmem_offset_x;
 
-      float grad_elt = static_cast<float>(in_grad_sh_curr[shmem_idx]);
       float act_elt = static_cast<float>(in_act_sh_curr[shmem_idx]);
       float gate_elt = static_cast<float>(in_gate_sh_curr[shmem_idx]);
+      float amax_gated_elem;
 
-      const float x = act_elt;
-      float act_x;
-      float dact_x;
+      if constexpr (IS_DGATED) {
+        float grad_elt = static_cast<float>(in_grad_sh_curr[shmem_idx]);
+        const float x = act_elt;
+        float act_x;
+        float dact_x;
 
-      if constexpr ((ActOP == &silu<fp32, fp32>) && (DActOP == &dsilu<fp32, fp32>)) {
-        const float s = sigmoidf(x);
-        act_x = x * s;
-        dact_x = x * s * (1 - s) + s;
+        if constexpr ((ActOP == &silu<fp32, fp32>) && (DActOP == &dsilu<fp32, fp32>)) {
+          const float s = sigmoidf(x);
+          act_x = x * s;
+          dact_x = x * s * (1 - s) + s;
+        } else {
+          act_x = ActOP(x, {});
+          dact_x = DActOP(x, {});
+        }
+        after_dact_reg[stage] = dact_x * grad_elt * gate_elt;
+        after_dgate_reg[stage] = act_x * grad_elt;
+
+        amax_gated_elem = fmaxf(fabsf(after_dact_reg[stage]), fabsf(after_dgate_reg[stage]));
       } else {
-        act_x = ActOP(x);
-        dact_x = DActOP(x);
+        after_dact_reg[stage] = ActOP(act_elt, {}) * gate_elt;
+        amax_gated_elem = fabsf(after_dact_reg[stage]);
       }
-      after_dact_reg[stage] = dact_x * grad_elt * gate_elt;
-      after_dgate_reg[stage] = act_x * grad_elt;
-
-      const float amax_gated_elem =
-          fmaxf(fabsf(after_dact_reg[stage]), fabsf(after_dgate_reg[stage]));
 
       if constexpr (USE_ROWWISE_SCALING) {
         __builtin_assume(amax_gated_elem >= 0);
@@ -497,22 +529,23 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
         thread_amax = fmaxf(thread_amax, amax_gated_elem);
 
         const float mx_block_X_amax = warp_reduce_max_broadcast(amax_gated_elem);
-        const e8m0_t biased_exponent_X =
-            float_to_e8m0(mx_block_X_amax * Quantized_Limits<OType>::max_norm_rcp);
+        const e8m0_t biased_exponent_X = float_to_e8m0(mx_block_X_amax
+                                         * Quantized_Limits<OType>::max_norm_rcp);
         const float scale_reciprocal_X = exp2f_rcp(biased_exponent_X);
 
-        out_act_rowwise_sh_curr[shmem_idx] =
-            static_cast<OType>(scale_reciprocal_X * after_dact_reg[stage]);
-        out_gate_rowwise_sh_curr[shmem_idx] =
-            static_cast<OType>(scale_reciprocal_X * after_dgate_reg[stage]);
+        out_act_rowwise_sh_curr[shmem_idx] = static_cast<OType>(scale_reciprocal_X * after_dact_reg[stage]);
+        if constexpr (IS_DGATED) {
+          out_gate_rowwise_sh_curr[shmem_idx] = static_cast<OType>(scale_reciprocal_X * after_dgate_reg[stage]);
+        }
 
         // Only single thread writes the computed scaling factor
         if (tid_X % SCALE_DIM_X == 0) {
-          const int global_scales_offset_Y =
-              iteration_scale_rowwise_offset_Y + stage_offset_Y + thread_offset_Y;
-          const int global_scales_offset_X = scales_rowwise_chunk_offset_X + tid_X / SCALE_DIM_X;
-          const int scale_idx =
-              global_scales_offset_Y * scale_stride_rowwise + global_scales_offset_X;
+          const int global_scales_offset_Y = iteration_scale_rowwise_offset_Y
+                                             + stage_offset_Y + thread_offset_Y;
+          const int global_scales_offset_X = scales_rowwise_chunk_offset_X
+                                             + tid_X / SCALE_DIM_X;
+          const int scale_idx = global_scales_offset_Y * scale_stride_rowwise
+                                + global_scales_offset_X;
           scales_rowwise[scale_idx] = biased_exponent_X;
         }
       }
@@ -557,8 +590,8 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
       if (tid_Y == 0) {
         const int global_scales_offset_Y = iteration_scale_colwise_offset_Y;
         const int global_scales_offset_X = scales_colwise_chunk_offset_X + tid_X;
-        const int scale_idx =
-            global_scales_offset_Y * scale_stride_colwise + global_scales_offset_X;
+        const int scale_idx = global_scales_offset_Y * scale_stride_colwise
+                              + global_scales_offset_X;
         scales_colwise[scale_idx] = biased_exponent;
       }
 
@@ -569,10 +602,10 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
         const int shmem_offset_x = thread_offset_X;
         const int shmem_idx = shmem_offset_y * SHMEM_DIM_X + shmem_offset_x;
 
-        out_act_colwise_sh_curr[shmem_idx] =
-            static_cast<OType>(scale_reciprocal * after_dact_reg[stage]);
-        out_gate_colwise_sh_curr[shmem_idx] =
-            static_cast<OType>(scale_reciprocal * after_dgate_reg[stage]);
+        out_act_colwise_sh_curr[shmem_idx] = static_cast<OType>(scale_reciprocal * after_dact_reg[stage]);
+        if constexpr (IS_DGATED) {
+          out_gate_colwise_sh_curr[shmem_idx] = static_cast<OType>(scale_reciprocal * after_dgate_reg[stage]);
+        }
       }
     }  // endif USE_COLWISE_SCALING
 
@@ -592,10 +625,12 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
             TMAP_output_rowwise, chunk_it_offset_x, chunk_it_offset_y,
             reinterpret_cast<uint64_t *>(out_act_rowwise_sh_curr));
 
-        // dGate
-        ptx::cp_async_bulk_tensor_2d_shared_to_global(
-            TMAP_output_rowwise, chunk_it_offset_x + cols, chunk_it_offset_y,
-            reinterpret_cast<uint64_t *>(out_gate_rowwise_sh_curr));
+        if constexpr (IS_DGATED) {
+          // dGate
+          ptx::cp_async_bulk_tensor_2d_shared_to_global(
+              TMAP_output_rowwise, chunk_it_offset_x + cols, chunk_it_offset_y,
+              reinterpret_cast<uint64_t *>(out_gate_rowwise_sh_curr));
+        }
       }
 
       // dGeLU
@@ -604,10 +639,12 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
             TMAP_output_colwise, chunk_it_offset_x, chunk_it_offset_y,
             reinterpret_cast<uint64_t *>(out_act_colwise_sh_curr));
 
-        // dGate
-        ptx::cp_async_bulk_tensor_2d_shared_to_global(
-            TMAP_output_colwise, chunk_it_offset_x + cols, chunk_it_offset_y,
-            reinterpret_cast<uint64_t *>(out_gate_colwise_sh_curr));
+        if constexpr (IS_DGATED) {
+          // dGate
+          ptx::cp_async_bulk_tensor_2d_shared_to_global(
+              TMAP_output_colwise, chunk_it_offset_x + cols, chunk_it_offset_y,
+              reinterpret_cast<uint64_t *>(out_gate_colwise_sh_curr));
+        }
       }
 
       // Create a "bulk async-group" out of the previous bulk copy operation.
@@ -643,13 +680,21 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-template <typename ParamOP, float (*ActOP)(float, const ParamOP &),
+template <bool IS_DGATED, typename ParamOP, float (*ActOP)(float, const ParamOP &),
           float (*DActOP)(float, const ParamOP &)>
-void cast_fp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *output,
+void cast_fp8_gated(const Tensor &grad, const Tensor &gated_input, Tensor *output,
                      cudaStream_t stream) {
+  if (output->has_data()) {
+    NVTE_CHECK(output->scale_inv.dptr != nullptr, "Scaling tensor must be allocated.");
+  }
+  if (output->has_columnwise_data()) {
+    NVTE_CHECK(output->columnwise_scale_inv.dptr != nullptr, "Scaling tensor must be allocated.");
+  }
+
   NVTE_CHECK(!output->has_columnwise_data(), "Only cast supported in this function.");
-  const size_t rows = grad.data.shape[0];
-  const size_t cols = grad.data.shape[1];
+  const size_t rows = gated_input.data.shape[0];
+  const size_t cols = gated_input.data.shape[1] / 2;
+  const size_t output_cols = (IS_DGATED ? 2 : 1) * cols;
 
   const size_t blocks_Y = DIVUP(rows, CHUNK_DIM_Y);
   const size_t blocks_X = DIVUP(cols, CHUNK_DIM_X);
@@ -661,28 +706,26 @@ void cast_fp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *outp
   const dim3 block_dim(THREADS_PER_CHUNK);
   const dim3 grid_dim(blocks_X, blocks_Y);
 
-  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
-      grad.dtype(), IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
-          output->dtype(), OType,
+  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(gated_input.dtype(), IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->dtype(), OType,
 
           alignas(64) CUtensorMap tensor_map_grad{};
           alignas(64) CUtensorMap tensor_map_gated_input{};
           alignas(64) CUtensorMap tensor_map_output{};
 
-          create_2D_tensor_map(tensor_map_grad, grad.data, rows, cols,
-                               SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(IType));
+          if constexpr (IS_DGATED) {
+            create_2D_tensor_map(tensor_map_grad, grad.data, rows, cols,
+                                 SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(IType));
+          }
           create_2D_tensor_map(tensor_map_gated_input, gated_input.data, rows, cols * 2,
                                SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(IType));
-          create_2D_tensor_map(tensor_map_output, output->data, rows, cols * 2, SHMEM_DIM_Y,
+          create_2D_tensor_map(tensor_map_output, output->data, rows, output_cols, SHMEM_DIM_Y,
                                SHMEM_DIM_X, sizeof(OType));
 
           const size_t buff_elems_total = BUFFERS_NUM * SHMEM_DIM_Y * SHMEM_DIM_X;
-          const size_t buff_size_aligned_in =
-              DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
-          const size_t buff_size_aligned_out =
-              DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
-          const size_t grad_mem = buff_size_aligned_in;
+          const size_t buff_size_aligned_in = DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+          const size_t buff_size_aligned_out = DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+          const size_t grad_mem = (IS_DGATED ? buff_size_aligned_in : 0);
           const size_t in_act_mem = buff_size_aligned_in;
           const size_t in_gate_mem = buff_size_aligned_in;
           const size_t out_act_mem = buff_size_aligned_out;
@@ -691,29 +734,39 @@ void cast_fp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *outp
           const size_t shmem_size = ALIGNMENT_SIZE + grad_mem + (in_act_mem + in_gate_mem) +
                                     (out_act_mem + out_gate_mem);  // + mbar_mem;
 
-          cudaFuncSetAttribute(cast_fp8_dgated_kernel<ParamOP, ActOP, DActOP, IType, OType>,
+          cudaFuncSetAttribute(cast_fp8_gated_kernel<IS_DGATED, ParamOP, ActOP, DActOP, IType, OType>,
                                cudaFuncAttributeMaxDynamicSharedMemorySize, shmem_size);
 
-          cast_fp8_dgated_kernel<ParamOP, ActOP, DActOP, IType, OType>
-          <<<grid_dim, block_dim, shmem_size, stream>>>(tensor_map_grad, tensor_map_gated_input,
-                                                        tensor_map_output, amax_ptr, scale_inv_ptr,
-                                                        scale_ptr, rows, cols););  // NOLINT(*)
+          cast_fp8_gated_kernel<IS_DGATED, ParamOP, ActOP, DActOP, IType, OType>
+            <<<grid_dim, block_dim, shmem_size, stream>>>
+              (tensor_map_grad, tensor_map_gated_input, tensor_map_output, amax_ptr, scale_inv_ptr,
+               scale_ptr, rows, cols);
+      );  // NOLINT(*)
   );                                                                               // NOLINT(*)
 }
 
-template <typename ParamOP, float (*ActOP)(float, const ParamOP &),
+template <bool IS_DGATED, typename ParamOP, float (*ActOP)(float, const ParamOP &),
           float (*DActOP)(float, const ParamOP &)>
-void cast_mxfp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *output,
-                       cudaStream_t stream) {
+void cast_mxfp8_gated(const Tensor &grad, const Tensor &gated_input, Tensor *output,
+                      cudaStream_t stream) {
   const bool USE_ROWWISE_SCALING = output->has_data();
   const bool USE_COLWISE_SCALING = output->has_columnwise_data();
+
+  if (USE_ROWWISE_SCALING) {
+    NVTE_CHECK(output->scale_inv.dptr != nullptr, "Scaling tensor must be allocated.");
+  }
+  if (USE_COLWISE_SCALING) {
+    NVTE_CHECK(output->columnwise_scale_inv.dptr != nullptr, "Scaling tensor must be allocated.");
+  }
 
   // TODO: Make more general
   const size_t scale_dim_X_rowwise = USE_ROWWISE_SCALING ? 32 : 1;
   const size_t scale_dim_Y_colwise = USE_COLWISE_SCALING ? 32 : 1;
 
-  const size_t rows = grad.data.shape[0];
-  const size_t cols = grad.data.shape[1];
+  const size_t rows = gated_input.data.shape[0];
+  const size_t cols = gated_input.data.shape[1] / 2;
+  const size_t output_cols = (IS_DGATED ? 2 : 1) * cols;
+
   const size_t blocks_Y = DIVUP(rows, CHUNK_DIM_Y);
   const size_t blocks_X = DIVUP(cols, CHUNK_DIM_X);
   const size_t scale_stride_rowwise = DIVUP(cols, scale_dim_X_rowwise);
@@ -721,50 +774,49 @@ void cast_mxfp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *ou
 
   float *const amax_ptr = reinterpret_cast<float *>(output->amax.dptr);
 
-  e8m0_t *const scales_rowwise_ptr =
-      USE_ROWWISE_SCALING ? reinterpret_cast<e8m0_t *>(output->scale_inv.dptr) : nullptr;
-  e8m0_t *const scales_colwise_ptr =
-      USE_COLWISE_SCALING ? reinterpret_cast<e8m0_t *>(output->columnwise_scale_inv.dptr) : nullptr;
+  e8m0_t *const scales_rowwise_ptr = USE_ROWWISE_SCALING
+                                     ? reinterpret_cast<e8m0_t *>(output->scale_inv.dptr)
+                                     : nullptr;
+  e8m0_t *const scales_colwise_ptr = USE_COLWISE_SCALING
+                                     ? reinterpret_cast<e8m0_t *>(output->columnwise_scale_inv.dptr)
+                                     : nullptr;
 
   const dim3 block_dim(THREADS_PER_CHUNK);
   const dim3 grid_dim(blocks_X, blocks_Y);
 
-  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
-      scale_dim_Y_colwise, SCALE_DIM_Y,
-      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
-          scale_dim_X_rowwise, SCALE_DIM_X,
-          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
-              grad.dtype(), IType,
-              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
-                  output->dtype(), OType,
+  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_Y_colwise, SCALE_DIM_Y,
+      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_X_rowwise, SCALE_DIM_X,
+          TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(gated_input.dtype(), IType,
+              TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(output->dtype(), OType,
 
                   alignas(64) CUtensorMap tensor_map_grad{};
                   alignas(64) CUtensorMap tensor_map_gated_input{};
                   alignas(64) CUtensorMap tensor_map_output_rowwise{};
                   alignas(64) CUtensorMap tensor_map_output_colwise{};
 
-                  create_2D_tensor_map(tensor_map_grad, grad.data, rows, cols, SHMEM_DIM_Y,
-                                       SHMEM_DIM_X, sizeof(IType));
+                  if constexpr (IS_DGATED) {
+                    create_2D_tensor_map(tensor_map_grad, grad.data, rows, cols, SHMEM_DIM_Y,
+                                        SHMEM_DIM_X, sizeof(IType));
+                  }
+
                   create_2D_tensor_map(tensor_map_gated_input, gated_input.data, rows, cols * 2,
                                        SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(IType));
 
                   if (USE_ROWWISE_SCALING) {
                     create_2D_tensor_map(tensor_map_output_rowwise, output->data, rows,
-                                         cols * 2, SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(OType));
+                                         output_cols, SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(OType));
                   }
 
                   if (USE_COLWISE_SCALING) {
                     create_2D_tensor_map(tensor_map_output_colwise, output->columnwise_data, rows,
-                                         cols * 2, SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(OType));
+                                         output_cols, SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(OType));
                   }
 
                   const size_t buff_elems_total = BUFFERS_NUM * SHMEM_DIM_Y * SHMEM_DIM_X;
-                  const size_t buff_size_aligned_in =
-                      DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
-                  const size_t buff_size_aligned_out =
-                      DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+                  const size_t buff_size_aligned_in = DIVUP(buff_elems_total * sizeof(IType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
+                  const size_t buff_size_aligned_out = DIVUP(buff_elems_total * sizeof(OType), ALIGNMENT_SIZE) * ALIGNMENT_SIZE;
 
-                  const size_t grad_mem = buff_size_aligned_in;
+                  const size_t grad_mem = (IS_DGATED ? buff_size_aligned_in : 0);
                   const size_t in_act_mem = buff_size_aligned_in;
                   const size_t in_gate_mem = buff_size_aligned_in;
                   const size_t in_mem = grad_mem + in_act_mem + in_gate_mem;
@@ -779,82 +831,193 @@ void cast_mxfp8_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *ou
 
                   const size_t shmem_size = ALIGNMENT_SIZE + in_mem + out_mem;
 
-                  cudaFuncSetAttribute(cast_mxfp8_dgated_kernel<ParamOP, ActOP, DActOP, IType,
-                                                                OType, SCALE_DIM_Y, SCALE_DIM_X>,
+                  cudaFuncSetAttribute(cast_mxfp8_gated_kernel<IS_DGATED, ParamOP, ActOP, DActOP,
+                                                               IType, OType, SCALE_DIM_Y, SCALE_DIM_X>,
                                        cudaFuncAttributeMaxDynamicSharedMemorySize, shmem_size);
 
-                  cast_mxfp8_dgated_kernel<ParamOP, ActOP, DActOP, IType, OType, SCALE_DIM_Y,
-                                           SCALE_DIM_X>
+                  cast_mxfp8_gated_kernel<IS_DGATED, ParamOP, ActOP, DActOP, IType, OType,
+                                          SCALE_DIM_Y, SCALE_DIM_X>
                   <<<grid_dim, block_dim, shmem_size, stream>>>(
                       tensor_map_grad, tensor_map_gated_input, tensor_map_output_rowwise,
                       tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr,
                       amax_ptr, rows, cols, scale_stride_rowwise,
-                      scale_stride_colwise););  // NOLINT(*)
-          );                                    // NOLINT(*)
-      );                                        // NOLINT(*)
-  );                                            // NOLINT(*)
+                      scale_stride_colwise);
+              );  // NOLINT(*)
+          );      // NOLINT(*)
+      );          // NOLINT(*)
+  );              // NOLINT(*)
+}
+
+template <typename ParamOP, float (*ActOP)(float, const ParamOP &)>
+void cast_gated(const Tensor &input, Tensor *output, cudaStream_t stream) {
+  CheckInputTensor(input, "gated_act_input");
+  CheckOutputTensor(*output, "gated_act_output");
+  NVTE_CHECK(input.data.shape.size() == 2, "Input must have 2 dimensions.");
+  NVTE_CHECK(output->data.shape.size() == 2, "Output must have 2 dimensions.");
+  NVTE_CHECK(input.data.shape[0] == output->data.shape[0],
+             "Input shape[0] must be equal to output shape[0].");
+  NVTE_CHECK(input.data.shape[1] == output->data.shape[1] * 2,
+             "Input shape[1] must be 2x larger than output shape[1].");
+
+  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_OUTPUT(output->data.dtype, OType,
+
+          if (!is_fp8_dtype(output->data.dtype) ||
+              is_delayed_tensor_scaling(output->scaling_mode)) {
+            constexpr int nvec = 32 / sizeof(IType);
+            GatedActivationKernelLauncher<nvec, fp32, ParamOP, ActOP>(
+                reinterpret_cast<const IType *>(input.data.dptr),
+                reinterpret_cast<OType *>(output->data.dptr),
+                reinterpret_cast<const fp32 *>(output->scale.dptr),
+                reinterpret_cast<fp32 *>(output->amax.dptr),
+                reinterpret_cast<fp32 *>(output->scale_inv.dptr),
+                output->data.shape[0],
+                output->data.shape[1],
+                {},
+                stream);
+          } else {
+            NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
+          }
+      );  // NOLINT(*)
+  );      // NOLINT(*)
 }
 
 template <typename ParamOP, float (*ActOP)(float, const ParamOP &),
           float (*DActOP)(float, const ParamOP &)>
-void fp8_quantize_dgated(const Tensor &grad, const Tensor &gated_input, Tensor *output,
-                         cudaStream_t stream) {
-  NVTE_CHECK(is_supported_by_CC_100(), "Not supported by the Arch < 10.0");
+void cast_dgated(const Tensor &grad, const Tensor &input, Tensor *output, cudaStream_t stream) {
+  CheckInputTensor(grad, "dgated_act_grad");
+  CheckInputTensor(input, "dgated_act_input");
+  CheckOutputTensor(*output, "dgated_act_output");
+  NVTE_CHECK(grad.data.shape.size() == 2, "Grad must have 2 dimensions.");
+  NVTE_CHECK(input.data.shape.size() == 2, "Input must have 2 dimensions.");
+  NVTE_CHECK(output->data.shape.size() == 2, "Output must have 2 dimensions.");
+  NVTE_CHECK(output->data.shape[0] == grad.data.shape[0],
+             "Output shape[0] must be equal to grad shape[0].");
+  NVTE_CHECK(output->data.shape[1] == grad.data.shape[1] * 2,
+             "Output shape[1] must be 2x larger than grad shape[1].");
+  NVTE_CHECK(input.data.shape == output->data.shape, "Input and output shapes must match.");
 
+  TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(input.data.dtype, IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_OUTPUT(output->data.dtype, OType,
+
+          if (!is_fp8_dtype(output->data.dtype) ||
+              is_delayed_tensor_scaling(output->scaling_mode)) {
+            constexpr int nvec = 32 / sizeof(IType);
+            DGatedActivationKernelLauncher<nvec, fp32, ParamOP, ActOP, DActOP>(
+                reinterpret_cast<const IType *>(grad.data.dptr),
+                reinterpret_cast<const IType *>(input.data.dptr),
+                reinterpret_cast<OType *>(output->data.dptr),
+                grad.data.shape[0],
+                grad.data.shape[1],
+                {},
+                stream);
+          } else {
+            NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
+          }
+      );  // NOLINT(*)
+  );      // NOLINT(*)
+}
+
+template <bool IS_DGATED, typename ParamOP, float (*ActOP)(float, const ParamOP &),
+          float (*DActOP)(float, const ParamOP &)>
+void quantize_gated(const Tensor &grad, const Tensor &gated_input, Tensor *output,
+                    cudaStream_t stream) {
   checkCuDriverContext(stream);
 
-  CheckInputTensor(grad, "grad");
   CheckInputTensor(gated_input, "gated_input");
   CheckOutputTensor(*output, "output");
 
-  NVTE_CHECK(!is_fp8_dtype(grad.data.dtype), "Grad input must be in higher precision.");
-  NVTE_CHECK(grad.data.shape.size() == 2, "Grad input must have 2 dimensions.");
-  const size_t rows = grad.data.shape[0];
-  const size_t cols = grad.data.shape[1];
+  const size_t rows = gated_input.data.shape[0];
+  const size_t cols = gated_input.data.shape[1] / 2;
+  const size_t output_cols = (IS_DGATED ? 2 : 1) * cols;
 
-  NVTE_CHECK(grad.data.dtype == gated_input.data.dtype, "Types of both inputs must match.");
+  NVTE_CHECK(gated_input.data.shape[1] % 2 == 0, "Number of columns must be even.");
   NVTE_CHECK(gated_input.data.shape.size() == 2, "Gated input must have 2 dimensions.");
-  NVTE_CHECK(gated_input.data.shape[0] == rows, "Wrong dimension of the gated input.");
-  NVTE_CHECK(gated_input.data.shape[1] == cols * 2, "Wrong dimension of the gated input.");
+
+  if constexpr (IS_DGATED) {
+    CheckInputTensor(grad, "grad");
+    NVTE_CHECK(!is_fp8_dtype(grad.data.dtype), "Grad input must be in higher precision.");
+    NVTE_CHECK(grad.data.dtype == gated_input.data.dtype, "Types of both inputs must match.");
+    NVTE_CHECK(grad.data.shape.size() == 2, "Grad input must have 2 dimensions.");
+    NVTE_CHECK(grad.data.shape[0] == rows, "Wrong dimension of the grad input.");
+    NVTE_CHECK(grad.data.shape[1] == cols, "Wrong dimension of the grad input.");
+  }
 
   NVTE_CHECK(output->has_data() || output->has_columnwise_data(),
              "Either rowwise or columnwise output data need to be allocated.");
+
+  bool is_fp8_rowwise_output = true;
+  bool is_fp8_colwise_output = true;
   if (output->has_data()) {
-    NVTE_CHECK(is_fp8_dtype(output->data.dtype), "Output must have FP8 type.");
+    is_fp8_rowwise_output = is_fp8_dtype(output->data.dtype);
     NVTE_CHECK(output->data.shape.size() == 2, "Output must have 2 dimensions.");
     NVTE_CHECK(output->data.shape[0] == rows, "Wrong dimension of the output.");
-    NVTE_CHECK(output->data.shape[1] == cols * 2, "Wrong dimension of the output.");
-    NVTE_CHECK(output->scale_inv.dptr != nullptr, "Scaling tensor must be allocated.");
+    NVTE_CHECK(output->data.shape[1] == output_cols, "Wrong dimension of the output.");
   }
   if (output->has_columnwise_data()) {
-    NVTE_CHECK(is_fp8_dtype(output->columnwise_data.dtype), "Output must have FP8 type.");
+    is_fp8_colwise_output = is_fp8_dtype(output->columnwise_data.dtype);
     NVTE_CHECK(output->columnwise_data.shape.size() == 2, "Output must have 2 dimensions.");
     NVTE_CHECK(output->columnwise_data.shape[0] == rows, "Wrong dimension of the output.");
-    NVTE_CHECK(output->columnwise_data.shape[1] == cols * 2, "Wrong dimension of the output.");
-    NVTE_CHECK(output->columnwise_scale_inv.dptr != nullptr, "Scaling tensor must be allocated.");
+    NVTE_CHECK(output->columnwise_data.shape[1] == output_cols, "Wrong dimension of the output.");
   }
 
-  const bool isFullTile = (rows % CHUNK_DIM_Y == 0) && (cols % CHUNK_DIM_X == 0);
-  NVTE_CHECK(isFullTile, "Only full tiles are supported.");
+  const bool is_full_tile = (rows % CHUNK_DIM_Y == 0) && (cols % CHUNK_DIM_X == 0);
+  const bool use_tma_kernels = is_full_tile && is_fp8_rowwise_output && is_fp8_colwise_output;
 
   if (is_delayed_tensor_scaling(output->scaling_mode)) {
-    cast_fp8_dgated<ParamOP, ActOP, DActOP>(grad, gated_input, output, stream);
+    if (use_tma_kernels) {
+      cast_fp8_gated<IS_DGATED, ParamOP, ActOP, DActOP>(grad, gated_input, output, stream);
+    } else {
+      if constexpr (IS_DGATED) {
+        cast_dgated<ParamOP, ActOP, DActOP>(grad, gated_input, output, stream);
+      } else {
+        cast_gated<ParamOP, ActOP>(gated_input, output, stream);
+      }
+    }
   } else if (is_mxfp_scaling(output->scaling_mode)) {
-    cast_mxfp8_dgated<ParamOP, ActOP, DActOP>(grad, gated_input, output, stream);
+    if (use_tma_kernels) {
+      cast_mxfp8_gated<IS_DGATED, ParamOP, ActOP, DActOP>(grad, gated_input, output, stream);
+    } else {
+      NVTE_ERROR("MX FP8 quantization supports full tiles only.");
+    }
   } else {
-    NVTE_ERROR("Not supported FP8 scaling mode");
+    NVTE_ERROR("Not supported scaling mode");
   }
 }
+} // namespace gated_kernels
+
+namespace detail {
+
+template <bool IS_DGATED, typename ParamOP, float (*ActOP)(float, const ParamOP &),
+          float (*DActOP)(float, const ParamOP &)>
+void quantize_gated_helper(const NVTETensor grad, const NVTETensor gated_input, NVTETensor output,
+                           cudaStream_t stream) {
+  using namespace gated_kernels;
+  Tensor grad_empty_tensor;
+  const Tensor& grad_tensor = IS_DGATED
+                            ? *(reinterpret_cast<const Tensor*>(grad))
+                            : grad_empty_tensor;
+  const Tensor gated_input_tensor = *reinterpret_cast<const Tensor*>(gated_input);
+  Tensor* output_tensor = reinterpret_cast<Tensor*>(output);
+
+  if (is_supported_by_CC_100()) {
+    quantize_gated<IS_DGATED, ParamOP, ActOP, DActOP>(
+        grad_tensor, gated_input_tensor, output_tensor, stream);
+  } else {
+    if (is_delayed_tensor_scaling(output_tensor->scaling_mode)) {
+      if constexpr (IS_DGATED) {
+        cast_dgated<ParamOP, ActOP, DActOP>(grad_tensor, gated_input_tensor, output_tensor, stream);
+      } else {
+        cast_gated<ParamOP, ActOP>(gated_input_tensor, output_tensor, stream);
+      }
+    } else {
+      // MX scaling
+      NVTE_ERROR("Not supported by the Arch < 10.0");
+    }
+  }
+}
+}  // namespace detail
 
 }  // namespace transformer_engine
 
-void nvte_quantize_dswiglu(const NVTETensor grad, const NVTETensor gated_input,
-                           NVTETensor output, cudaStream_t stream) {
-  NVTE_API_CALL(nvte_quantize_dswiglu);
-  using namespace transformer_engine;
-
-  fp8_quantize_dgated<Empty, silu<fp32, fp32>, dsilu<fp32, fp32>>(
-      *reinterpret_cast<const Tensor *>(grad),
-      *reinterpret_cast<const Tensor *>(gated_input),
-      reinterpret_cast<Tensor *>(output), stream);
-}
+#endif  // TRANSFORMER_ENGINE_CAST_GATED_KERNELS_CUH_

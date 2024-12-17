@@ -1311,11 +1311,13 @@ void quantize_helper(const NVTETensor input,
           dbias_tensor,
           workspace_tensor, stream);
     }
-  } else {
+  } else if (is_mxfp_scaling(output_tensor->scaling_mode)) {
     // MX scaling
     mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(input_tensor, activation_tensor,
                                                            output_tensor, dbias_tensor,
                                                            workspace_tensor, stream);
+  } else {
+    NVTE_ERROR("Not implemented yet!");
   }
 }
 }  // namespace detail

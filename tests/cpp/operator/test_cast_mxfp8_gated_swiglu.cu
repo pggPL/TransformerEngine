@@ -24,7 +24,7 @@ using namespace test;
 
 namespace {
 
-template <typename IType, typename OType>
+template <bool IS_DGATED, typename IType, typename OType>
 void scale_block(const IType* grad,
                  const IType* input,
                  OType* output,
@@ -43,14 +43,19 @@ void scale_block(const IType* grad,
     // Find the absolute maximum value in the block
     for (size_t i = i_min; i < i_max; ++i) {
         for (size_t j = j_min; j < j_max; ++j) {
-            float grad_elt = static_cast<float>(grad[i * cols + j]);
             float silu_elt = static_cast<float>(input[i * stride + j]);
             float gate_elt = static_cast<float>(input[i * stride + cols + j]);
+            float gated_amax;
 
-            float after_dsilu = dsilu(silu_elt) * grad_elt * gate_elt;
-            float after_dgate = silu(silu_elt) * grad_elt;
-
-            const float gated_amax = max(abs(after_dsilu), abs(after_dgate));
+            if constexpr (IS_DGATED) {
+                const float grad_elt = static_cast<float>(grad[i * cols + j]);
+                const float after_dsilu = dsilu(silu_elt) * grad_elt * gate_elt;
+                const float after_dgate = silu(silu_elt) * grad_elt;
+                gated_amax = max(abs(after_dsilu), abs(after_dgate));
+            } else {
+                const float after_silu = silu(silu_elt) * gate_elt;
+                gated_amax = abs(after_silu);
+            }
 
             if (abs(gated_amax) > block_amax) { block_amax = abs(gated_amax); }
         }
@@ -63,21 +68,26 @@ void scale_block(const IType* grad,
     // Quantize elements in the block
     for (size_t i = i_min; i < i_max; ++i) {
         for (size_t j = j_min; j < j_max; ++j) {
-            float grad_elt = static_cast<float>(grad[i * cols + j]);
             float silu_elt = static_cast<float>(input[i * stride + j]);
             float gate_elt = static_cast<float>(input[i * stride + cols + j]);
 
-            float after_dsilu = dsilu(silu_elt) * grad_elt * gate_elt;
-            float after_dgate = silu(silu_elt) * grad_elt;
+            if constexpr (IS_DGATED) {
+                const float grad_elt = static_cast<float>(grad[i * cols + j]);
+                const float after_dsilu = dsilu(silu_elt) * grad_elt * gate_elt;
+                const float after_dgate = silu(silu_elt) * grad_elt;
+                output[i * stride + j] = static_cast<OType>(after_dsilu * scale_reciprocal);
+                output[i * stride + cols + j] = static_cast<OType>(after_dgate * scale_reciprocal);
+            } else {
+                const float after_silu = silu(silu_elt) * gate_elt;
+                output[i * cols + j] = static_cast<OType>(after_silu * scale_reciprocal);
+            }
 
-            output[i * stride + j] = static_cast<OType>(after_dsilu * scale_reciprocal);
-            output[i * stride + cols + j] = static_cast<OType>(after_dgate * scale_reciprocal);
         }
     }
     thread_amax = std::max(thread_amax, block_amax);
 }
 
-template <typename IType, typename OType>
+template <bool IS_DGATED, typename IType, typename OType>
 void compute_ref_x1(const IType* grad,
                     const IType* input,
                     OType* output,
@@ -119,8 +129,9 @@ void compute_ref_x1(const IType* grad,
                     const size_t j_max = std::min(j_min + block_size_X, cols);
 
                     const size_t mx_scale_idx = block_idx_Y * blocks_per_row + block_idx_X;
-                    scale_block<IType, OType>(grad, input, output, output_scales, mx_scale_idx,
-                                              thread_amax, i_min, i_max, j_min, j_max, cols);
+                    scale_block<IS_DGATED, IType, OType>(
+                        grad, input, output, output_scales, mx_scale_idx,
+                        thread_amax, i_min, i_max, j_min, j_max, cols);
                 }
             }
         }
@@ -131,7 +142,7 @@ void compute_ref_x1(const IType* grad,
     ref_amax = amax;
 }
 
-template <typename IType, typename OType>
+template <bool IS_DGATED, typename IType, typename OType>
 void compute_ref_x2(const IType* grad,
                     const IType* input,
                     OType* output_rowwise,
@@ -143,9 +154,9 @@ void compute_ref_x2(const IType* grad,
                     const size_t cols,
                     const size_t block_size_Y,
                     const size_t block_size_X) {
-    compute_ref_x1<IType, OType>(
+    compute_ref_x1<IS_DGATED, IType, OType>(
         grad, input, output_rowwise, scales_rowwise, ref_amax, rows, cols, 1, block_size_X);
-    compute_ref_x1<IType, OType>(
+    compute_ref_x1<IS_DGATED, IType, OType>(
         grad, input, output_colwise, scales_colwise, ref_amax, rows, cols, block_size_Y, 1);
 }
 
@@ -157,7 +168,7 @@ void compute_ref_x2(const IType* grad,
  * 2) Scaled columns + column-wise scaling factors
  */
 
-template <typename IType, typename OType>
+template <bool IS_DGATED, typename IType, typename OType>
 void performTest_x1(const size_t rows,
                     const size_t cols,
                     const size_t block_size_rows,
@@ -177,37 +188,41 @@ void performTest_x1(const size_t rows,
     const size_t blocks_X = (cols + block_size_cols - 1) / block_size_cols;
     const size_t blocks_num = blocks_Y * blocks_X;
 
-    const int block_rows_dim = static_cast<int>(block_size_rows);
-    const int block_cols_dim = static_cast<int>(block_size_cols);
-    const int is_delayed_scaling = false;
-
     Tensor grad({ rows, cols }, itype);
     Tensor input({ rows, cols * 2 }, itype);
-    Tensor output({ rows, cols * 2 }, otype, rowwise, colwise, NVTE_MXFP8_1D_SCALING);
 
-    std::unique_ptr<OType[]> ref_output = std::make_unique<OType[]>(rows * cols * 2);
+    const size_t output_cols = (IS_DGATED ? 2 : 1) * cols;
+    Tensor output(std::vector<size_t>{ rows, output_cols }, otype, rowwise, colwise, NVTE_MXFP8_1D_SCALING);
+
+    std::unique_ptr<OType[]> ref_output = std::make_unique<OType[]>(rows * output_cols);
     std::unique_ptr<fp8e8m0[]> ref_output_scales = std::make_unique<fp8e8m0[]>(blocks_Y * blocks_X);
 
     // fillCase<EncodingType>(&grad, fill_case);
-    fillUniform(&grad);
+    if constexpr (IS_DGATED) {
+        fillUniform(&grad);
+    }
     fillUniform(&input);
 
-    nvte_quantize_dswiglu(grad.data(), input.data(), output.data(), 0);
+    if constexpr (IS_DGATED) {
+        nvte_dswiglu(grad.data(), input.data(), output.data(), 0);
+    } else {
+        nvte_swiglu(input.data(), output.data(), 0);
+    }
     cudaDeviceSynchronize();
 
     auto err = cudaGetLastError();
     ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
 
     float ref_amax = 0;
-    compute_ref_x1<IType, OType>(grad.rowwise_cpu_dptr<IType>(),
-                                 input.rowwise_cpu_dptr<IType>(),
-                                 ref_output.get(),
-                                 ref_output_scales.get(),
-                                 ref_amax,
-                                 rows,
-                                 cols,
-                                 block_size_rows,
-                                 block_size_cols);
+    compute_ref_x1<IS_DGATED, IType, OType>(grad.rowwise_cpu_dptr<IType>(),
+                                            input.rowwise_cpu_dptr<IType>(),
+                                            ref_output.get(),
+                                            ref_output_scales.get(),
+                                            ref_amax,
+                                            rows,
+                                            cols,
+                                            block_size_rows,
+                                            block_size_cols);
 
     auto [atol, rtol] = getTolerances(otype);
     compareResults("output", output, ref_output.get(), rowwise, atol, rtol);
@@ -225,7 +240,7 @@ void performTest_x1(const size_t rows,
  *      AND
  * 2) Scaled columns + column-wise scaling factors
  */
-template <typename IType, typename OType>
+template <bool IS_DGATED, typename IType, typename OType>
 void performTest_x2(const size_t rows,
                     const size_t cols,
                     const size_t block_size_rows,
@@ -241,41 +256,45 @@ void performTest_x2(const size_t rows,
     const size_t blocks_num_rowwise = rows * blocks_X;
     const size_t blocks_num_colwise = blocks_Y * cols;
 
-    const int block_rows_dim = static_cast<int>(block_size_rows);
-    const int block_cols_dim = static_cast<int>(block_size_cols);
-    const int is_delayed_scaling = false;
-
     Tensor grad({ rows, cols }, itype);
     Tensor input({ rows, cols * 2 }, itype);
-    Tensor output({ rows, cols * 2 }, otype, true, true, NVTE_MXFP8_1D_SCALING);
 
-    std::unique_ptr<OType[]> ref_output_rowwise = std::make_unique<OType[]>(rows * cols * 2);
-    std::unique_ptr<OType[]> ref_output_colwise = std::make_unique<OType[]>(rows * cols * 2);
+    const size_t output_cols = (IS_DGATED ? 2 : 1) * cols;
+    Tensor output(std::vector<size_t>{ rows, output_cols }, otype, true, true, NVTE_MXFP8_1D_SCALING);  
+
+    std::unique_ptr<OType[]> ref_output_rowwise = std::make_unique<OType[]>(rows * output_cols);
+    std::unique_ptr<OType[]> ref_output_colwise = std::make_unique<OType[]>(rows * output_cols);
     std::unique_ptr<fp8e8m0[]> ref_scales_rowwise = std::make_unique<fp8e8m0[]>(rows * blocks_X);
     std::unique_ptr<fp8e8m0[]> ref_scales_colwise = std::make_unique<fp8e8m0[]>(blocks_Y * cols);
 
     // fillCase<EncodingType>(&grad, fill_case);
-    fillUniform(&grad);
+    if constexpr (IS_DGATED) {
+        fillUniform(&grad);
+    }
     fillUniform(&input);
 
-    nvte_quantize_dswiglu(grad.data(), input.data(), output.data(), 0);
+    if constexpr (IS_DGATED) {
+        nvte_dswiglu(grad.data(), input.data(), output.data(), 0);
+    } else {
+        nvte_swiglu(input.data(), output.data(), 0);
+    }
     cudaDeviceSynchronize();
 
     auto err = cudaGetLastError();
     ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
 
     float ref_amax = 0;
-    compute_ref_x2<IType, OType>(grad.rowwise_cpu_dptr<IType>(),
-                                 input.rowwise_cpu_dptr<IType>(),
-                                 ref_output_rowwise.get(),
-                                 ref_output_colwise.get(),
-                                 ref_scales_rowwise.get(),
-                                 ref_scales_colwise.get(),
-                                 ref_amax,
-                                 rows,
-                                 cols,
-                                 block_size_rows,
-                                 block_size_cols);
+    compute_ref_x2<IS_DGATED, IType, OType>(grad.rowwise_cpu_dptr<IType>(),
+                                            input.rowwise_cpu_dptr<IType>(),
+                                            ref_output_rowwise.get(),
+                                            ref_output_colwise.get(),
+                                            ref_scales_rowwise.get(),
+                                            ref_scales_colwise.get(),
+                                            ref_amax,
+                                            rows,
+                                            cols,
+                                            block_size_rows,
+                                            block_size_cols);
 
     auto [atol, rtol] = getTolerances(otype);
     auto [atol_amax, rtol_amax] = getTolerances(DType::kFloat32);
@@ -311,14 +330,20 @@ std::vector<InputsFillCase> input_scenarios = {
     // InputsFillCase::maxNorm_to_inf
 };
 
+std::vector<bool> is_dgated_op = {
+    true,
+    false
+};
+
 }  // namespace
 
-class CastMXFP8SwiGLUTestSuite : public ::testing::TestWithParam
+class CastMXFP8_GatedActTestSuite : public ::testing::TestWithParam
     <std::tuple<std::pair<size_t, size_t>,
                 std::pair<size_t, size_t>,
                 transformer_engine::DType,
                 transformer_engine::DType,
-                InputsFillCase>> {};
+                InputsFillCase,
+                bool>> {};
 
 static const int32_t deviceComputeCapability = [](){
     cudaDeviceProp deviceProp;
@@ -328,7 +353,7 @@ static const int32_t deviceComputeCapability = [](){
 
 constexpr int32_t blackwellComputeCapability = 100;
 
-TEST_P(CastMXFP8SwiGLUTestSuite, TestCastMXFP8Swiglu) {
+TEST_P(CastMXFP8_GatedActTestSuite, TestCastMXFP8Swiglu) {
     // Skip tests for pre-Blackwell architectures
     if (deviceComputeCapability < blackwellComputeCapability) {
         GTEST_SKIP();
@@ -342,15 +367,26 @@ TEST_P(CastMXFP8SwiGLUTestSuite, TestCastMXFP8Swiglu) {
     const DType input_type = std::get<2>(GetParam());
     const DType output_type = std::get<3>(GetParam());
     const InputsFillCase fill_case = std::get<4>(GetParam());
+    const bool IS_DGATED = std::get<5>(GetParam());
 
     TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(input_type, IType,
         TRANSFORMER_ENGINE_TYPE_SWITCH_FP8_ONLY(output_type, OType,
             if (block_size.first == 1 || block_size.second == 1) {
-                performTest_x1<IType, OType>(matrix_size.first, matrix_size.second,
-                    block_size.first, block_size.second, fill_case);
+                if (IS_DGATED) {
+                    performTest_x1<true, IType, OType>(matrix_size.first, matrix_size.second,
+                        block_size.first, block_size.second, fill_case);
+                } else {
+                    performTest_x1<false, IType, OType>(matrix_size.first, matrix_size.second,
+                        block_size.first, block_size.second, fill_case);
+                }
             } else {
-                performTest_x2<IType, OType>(matrix_size.first, matrix_size.second,
-                    block_size.first, block_size.second, fill_case);
+                if (IS_DGATED) {
+                    performTest_x2<true, IType, OType>(matrix_size.first, matrix_size.second,
+                        block_size.first, block_size.second, fill_case);
+                } else {
+                    performTest_x2<false, IType, OType>(matrix_size.first, matrix_size.second,
+                        block_size.first, block_size.second, fill_case);
+                }
             }
         );
     );
@@ -358,22 +394,22 @@ TEST_P(CastMXFP8SwiGLUTestSuite, TestCastMXFP8Swiglu) {
 
 INSTANTIATE_TEST_SUITE_P(
     OperatorTest,
-    CastMXFP8SwiGLUTestSuite,
+    CastMXFP8_GatedActTestSuite,
     ::testing::Combine(
         ::testing::ValuesIn(matrix_sizes),
         ::testing::ValuesIn(block_sizes),
         ::testing::Values(DType::kFloat32, DType::kBFloat16, DType::kFloat16),
         ::testing::Values(DType::kFloat8E4M3, DType::kFloat8E5M2),
-        // ::testing::Values(DType::kBFloat16),
-        // ::testing::Values(DType::kFloat8E4M3),
-        ::testing::ValuesIn(input_scenarios)),
-    [](const testing::TestParamInfo<CastMXFP8SwiGLUTestSuite::ParamType>& info) {
+        ::testing::ValuesIn(input_scenarios),
+        ::testing::ValuesIn(is_dgated_op)),
+    [](const testing::TestParamInfo<CastMXFP8_GatedActTestSuite::ParamType>& info) {
         std::string name = std::to_string(std::get<0>(info.param).first) + "X" +
                            std::to_string(std::get<0>(info.param).second) + "X" +
                            std::to_string(std::get<1>(info.param).first) + "X" +
                            std::to_string(std::get<1>(info.param).second) + "X" +
                            test::typeName(std::get<2>(info.param)) + "X" +
                            test::typeName(std::get<3>(info.param)) + "X" +
-                           test::caseName(std::get<4>(info.param));
+                           test::caseName(std::get<4>(info.param)) + "X" +
+                           (std::get<5>(info.param) ? "DGATED" : "GATED");
         return name;
     });
