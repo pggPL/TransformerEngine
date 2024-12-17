@@ -88,8 +88,7 @@ void CheckScaleTensorShape(const Tensor &t) {
         expected_x =
             DIVUP(DIVUP(t.flat_first_dim(), static_cast<size_t>(32)), alignment) * alignment;
         alignment = block_alignment[0];
-        expected_y =
-            DIVUP(DIVUP(t.flat_last_dim(), static_cast<size_t>(1)), alignment) * alignment;
+        expected_y = DIVUP(DIVUP(t.flat_last_dim(), static_cast<size_t>(1)), alignment) * alignment;
         const auto &expected = std::vector<size_t>{expected_x, expected_y};
         NVTE_CHECK(t.columnwise_scale_inv.shape == expected,
                    "Tensor has invalid columnwise_scale_inv shape (expected ", expected, ", got ",
