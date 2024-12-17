@@ -87,7 +87,7 @@ void dequantize_1x_kernel(InputType* input_ptr, ScaleType* scale_ptr, OutputType
 }
 
 template <typename InputType, typename ScaleType>
-void dequantize_2x(Tensor& input, Tensor& output, bool is_colwise_out)
+void dequantize_2x(Tensor& input, Tensor& output, bool is_training)
 {
   input.to_cpu();
   auto scaling_mode = input.scaling_mode();
@@ -99,7 +99,7 @@ void dequantize_2x(Tensor& input, Tensor& output, bool is_colwise_out)
                        output.rowwise_cpu_dptr<float>(),
                        input.rowwise_shape().data[0], input.rowwise_shape().data[1],
                        1, 32);
-  if (is_colwise_out)
+  if (is_training)
     dequantize_1x_kernel(input.columnwise_cpu_dptr<InputType>(),
                          input.columnwise_cpu_scale_inv_ptr<ScaleType>(),
                          output.columnwise_cpu_dptr<float>(),
@@ -165,7 +165,7 @@ void compute_ref_output(NormType norm_type,
 }
 
 template <typename InputType, typename OutputType>
-void performTest(const size_t N, const size_t H, const bool zero_centered_gamma, NormType norm_type, bool is_colwise_out) {
+void performTest(const size_t N, const size_t H, const bool zero_centered_gamma, NormType norm_type, bool is_training) {
 
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
@@ -182,7 +182,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
   DType otype = TypeInfo<OutputType>::dtype;
 
   Tensor input({ N, H }, itype);
-  Tensor z({ N, H }, otype, true, is_colwise_out, NVTE_MXFP8_1D_SCALING);
+  Tensor z({ N, H }, otype, true, is_training, NVTE_MXFP8_1D_SCALING);
   Tensor gamma({ H }, wtype);
   Tensor beta({ H }, wtype);
   Tensor mu({ N }, DType::kFloat32);
@@ -221,7 +221,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 
   Tensor dequantized_output({ N, H }, DType::kFloat32, true, true);
 
-  dequantize_2x<OutputType, e8m0_t>(z, dequantized_output, is_colwise_out);
+  dequantize_2x<OutputType, e8m0_t>(z, dequantized_output, is_training);
 
   // Reference implementations
   std::unique_ptr<float[]> ref_mu = std::make_unique<float[]>(N);
@@ -249,8 +249,10 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 
   auto [atol_stats, rtol_stats] = getTolerances(DType::kFloat32);
   rtol_stats = 5e-5;
-  compareResults("mu", mu, ref_mu.get(), true, atol_stats, rtol_stats);
-  compareResults("rsigma", rsigma, ref_rsigma.get(), true, atol_stats, rtol_stats);
+  if (is_training){
+    compareResults("mu", mu, ref_mu.get(), true, atol_stats, rtol_stats);
+    compareResults("rsigma", rsigma, ref_rsigma.get(), true, atol_stats, rtol_stats);
+  }
 
   float atol, rtol;
   if (otype == DType::kFloat8E5M2){
@@ -266,7 +268,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
     }
   }
   compareResults("output_rowwise", dequantized_output, ref_output.get(), true, atol, rtol, false);
-  if (is_colwise_out)
+  if (is_training)
     compareResults("output_colwise", dequantized_output, ref_output.get(), false, atol, rtol, false);
 }
 
@@ -298,11 +300,11 @@ TEST_P(MxNormTestSuite, TestMxNorm) {
   const DType output_type = std::get<2>(GetParam());
   const auto size = std::get<3>(GetParam());
   const bool zero_centered_gamma = std::get<4>(GetParam());
-  const bool is_colwise_out = std::get<5>(GetParam());
+  const bool is_training = std::get<5>(GetParam());
 
   TRANSFORMER_ENGINE_TYPE_SWITCH_FP16_FP32_ONLY(input_type, InputType,
     TRANSFORMER_ENGINE_TYPE_SWITCH_FP8_ONLY(output_type, OutputType,
-      performTest<InputType, OutputType>(size.first, size.second, zero_centered_gamma, norm_type, is_colwise_out);
+      performTest<InputType, OutputType>(size.first, size.second, zero_centered_gamma, norm_type, is_training);
     );
   );
 }

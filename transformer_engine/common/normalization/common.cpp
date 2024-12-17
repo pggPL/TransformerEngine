@@ -39,8 +39,9 @@ Compute always in FP32
 namespace transformer_engine {
 namespace normalization {
 
-cudnn_frontend::NormFwdPhase_t get_cudnn_forward_phase(const bool columnwise){
-  return columnwise ? cudnn_frontend::NormFwdPhase_t::TRAINING : cudnn_frontend::NormFwdPhase_t::INFERENCE;
+cudnn_frontend::NormFwdPhase_t get_cudnn_forward_phase(const bool columnwise) {
+  return columnwise ? cudnn_frontend::NormFwdPhase_t::TRAINING
+                    : cudnn_frontend::NormFwdPhase_t::INFERENCE;
 }
 
 TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
@@ -190,8 +191,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(
     const bool zero_centered_gamma, const NVTEScalingMode mode, bool rowwise, bool columnwise)
     : _fp8_out(is_fp8_dtype(otype)),
       _zero_centered(zero_centered_gamma),
-      _rowwise(rowwise),
-      _columnwise(columnwise),
+      _training(columnwise),
       _norm_stage(NormStage),
       _norm_type(NormType) {
   static_assert(CUDNN_FRONTEND_VERSION >= 10601,
@@ -265,22 +265,22 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(
                                 .set_stride({hidden_dim, 1, hidden_dim, hidden_dim})
                                 .set_data_type(get_cudnn_fe_dtype(wtype)));
       auto norm_options = fe::graph::Layernorm_attributes()
-                              .set_forward_phase(get_cudnn_forward_phase(_columnwise))
+                              .set_forward_phase(get_cudnn_forward_phase(_training))
                               .set_epsilon(_eps)
                               .set_compute_data_type(get_cudnn_fe_dtype(ctype));
       auto ret = _graph.layernorm(_x, _gamma, _beta, norm_options);
       std::tie(_z, _mean, _rsigma) = std::make_tuple(ret[0], ret[1], ret[2]);
-      _mean->set_output(true).set_data_type(get_cudnn_fe_dtype(ctype));
+      if (_training) _mean->set_output(true).set_data_type(get_cudnn_fe_dtype(ctype));
     } else {
       auto norm_options = fe::graph::Rmsnorm_attributes()
-                              .set_forward_phase(get_cudnn_forward_phase(_columnwise))
+                              .set_forward_phase(get_cudnn_forward_phase(_training))
                               .set_epsilon(_eps)
                               .set_compute_data_type(get_cudnn_fe_dtype(ctype));
       auto ret = _graph.rmsnorm(_x, _gamma, norm_options);
       std::tie(_z, _rsigma) = std::make_tuple(ret[0], ret[1]);
     }
 
-    _rsigma->set_output(true).set_data_type(get_cudnn_fe_dtype(ctype));
+    if (_training) _rsigma->set_output(true).set_data_type(get_cudnn_fe_dtype(ctype));
 
     const auto ZDtype = _fp8_out ? ctype : otype;
     _z->set_output(!_fp8_out).set_data_type(get_cudnn_fe_dtype(ZDtype));
@@ -320,18 +320,16 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(
         auto z_2d = _graph.reshape(_z, fe::graph::Reshape_attributes());
         z_2d->set_dim({batch_dim, hidden_dim});
 
-        if (_rowwise) {
-          auto mx_quantize_row_opts = fe::graph::Block_scale_quantize_attributes()
-                                          .set_block_size(32)
-                                          .set_axis(1)
-                                          .set_transpose(false);
-          auto bs_row_ret = _graph.block_scale_quantize(z_2d, mx_quantize_row_opts);
-          std::tie(_z_mx_row, _sf_row) = std::make_tuple(bs_row_ret[0], bs_row_ret[1]);
-          _z_mx_row->set_output(true).set_data_type(get_cudnn_fe_dtype(otype));
-          _sf_row->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);  //TODO
-        }
+        auto mx_quantize_row_opts = fe::graph::Block_scale_quantize_attributes()
+                                        .set_block_size(32)
+                                        .set_axis(1)
+                                        .set_transpose(false);
+        auto bs_row_ret = _graph.block_scale_quantize(z_2d, mx_quantize_row_opts);
+        std::tie(_z_mx_row, _sf_row) = std::make_tuple(bs_row_ret[0], bs_row_ret[1]);
+        _z_mx_row->set_output(true).set_data_type(get_cudnn_fe_dtype(otype));
+        _sf_row->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);  //TODO
 
-        if (_columnwise) {
+        if (_training) {
           auto mx_quantize_col_opts = fe::graph::Block_scale_quantize_attributes()
                                           .set_block_size(32)
                                           .set_axis(0)
@@ -402,10 +400,14 @@ void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, 
                                      void* mean_dptr, void* eps_dptr, void* rsigma_dptr,
                                      void* workspace_dptr, cudaStream_t stream) {
   // Binding data pointers to graph tensors
-  _variant_pack = {{_x, x_dptr}, {_rsigma, rsigma_dptr}, {_eps, eps_dptr}};
+  _variant_pack = {{_x, x_dptr}, {_eps, eps_dptr}};
 
-  // layernorm should have valid mean_dptr and beta_dptr
-  if (mean_dptr && beta_dptr) _variant_pack.insert({{_mean, mean_dptr}, {_beta, beta_dptr}});
+  if (_training) _variant_pack.insert({{_rsigma, rsigma_dptr}});
+
+  if (_norm_type == NVTE_Norm_Type::LayerNorm ) {
+    _variant_pack.insert({{_beta, beta_dptr}});
+    if (_training) _variant_pack.insert({{_mean, mean_dptr}});
+  }
 
   if (_zero_centered)
     _variant_pack.insert(
@@ -420,14 +422,10 @@ void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, 
                           {_amax, z->amax.dptr},
                           {_z_fp8, z->data.dptr}});
   } else if (_fp8_out && _ndim_scale_block == 1) {
-    if (_rowwise) {
-      _variant_pack.insert({{_z_mx_row, z->data.dptr}, {_sf_row, z->scale_inv.dptr}});
-    }
-
-    if (_columnwise) {
+    _variant_pack.insert({{_z_mx_row, z->data.dptr}, {_sf_row, z->scale_inv.dptr}});
+    if (_training)
       _variant_pack.insert(
           {{_z_mx_col, z->columnwise_data.dptr}, {_sf_col, z->columnwise_scale_inv.dptr}});
-    }
   } else {
     _variant_pack.insert({{_z, z->data.dptr}});
   }

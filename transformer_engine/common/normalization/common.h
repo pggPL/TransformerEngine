@@ -287,7 +287,7 @@ class CudnnNormalizationPlan : public NormalizationPlanBase {
       _eps, _mean, _rsigma, _z, _z_scale, _one_for_div, _z_scale_inv, _amax, _z_fp8;
   // MX FWD
   std::shared_ptr<fe::graph::Tensor_attributes> _z_mx_row, _z_mx_col, _sf_row, _sf_col;
-  const bool _columnwise, _rowwise;
+  const bool _training;
   // BWD
   std::shared_ptr<fe::graph::Tensor_attributes> _dz, _dx, _dgamma, _dbeta;
 
