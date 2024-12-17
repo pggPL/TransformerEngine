@@ -11,6 +11,7 @@
 
 #include "common.h"
 
+
 /***************************************************************************************************
  * Permutation
  **************************************************************************************************/
@@ -44,53 +45,16 @@ NVTE_Fused_Attn_Backend get_fused_attn_backend(const transformer_engine::DType q
                                                size_t head_dim_qk, size_t head_dim_v,
                                                int64_t window_size_left, int64_t window_size_right);
 
-std::vector<py::object> fused_attn_fwd_qkvpacked(
-    size_t max_seqlen, bool is_training, float attn_scale, float p_dropout, bool set_zero,
-    NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-    const std::vector<int64_t> window_size, const at::Tensor cu_seqlens, const py::handle QKV,
-    const transformer_engine::DType qkv_type, const c10::optional<at::Tensor> cu_seqlens_padded,
-    py::handle s_quantizer, py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
-    const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread);
-
-std::vector<py::object> fused_attn_bwd_qkvpacked(
-    size_t max_seqlen, float attn_scale, float p_dropout, bool set_zero, NVTE_QKV_Layout qkv_layout,
-    NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
-    bool deterministic, const at::Tensor cu_seqlens, const py::handle QKV, const py::handle O,
-    const py::handle dO, const transformer_engine::DType qkv_type,
-    const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
-    const c10::optional<at::Tensor> cu_seqlens_padded, py::handle s_quantizer,
-    py::handle dp_quantizer, py::handle dqkv_quantizer);
-
-std::vector<py::object> fused_attn_fwd_kvpacked(
-    size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, float attn_scale, float p_dropout,
-    bool set_zero, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
-    NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
-    const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, py::handle Q, py::handle KV,
-    const transformer_engine::DType qkv_type, const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
-    py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
-    const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread);
-
-std::vector<py::object> fused_attn_bwd_kvpacked(
-    size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float p_dropout, bool set_zero,
-    NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-    const std::vector<int64_t> window_size, bool deterministic, const at::Tensor cu_seqlens_q,
-    const at::Tensor cu_seqlens_kv, py::handle Q, py::handle KV, py::handle O, py::handle dO,
-    const transformer_engine::DType qkv_type, const transformer_engine::DType dqkv_type,
-    const std::vector<at::Tensor> Aux_CTX_Tensors,
-    const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
-    py::handle dp_quantizer, py::handle dqkv_quantizer);
 
 std::vector<py::object> fused_attn_fwd(
     size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, float attn_scale, float p_dropout,
     bool set_zero, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
     NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
     const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const py::handle Q,
-    const py::handle K, const py::handle V, const transformer_engine::DType qkv_type,
+    const py::handle K, const py::handle V, 
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
-    const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
-    py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
+    const c10::optional<at::Tensor> cu_seqlens_kv_padded,
+    py::handle s_quantizer, py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread);
 
 std::vector<py::object> fused_attn_bwd(
@@ -98,8 +62,8 @@ std::vector<py::object> fused_attn_bwd(
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
     const std::vector<int64_t> window_size, bool deterministic, const at::Tensor cu_seqlens_q,
     const at::Tensor cu_seqlens_kv, const py::handle Q, const py::handle K, const py::handle V,
-    const py::handle O, py::handle dO, const transformer_engine::DType qkv_type,
-    const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
+    const py::handle O, const py::handle dO, const transformer_engine::DType dqkv_type,
+    const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
     py::handle dp_quantizer, py::handle dqkv_quantizer);

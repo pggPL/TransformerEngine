@@ -186,14 +186,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("fused_multi_quantize", &fused_multi_quantize, "Fused Multi-tensor Cast + Transpose",
         py::arg("input_list"), py::arg("output_list"), py::arg("quantizer_list"), py::arg("otype"));
   m.def("te_general_grouped_gemm", &te_general_grouped_gemm, "Grouped GEMM");
-  m.def("fused_attn_fwd_qkvpacked", &fused_attn_fwd_qkvpacked,
-        "Fused Attention FP8/BF16/FP16 FWD with packed QKV");
-  m.def("fused_attn_bwd_qkvpacked", &fused_attn_bwd_qkvpacked,
-        "Fused Attention FP8/BF16/FP16 BWD with packed QKV");
-  m.def("fused_attn_fwd_kvpacked", &fused_attn_fwd_kvpacked,
-        "Fused Attention FP8/BF16/FP16 FWD with packed KV");
-  m.def("fused_attn_bwd_kvpacked", &fused_attn_bwd_kvpacked,
-        "Fused Attention FP8/BF16/FP16 BWD with packed KV");
   m.def("fused_attn_fwd", &fused_attn_fwd,
         "Fused Attention FP8/BF16/FP16 FWD with separate Q, K and V");
   m.def("fused_attn_bwd", &fused_attn_bwd,
