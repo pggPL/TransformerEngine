@@ -157,7 +157,7 @@ struct TupleHash {
 TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
                      NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype, DType ctype,
                      uint64_t batch_size, uint64_t hidden_size, bool zero_centered_gamma,
-                     bool is_tuned);
+                     bool is_tuned, bool rowwise = true, bool columnwise = false);
 
 template <typename KernelParamsType>
 class TeNormalizationRegistry {
@@ -258,7 +258,8 @@ class CudnnNormalizationPlan : public NormalizationPlanBase {
   CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype,
                          DType itype, DType otype, DType ctype, const size_t batch_size,
                          const size_t hidden_size, const size_t sm_count,
-                         const bool zero_centered_gamma, const NVTEScalingMode& mode);
+                         const bool zero_centered_gamma, const NVTEScalingMode& mode,
+                         const bool rowwise = true, const bool columnwise = true);
 
   std::vector<size_t> getWorkspaceShape() const override;
 
@@ -282,6 +283,7 @@ class CudnnNormalizationPlan : public NormalizationPlanBase {
       _eps, _mean, _rsigma, _z, _z_scale, _one_for_div, _z_scale_inv, _amax, _z_fp8;
   // MX FWD
   std::shared_ptr<fe::graph::Tensor_attributes> _z_mx_row, _z_mx_col, _sf_row, _sf_col;
+  const bool _columnwise, _rowwise;
   // BWD
   std::shared_ptr<fe::graph::Tensor_attributes> _dz, _dx, _dgamma, _dbeta;
 
@@ -298,10 +300,15 @@ class NormalizationPlanRegistry {
   }
 
   NormalizationPlanBase* getNormalizationPlan(
-      NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
-      DType wtype, DType itype, DType otype, const size_t batch_size, const size_t hidden_size,
-      const size_t sm_count, const bool zero_centered_gamma, const bool is_aligned,
-      const NVTEScalingMode mode = NVTE_DELAYED_TENSOR_SCALING);
+      NVTE_Norm_Backend NormBackend,
+      NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
+      DType wtype, DType itype, DType otype,
+      const size_t batch_size, const size_t hidden_size,
+      const size_t sm_count, const bool zero_centered_gamma,
+      const bool is_aligned,
+      const NVTEScalingMode mode = NVTE_DELAYED_TENSOR_SCALING,
+      const bool rowwise = true,
+      const bool columnwise = false);
 
  private:
   NormalizationPlanRegistry() {}

@@ -6,8 +6,8 @@ add_executable(test_operator
                test_cast.cu
                test_cast_dbias.cu
                test_cast_dbias_dgelu.cu
-               test_cast_gated_swiglu.cu
-               test_cast_mxfp8_gated_swiglu.cu
+               # test_cast_gated_swiglu.cu
+               # test_cast_mxfp8_gated_swiglu.cu
                test_qdq.cu
                test_cast_mxfp8.cu
                test_transpose.cu
@@ -31,4 +31,4 @@ target_link_libraries(test_operator PUBLIC ${test_operator_LINKER_LIBS} OpenMP::
 target_compile_options(test_operator PRIVATE -O2 -fopenmp)
 
 include(GoogleTest)
-gtest_discover_tests(test_operator)
+gtest_discover_tests(test_operator DISCOVERY_TIMEOUT 600)

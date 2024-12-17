@@ -207,7 +207,7 @@ std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(const std::ve
   py::object ret;
   if (internal) {
     py::handle MXFP8TensorClass(reinterpret_cast<PyObject*>(MXFP8TensorBasePythonClass));
-    ret = MXFP8TensorClass("rowwise_data"_a = *data, "columnwise_data"_a = columnwise_data,
+    ret = MXFP8TensorClass("rowwise_data"_a = data, "columnwise_data"_a = columnwise_data,
                            "rowwise_scale_inv"_a = rowwise_scale_inv,
                            "columnwise_scale_inv"_a = columnwise_scale_inv,
                            "fp8_dtype"_a = this->dtype, "quantizer"_a = this->quantizer);
