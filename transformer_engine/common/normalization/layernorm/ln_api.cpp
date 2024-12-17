@@ -70,26 +70,18 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
   bool rowwise = (z->data).dptr != nullptr && is_block_scaling(z->scaling_mode);
   bool columnwise = (z->columnwise_data).dptr != nullptr && is_block_scaling(z->scaling_mode);
 
-  NVTE_CHECK(!rowwise || (z->scale_inv).dptr != nullptr,
-             "Rowwise scale_inv is empty!");
+  NVTE_CHECK(!rowwise || (z->scale_inv).dptr != nullptr, "Rowwise scale_inv is empty!");
   NVTE_CHECK(!columnwise || (z->columnwise_scale_inv).dptr != nullptr,
              "Columnwise scale_inv is empty!");
 
   auto plan = NormalizationPlanRegistry::getInstance().getNormalizationPlan(
-      norm_backend,
-      NVTE_Norm_Type::LayerNorm,
-      NVTE_Norm_Stage::Forward,
+      norm_backend, NVTE_Norm_Type::LayerNorm, NVTE_Norm_Stage::Forward,
       gamma.data.dtype,  // wtype
       x.data.dtype,      // itype
       z->data.dtype,     // otype
       x.data.shape[0],   // batch_size
       x.data.shape[1],   // hidden_size
-      multiprocessorCount,
-      zero_centered_gamma,
-      is_aligned,
-      z->scaling_mode,
-      rowwise,
-      columnwise);
+      multiprocessorCount, zero_centered_gamma, is_aligned, z->scaling_mode, rowwise, columnwise);
 
   if (workspace->data.shape.empty()) {
     workspace->data.shape = plan->getWorkspaceShape();
