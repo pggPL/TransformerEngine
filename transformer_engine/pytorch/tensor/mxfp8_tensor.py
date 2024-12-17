@@ -75,8 +75,8 @@ class MXFP8Quantizer(Quantizer):
         # Allocate FP8 data
         data = torch.empty(shape, dtype=torch.uint8, device=device)
         scale_inv = torch.empty(
-            math.prod(shape[:-1]) // MXFP8_BLOCK_SCALING_SIZE,
-            shape[-1],
+            math.prod(shape[:-1]),
+            shape[-1] // MXFP8_BLOCK_SCALING_SIZE,
             dtype=torch.uint8,
             device=device,
         )
@@ -87,8 +87,8 @@ class MXFP8Quantizer(Quantizer):
         if self.columnwise_usage:
             columnwise_data = torch.empty_like(data)
             columnwise_scale_inv = torch.empty(
-                math.prod(shape[:-1]),
-                shape[-1] // MXFP8_BLOCK_SCALING_SIZE,
+                math.prod(shape[:-1]) // MXFP8_BLOCK_SCALING_SIZE,
+                shape[-1],
                 dtype=torch.uint8,
                 device=device,
             )

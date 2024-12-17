@@ -38,14 +38,21 @@ void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool roww
   void* scale_inv_dptr = scale_inv.data_ptr;
   void* swizzled_scale_inv_dptr = getDataPtr(swizzled_scale_inv, 0);
 
-  // Construct Transformer Engine tensors
-  DType dtype = DType::kFloat8E4M3;  // Use any 8 bit dummy type.
-  auto input_cu =
-      makeTransformerEngineTensor(input.dptr(), input_shape, dtype, nullptr, nullptr,
-                                  scale_inv_dptr, scale_inv_shape, NVTE_MXFP8_1D_SCALING);
-  auto output_cu =
-      makeTransformerEngineTensor(input.dptr(), input_shape, dtype, nullptr, nullptr,
-                                  swizzled_scale_inv_dptr, scale_inv_shape, NVTE_MXFP8_1D_SCALING);
+  // Reconstruct input only to avoid swizzling both directions if not needed.
+  // Use any 8 bit type, it's irrelevant.
+  transformer_engine::TensorWrapper input_cu(NVTE_MXFP8_1D_SCALING);
+  transformer_engine::TensorWrapper output_cu(NVTE_MXFP8_1D_SCALING);
+  if (rowwise) {
+    input_cu.set_rowwise_data(input.dptr(), DType::kFloat8E4M3, input_shape);
+    input_cu.set_rowwise_scale_inv(scale_inv_dptr, DType::kFloat8E8M0, scale_inv_shape);
+    output_cu.set_rowwise_data(input.dptr(), DType::kFloat8E4M3, input_shape);
+    output_cu.set_rowwise_scale_inv(swizzled_scale_inv_dptr, DType::kFloat8E8M0, scale_inv_shape);
+  } else {
+    input_cu.set_columnwise_data(input.dptr(), DType::kFloat8E4M3, input_shape);
+    input_cu.set_columnwise_scale_inv(scale_inv_dptr, DType::kFloat8E8M0, scale_inv_shape);
+    output_cu.set_columnwise_data(input.dptr(), DType::kFloat8E4M3, input_shape);
+    output_cu.set_columnwise_scale_inv(swizzled_scale_inv_dptr, DType::kFloat8E8M0, scale_inv_shape);
+  }
 
   // Launch kernel
   nvte_swizzle_scaling_factors(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());

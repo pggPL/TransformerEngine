@@ -182,12 +182,12 @@ std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(const std::ve
   }
   if (columnwise_usage) {
     columnwise_data = at::empty(torch_shape, opts);
-    columnwise_scale_inv = at::empty({numel / last_dim, last_dim / MXFP8_BLOCK_SIZE}, opts);
+    columnwise_scale_inv = at::empty({numel / (last_dim * MXFP8_BLOCK_SIZE), last_dim}, opts);
 
     tensor.set_columnwise_data(columnwise_data.data_ptr(), this->dtype, shape);
     tensor.set_columnwise_scale_inv(
         columnwise_scale_inv.data_ptr(), DType::kFloat8E8M0,
-        std::vector<size_t>{numel / last_dim, last_dim / MXFP8_BLOCK_SIZE});
+        std::vector<size_t>{numel / (last_dim * MXFP8_BLOCK_SIZE), last_dim});
   }
   this->set_quantization_params(&tensor);
 
