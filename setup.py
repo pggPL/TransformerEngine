@@ -5,6 +5,7 @@
 """Installation script."""
 
 import os
+import sys
 import time
 from pathlib import Path
 from typing import List, Tuple
@@ -43,7 +44,7 @@ elif "jax" in frameworks:
 
 
 CMakeBuildExtension = get_build_ext(BuildExtension)
-
+archs = cuda_archs()
 
 class TimedBdist(bdist_wheel):
     """Helper class to measure build time"""
@@ -57,7 +58,7 @@ class TimedBdist(bdist_wheel):
 
 def setup_common_extension() -> CMakeExtension:
     """Setup CMake extension for common library"""
-    cmake_flags = ["-DCMAKE_CUDA_ARCHITECTURES={}".format(cuda_archs())]
+    cmake_flags = ["-DCMAKE_CUDA_ARCHITECTURES={}".format(archs)]
     if bool(int(os.getenv("NVTE_UB_WITH_MPI", "0"))):
         assert (
             os.getenv("MPI_HOME") is not None
@@ -101,10 +102,11 @@ def setup_requirements() -> Tuple[List[str], List[str], List[str]]:
     if not bool(int(os.getenv("NVTE_RELEASE_BUILD", "0"))):
         if "pytorch" in frameworks:
             install_reqs.extend(["torch"])
-            test_reqs.extend(["numpy", "onnxruntime", "torchvision", "prettytable"])
+            test_reqs.extend(["numpy", "torchvision", "prettytable"])
         if "jax" in frameworks:
             install_reqs.extend(["jax", "flax>=0.7.1"])
-            test_reqs.extend(["numpy", "praxis"])
+            # test_reqs.extend(["numpy", "praxis"])
+            test_reqs.extend(["numpy"])
         if "paddle" in frameworks:
             install_reqs.append("paddlepaddle-gpu")
             test_reqs.append("numpy")
@@ -147,6 +149,24 @@ if __name__ == "__main__":
             # results in a single binary with FW extensions included.
             uninstall_te_wheel_packages()
             if "pytorch" in frameworks:
+                from importlib.metadata import PackageNotFoundError
+                from importlib.metadata import version as get_pkg_version
+                from packaging.version import Version as PkgVersion
+
+                # FA for blackwell.
+                # cuda_archs() globally ensures that NVTE_CUDA_ARCHS is set thereby
+                # ensuring FA installation sees the same archs as TE installation
+                try:
+                    fa_version = PkgVersion(get_pkg_version("flash-attn"))
+                except PackageNotFoundError:
+                    fa_version = "unknown"
+
+                if fa_version != PkgVersion("2.4.2.dev3"):
+                    import subprocess
+
+                    fa_path = current_file_path / "3rdparty/flashattn_internal"
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", fa_path])
+
                 from build_tools.pytorch import setup_pytorch_extension
 
                 ext_modules.append(

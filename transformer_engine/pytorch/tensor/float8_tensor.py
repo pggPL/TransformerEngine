@@ -527,13 +527,12 @@ class Float8Tensor(QuantizedTensor):
             data = data.view(1, -1)
 
         # Cast from FP8
-        out = cast_from_fp8(
+        out = tex.cast_from_fp8(
             data.view(1, -1),
-            None,  # fp8_meta_tensor
-            None,  # fp8_tensor
+            self._scale_inv,
             self._fp8_dtype,
             dtype,
-            scale_inv=self._scale_inv,
+            0,
         )
 
         # Make sure output is in expected format

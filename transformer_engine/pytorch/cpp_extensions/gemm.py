@@ -8,7 +8,7 @@ from typing import Optional, Tuple, Union, List
 import torch
 import transformer_engine_torch as tex
 from ..constants import TE_DType
-from ..utils import assert_dim_for_fp8_exec
+from ..utils import assert_dim_for_fp8_exec, get_sm_count
 
 
 __all__ = [
@@ -22,7 +22,7 @@ __all__ = [
 @functools.lru_cache(maxsize=None)
 def _empty_tensor() -> torch.Tensor:
     """Get tensor with no entries and no data"""
-    return torch.Tensor()
+    return torch.Tensor().cuda()
 
 
 def fp8_gemm(
@@ -36,6 +36,8 @@ def fp8_gemm(
     B_dtype: tex.DType,
     out_dtype: torch.dtype,
     workspace: torch.Tensor,
+    A_scaling_mode: List = [-1, -1, 1],
+    B_scaling_mode: List = [-1, -1, 1],
     gelu: bool = False,
     accumulate: bool = False,
     out: Optional[torch.Tensor] = None,
@@ -80,16 +82,19 @@ def fp8_gemm(
 
     out_dtype = TE_DType[out.dtype] if D_dtype is None else D_dtype
 
+
+    fn = tex.te_gemm
+    sm_count = get_sm_count()
     args = (
         A,
-        A_scale_inv,
-        A_fp8_tensor,
+        A_scale_inv[A_fp8_tensor],
         A_dtype,
+        A_scaling_mode,
         True,  # transa
         B,
-        B_scale_inv,
-        B_fp8_tensor,
+        B_scale_inv[B_fp8_tensor],
         B_dtype,
+        B_scaling_mode,
         False,  # transb
         out,
         empty_tensor if out_index is None else fp8_meta_tensor.scale[out_index],
@@ -104,8 +109,9 @@ def fp8_gemm(
         accumulate,
         use_split_accumulator,
     )
-    fn = torch.ops.tex_ts.te_gemm_ts
-    if ub_algo is not None:
+    if ub_algo is None:
+        args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),))
+    else:
         assert ub is not None, "ub object is None!"
         if ub_algo == tex.CommOverlapAlgo.BULK_OVERLAP_AG:
             fn = ub.bulk_overlap
@@ -138,6 +144,11 @@ def fp8_gemm(
             )
             args = tuple(args + (extra_output_tensor,))
         elif ub_algo == tex.CommOverlapAlgo.ATOMIC_GEMM_AG_P2P:
+            assert A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [
+                -1,
+                -1,
+                1,
+            ], "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_ag_p2p
             extra_output_tensor = (
                 empty_tensor if extra_output_tensor is None else extra_output_tensor
@@ -162,6 +173,11 @@ def fp8_gemm(
             ), "SPLIT_PIPELINED_RS_P2P requires extra output tensor"
             args = tuple(args + (extra_output_tensor,))
         elif ub_algo == tex.CommOverlapAlgo.ATOMIC_GEMM_RS:
+            assert A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [
+                -1,
+                -1,
+                1,
+            ], "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_rs
             assert extra_output_tensor is not None, "ATOMIC_GEMM_RS requires extra output tensor"
             args = tuple(
@@ -172,12 +188,21 @@ def fp8_gemm(
                 )
             )
         elif ub_algo == tex.CommOverlapAlgo.ATOMIC_GEMM_RS_P2P:
+            assert A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [
+                -1,
+                -1,
+                1,
+            ], "Block scaling unsupported for atomic GEMM."
             fn = ub.atomic_gemm_overlap_rs_p2p
             assert (
                 extra_output_tensor is not None
             ), "ATOMIC_GEMM_RS_P2P requires extra output tensor"
             args = tuple(args + (extra_output_tensor,))
-    _ = fn(*args)
+
+    if ub_algo is not None and ub_algo == tex.CommOverlapAlgo.ATOMIC_GEMM_AG_P2P:
+        out = fn(*args)
+    else:
+        _ = fn(*args)
 
     return out, gelu_input
 
@@ -196,7 +221,7 @@ def gemm(
     bias: Optional[torch.Tensor] = None,
     use_bias: bool = False,
     ub_algo: tex.CommOverlapAlgo = None,
-    ub: Union[tex.CommOverlap, tex.CommOverlapP2P] = None,
+    ub: tex.CommOverlap = None,
     extra_output_tensor: torch.Tensor = None,
 ) -> Tuple[Union[torch.Tensor, None], ...]:
     """Non FP8 GEMM."""
@@ -205,7 +230,6 @@ def gemm(
     transa = layout[0] == "T"
     transb = layout[1] == "T"
     empty_tensor = _empty_tensor()
-    fp8_index = -1  # dummy index
 
     if out is None:
         out = torch.empty(
@@ -240,16 +264,18 @@ def gemm(
     else:
         bias_dtype = output_dtype
 
+    fn = tex.te_gemm
+    sm_count = get_sm_count()
     args = (
         A,
         empty_tensor,
-        fp8_index,
         input_dtype,
+        [-1, -1, 1],  # A_scaling_mode
         transa,
         B,
         empty_tensor,
-        fp8_index,
         input_dtype,
+        [-1, -1, 1],  # B_scaling_mode
         transb,
         out,
         empty_tensor,  # out_scale
@@ -264,8 +290,9 @@ def gemm(
         accumulate,
         False,  # use_split_accumulator
     )
-    fn = torch.ops.tex_ts.te_gemm_ts
-    if ub_algo is not None:
+    if ub_algo is None:
+        args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),))
+    else:
         assert ub is not None, "ub object is None!"
         if ub_algo == tex.CommOverlapAlgo.BULK_OVERLAP_AG:
             fn = ub.bulk_overlap
@@ -297,6 +324,7 @@ def gemm(
                 extra_output_tensor is not None
             ), "SPLIT_PIPELINED_RS_P2P requires extra output tensor"
             args = tuple(args + (extra_output_tensor,))
+
     _ = fn(*args)
 
     return out, grad_bias, gelu_input
@@ -351,16 +379,20 @@ def grouped_gemm(
     else:
         bias_dtype = output_dtype
 
-    torch.ops.tex_ts.te_grouped_gemm_ts(
+    sm_count = get_sm_count()
+
+    tex.te_grouped_gemm(
         A,
         empty_tensor,
         0,  # A_offset
         input_dtype,
+        [-1, -1, 1],  # A_scaling_mode
         transa,
         B,
         empty_tensor,
         0,  # B_offset
         input_dtype,
+        [-1, -1, 1],  # B_scaling_mode
         transb,
         out,
         0,  # out_offset
@@ -375,6 +407,7 @@ def grouped_gemm(
         workspaces[0].shape[0],
         accumulate,
         False,  # use_split_accumulator
+        sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),
     )
 
     return out, grad_bias, gelu_input
@@ -392,6 +425,8 @@ def fp8_grouped_gemm(
     out: List[torch.Tensor],
     out_dtype: torch.dtype,
     workspaces: List[torch.Tensor],
+    A_scaling_mode: List = [-1, -1, 1],
+    B_scaling_mode: List = [-1, -1, 1],
     m_splits: Optional[List[int]] = None,
     out_offset: Optional[int] = None,
     fp8_meta_tensor: tex.FP8TensorMeta = None,
@@ -436,6 +471,8 @@ def fp8_grouped_gemm(
     gelu_input = empty_tensors
     out_dtype = TE_DType[out[0].dtype] if D_dtype is None else D_dtype
 
+    sm_count = get_sm_count()
+
     if len(A_scale_inv) == 1:
         if gelu:
             gelu_input = [
@@ -443,16 +480,18 @@ def fp8_grouped_gemm(
                 for o in out
             ]
 
-        torch.ops.tex_ts.te_grouped_gemm_ts(
+        tex.te_grouped_gemm(
             A,
             A_scale_inv[0],
             A_fp8_tensor_offset,
             A_dtype,
+            A_scaling_mode,
             True,  # transa
             B,
             B_scale_inv,
             B_fp8_tensor_offset,
             B_dtype,
+            B_scaling_mode,
             False,  # transb
             out,
             0 if out_offset is None else out_offset,
@@ -467,12 +506,13 @@ def fp8_grouped_gemm(
             workspaces[0].shape[0],
             accumulate,
             use_split_accumulator,
+            sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),
         )
     else:
         if gelu:
             gelu_input = [torch.empty((m, A[0].size(0)), dtype=bias_dtype) for m in m_splits]
 
-        torch.ops.tex_ts.te_grouped_gemm_single_output_ts(
+        tex.te_grouped_gemm_single_output(
             A,
             A_scale_inv,
             A_fp8_tensor_offset,
@@ -497,6 +537,7 @@ def fp8_grouped_gemm(
             workspaces[0].shape[0],
             accumulate,
             use_split_accumulator,
+            sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),
         )
 
     return out, gelu_input

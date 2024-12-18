@@ -99,10 +99,15 @@ NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
         (max_seqlen_q == max_seqlen_kv) && (max_seqlen_q <= 512) && (head_dim_qk == 64) &&
         (head_dim_v == 64) && (attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_MASK)) ||
        ((cudnn_runtime_version >= 90201) && (max_seqlen_q % 128 == 0) &&
-        (max_seqlen_kv % 128 == 0) && (head_dim_qk == 128) && (head_dim_v == 128) &&
+        (max_seqlen_kv % 128 == 0) &&
+        (((sm_arch_ < 100) && (head_dim_qk == 128) && (head_dim_v == 128)) ||
+         ((sm_arch_ >= 100) && (head_dim_qk <= 128) && (head_dim_v <= 128) &&
+          (head_dim_qk % 16 == 0) && (head_dim_v % 16 == 0))) &&
         ((qkv_format == NVTE_QKV_Format::NVTE_BSHD) ||
          (qkv_format == NVTE_QKV_Format::NVTE_SBHD)) &&
-        ((attn_mask_type == NVTE_Mask_Type::NVTE_CAUSAL_MASK) ||
+        ((attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_CAUSAL_MASK) ||
+         (attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_MASK) ||
+         (attn_mask_type == NVTE_Mask_Type::NVTE_CAUSAL_MASK) ||
          (attn_mask_type == NVTE_Mask_Type::NVTE_NO_MASK)))) &&
       !requires_64bit_ragged_offset) {
     if (cudnn_runtime_version >= 8900) {
@@ -135,7 +140,18 @@ NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
         !requires_64bit_ragged_offset) {
       flag_m512 = true;
     }
-    if (  // architecture
+    if (
+        // special conditions for blackwell
+        !(sm_arch_ == 100 &&
+          (head_dim_qk > 128 || head_dim_v > 128 ||
+           attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_MASK ||
+           attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_CAUSAL_MASK ||
+           attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_CAUSAL_BOTTOM_RIGHT_MASK ||
+           attn_mask_type == NVTE_Mask_Type::NVTE_CAUSAL_BOTTOM_RIGHT_MASK ||
+           bias_type == NVTE_Bias_Type::NVTE_ALIBI ||
+           bias_type == NVTE_Bias_Type::NVTE_POST_SCALE_BIAS ||
+           !(window_size_left == -1 && (window_size_right == -1 || window_size_right == 0)))) &&
+        // architecture
         ((cudnn_runtime_version >= 8903 && sm_arch_ >= 80) ||
          (cudnn_runtime_version < 8903 && (sm_arch_ == 80 || sm_arch_ == 90))) &&
         // sequence length

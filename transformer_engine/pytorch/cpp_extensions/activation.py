@@ -25,22 +25,22 @@ def gelu(
     """GeLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
+    fp8_scales, _ = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.gelu_ts(
+    return tex.gelu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
-        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -57,22 +57,22 @@ def relu(
     """ReLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
+    fp8_scales, _ = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.relu_ts(
+    return tex.relu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
-        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -89,22 +89,22 @@ def geglu(
     """GeGLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
+    fp8_scales, _ = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.geglu_ts(
+    return tex.geglu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
-        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -121,22 +121,22 @@ def reglu(
     """ReGLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
+    fp8_scales, _ = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.reglu_ts(
+    return tex.reglu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
-        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -153,22 +153,22 @@ def swiglu(
     """SwiGLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
+    fp8_scales, _ = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.swiglu_ts(
+    return tex.swiglu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
-        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -185,22 +185,22 @@ def qgelu(
     """QuickGELU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
+    fp8_scales, _ = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.qgelu_ts(
+    return tex.qgelu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
-        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -217,21 +217,21 @@ def srelu(
     """ReLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
+    fp8_scales, _ = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
+        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
-    return torch.ops.tex_ts.srelu_ts(
+    return tex.srelu(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
-        fp8_scales_offsets["scale_offset"],
         otype,
     )
