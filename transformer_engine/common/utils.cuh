@@ -935,11 +935,10 @@ __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
   uint16_t out;
   asm volatile(
       "{\n"
-      "cvt.rp.satfinite.ue8m0x2.f32  %0, 0.0, %1;\n"
+      "cvt.rp.satfinite.ue8m0x2.f32  %0, %1, 0.0;\n"
       "}"
       : "=h"(out)
       : "f"(val));
-  out = out << 8;
   return *reinterpret_cast<e8m0_t *>(&out);
 #else
   if (isinf(val) || isnan(val)) {
