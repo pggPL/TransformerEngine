@@ -931,9 +931,7 @@ struct Quantized_Limits {
 };
 
 __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
-#if (defined __CUDA_ARCH__) &&                                                     \
-    (defined(__CUDA_ARCH_FEAT_SM100_ALL) || defined(__CUDA_ARCH_FEAT_SM101_ALL) || \
-     defined(__CUDA_ARCH_FEAT_SM120_ALL))
+#if CUDART_VERSION >= 12080
   uint16_t out;
   asm volatile(
       "{\n"
@@ -941,6 +939,7 @@ __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
       "}"
       : "=h"(out)
       : "f"(val));
+  out = out << 8;
   return *reinterpret_cast<e8m0_t *>(&out);
 #else
   if (isinf(val) || isnan(val)) {
