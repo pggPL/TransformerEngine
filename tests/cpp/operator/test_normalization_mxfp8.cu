@@ -232,13 +232,21 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
   compute_ref_stats(norm_type, input.rowwise_cpu_dptr<InputType>(), ref_mu.get(),
                     ref_rsigma.get(), N, H, epsilon);
   // use the GPU stats to tighten the tolerances
-  mu.to_cpu();
-  rsigma.to_cpu();
+  float *ref_mu_ptr, *ref_rsigma_ptr;
+  if (is_training){
+    mu.to_cpu();
+    rsigma.to_cpu();
+    ref_mu_ptr = mu.rowwise_cpu_dptr<float>();
+    ref_rsigma_ptr = rsigma.rowwise_cpu_dptr<float>();
+  } else {
+    ref_mu_ptr = ref_mu.get();
+    ref_rsigma_ptr = ref_rsigma.get();
+  }
   compute_ref_output(norm_type, input.rowwise_cpu_dptr<InputType>(),
                      gamma.rowwise_cpu_dptr<WeightType>(),
                      beta.rowwise_cpu_dptr<WeightType>(),
-                     mu.rowwise_cpu_dptr<float>(),
-                     rsigma.rowwise_cpu_dptr<float>(),
+                     ref_mu_ptr,
+                     ref_rsigma_ptr,
                      N, H,
                      ref_output.get(),
                      zero_centered_gamma);
