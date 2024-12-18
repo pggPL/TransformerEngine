@@ -931,7 +931,7 @@ struct Quantized_Limits {
 };
 
 __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
-#if CUDART_VERSION >= 12080
+#if (defined __CUDA_ARCH__) && __CUDA_ARCH__>=1000
   uint16_t out;
   asm volatile(
       "{\n"
