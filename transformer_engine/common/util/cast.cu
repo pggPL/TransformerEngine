@@ -11,6 +11,7 @@
 
 #include <cfloat>
 #include <limits>
+#include <string>
 
 #include "../common.h"
 #include "../transpose/cast_transpose.h"
