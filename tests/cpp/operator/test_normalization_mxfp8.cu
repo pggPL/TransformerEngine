@@ -221,7 +221,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 
   Tensor dequantized_output({ N, H }, DType::kFloat32, true, true);
 
-  dequantize_2x<OutputType, e8m0_t>(z, dequantized_output, is_training);
+  dequantize_2x<OutputType, fp8e8m0>(z, dequantized_output, is_training);
 
   // Reference implementations
   std::unique_ptr<float[]> ref_mu = std::make_unique<float[]>(N);

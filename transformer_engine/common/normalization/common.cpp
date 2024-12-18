@@ -204,7 +204,6 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
     _ndim_scale_block = 0;
   } else {
     NVTE_CHECK(mode == NVTE_MXFP8_1D_SCALING, "Unsupported scaling mode.");
-    NVTE_CHECK(rowwise || columnwise, "No scaling mode selected.");
     _ndim_scale_block = 1;
   }
 
@@ -321,16 +320,14 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
         auto z_2d = _graph.reshape(_z, fe::graph::Reshape_attributes());
         z_2d->set_dim({batch_dim, hidden_dim});
 
-        if (_rowwise) {
-          auto mx_quantize_row_opts = fe::graph::Block_scale_quantize_attributes()
-                                          .set_block_size(32)
-                                          .set_axis(1)
-                                          .set_transpose(false);
-          auto bs_row_ret = _graph.block_scale_quantize(z_2d, mx_quantize_row_opts);
-          std::tie(_z_mx_row, _sf_row) = std::make_tuple(bs_row_ret[0], bs_row_ret[1]);
-          _z_mx_row->set_output(true).set_data_type(get_cudnn_fe_dtype(otype));
-          _sf_row->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);  //TODO
-        }
+        auto mx_quantize_row_opts = fe::graph::Block_scale_quantize_attributes()
+                                        .set_block_size(32)
+                                        .set_axis(1)
+                                        .set_transpose(false);
+        auto bs_row_ret = _graph.block_scale_quantize(z_2d, mx_quantize_row_opts);
+        std::tie(_z_mx_row, _sf_row) = std::make_tuple(bs_row_ret[0], bs_row_ret[1]);
+        _z_mx_row->set_output(true).set_data_type(get_cudnn_fe_dtype(otype));
+        _sf_row->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);  //TODO
 
         if (_training) {
           auto mx_quantize_col_opts = fe::graph::Block_scale_quantize_attributes()

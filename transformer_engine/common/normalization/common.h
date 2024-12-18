@@ -307,7 +307,7 @@ class NormalizationPlanRegistry {
       NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
       DType wtype, DType itype, DType otype, const size_t batch_size, const size_t hidden_size,
       const size_t sm_count, const bool zero_centered_gamma, const bool is_aligned,
-      const NVTEScalingMode mode, const bool training = true);
+      const NVTEScalingMode mode = NVTE_DELAYED_TENSOR_SCALING, const bool training = true);
 
  private:
   NormalizationPlanRegistry() {}
