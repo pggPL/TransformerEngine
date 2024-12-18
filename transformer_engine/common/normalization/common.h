@@ -154,10 +154,12 @@ struct TupleHash {
   }
 };
 
+// Note: the default mode here should match with the default mode with QTensor
 TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
                      NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype, DType ctype,
                      uint64_t batch_size, uint64_t hidden_size, bool zero_centered_gamma,
-                     bool is_tuned, bool rowwise = true, bool columnwise = false);
+                     bool is_tuned, NVTEScalingMode mode = NVTE_DELAYED_TENSOR_SCALING,
+                     bool training = true);
 
 template <typename KernelParamsType>
 class TeNormalizationRegistry {
@@ -258,8 +260,8 @@ class CudnnNormalizationPlan : public NormalizationPlanBase {
   CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype,
                          DType itype, DType otype, DType ctype, const size_t batch_size,
                          const size_t hidden_size, const size_t sm_count,
-                         const bool zero_centered_gamma, const NVTEScalingMode& mode,
-                         const bool rowwise = true, const bool columnwise = true);
+                         const bool zero_centered_gamma, const NVTEScalingMode mode,
+                         const bool training);
 
   std::vector<size_t> getWorkspaceShape() const override;
 
@@ -276,6 +278,8 @@ class CudnnNormalizationPlan : public NormalizationPlanBase {
 
   const bool _zero_centered, _fp8_out;
   int _ndim_scale_block;
+  const NVTE_Norm_Stage _norm_stage;
+  const NVTE_Norm_Type _norm_type;
   std::unique_ptr<char[]> _scalar_dptr;
   std::unique_ptr<float> _one_dptr = std::make_unique<float>(1.0f);
   // FWD
@@ -283,7 +287,7 @@ class CudnnNormalizationPlan : public NormalizationPlanBase {
       _eps, _mean, _rsigma, _z, _z_scale, _one_for_div, _z_scale_inv, _amax, _z_fp8;
   // MX FWD
   std::shared_ptr<fe::graph::Tensor_attributes> _z_mx_row, _z_mx_col, _sf_row, _sf_col;
-  const bool _columnwise, _rowwise;
+  const bool _training;
   // BWD
   std::shared_ptr<fe::graph::Tensor_attributes> _dz, _dx, _dgamma, _dbeta;
 
@@ -303,8 +307,7 @@ class NormalizationPlanRegistry {
       NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
       DType wtype, DType itype, DType otype, const size_t batch_size, const size_t hidden_size,
       const size_t sm_count, const bool zero_centered_gamma, const bool is_aligned,
-      const NVTEScalingMode mode = NVTE_DELAYED_TENSOR_SCALING, const bool rowwise = true,
-      const bool columnwise = false);
+      const NVTEScalingMode mode, const bool training = true);
 
  private:
   NormalizationPlanRegistry() {}

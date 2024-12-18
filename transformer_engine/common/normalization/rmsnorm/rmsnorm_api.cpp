@@ -48,12 +48,12 @@ void rmsnorm_fwd(const Tensor &x, const Tensor &gamma, const float epsilon, Tens
   bool is_aligned = true;
   bool cudnn_backend = use_cudnn_norm_fwd() || is_block_scaling(z->scaling_mode);
 
-  bool rowwise = (z->data).dptr != nullptr;
-  bool columnwise = (z->columnwise_data).dptr != nullptr;
-
-  NVTE_CHECK(!rowwise || (z->scale_inv).dptr != nullptr, "Rowwise scale_inv is empty!");
-  NVTE_CHECK(!columnwise || (z->columnwise_scale_inv).dptr != nullptr,
-             "Columnwise scale_inv is empty!");
+  bool training = true;
+  if (is_block_scaling(z->scaling_mode)) {
+    training = (z->columnwise_data).dptr != nullptr;
+    NVTE_CHECK(!training || z->columnwise_scale_inv.dptr != nullptr,
+               "Columnwise scale_inv must be allocated for NormFwdTraining!");
+  }
 
   if (cudnn_backend) {
     // TODO: add check for GPU ARCH
@@ -70,7 +70,7 @@ void rmsnorm_fwd(const Tensor &x, const Tensor &gamma, const float epsilon, Tens
       z->data.dtype,     // otype
       x.data.shape[0],   // batch_size
       x.data.shape[1],   // hidden_size
-      multiprocessorCount, zero_centered_gamma, is_aligned, z->scaling_mode, rowwise, columnwise);
+      multiprocessorCount, zero_centered_gamma, is_aligned, z->scaling_mode, training);
 
   if (workspace->data.shape.empty()) {
     workspace->data.shape = plan->getWorkspaceShape();

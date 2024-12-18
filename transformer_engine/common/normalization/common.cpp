@@ -39,16 +39,21 @@ Compute always in FP32
 namespace transformer_engine {
 namespace normalization {
 
+cudnn_frontend::NormFwdPhase_t get_cudnn_forward_phase(const bool training) {
+  return training ? cudnn_frontend::NormFwdPhase_t::TRAINING
+                  : cudnn_frontend::NormFwdPhase_t::INFERENCE;
+}
+
 TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
                      NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype, DType ctype,
                      uint64_t batch_size, uint64_t hidden_size, bool zero_centered_gamma,
-                     bool is_tuned, bool rowwise, bool columnwise) {
+                     bool is_tuned, NVTEScalingMode mode, bool training) {
   // TODO: Add scaling_mode to general_key is needed
   uint64_t general_key = static_cast<uint32_t>(itype) | (static_cast<uint32_t>(otype) << 3) |
                          (static_cast<uint32_t>(ctype) << 6) | (static_cast<uint32_t>(wtype) << 9) |
                          (uint32_t(NormType) << 12) | (uint32_t(NormStage)) << 14 |
                          (uint32_t(NormBackend) << 16) | (uint32_t(zero_centered_gamma) << 18) |
-                         (uint32_t(rowwise) << 19) | (uint32_t(columnwise) << 20);
+                         (uint32_t(mode) << 19) | (uint32_t(training) << 22);
   return std::make_tuple(general_key, batch_size, hidden_size, is_tuned);
 }
 
@@ -179,14 +184,17 @@ void TeNormalizationPlan<BackwardKernelParams>::execute(void* x_dptr, void* gamm
   _kernel(_launch_params, false);
 }
 
-CudnnNormalizationPlan::CudnnNormalizationPlan(
-    NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype,
-    DType ctype, const size_t batch_size, const size_t hidden_size, const size_t sm_count,
-    const bool zero_centered_gamma, const NVTEScalingMode& mode, bool rowwise, bool columnwise)
+CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
+                                               DType wtype, DType itype, DType otype, DType ctype,
+                                               const size_t batch_size, const size_t hidden_size,
+                                               const size_t sm_count,
+                                               const bool zero_centered_gamma,
+                                               const NVTEScalingMode mode, bool training)
     : _fp8_out(is_fp8_dtype(otype)),
       _zero_centered(zero_centered_gamma),
-      _rowwise(rowwise),
-      _columnwise(columnwise) {
+      _training(training),
+      _norm_stage(NormStage),
+      _norm_type(NormType) {
   static_assert(CUDNN_FRONTEND_VERSION >= 10601,
                 "CUDNN_FRONTEND_VERSION should be at least 1.6.1!");
 
@@ -227,7 +235,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(
                                   .set_dim({1, hidden_dim, 1, 1})
                                   .set_stride({hidden_dim, 1, hidden_dim, hidden_dim})
                                   .set_data_type(get_cudnn_fe_dtype(wtype)));
-  if (zero_centered_gamma) {
+  if (_zero_centered) {
     _scalar_offset = _graph.tensor(fe::graph::Tensor_attributes()
                                        .set_name("one")
                                        .set_dim({1, 1, 1, 1})
@@ -244,42 +252,42 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(
   }
 
   // Create graph computation nodes
-  if (NormStage == NVTE_Norm_Stage::Forward) {
+  if (_norm_stage == NVTE_Norm_Stage::Forward) {
     _eps = _graph.tensor(fe::graph::Tensor_attributes()
                              .set_name("epsilon")
                              .set_dim({1, 1, 1, 1})
                              .set_stride({1, 1, 1, 1})
                              .set_data_type(get_cudnn_fe_dtype(ctype))
                              .set_is_pass_by_value(true));
-    if (NormType == NVTE_Norm_Type::LayerNorm) {
+    if (_norm_type == NVTE_Norm_Type::LayerNorm) {
       _beta = _graph.tensor(fe::graph::Tensor_attributes()
                                 .set_name("bias")
                                 .set_dim({1, hidden_dim, 1, 1})
                                 .set_stride({hidden_dim, 1, hidden_dim, hidden_dim})
                                 .set_data_type(get_cudnn_fe_dtype(wtype)));
       auto norm_options = fe::graph::Layernorm_attributes()
-                              .set_forward_phase(fe::NormFwdPhase_t::TRAINING)
+                              .set_forward_phase(get_cudnn_forward_phase(_training))
                               .set_epsilon(_eps)
                               .set_compute_data_type(get_cudnn_fe_dtype(ctype));
       auto ret = _graph.layernorm(_x, _gamma, _beta, norm_options);
       std::tie(_z, _mean, _rsigma) = std::make_tuple(ret[0], ret[1], ret[2]);
-      _mean->set_output(true).set_data_type(get_cudnn_fe_dtype(ctype));
-    } else if (NormType == NVTE_Norm_Type::RMSNorm) {
+      if (_training) _mean->set_output(true).set_data_type(get_cudnn_fe_dtype(ctype));
+    } else {
       auto norm_options = fe::graph::Rmsnorm_attributes()
-                              .set_forward_phase(fe::NormFwdPhase_t::TRAINING)
+                              .set_forward_phase(get_cudnn_forward_phase(_training))
                               .set_epsilon(_eps)
                               .set_compute_data_type(get_cudnn_fe_dtype(ctype));
       auto ret = _graph.rmsnorm(_x, _gamma, norm_options);
       std::tie(_z, _rsigma) = std::make_tuple(ret[0], ret[1]);
     }
 
-    _rsigma->set_output(true).set_data_type(get_cudnn_fe_dtype(ctype));
+    if (_training) _rsigma->set_output(true).set_data_type(get_cudnn_fe_dtype(ctype));
 
     const auto ZDtype = _fp8_out ? ctype : otype;
     _z->set_output(!_fp8_out).set_data_type(get_cudnn_fe_dtype(ZDtype));
 
     if (_fp8_out) {
-      if (is_tensor_scaling(mode)) {
+      if (_ndim_scale_block == 0) {  // tensor_scaling
         // create a scale node
         _z_scale = _graph.tensor(fe::graph::Tensor_attributes()
                                      .set_name("z_scale")
@@ -324,7 +332,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(
           _sf_row->set_output(true).set_data_type(fe::DataType_t::FP8_E8M0);  //TODO
         }
 
-        if (_columnwise) {
+        if (_training) {
           auto mx_quantize_col_opts = fe::graph::Block_scale_quantize_attributes()
                                           .set_block_size(32)
                                           .set_axis(0)
@@ -353,7 +361,7 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(
                               .set_dim({batch_dim, 1, 1, 1})
                               .set_stride({1, 1, 1, 1})
                               .set_data_type(get_cudnn_fe_dtype(ctype)));
-    if (NormType == NVTE_Norm_Type::LayerNorm) {
+    if (_norm_type == NVTE_Norm_Type::LayerNorm) {
       auto norm_options = fe::graph::Layernorm_backward_attributes()
                               .set_saved_mean_and_inv_variance(_mean, _rsigma)
                               .set_compute_data_type(get_cudnn_fe_dtype(ctype));
@@ -395,10 +403,14 @@ void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, 
                                      void* mean_dptr, void* eps_dptr, void* rsigma_dptr,
                                      void* workspace_dptr, cudaStream_t stream) {
   // Binding data pointers to graph tensors
-  _variant_pack = {{_x, x_dptr}, {_rsigma, rsigma_dptr}, {_eps, eps_dptr}};
+  _variant_pack = {{_x, x_dptr}, {_eps, eps_dptr}};
 
-  // layernorm should have valid mean_dptr and beta_dptr
-  if (mean_dptr && beta_dptr) _variant_pack.insert({{_mean, mean_dptr}, {_beta, beta_dptr}});
+  if (_training) _variant_pack.insert({{_rsigma, rsigma_dptr}});
+
+  if (_norm_type == NVTE_Norm_Type::LayerNorm) {
+    _variant_pack.insert({{_beta, beta_dptr}});
+    if (_training) _variant_pack.insert({{_mean, mean_dptr}});
+  }
 
   if (_zero_centered)
     _variant_pack.insert(
@@ -413,14 +425,10 @@ void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, 
                           {_amax, z->amax.dptr},
                           {_z_fp8, z->data.dptr}});
   } else if (_fp8_out && _ndim_scale_block == 1) {
-    if (_rowwise) {
-      _variant_pack.insert({{_z_mx_row, z->data.dptr}, {_sf_row, z->scale_inv.dptr}});
-    }
-
-    if (_columnwise) {
+    _variant_pack.insert({{_z_mx_row, z->data.dptr}, {_sf_row, z->scale_inv.dptr}});
+    if (_training)
       _variant_pack.insert(
           {{_z_mx_col, z->columnwise_data.dptr}, {_sf_col, z->columnwise_scale_inv.dptr}});
-    }
   } else {
     _variant_pack.insert({{_z, z->data.dptr}});
   }
@@ -456,11 +464,11 @@ NormalizationPlanBase* NormalizationPlanRegistry::getNormalizationPlan(
     NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype,
     DType itype, DType otype, const size_t batch_size, const size_t hidden_size,
     const size_t sm_count, const bool zero_centered_gamma, const bool is_aligned,
-    const NVTEScalingMode mode, const bool rowwise, const bool columnwise) {
+    const NVTEScalingMode mode, const bool training) {
   const DType ctype = DType::kFloat32;
   bool is_tuned = is_aligned && (batch_size % 4 == 0);
   auto key = get_key(NormBackend, NormType, NormStage, wtype, itype, otype, ctype, batch_size,
-                     hidden_size, zero_centered_gamma, is_tuned, rowwise, columnwise);
+                     hidden_size, zero_centered_gamma, is_tuned, mode, training);
 
   auto it = normalizationPlanMap.find(key);
   if (it != normalizationPlanMap.end()) {
@@ -471,7 +479,7 @@ NormalizationPlanBase* NormalizationPlanRegistry::getNormalizationPlan(
   if (NormBackend == NVTE_Norm_Backend::Cudnn) {
     plan = std::make_unique<CudnnNormalizationPlan>(NormType, NormStage, wtype, itype, otype, ctype,
                                                     batch_size, hidden_size, sm_count,
-                                                    zero_centered_gamma, mode, rowwise, columnwise);
+                                                    zero_centered_gamma, mode, training);
   } else if (NormStage == NVTE_Norm_Stage::Forward) {
     plan = std::make_unique<TeNormalizationPlan<ForwardKernelParams>>(
         NormType, NormStage, wtype, itype, otype, ctype, batch_size, hidden_size, sm_count,
