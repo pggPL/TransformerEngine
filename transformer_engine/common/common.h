@@ -102,7 +102,9 @@ using fp16 = half;
 using bf16 = nv_bfloat16;
 using fp8e4m3 = __nv_fp8_e4m3;
 using fp8e5m2 = __nv_fp8_e5m2;
-using fp8e8m0 = __nv_fp8_e8m0;
+#if CUDA_VERSION >= 12080
+    using fp8e8m0 = __nv_fp8_e8m0;
+#endif
 using e8m0_t = uint8_t;
 
 namespace detail {
