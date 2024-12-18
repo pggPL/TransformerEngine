@@ -39,22 +39,21 @@ Compute always in FP32
 namespace transformer_engine {
 namespace normalization {
 
-cudnn_frontend::NormFwdPhase_t get_cudnn_forward_phase(const bool columnwise) {
-  return columnwise ? cudnn_frontend::NormFwdPhase_t::TRAINING
-                    : cudnn_frontend::NormFwdPhase_t::INFERENCE;
+cudnn_frontend::NormFwdPhase_t get_cudnn_forward_phase(const bool training) {
+  return training ? cudnn_frontend::NormFwdPhase_t::TRAINING
+                  : cudnn_frontend::NormFwdPhase_t::INFERENCE;
 }
 
 TupleKeyType get_key(NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType,
                      NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype, DType ctype,
                      uint64_t batch_size, uint64_t hidden_size, bool zero_centered_gamma,
-                     bool is_tuned, NVTEScalingMode mode, bool rowwise, bool columnwise) {
+                     bool is_tuned, NVTEScalingMode mode, bool training) {
   // TODO: Add scaling_mode to general_key is needed
   uint64_t general_key = static_cast<uint32_t>(itype) | (static_cast<uint32_t>(otype) << 3) |
                          (static_cast<uint32_t>(ctype) << 6) | (static_cast<uint32_t>(wtype) << 9) |
                          (uint32_t(NormType) << 12) | (uint32_t(NormStage)) << 14 |
                          (uint32_t(NormBackend) << 16) | (uint32_t(zero_centered_gamma) << 18) |
-                         (uint32_t(rowwise) << 19) | (uint32_t(columnwise) << 20) |
-                         (uint32_t(mode) << 21);
+                         (uint32_t(mode) << 19) | (uint32_t(training) << 22);
   return std::make_tuple(general_key, batch_size, hidden_size, is_tuned);
 }
 
@@ -185,13 +184,15 @@ void TeNormalizationPlan<BackwardKernelParams>::execute(void* x_dptr, void* gamm
   _kernel(_launch_params, false);
 }
 
-CudnnNormalizationPlan::CudnnNormalizationPlan(
-    NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype,
-    DType ctype, const size_t batch_size, const size_t hidden_size, const size_t sm_count,
-    const bool zero_centered_gamma, const NVTEScalingMode mode, bool rowwise, bool columnwise)
+CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
+                                               DType wtype, DType itype, DType otype, DType ctype,
+                                               const size_t batch_size, const size_t hidden_size,
+                                               const size_t sm_count,
+                                               const bool zero_centered_gamma,
+                                               const NVTEScalingMode mode, bool training)
     : _fp8_out(is_fp8_dtype(otype)),
       _zero_centered(zero_centered_gamma),
-      _training(columnwise),
+      _training(training),
       _norm_stage(NormStage),
       _norm_type(NormType) {
   static_assert(CUDNN_FRONTEND_VERSION >= 10601,
@@ -203,7 +204,6 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(
     _ndim_scale_block = 0;
   } else {
     NVTE_CHECK(mode == NVTE_MXFP8_1D_SCALING, "Unsupported scaling mode.");
-    NVTE_CHECK(rowwise || columnwise, "No scaling mode selected.");
     _ndim_scale_block = 1;
   }
 
@@ -404,7 +404,7 @@ void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, 
 
   if (_training) _variant_pack.insert({{_rsigma, rsigma_dptr}});
 
-  if (_norm_type == NVTE_Norm_Type::LayerNorm ) {
+  if (_norm_type == NVTE_Norm_Type::LayerNorm) {
     _variant_pack.insert({{_beta, beta_dptr}});
     if (_training) _variant_pack.insert({{_mean, mean_dptr}});
   }
@@ -461,11 +461,11 @@ NormalizationPlanBase* NormalizationPlanRegistry::getNormalizationPlan(
     NVTE_Norm_Backend NormBackend, NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype,
     DType itype, DType otype, const size_t batch_size, const size_t hidden_size,
     const size_t sm_count, const bool zero_centered_gamma, const bool is_aligned,
-    const NVTEScalingMode mode, const bool rowwise, const bool columnwise) {
+    const NVTEScalingMode mode, const bool training) {
   const DType ctype = DType::kFloat32;
   bool is_tuned = is_aligned && (batch_size % 4 == 0);
   auto key = get_key(NormBackend, NormType, NormStage, wtype, itype, otype, ctype, batch_size,
-                     hidden_size, zero_centered_gamma, is_tuned, mode, rowwise, columnwise);
+                     hidden_size, zero_centered_gamma, is_tuned, mode, training);
 
   auto it = normalizationPlanMap.find(key);
   if (it != normalizationPlanMap.end()) {
@@ -476,7 +476,7 @@ NormalizationPlanBase* NormalizationPlanRegistry::getNormalizationPlan(
   if (NormBackend == NVTE_Norm_Backend::Cudnn) {
     plan = std::make_unique<CudnnNormalizationPlan>(NormType, NormStage, wtype, itype, otype, ctype,
                                                     batch_size, hidden_size, sm_count,
-                                                    zero_centered_gamma, mode, rowwise, columnwise);
+                                                    zero_centered_gamma, mode, training);
   } else if (NormStage == NVTE_Norm_Stage::Forward) {
     plan = std::make_unique<TeNormalizationPlan<ForwardKernelParams>>(
         NormType, NormStage, wtype, itype, otype, ctype, batch_size, hidden_size, sm_count,

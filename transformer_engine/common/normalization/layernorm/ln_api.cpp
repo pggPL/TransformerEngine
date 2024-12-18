@@ -67,12 +67,12 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
                                 mu->data.dptr, rsigma->data.dptr);
   }
 
-  bool rowwise = (z->data).dptr != nullptr && is_block_scaling(z->scaling_mode);
-  bool columnwise = (z->columnwise_data).dptr != nullptr && is_block_scaling(z->scaling_mode);
-
-  NVTE_CHECK(!rowwise || (z->scale_inv).dptr != nullptr, "Rowwise scale_inv is empty!");
-  NVTE_CHECK(!columnwise || (z->columnwise_scale_inv).dptr != nullptr,
-             "Columnwise scale_inv is empty!");
+  bool training = true;
+  if (is_block_scaling(z->scaling_mode)) {
+    training = (z->columnwise_data).dptr != nullptr;
+    NVTE_CHECK(!training || z->columnwise_scale_inv.dptr != nullptr,
+               "Columnwise scale_inv must be allocated for NormFwdTraining!");
+  }
 
   auto plan = NormalizationPlanRegistry::getInstance().getNormalizationPlan(
       norm_backend, NVTE_Norm_Type::LayerNorm, NVTE_Norm_Stage::Forward,
@@ -81,7 +81,7 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
       z->data.dtype,     // otype
       x.data.shape[0],   // batch_size
       x.data.shape[1],   // hidden_size
-      multiprocessorCount, zero_centered_gamma, is_aligned, z->scaling_mode, rowwise, columnwise);
+      multiprocessorCount, zero_centered_gamma, is_aligned, z->scaling_mode, training);
 
   if (workspace->data.shape.empty()) {
     workspace->data.shape = plan->getWorkspaceShape();
