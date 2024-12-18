@@ -73,7 +73,6 @@ list(APPEND transformer_engine_SOURCES
      normalization/rmsnorm/rmsnorm_fwd_cuda_kernel.cu
      permutation/permutation.cu
      util/cast.cu
-     util/cast_gated_act.cu
      util/padding.cu
      util/cuda_driver.cpp
      util/cuda_runtime.cpp

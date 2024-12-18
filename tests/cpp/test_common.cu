@@ -53,7 +53,8 @@ const std::string &typeName(DType type) {
     {DType::kFloat16, "float16"},
     {DType::kBFloat16, "bfloat16"},
     {DType::kFloat8E4M3, "float8e4m3"},
-    {DType::kFloat8E5M2, "float8e5m2"}};
+    {DType::kFloat8E5M2, "float8e5m2"},
+    {DType::kFloat8E8M0, "float8e8m0"}};
   return name_map.at(type);
 }
 
@@ -603,6 +604,7 @@ std::pair<double, double> getTolerances(const DType type) {
       return {1e-5, 1e-2};
     case DType::kFloat8E4M3:
     case DType::kFloat8E5M2:
+    case DType::kFloat8E8M0:
       return {1e-2, 1e-2};
     default:
       NVTE_CHECK("Invalid type!");
@@ -726,7 +728,7 @@ void setRandomScaleInv(Tensor *t) {
 }
 
 bool isFp8Type(DType type) {
-    return type == DType::kFloat8E4M3 || type == DType::kFloat8E5M2;
+    return type == DType::kFloat8E4M3 || type == DType::kFloat8E5M2 || type == DType::kFloat8E8M0;
 }
 
 }  // namespace test

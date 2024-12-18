@@ -74,7 +74,7 @@ void performTest(const size_t rows, const size_t cols) {
 
   std::unique_ptr<OType[]> ref_output_c = std::make_unique<OType[]>(rows * cols * 2);
 
-  nvte_quantize_dswiglu(grad.data(), input.data(), output_c.data(), 0);
+  nvte_dswiglu(grad.data(), input.data(), output_c.data(), 0);
   cudaDeviceSynchronize();
 
   auto err = cudaGetLastError();
