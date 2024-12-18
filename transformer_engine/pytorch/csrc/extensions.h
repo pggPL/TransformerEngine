@@ -154,6 +154,8 @@ py::object relu(const at::Tensor &input, py::handle quantizer);
 
 py::object geglu(const at::Tensor &input, py::handle quantizer);
 
+py::object qgeglu(const at::Tensor &input, py::handle quantizer);
+
 py::object reglu(const at::Tensor &input, py::handle quantizer);
 
 py::object swiglu(const at::Tensor &input, py::handle quantizer);
@@ -167,6 +169,8 @@ py::object dgelu(const at::Tensor &grad, const at::Tensor &input, py::handle qua
 py::object drelu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 
 py::object dgeglu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
+
+py::object dqgeglu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 
 py::object dreglu(const at::Tensor &grad, const at::Tensor &input, py::handle quantizer);
 

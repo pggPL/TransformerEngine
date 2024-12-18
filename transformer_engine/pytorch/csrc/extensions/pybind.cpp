@@ -87,6 +87,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("quantizer"));
   m.def("geglu", transformer_engine::pytorch::geglu, "GeGLU activation", py::arg("input"),
         py::arg("quantizer"));
+  m.def("qgeglu", transformer_engine::pytorch::qgeglu, "QuickGeGLU activation", py::arg("input"),
+        py::arg("quantizer"));
   m.def("reglu", transformer_engine::pytorch::reglu, "ReGLU activation", py::arg("input"),
         py::arg("quantizer"));
   m.def("swiglu", transformer_engine::pytorch::swiglu, "SwiGLU activation", py::arg("input"),
@@ -100,6 +102,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("drelu", transformer_engine::pytorch::drelu, "Backward of ReLU", py::arg("grad"),
         py::arg("fwd_input"), py::arg("quantizer"));
   m.def("dgeglu", transformer_engine::pytorch::dgeglu, "Backward of GeGLU", py::arg("grad"),
+        py::arg("fwd_input"), py::arg("quantizer"));
+  m.def("dqgeglu", transformer_engine::pytorch::dqgeglu, "Backward of QuickGeGLU", py::arg("grad"),
         py::arg("fwd_input"), py::arg("quantizer"));
   m.def("dreglu", transformer_engine::pytorch::dreglu, "Backward of ReGLU", py::arg("grad"),
         py::arg("fwd_input"), py::arg("quantizer"));
