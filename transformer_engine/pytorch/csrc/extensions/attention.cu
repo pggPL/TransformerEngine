@@ -86,15 +86,13 @@ at::PhiloxCudaState init_philox_state(at::CUDAGeneratorImpl *gen, size_t elts_pe
   return philox_args;
 }
 
-
 // fused attention FWD with separate Q, K and V tensors
 std::vector<py::object> fused_attn_fwd(
     size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, float attn_scale, float p_dropout,
     bool set_zero, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
     NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
     const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const py::handle Q,
-    const py::handle K, const py::handle V, 
-    const c10::optional<at::Tensor> cu_seqlens_q_padded,
+    const py::handle K, const py::handle V, const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
     py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread) {
@@ -112,7 +110,8 @@ std::vector<py::object> fused_attn_fwd(
 
   // If qkv has FP8 dtype, fake_type is equal to the fake dtype of q, k, v - needed since torch do not have fp8 types.
   const transformer_engine::DType qkv_type = te_Q.dtype();
-  const transformer_engine::DType fake_type = GetTransformerEngineDType(Q.attr("dtype").cast<at::ScalarType>());
+  const transformer_engine::DType fake_type =
+      GetTransformerEngineDType(Q.attr("dtype").cast<at::ScalarType>());
 
   std::vector<size_t> q_shape = convertShape(te_Q.shape());
   std::vector<size_t> k_shape = convertShape(te_K.shape());
@@ -126,7 +125,7 @@ std::vector<py::object> fused_attn_fwd(
   std::tie(te_O, o_python) = O_quantizer->create_tensor(o_shape, fake_type);
   std::tie(te_S, s_python) = S_quantizer->create_tensor({0}, DType::kFloat32);
   auto o_shape_int64 = std::vector<int64_t>{o_shape.begin(), o_shape.end()};
-  
+
   // construct NVTE tensors
   TensorWrapper te_Bias;
   TensorWrapper te_cu_seqlens_q, te_cu_seqlens_kv;
@@ -272,7 +271,8 @@ std::vector<py::object> fused_attn_bwd(
 
   std::unique_ptr<Quantizer> dQKV_quantizer = convert_quantizer(dqkv_quantizer);
   const transformer_engine::DType qkv_type = te_Q.dtype();
-  const transformer_engine::DType fake_type = GetTransformerEngineDType(Q.attr("dtype").cast<at::ScalarType>());
+  const transformer_engine::DType fake_type =
+      GetTransformerEngineDType(Q.attr("dtype").cast<at::ScalarType>());
 
   py::object s_python, dp_python;
   std::unique_ptr<Quantizer> S_quantizer = convert_quantizer(s_quantizer);
@@ -385,7 +385,7 @@ std::vector<py::object> fused_attn_bwd(
       dK.fill_(0);
       dV.fill_(0);
     }
-    
+
   } else if (qkv_type == DType::kBFloat16 || qkv_type == DType::kFloat16) {
     if (nvte_get_qkv_format(qkv_layout) == NVTE_QKV_Format::NVTE_THD) {
       dQ.fill_(0);
@@ -483,8 +483,6 @@ std::vector<py::object> fused_attn_bwd(
 
   return {py_dQ, py_dK, py_dV, py::cast(dBias)};
 }
-
-
 
 namespace flash_attention {
 
@@ -672,7 +670,6 @@ at::Tensor thd_read_half_tensor(const at::Tensor &tensor, const at::Tensor &cu_s
 
   return half;
 }
-
 
 /***************************************************************************************************
  * Support THD format for Context Parallel: softmax_lse related operations
@@ -995,5 +992,3 @@ at::Tensor thd_get_partitioned_indices(const at::Tensor &cu_seqlens, int total_t
 
   return output;
 }
-
-

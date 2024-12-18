@@ -88,8 +88,7 @@ void CheckScaleTensorShape(const Tensor &t) {
         expected_x =
             DIVUP(DIVUP(t.flat_first_dim(), static_cast<size_t>(32)), alignment) * alignment;
         alignment = block_alignment[0];
-        expected_y =
-            DIVUP(DIVUP(t.flat_last_dim(), static_cast<size_t>(1)), alignment) * alignment;
+        expected_y = DIVUP(DIVUP(t.flat_last_dim(), static_cast<size_t>(1)), alignment) * alignment;
         const auto &expected = std::vector<size_t>{expected_x, expected_y};
         NVTE_CHECK(t.columnwise_scale_inv.shape == expected,
                    "Tensor has invalid columnwise_scale_inv shape (expected ", expected, ", got ",
@@ -106,8 +105,7 @@ void CheckInputTensor(const Tensor &t, const std::string &name) {
     if (t.has_data()) {
       NVTE_CHECK(t.scale_inv.dptr != nullptr, "FP8 scaling factor input ", name,
                  "_scale_inverse must be allocated");
-      NVTE_CHECK(t.scale_inv.dtype == DType::kFloat32 ||
-                 t.scale_inv.dtype == DType::kFloat8E8M0,
+      NVTE_CHECK(t.scale_inv.dtype == DType::kFloat32 || t.scale_inv.dtype == DType::kFloat8E8M0,
                  "FP8 scaling factor input ", name,
                  "_scale_inverse has invalid dtype "
                  "(expected Float32 or Byte, got ",
@@ -117,7 +115,7 @@ void CheckInputTensor(const Tensor &t, const std::string &name) {
       NVTE_CHECK(t.columnwise_scale_inv.dptr != nullptr, "FP8 scaling factor input ", name,
                  "_columnwise_scale_inverse must be allocated");
       NVTE_CHECK(t.columnwise_scale_inv.dtype == DType::kFloat32 ||
-                 t.columnwise_scale_inv.dtype == DType::kFloat8E8M0,
+                     t.columnwise_scale_inv.dtype == DType::kFloat8E8M0,
                  "FP8 scaling factor input ", name,
                  "_columnwise_scale_inverse has invalid dtype "
                  "(expected Float32 or Byte, got ",
@@ -149,8 +147,7 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
     if (t.has_data()) {
       NVTE_CHECK(t.scale_inv.dptr != nullptr, "FP8 scaling factor output ", name,
                  "_scale_inverse must be allocated");
-      NVTE_CHECK(t.scale_inv.dtype == DType::kFloat32 ||
-                 t.scale_inv.dtype == DType::kFloat8E8M0,
+      NVTE_CHECK(t.scale_inv.dtype == DType::kFloat32 || t.scale_inv.dtype == DType::kFloat8E8M0,
                  "FP8 scaling factor output ", name,
                  "_scale_inverse has invalid dtype "
                  "(expected Float32 or Float8E8M0, got ",
@@ -160,7 +157,7 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
       NVTE_CHECK(t.columnwise_scale_inv.dptr != nullptr, "FP8 scaling factor output ", name,
                  "_columnwise_scale_inverse must be allocated");
       NVTE_CHECK(t.columnwise_scale_inv.dtype == DType::kFloat32 ||
-                 t.columnwise_scale_inv.dtype == DType::kFloat8E8M0,
+                     t.columnwise_scale_inv.dtype == DType::kFloat8E8M0,
                  "FP8 scaling factor output ", name,
                  "_columnwise_scale_inverse has invalid dtype "
                  "(expected Float32 or Float8E8M0, got ",
@@ -389,16 +386,16 @@ void nvte_tensor_pack_destroy(NVTETensorPack *pack) {
 }
 
 void nvte_zero_tensor(const NVTETensor tensor, cudaStream_t stream) {
-    const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
-    // Zero out tensor data if allocated
-    if (t.data.dptr != nullptr) {
-        size_t size_in_bytes = nvte_tensor_element_size(tensor);
-        cudaMemsetAsync(t.data.dptr, 0, size_in_bytes, stream);
-    }
-    // Set amax to 0 if allocated
-    if (t.amax.dptr != nullptr) {
-        float zero = 0.0f;
-        cudaMemcpyAsync(t.amax.dptr, &zero, sizeof(float), cudaMemcpyHostToDevice, stream);
-    }
-    cudaStreamSynchronize(stream);
+  const auto &t = *reinterpret_cast<const transformer_engine::Tensor *>(tensor);
+  // Zero out tensor data if allocated
+  if (t.data.dptr != nullptr) {
+    size_t size_in_bytes = nvte_tensor_element_size(tensor);
+    cudaMemsetAsync(t.data.dptr, 0, size_in_bytes, stream);
+  }
+  // Set amax to 0 if allocated
+  if (t.amax.dptr != nullptr) {
+    float zero = 0.0f;
+    cudaMemcpyAsync(t.amax.dptr, &zero, sizeof(float), cudaMemcpyHostToDevice, stream);
+  }
+  cudaStreamSynchronize(stream);
 }

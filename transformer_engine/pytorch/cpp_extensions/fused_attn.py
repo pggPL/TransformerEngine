@@ -300,7 +300,7 @@ def fused_attn_bwd(
     attn_bias_type: str = "no_bias",
     attn_mask_type: str = "padding",
     window_size: Tuple[int, int] = (-1, -1),
-    deterministic: bool = False
+    deterministic: bool = False,
 ) -> Tuple[Union[torch.Tensor, None], ...]:
     """Fused Attention BWD for packed KV input.
 
@@ -419,9 +419,11 @@ def fused_attn_bwd(
         assert (
             len(aux_ctx_tensors) == 3
         ), "aux_ctx_tensors is required to be [M, ZInv, rng_state] for FP8 fused attention."
-    
+
     if dqkv_quantizer is not None:
-        assert dqkv_quantizer.dtype == dqkv_dtype, "If dQKV quantizer is not None, it's dtype must be equal to the dqkv_dtype."
+        assert (
+            dqkv_quantizer.dtype == dqkv_dtype
+        ), "If dQKV quantizer is not None, it's dtype must be equal to the dqkv_dtype."
 
     output_tensors = tex.fused_attn_bwd(
         max_seqlen_q,

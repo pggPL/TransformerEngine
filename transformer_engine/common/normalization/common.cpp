@@ -79,8 +79,7 @@ template <>
 void TeNormalizationPlan<ForwardKernelParams>::execute(Tensor* z, void* x_dptr, void* gamma_dptr,
                                                        void* beta_dptr, void* mean_dptr,
                                                        void* eps_dptr, void* rsigma_dptr,
-                                                       void* workspace_dptr, cudaStream_t stream
-                                                       ) {
+                                                       void* workspace_dptr, cudaStream_t stream) {
   _launch_params.stream = stream;
 
   auto& kernel_params = _launch_params.params;
@@ -107,8 +106,7 @@ template <>
 void TeNormalizationPlan<BackwardKernelParams>::execute(Tensor* z, void* x_dptr, void* gamma_dptr,
                                                         void* beta_dptr, void* mean_dptr,
                                                         void* eps_dptr, void* rsigma_dptr,
-                                                        void* workspace_dptr, cudaStream_t stream)
-{
+                                                        void* workspace_dptr, cudaStream_t stream) {
   NVTE_ERROR("Backward normalization should not call the forward execute function!");
 }
 
@@ -181,14 +179,14 @@ void TeNormalizationPlan<BackwardKernelParams>::execute(void* x_dptr, void* gamm
   _kernel(_launch_params, false);
 }
 
-CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage,
-                                               DType wtype, DType itype, DType otype, DType ctype,
-                                               const size_t batch_size, const size_t hidden_size,
-                                               const size_t sm_count,
-                                               const bool zero_centered_gamma,
-                                               const NVTEScalingMode& mode,
-                                               bool rowwise, bool columnwise)
-    : _fp8_out(is_fp8_dtype(otype)), _zero_centered(zero_centered_gamma), _rowwise(rowwise), _columnwise(columnwise){
+CudnnNormalizationPlan::CudnnNormalizationPlan(
+    NVTE_Norm_Type NormType, NVTE_Norm_Stage NormStage, DType wtype, DType itype, DType otype,
+    DType ctype, const size_t batch_size, const size_t hidden_size, const size_t sm_count,
+    const bool zero_centered_gamma, const NVTEScalingMode& mode, bool rowwise, bool columnwise)
+    : _fp8_out(is_fp8_dtype(otype)),
+      _zero_centered(zero_centered_gamma),
+      _rowwise(rowwise),
+      _columnwise(columnwise) {
   static_assert(CUDNN_FRONTEND_VERSION >= 10601,
                 "CUDNN_FRONTEND_VERSION should be at least 1.6.1!");
 
@@ -197,10 +195,8 @@ CudnnNormalizationPlan::CudnnNormalizationPlan(NVTE_Norm_Type NormType, NVTE_Nor
   if (is_tensor_scaling(mode)) {
     _ndim_scale_block = 0;
   } else {
-    NVTE_CHECK(mode == NVTE_MXFP8_1D_SCALING,
-               "Unsupported scaling mode.");
-    NVTE_CHECK(rowwise || columnwise,
-               "No scaling mode selected.");
+    NVTE_CHECK(mode == NVTE_MXFP8_1D_SCALING, "Unsupported scaling mode.");
+    NVTE_CHECK(rowwise || columnwise, "No scaling mode selected.");
     _ndim_scale_block = 1;
   }
 
@@ -397,8 +393,7 @@ std::vector<size_t> CudnnNormalizationPlan::getWorkspaceShape() const {
 
 void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, void* beta_dptr,
                                      void* mean_dptr, void* eps_dptr, void* rsigma_dptr,
-                                     void* workspace_dptr, cudaStream_t stream)
-{
+                                     void* workspace_dptr, cudaStream_t stream) {
   // Binding data pointers to graph tensors
   _variant_pack = {{_x, x_dptr}, {_rsigma, rsigma_dptr}, {_eps, eps_dptr}};
 
@@ -419,13 +414,12 @@ void CudnnNormalizationPlan::execute(Tensor* z, void* x_dptr, void* gamma_dptr, 
                           {_z_fp8, z->data.dptr}});
   } else if (_fp8_out && _ndim_scale_block == 1) {
     if (_rowwise) {
-      _variant_pack.insert({{_z_mx_row, z->data.dptr},
-                            {_sf_row, z->scale_inv.dptr}});
+      _variant_pack.insert({{_z_mx_row, z->data.dptr}, {_sf_row, z->scale_inv.dptr}});
     }
 
     if (_columnwise) {
-      _variant_pack.insert({{_z_mx_col, z->columnwise_data.dptr},
-                            {_sf_col, z->columnwise_scale_inv.dptr}});
+      _variant_pack.insert(
+          {{_z_mx_col, z->columnwise_data.dptr}, {_sf_col, z->columnwise_scale_inv.dptr}});
     }
   } else {
     _variant_pack.insert({{_z, z->data.dptr}});

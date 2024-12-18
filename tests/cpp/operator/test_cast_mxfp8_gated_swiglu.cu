@@ -260,7 +260,7 @@ void performTest_x2(const size_t rows,
     Tensor input({ rows, cols * 2 }, itype);
 
     const size_t output_cols = (IS_DGATED ? 2 : 1) * cols;
-    Tensor output(std::vector<size_t>{ rows, output_cols }, otype, true, true, NVTE_MXFP8_1D_SCALING);  
+    Tensor output(std::vector<size_t>{ rows, output_cols }, otype, true, true, NVTE_MXFP8_1D_SCALING);
 
     std::unique_ptr<OType[]> ref_output_rowwise = std::make_unique<OType[]>(rows * output_cols);
     std::unique_ptr<OType[]> ref_output_colwise = std::make_unique<OType[]>(rows * output_cols);

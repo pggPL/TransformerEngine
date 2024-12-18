@@ -103,8 +103,9 @@ class Quantizer {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const = 0;
 
-  virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
-                                                             DType dtype, std::optional<at::Tensor> rowwise_data = std::nullopt) const = 0;
+  virtual std::pair<TensorWrapper, py::object> create_tensor(
+      const std::vector<size_t>& shape, DType dtype,
+      std::optional<at::Tensor> rowwise_data = std::nullopt) const = 0;
 
   bool rowwise_usage = true;
   bool columnwise_usage = true;
@@ -123,8 +124,9 @@ class NoneQuantizer : public Quantizer {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override {}
 
-  virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
-                                                             DType dtype, std::optional<at::Tensor> rowwise_data = std::nullopt) const override;
+  virtual std::pair<TensorWrapper, py::object> create_tensor(
+      const std::vector<size_t>& shape, DType dtype,
+      std::optional<at::Tensor> rowwise_data = std::nullopt) const override;
 };
 
 class Float8Quantizer : public Quantizer {
@@ -140,8 +142,9 @@ class Float8Quantizer : public Quantizer {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;
 
-  virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
-                                                             DType dtype, std::optional<at::Tensor> rowwise_data = std::nullopt) const override;
+  virtual std::pair<TensorWrapper, py::object> create_tensor(
+      const std::vector<size_t>& shape, DType dtype,
+      std::optional<at::Tensor> rowwise_data = std::nullopt) const override;
 };
 
 class MXFP8Quantizer : public Quantizer {
@@ -154,8 +157,9 @@ class MXFP8Quantizer : public Quantizer {
 
   virtual void set_quantization_params(TensorWrapper* tensor) const override;
 
-  virtual std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape,
-                                                             DType dtype, std::optional<at::Tensor> rowwise_data = std::nullopt) const override;
+  virtual std::pair<TensorWrapper, py::object> create_tensor(
+      const std::vector<size_t>& shape, DType dtype,
+      std::optional<at::Tensor> rowwise_data = std::nullopt) const override;
 };
 
 std::unique_ptr<Quantizer> convert_quantizer(py::handle quantizer);

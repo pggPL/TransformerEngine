@@ -495,7 +495,7 @@ TEST_P(FusedCastMXFP8TestSuite, TestFusedCastMXFP8) {
     const InputsFillCase fill_case = std::get<6>(GetParam());
 
     // Skips non Act tests if the Activation type is not an identity
-    if ((processing_method == ProcessingMethod::CAST_ONLY || processing_method == ProcessingMethod::CAST_DBIAS) 
+    if ((processing_method == ProcessingMethod::CAST_ONLY || processing_method == ProcessingMethod::CAST_DBIAS)
         && Act_type != ActivationType::Identity) {
         GTEST_SKIP();
     }
@@ -556,7 +556,7 @@ std::string to_string(const ProcessingMethod method) {
 }
 
 std::string to_string(const ActivationType Act_type) {
-    switch (Act_type) {    
+    switch (Act_type) {
         case ActivationType::Identity:  return "Identity";
         case ActivationType::GeLU:      return "GeLU";
         case ActivationType::SiLU:      return "SiLU";

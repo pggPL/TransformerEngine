@@ -215,25 +215,23 @@ class MXFP8Tensor(MXFP8TensorBase, QuantizedTensor):
 
         if columnwise_usage and rowwise_usage:
             assert (
-                self._rowwise_data is not None and
-                self._rowwise_scale_inv is not None and
-                self._columnwise_data is not None and
-                self._columnwise_scale_inv is not None
+                self._rowwise_data is not None
+                and self._rowwise_scale_inv is not None
+                and self._columnwise_data is not None
+                and self._columnwise_scale_inv is not None
             ), "Cannot update to rowwise and columnwise usage."
             return
 
         if rowwise_usage:
             assert (
-                self._rowwise_data is not None and
-                self._rowwise_scale_inv is not None
+                self._rowwise_data is not None and self._rowwise_scale_inv is not None
             ), "Cannot update to rowwise usage."
             self._columnwise_data = None
             self._columnwise_scale_inv = None
             return
 
         assert (
-            self._columnwise_data is not None and
-            self._columnwise_scale_inv is not None
+            self._columnwise_data is not None and self._columnwise_scale_inv is not None
         ), "Cannot update to columnwise usage."
         self._rowwise_data = None
         self._rowwise_scale_inv = None

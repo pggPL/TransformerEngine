@@ -55,8 +55,7 @@ TensorWrapper NVTETensorFromMXFP8Tensor(py::handle tensor, Quantizer *quantizer)
     ret.set_rowwise_data(data_rowwise.data_ptr(), dtype, shape);
 
     const auto scale_inv_rowwise_shape = getTensorShape(scale_inv_rowwise);
-    ret.set_rowwise_scale_inv(scale_inv_rowwise_dptr, DType::kFloat8E8M0,
-                              scale_inv_rowwise_shape);
+    ret.set_rowwise_scale_inv(scale_inv_rowwise_dptr, DType::kFloat8E8M0, scale_inv_rowwise_shape);
   }
 
   if (columnwise_usage) {

@@ -51,7 +51,8 @@ void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool roww
     input_cu.set_columnwise_data(input.dptr(), DType::kFloat8E4M3, input_shape);
     input_cu.set_columnwise_scale_inv(scale_inv_dptr, DType::kFloat8E8M0, scale_inv_shape);
     output_cu.set_columnwise_data(input.dptr(), DType::kFloat8E4M3, input_shape);
-    output_cu.set_columnwise_scale_inv(swizzled_scale_inv_dptr, DType::kFloat8E8M0, scale_inv_shape);
+    output_cu.set_columnwise_scale_inv(swizzled_scale_inv_dptr, DType::kFloat8E8M0,
+                                       scale_inv_shape);
   }
 
   // Launch kernel

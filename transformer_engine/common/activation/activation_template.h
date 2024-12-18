@@ -15,10 +15,10 @@
 #include <transformer_engine/activation.h>
 
 #include "../common.h"
-#include "../util/cast_kernels.cuh"
 #include "../util/cast_gated_kernels.cuh"
-#include "../util/vectorized_pointwise.h"
+#include "../util/cast_kernels.cuh"
 #include "../util/math.h"
+#include "../util/vectorized_pointwise.h"
 
 namespace transformer_engine {
 
@@ -32,12 +32,13 @@ void act_fn(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
   constexpr NVTETensor workspace = nullptr;
   constexpr const NVTETensor activation_input = nullptr;
 
-  quantize_helper<IS_DBIAS, IS_DACT, IS_ACT, Empty, OP>
-      (input, activation_input, nullptr, output, dbias, workspace, stream);
+  quantize_helper<IS_DBIAS, IS_DACT, IS_ACT, Empty, OP>(input, activation_input, nullptr, output,
+                                                        dbias, workspace, stream);
 }
 
 template <typename ComputeType, typename Param, ComputeType (*OP)(ComputeType, const Param &)>
-void dact_fn(const NVTETensor grad, const NVTETensor input, NVTETensor output, cudaStream_t stream) {
+void dact_fn(const NVTETensor grad, const NVTETensor input, NVTETensor output,
+             cudaStream_t stream) {
   using namespace detail;
   constexpr bool IS_DBIAS = false;
   constexpr bool IS_DACT = true;
@@ -45,8 +46,8 @@ void dact_fn(const NVTETensor grad, const NVTETensor input, NVTETensor output, c
   constexpr NVTETensor dbias = nullptr;
   constexpr NVTETensor workspace = nullptr;
 
-  quantize_helper<IS_DBIAS, IS_DACT, IS_ACT, Empty, OP>
-      (input, grad, nullptr, output, dbias, workspace, stream);
+  quantize_helper<IS_DBIAS, IS_DACT, IS_ACT, Empty, OP>(input, grad, nullptr, output, dbias,
+                                                        workspace, stream);
 }
 
 template <typename ComputeType, typename Param, ComputeType (*ActOP)(ComputeType, const Param &)>
@@ -60,7 +61,8 @@ void gated_act_fn(const NVTETensor input, NVTETensor output, cudaStream_t stream
 
 template <typename ComputeType, typename Param, ComputeType (*ActOP)(ComputeType, const Param &),
           ComputeType (*DActOP)(ComputeType, const Param &)>
-void dgated_act_fn(const NVTETensor grad, const NVTETensor input, NVTETensor output, cudaStream_t stream) {
+void dgated_act_fn(const NVTETensor grad, const NVTETensor input, NVTETensor output,
+                   cudaStream_t stream) {
   using namespace detail;
   constexpr bool IS_DGATED = true;
 

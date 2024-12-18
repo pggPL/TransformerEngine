@@ -39,9 +39,7 @@ Float8Quantizer::Float8Quantizer(const py::handle& quantizer) : Quantizer(quanti
 }
 
 std::pair<TensorWrapper, py::object> NoneQuantizer::create_tensor(
-    const std::vector<size_t>& shape,
-    DType dtype, 
-    std::optional<at::Tensor> rowwise_data) const {
+    const std::vector<size_t>& shape, DType dtype, std::optional<at::Tensor> rowwise_data) const {
   at::TensorOptions opts;
   opts = opts.dtype(GetATenDType(dtype)).device(torch::kCUDA);
   std::vector<int64_t> torch_shape;
@@ -51,11 +49,10 @@ std::pair<TensorWrapper, py::object> NoneQuantizer::create_tensor(
   at::Tensor ret;
   if (rowwise_data.has_value()) {
     ret = std::move(*rowwise_data);
-  }
-  else {
+  } else {
     ret = at::empty(torch_shape, opts);
   }
-  
+
   TensorWrapper tensor;
   tensor.set_rowwise_data(ret.data_ptr(), dtype, shape);
   return {std::move(tensor), py::cast(ret)};
@@ -65,8 +62,7 @@ void Float8Quantizer::set_quantization_params(TensorWrapper* tensor) const {
   tensor->set_scale(scale.data_ptr(), GetTransformerEngineDType(scale.scalar_type()),
                     getTensorShape(scale));
   at::TensorOptions opts = opts.dtype(torch::kFloat32).device(torch::kCUDA);
-  tensor->set_amax(amax.data_ptr(),
-                   GetTransformerEngineDType(amax.scalar_type()),
+  tensor->set_amax(amax.data_ptr(), GetTransformerEngineDType(amax.scalar_type()),
                    getTensorShape(amax));
   auto rowwise_data = tensor->get_rowwise_data();
   rowwise_data.dtype = static_cast<NVTEDType>(dtype);
@@ -85,7 +81,7 @@ std::pair<TensorWrapper, py::object> Float8Quantizer::create_tensor(
   using namespace pybind11::literals;
   std::vector<int64_t> rowwise_torch_shape;
   std::vector<int64_t> columnwise_torch_shape;
-  
+
   columnwise_torch_shape.emplace_back(static_cast<int64_t>(shape.back()));
   for (size_t i = 0; i < shape.size(); ++i) {
     if (i < shape.size() - 1) {
@@ -97,10 +93,9 @@ std::pair<TensorWrapper, py::object> Float8Quantizer::create_tensor(
   opts = opts.dtype(torch::kUInt8).device(torch::kCUDA);
   at::Tensor data;
   if (rowwise_usage) {
-    if(rowwise_data.has_value()) {
+    if (rowwise_data.has_value()) {
       data = std::move(*rowwise_data);
-    }
-    else{
+    } else {
       data = at::empty(rowwise_torch_shape, opts);
     }
   }
@@ -160,8 +155,8 @@ void MXFP8Quantizer::set_quantization_params(TensorWrapper* tensor) const {
                               columnwise_data.shape);
 }
 
-std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(const std::vector<size_t>& shape,
-                                                                   DType dtype, std::optional<at::Tensor> rowwise_data) const {
+std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(
+    const std::vector<size_t>& shape, DType dtype, std::optional<at::Tensor> rowwise_data) const {
   using namespace pybind11::literals;
   std::vector<int64_t> torch_shape;
   size_t numel = 1;
@@ -172,16 +167,16 @@ std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(const std::ve
 
   TensorWrapper tensor(NVTE_MXFP8_1D_SCALING);
   at::TensorOptions opts;
-  at::Tensor rowwise_data1, columnwise_data, rowwise_scale_inv, columnwise_scale_inv; // TODO(pgadzinski) - change
+  at::Tensor rowwise_data1, columnwise_data, rowwise_scale_inv,
+      columnwise_scale_inv;  // TODO(pgadzinski) - change
   opts = opts.dtype(torch::kUInt8).device(torch::kCUDA);
   auto last_dim = torch_shape.back();
 
   at::Tensor data;
   if (rowwise_usage) {
-    if(rowwise_data.has_value()) {
+    if (rowwise_data.has_value()) {
       data = std::move(*rowwise_data);
-    }
-    else{
+    } else {
       data = at::empty(torch_shape, opts);
     }
     rowwise_scale_inv = at::empty({numel / last_dim, last_dim / MXFP8_BLOCK_SIZE}, opts);
@@ -189,9 +184,7 @@ std::pair<TensorWrapper, py::object> MXFP8Quantizer::create_tensor(const std::ve
     tensor.set_rowwise_scale_inv(
         rowwise_scale_inv.data_ptr(), DType::kFloat8E8M0,
         std::vector<size_t>{numel / last_dim, last_dim / MXFP8_BLOCK_SIZE});
-  }
-  else {
-
+  } else {
   }
   if (columnwise_usage) {
     columnwise_data = at::empty(torch_shape, opts);

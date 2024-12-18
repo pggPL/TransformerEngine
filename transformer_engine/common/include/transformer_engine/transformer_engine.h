@@ -599,9 +599,7 @@ class TensorWrapper {
     return nvte_tensor_scaling_mode(tensor_);
   }
 
-  void zero_(cudaStream_t stream) {
-      nvte_zero_tensor(tensor_, stream);
-  }
+  void zero_(cudaStream_t stream) { nvte_zero_tensor(tensor_, stream); }
 
   static constexpr size_t defaultData = 1;
   static constexpr NVTEShape defaultShape = {&defaultData, 1};

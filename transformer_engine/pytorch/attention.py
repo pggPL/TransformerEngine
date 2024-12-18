@@ -1633,7 +1633,7 @@ def flash_attn_a2a_communicate(
     return a2a_outputs[0] if len(a2a_inputs) == 1 else a2a_outputs
 
 
-def get_attention_quantizers(fp8, quantizers, cp_specific_quantizers = False):
+def get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=False):
     if not fp8:
         num_of_nones = 8 if cp_specific_quantizers else 6
         return [None] * num_of_nones
@@ -1655,11 +1655,18 @@ def get_attention_quantizers(fp8, quantizers, cp_specific_quantizers = False):
     O_CP_quantizer.set_usage(rowwise=True, columnwise=False)
 
     if cp_specific_quantizers:
-        return QKV_quantizer, O_quantizer, O_CP_quantizer, S_quantizer,\
-            dQKV_quantizer, dQKV_CP_quantizer, dO_quantizer, dP_quantizer
+        return (
+            QKV_quantizer,
+            O_quantizer,
+            O_CP_quantizer,
+            S_quantizer,
+            dQKV_quantizer,
+            dQKV_CP_quantizer,
+            dO_quantizer,
+            dP_quantizer,
+        )
 
-    return QKV_quantizer, O_quantizer, S_quantizer,\
-        dQKV_quantizer, dO_quantizer, dP_quantizer
+    return QKV_quantizer, O_quantizer, S_quantizer, dQKV_quantizer, dO_quantizer, dP_quantizer
 
 
 class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
@@ -1700,7 +1707,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         cp_group,
         cp_global_ranks,
         cp_stream,
-        quantizers
+        quantizers,
     ):
         # pylint: disable=missing-function-docstring
         if softmax_scale is None:
@@ -1755,10 +1762,16 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         is_input_fp8 = False
         is_output_fp8 = fp8_meta is not None and fp8_meta["recipe"].fp8_mha
 
-
-        QKV_quantizer, O_quantizer, O_CP_quantizer, S_quantizer,\
-            dQKV_quantizer, dQKV_CP_quantizer, dO_quantizer, dP_quantizer = \
-                get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=True)
+        (
+            QKV_quantizer,
+            O_quantizer,
+            O_CP_quantizer,
+            S_quantizer,
+            dQKV_quantizer,
+            dQKV_CP_quantizer,
+            dO_quantizer,
+            dP_quantizer,
+        ) = get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=True)
 
         if fp8:
             if use_fused_attention:
@@ -1775,10 +1788,10 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                     if cp_size_a2a == 1 or int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
                         q = QKV_quantizer(q_f16)
                     if int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
-                        k, v = [QKV_quantizer(x) for x in [k_f16, v_f16] ]
+                        k, v = [QKV_quantizer(x) for x in [k_f16, v_f16]]
                 fp8_meta_kwargs = {}
                 fp8_meta_kwargs["s_quantizer"] = S_quantizer
-                fp8_meta_kwargs["o_quantizer"] = O_CP_quantizer # partial result quantizer
+                fp8_meta_kwargs["o_quantizer"] = O_CP_quantizer  # partial result quantizer
             else:
                 assert False, "FP8 is only supported with Fused Attention!"
         else:
@@ -2427,13 +2440,11 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         elif not use_fused_attention:
             out = out.view(-1, *out.shape[-2:])
 
-
         out_fp8 = None
         out_f16 = out.to(qkv_dtype)
         if fp8 and (is_output_fp8 or int(os.getenv("NVTE_FP8_DPA_BWD", "1"))):
-            out_fp8 = O_quantizer(out_f16) # final result
+            out_fp8 = O_quantizer(out_f16)  # final result
 
-        
         out_ret = out_fp8 if (fp8 and is_output_fp8) else out_f16
 
         if fp8 and int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
@@ -2473,7 +2484,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         ctx.dQKV_CP_quantizer = dQKV_CP_quantizer
         ctx.dO_quantizer = dO_quantizer
         ctx.dP_quantizer = dP_quantizer
-
 
         ctx.cp_group_a2a = cp_group_a2a
         ctx.cp_size_a2a = cp_size_a2a
@@ -2582,9 +2592,9 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                     dout = ctx.dO_Quantizer(dout)
                 p2p_comm_buffers = [[kv, dkv_fp8], [torch.empty_like(kv), dkv_fp8_]]
                 fp8_meta_kwargs = {}
-                fp8_meta_kwargs['s_quantizer'] = ctx.S_quantizer
-                fp8_meta_kwargs['dp_quantizer'] = ctx.dP_quantizer
-                fp8_meta_kwargs['dqkv_quantizer'] = ctx.dQKV_CP_quantizer
+                fp8_meta_kwargs["s_quantizer"] = ctx.S_quantizer
+                fp8_meta_kwargs["dp_quantizer"] = ctx.dP_quantizer
+                fp8_meta_kwargs["dqkv_quantizer"] = ctx.dQKV_CP_quantizer
             else:
                 assert False, "FP8 is only supported with Fused Attention!"
         else:
@@ -3253,7 +3263,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
             None,
             None,
             None,
-            None
+            None,
         )
 
 
@@ -3311,7 +3321,7 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
         use_fused_attention,
         window_size,
         cp_group,
-        cp_stream
+        cp_stream,
     ):
         # pylint: disable=missing-function-docstring
         if softmax_scale is None:
@@ -3732,7 +3742,7 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
         fp8_meta,
         cp_group,
         cp_stream,
-        quantizers
+        quantizers,
     ):
         # pylint: disable=missing-function-docstring
         if softmax_scale is None:
@@ -3787,9 +3797,9 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
         is_input_fp8 = False
         is_output_fp8 = fp8_meta is not None and fp8_meta["recipe"].fp8_mha
 
-        QKV_quantizer, O_quantizer, S_quantizer,\
-            dQKV_quantizer, dO_quantizer, dP_quantizer = \
-                get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=False)
+        QKV_quantizer, O_quantizer, S_quantizer, dQKV_quantizer, dO_quantizer, dP_quantizer = (
+            get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=False)
+        )
         if fp8:
             if use_fused_attention:
 
@@ -3803,13 +3813,10 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
                     q, k, v = q_fp8._data, k_fp8._data, v_fp8._data
                 elif int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
                     q_f16, k_f16, v_f16 = q, k, v
-                    q, k, v = [
-                        QKV_quantizer(x)
-                        for x in [q_f16, k_f16, v_f16]
-                    ]
+                    q, k, v = [QKV_quantizer(x) for x in [q_f16, k_f16, v_f16]]
                 fp8_meta_kwargs = {}
                 fp8_meta_kwargs["s_quantizer"] = S_quantizer
-                fp8_meta_kwargs["o_quantizer"] = O_quantizer # partial result quantizer
+                fp8_meta_kwargs["o_quantizer"] = O_quantizer  # partial result quantizer
             else:
                 assert False, "FP8 is only supported with Fused Attention!"
         else:
@@ -3904,7 +3911,6 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
         else:
             q_save, k_save, v_save, out_save = q, k, v, out
 
-
         saved_q_tensors, saved_q = prepare_for_saving(q_save)
         saved_k_tensors, saved_k = prepare_for_saving(k_save)
         saved_v_tensors, saved_v = prepare_for_saving(v_save)
@@ -3923,7 +3929,6 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
             *aux_ctx_tensors,
         )
 
-
         ctx.saved_q = saved_q
         ctx.saved_k = saved_k
         ctx.saved_v = saved_v
@@ -3935,7 +3940,6 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
         ctx.dQKV_quantizer = dQKV_quantizer
         ctx.dO_quantizer = dO_quantizer
         ctx.dP_quantizer = dP_quantizer
-
 
         ctx.batch_size = batch_size
         ctx.cp_group = cp_group
@@ -3984,9 +3988,9 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
                     dout_f16 = dout
                     dout = ctx.dO_quantizer(dout_f16)
                 fp8_meta_kwargs = {}
-                fp8_meta_kwargs['s_quantizer'] = ctx.S_quantizer
-                fp8_meta_kwargs['dp_quantizer'] = ctx.dP_quantizer
-                fp8_meta_kwargs['dqkv_quantizer'] = ctx.dQKV_quantizer
+                fp8_meta_kwargs["s_quantizer"] = ctx.S_quantizer
+                fp8_meta_kwargs["dp_quantizer"] = ctx.dP_quantizer
+                fp8_meta_kwargs["dqkv_quantizer"] = ctx.dQKV_quantizer
             else:
                 assert False, "FP8 is only supported with Fused Attention!"
         else:
@@ -4144,7 +4148,7 @@ def attn_forward_func_with_cp(
     window_size=None,
     fp8=False,
     fp8_meta=None,
-    quantizers=None
+    quantizers=None,
 ) -> torch.Tensor:
     """
     Attention implementation with context parallelism.
@@ -4453,7 +4457,7 @@ class _SplitAlongDim(torch.autograd.Function):
         mixed_x_layer: torch.Tensor,
         split_dim: int,
         split_size_or_sections: Union[int, List[int], Tuple[int]],
-        squeeze = False
+        squeeze=False,
     ) -> Tuple[torch.Tensor, ...]:
         # pylint: disable=missing-function-docstring
         ctx.split_dim = split_dim
@@ -4463,7 +4467,7 @@ class _SplitAlongDim(torch.autograd.Function):
                 Float8Tensor.make_like(
                     mixed_x_layer,
                     data=x.squeeze(split_dim) if squeeze else x,
-                    shape=x.squeeze(split_dim).shape if squeeze else x.shape
+                    shape=x.squeeze(split_dim).shape if squeeze else x.shape,
                 )
                 for x in torch.split(
                     mixed_x_layer._data,
@@ -5096,7 +5100,7 @@ class FlashAttention(torch.nn.Module):
         cp_comm_type: str = "p2p",
         fp8: bool = False,
         fp8_meta: Optional[Dict[str, Any]] = None,
-        quantizers = None
+        quantizers=None,
     ) -> torch.Tensor:
         """flash-attn fprop"""
 
@@ -5445,16 +5449,14 @@ class FusedAttnFunc(torch.autograd.Function):
         is_input_fp8 = False
         is_output_fp8 = fp8_meta["recipe"].fp8_mha if "recipe" in fp8_meta else False
 
-        
-        QKV_quantizer, O_quantizer, S_quantizer,\
-            dQKV_quantizer, dO_quantizer, dP_quantizer = \
-                get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=False)
+        QKV_quantizer, O_quantizer, S_quantizer, dQKV_quantizer, dO_quantizer, dP_quantizer = (
+            get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=False)
+        )
         if fp8:
             fused_attention_backend = FusedAttnBackend["FP8"]
             assert isinstance(k, q.__class__) and isinstance(
                 v, q.__class__
             ), "q, k, and v must have the same type."
-
 
             is_input_fp8 = isinstance(q, Float8Tensor)
             if is_input_fp8:
@@ -5715,15 +5717,19 @@ class FusedAttnFunc(torch.autograd.Function):
                         ctx.attn_bias_type,
                         ctx.attn_mask_type,
                         ctx.window_size,
-                        ctx.deterministic
+                        ctx.deterministic,
                     )
 
                     if not ctx.is_input_fp8:
                         qkv_group = len(ctx.qkv_layout.split("_"))
                         if qkv_group == 1:
                             dim = ctx.qkv_layout.find("3")
-                            dqkv_fp8_data = _combine_tensors([dq_fp8._data, dk_fp8._data, dv_fp8._data], dim)
-                            dqkv_fp8 = dq_fp8.make_like(tensor=dq_fp8, data=dqkv_fp8_data, shape=dqkv_fp8_data.shape)
+                            dqkv_fp8_data = _combine_tensors(
+                                [dq_fp8._data, dk_fp8._data, dv_fp8._data], dim
+                            )
+                            dqkv_fp8 = dq_fp8.make_like(
+                                tensor=dq_fp8, data=dqkv_fp8_data, shape=dqkv_fp8_data.shape
+                            )
                             dqkv = dqkv_fp8.dequantize()
                             dq, dk, dv = _SplitAlongDim.apply(dqkv, dim, [1, 1, 1], True)
                         if qkv_group == 2:
@@ -7038,7 +7044,7 @@ class DotProductAttention(TransformerEngineBaseModule):
                     max_seqlen_kv=max_seqlen_kv,
                     fp8=self.fp8 and self.fp8_meta["recipe"].fp8_dpa,
                     fp8_meta=self.fp8_meta,
-                    quantizers=self.quantizers
+                    quantizers=self.quantizers,
                 )
 
             if use_fused_attention:

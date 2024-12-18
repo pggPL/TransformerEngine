@@ -5,7 +5,7 @@
  ************************************************************************/
 
 /*! \file ptx.cuh
- *  \brief BW PTX 
+ *  \brief BW PTX
  */
 
 #ifndef TRANSFORMER_ENGINE_PTX_CUH_

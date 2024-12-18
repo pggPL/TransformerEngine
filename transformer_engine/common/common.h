@@ -268,7 +268,7 @@ struct TypeInfo {
       { __VA_ARGS__ }                                        \
     } break;                                                 \
     case DType::kFloat8E8M0: {                               \
-      using type = byte;                                  \
+      using type = byte;                                     \
       { __VA_ARGS__ }                                        \
     } break;                                                 \
     default:                                                 \
