@@ -931,6 +931,9 @@ struct Quantized_Limits {
 };
 
 __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
+  if (isinf(val) || isnan(val)) {
+    return 0xFF;
+  }
 #if (defined __CUDA_ARCH__) && __CUDA_ARCH__>=1000
   uint16_t out;
   asm volatile(
@@ -941,14 +944,12 @@ __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
       : "f"(val));
   return *reinterpret_cast<e8m0_t *>(&out);
 #else
-  if (isinf(val) || isnan(val)) {
-    return 0xFF;
-  }
   uint32_t val_u32 = *reinterpret_cast<uint32_t *>(&val);
-  e8m0_t exponent = (val_u32 >> FP32_MANTISSA_BITS) & 0xFF;
+  e8m0_t exponent = (val_u32 >> FP32_MANTISSA_BITS);
   uint32_t mantissa = val_u32 & 0x7FFFFF;
-  if ((mantissa > 0) && (exponent != 0xFE)) {  // exp can only be < 0xFE here
-    ++exponent;                                // roundup
+  // Round up exponent and deal with satfinite.
+  if ((mantissa > 0 && exponent != 0xFE) && !(exponent == 0 && mantissa <= 0x400000)) {
+    ++exponent;
   }
   return exponent;
 #endif

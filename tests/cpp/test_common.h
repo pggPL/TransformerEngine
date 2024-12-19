@@ -352,10 +352,11 @@ inline fp8e8m0 float_to_e8m0(float val) {
     return 0xFF;
   }
   uint32_t val_u32 = *reinterpret_cast<uint32_t*>(&val);
-  fp8e8m0 exponent = (val_u32 >> FP32_MANTISSA_BITS) & 0xFF;
+  fp8e8m0 exponent = (val_u32 >> FP32_MANTISSA_BITS);
   uint32_t mantissa = val_u32 & 0x7FFFFF;
-  if ((mantissa > 0) && (exponent != 0xFE)) {     // exp can only be < 0xFE here
-    ++exponent;                                   // roundup
+  // Round up exponent and deal with satfinite.
+  if ((mantissa > 0 && exponent != 0xFE) && !(exponent == 0 && mantissa <= 0x400000)) {
+    ++exponent;
   }
   return exponent;
 }
