@@ -4,6 +4,7 @@
 
 """Python interface for GEMM extensions"""
 import functools
+import os
 from typing import Optional, Tuple, Union, List
 import torch
 import transformer_engine_torch as tex
