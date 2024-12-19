@@ -365,6 +365,9 @@ extern std::vector<DType> all_fp_types;
 
 bool isFp8Type(DType type);
 
+int32_t getDeviceComputeCapability();
+constexpr int32_t blackwellComputeCapability = 100;
+
 }  // namespace test
 
 #define TRANSFORMER_ENGINE_TYPE_SWITCH_ALL(dtype, type, ...) \

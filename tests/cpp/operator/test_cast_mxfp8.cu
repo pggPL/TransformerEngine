@@ -435,17 +435,9 @@ switch (OP_FUNC_TYPE) { \
     case dActivationType::dSReLU:   { constexpr auto OP = &dsrelu;   { __VA_ARGS__ } } break; \
 }
 
-static const int32_t deviceComputeCapability = [](){
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, 0);
-    return 10 * deviceProp.major + deviceProp.minor;
-}();
-
-constexpr int32_t blackwellComputeCapability = 100;
-
 TEST_P(FusedCastMXFP8TestSuite, TestFusedCastMXFP8) {
     // Skip tests for pre-Blackwell architectures
-    if (deviceComputeCapability < blackwellComputeCapability) {
+    if (getDeviceComputeCapability() < blackwellComputeCapability) {
         GTEST_SKIP();
     }
 

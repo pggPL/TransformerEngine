@@ -152,6 +152,10 @@ class CastDBiasDGeluTestSuite : public ::testing::TestWithParam<std::tuple<trans
 TEST_P(CastDBiasDGeluTestSuite, TestCastDBiasDgelu) {
     using namespace transformer_engine;
     using namespace test;
+    // Skip tests for pre-Blackwell architectures
+    if (getDeviceComputeCapability() < blackwellComputeCapability) {
+        GTEST_SKIP();
+    }
 
     const DType input_type = std::get<0>(GetParam());
     const DType output_type = std::get<1>(GetParam());
