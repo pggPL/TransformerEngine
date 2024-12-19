@@ -939,19 +939,21 @@ __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
   if (isinf(val)) {
     return 0xFE;
   }
-  if (val == 0.0f) {
-    return 0x00;
-  }
-#if (defined __CUDA_ARCH__) && __CUDA_ARCH__>=1000
+#if ((__CUDA_ARCH_HAS_FEATURE__(SM100_ALL)) || \
+     (__CUDA_ARCH_HAS_FEATURE__(SM101_ALL)) || \
+     (__CUDA_ARCH_HAS_FEATURE__(SM120_ALL)))
   uint16_t out;
   asm volatile(
       "{\n"
-      "cvt.rp.satfinite.ue8m0x2.f32  %0, %1, 0.0;\n"
+      "cvt.rp.satfinite.ue8m0x2.f32  %0, 0.0, %1;\n"
       "}"
       : "=h"(out)
       : "f"(val));
   return *reinterpret_cast<e8m0_t *>(&out);
 #else
+  if (val == 0.0f) {
+    return 0x00;
+  }
   uint32_t val_u32 = *reinterpret_cast<uint32_t *>(&val);
   e8m0_t exponent = (val_u32 >> FP32_MANTISSA_BITS);
   uint32_t mantissa = val_u32 & 0x7FFFFF;
