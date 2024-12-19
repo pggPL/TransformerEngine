@@ -931,8 +931,16 @@ struct Quantized_Limits {
 };
 
 __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
-  if (isinf(val) || isnan(val)) {
+  // TODO: nan/inf needs to be set for any value
+  // of nan/inf in input not just amax.
+  if (isnan(val)) {
     return 0xFF;
+  }
+  if (isinf(val)) {
+    return 0xFE;
+  }
+  if (val == 0.0f) {
+    return 0x00;
   }
 #if (defined __CUDA_ARCH__) && __CUDA_ARCH__>=1000
   uint16_t out;

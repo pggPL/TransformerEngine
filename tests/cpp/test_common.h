@@ -348,8 +348,16 @@ enum InputsFillCase {
 };
 
 inline fp8e8m0 float_to_e8m0(float val) {
-  if (std::isinf(val) || std::isnan(val)) {
+  // TODO: nan/inf needs to be set for any value
+  // of nan/inf in input not just amax.
+  if (std::isnan(val)) {
     return 0xFF;
+  }
+  if (std::isinf(val)) {
+    return 0xFE;
+  }
+  if (val == 0.0f) {
+    return 0x00;
   }
   uint32_t val_u32 = *reinterpret_cast<uint32_t*>(&val);
   fp8e8m0 exponent = (val_u32 >> FP32_MANTISSA_BITS);
