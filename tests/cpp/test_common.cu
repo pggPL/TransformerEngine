@@ -568,4 +568,11 @@ bool isFp8Type(DType type) {
     return type == DType::kFloat8E4M3 || type == DType::kFloat8E5M2;
 }
 
+int32_t getDeviceComputeCapability()
+{
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0);
+    return 10 * deviceProp.major + deviceProp.minor;
+}
+
 }  // namespace test
