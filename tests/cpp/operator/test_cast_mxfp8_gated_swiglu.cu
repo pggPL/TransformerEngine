@@ -311,17 +311,9 @@ class CastMXFP8SwiGLUTestSuite : public ::testing::TestWithParam
                 transformer_engine::DType,
                 InputsFillCase>> {};
 
-static const int32_t deviceComputeCapability = [](){
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, 0);
-    return 10 * deviceProp.major + deviceProp.minor;
-}();
-
-constexpr int32_t blackwellComputeCapability = 100;
-
 TEST_P(CastMXFP8SwiGLUTestSuite, TestCastMXFP8Swiglu) {
     // Skip tests for pre-Blackwell architectures
-    if (deviceComputeCapability < blackwellComputeCapability) {
+    if (getDeviceComputeCapability() < blackwellComputeCapability) {
         GTEST_SKIP();
     }
 

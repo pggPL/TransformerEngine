@@ -168,10 +168,8 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
-
-  const auto deviceComputeCapability = 10 * prop.major + prop.minor;
-  constexpr int32_t blackwellComputeCapability = 100;
-  if (deviceComputeCapability < blackwellComputeCapability) {
+  
+  if (getDeviceComputeCapability() < blackwellComputeCapability) {
     GTEST_SKIP();
   }
 
