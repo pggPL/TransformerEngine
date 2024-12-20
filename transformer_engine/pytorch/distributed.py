@@ -20,12 +20,16 @@ from torch.distributed.fsdp._traversal_utils import _get_fsdp_states_with_module
 from .utils import safely_set_viewless_tensor_data
 from .constants import dist_group_type
 from .fp8 import FP8GlobalStateManager
-from .tensor.float8_tensor import Quantizer, Float8Quantizer, Float8Tensor
+from .tensor.float8_tensor import Quantizer
 from .tensor.quantized_tensor import QuantizedTensor
 from .tensor._internal.float8_tensor_base import Float8TensorBase
+from .tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 
 
 __all__ = ["checkpoint", "CudaRNGStatesTracker"]
+
+
+_FP8TensorBase = Union[Float8TensorBase, MXFP8TensorBase]
 
 
 _MODEL_PARALLEL_ATTRIBUTE_DEFAULTS = {
@@ -859,8 +863,8 @@ def gather_along_first_dim(
 
     # FP8 communication for FP8 tensors
     input_is_quantized = isinstance(input_, QuantizedTensor)
-    input_is_fp8 = isinstance(input_, Float8TensorBase)
-    quantizer_is_fp8 = isinstance(quantizer, Float8Quantizer)
+    input_is_fp8 = isinstance(input_, _FP8TensorBase)
+    quantizer_is_fp8 = isinstance(quantizer, Quantizer)
     if input_is_fp8 or quantizer_is_fp8:
 
         # Quantize input tensor if needed
@@ -875,8 +879,8 @@ def gather_along_first_dim(
             input_is_fp8 = True
 
         # Construct output tensor
-        input_is_fp8_tensor = isinstance(input_, Float8Tensor)
-        out: Float8TensorBase
+        input_is_fp8_tensor = isinstance(input_, QuantizedTensor)
+        out: _FP8TensorBase
         if quantizer_is_fp8:
             dtype = input_.dtype if input_is_fp8_tensor else torch.float32
             device = input_.device if input_is_fp8_tensor else "cuda"
@@ -895,7 +899,7 @@ def gather_along_first_dim(
             out._transpose = None
             out._transpose_invalid = True
         else:
-            raise RuntimeError("Float8TensorBase is not supported yet without Float8Quantizer")
+            raise RuntimeError("FP8TensorBase is not supported yet without Quantizer")
         out._scale_inv = input_._scale_inv
 
         # Perform communication
@@ -911,8 +915,8 @@ def gather_along_first_dim(
             if handle is not None:
                 handle.wait()
                 handle = None
-            if not isinstance(out, Float8Tensor):
-                raise RuntimeError("Float8TensorBase does not support FP8 transpose yet")
+            if not isinstance(out, QuantizedTensor):
+                raise RuntimeError("FP8TensorBase does not support FP8 transpose yet")
             out._create_transpose()
 
         return out, handle
@@ -973,7 +977,7 @@ def _fsdp_scatter_tensors(
     if fsdp_group is not None:
         for t in tensors:
             if isinstance(t, torch.Tensor):
-                target = t._data if isinstance(t, Float8Tensor) else t
+                target = t._data if isinstance(t, QuantizedTensor) else t
                 shapes.append(target.data.shape)
                 safely_set_viewless_tensor_data(
                     target,
@@ -994,7 +998,7 @@ def _fsdp_gather_tensors(
         for s, t in zip(shapes, tensors):
             if isinstance(t, torch.Tensor):
                 assert s is not None, "Internal TE error."
-                target = t._data if isinstance(t, Float8Tensor) else t
+                target = t._data if isinstance(t, QuantizedTensor) else t
                 safely_set_viewless_tensor_data(
                     target, gather_split_1d_tensor(target.data, fsdp_group).view(s)
                 )

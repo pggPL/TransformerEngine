@@ -45,10 +45,12 @@ def check_mxfp8_support() -> Tuple[bool, str]:
 
 def get_default_fp8_recipe() -> Recipe:
     """FP8 recipe with default args."""
+    if get_device_compute_capability() >= (10, 0):  # blackwell and above
+        return BlockScaling()
     return DelayedScaling()
 
 
-def get_fp8_torch_dtype(fp8_recipe: DelayedScaling, fprop_tensor: bool = True) -> torch.dtype:
+def get_fp8_torch_dtype(fp8_recipe: Recipe, fprop_tensor: bool = True) -> torch.dtype:
     """Get fp8 data type according to recipe and tensor"""
     if fp8_recipe.fp8_format == Format.E4M3 or (
         fp8_recipe.fp8_format == Format.HYBRID and fprop_tensor
@@ -57,7 +59,7 @@ def get_fp8_torch_dtype(fp8_recipe: DelayedScaling, fprop_tensor: bool = True) -
     return torch.float8_e5m2fn
 
 
-def get_fp8_te_dtype(fp8_recipe: DelayedScaling, fprop_tensor: bool = True) -> tex.DType:
+def get_fp8_te_dtype(fp8_recipe: Recipe, fprop_tensor: bool = True) -> tex.DType:
     """Get fp8 data type according to recipe and tensor"""
     if fp8_recipe.fp8_format == Format.E4M3 or (
         fp8_recipe.fp8_format == Format.HYBRID and fprop_tensor
@@ -66,7 +68,7 @@ def get_fp8_te_dtype(fp8_recipe: DelayedScaling, fprop_tensor: bool = True) -> t
     return tex.DType.kFloat8E5M2
 
 
-def get_fp8_max(fp8_recipe: DelayedScaling, fprop_tensor: bool = True) -> tex.DType:
+def get_fp8_max(fp8_recipe: Recipe, fprop_tensor: bool = True) -> tex.DType:
     """Get max representible FP8 value."""
     if fp8_recipe.fp8_format == Format.E4M3 or (
         fp8_recipe.fp8_format == Format.HYBRID and fprop_tensor
@@ -173,7 +175,7 @@ class FP8GlobalStateManager:
     def get_key_in_buffer(
         cls,
         forward: bool,
-        fp8_recipe: DelayedScaling,
+        fp8_recipe: Recipe,
         fp8_group: dist_group_type,
     ) -> str:
         """Returns a key into the global FP8 buffers."""
@@ -269,7 +271,7 @@ class FP8GlobalStateManager:
         return tmp
 
     @classmethod
-    def get_fp8_recipe(cls) -> DelayedScaling:
+    def get_fp8_recipe(cls) -> Recipe:
         """Return the fp8 recipe"""
         if cls.FP8_RECIPE is not None:
             return cls.FP8_RECIPE
@@ -281,7 +283,7 @@ class FP8GlobalStateManager:
         return cls.FP8_DISTRIBUTED_GROUP
 
     @classmethod
-    def get_fp8_autocast_state(cls) -> Tuple[bool, bool, DelayedScaling, dist_group_type, bool]:
+    def get_fp8_autocast_state(cls) -> Tuple[bool, bool, Recipe, dist_group_type, bool]:
         """FP8 autocast state getter"""
         return (
             cls.FP8_ENABLED,
@@ -373,7 +375,7 @@ class FP8GlobalStateManager:
     @classmethod
     def get_unique_autocast_key(
         cls,
-        recipe: Optional[DelayedScaling] = None,
+        recipe: Optional[Recipe] = None,
         group: Optional[dist_group_type] = None,
     ):
         """
@@ -387,7 +389,7 @@ class FP8GlobalStateManager:
         cls,
         enabled: bool = False,
         calibrating: bool = False,
-        fp8_recipe: Optional[DelayedScaling] = None,
+        fp8_recipe: Optional[Recipe] = None,
         fp8_group: Optional[dist_group_type] = None,
         _graph: bool = False,
     ) -> None:
@@ -516,7 +518,7 @@ def fp8_model_init(enabled: bool = True, recipe: Optional[Recipe] = None) -> Non
 def fp8_autocast(
     enabled: bool = True,
     calibrating: bool = False,
-    fp8_recipe: Optional[DelayedScaling] = None,
+    fp8_recipe: Optional[Recipe] = None,
     fp8_group: Optional[dist_group_type] = None,
     _graph: bool = False,
 ) -> None:
@@ -551,7 +553,7 @@ def fp8_autocast(
                  data of fp8 tensors even when executing without fp8 enabled. This is
                  useful for saving an inference ready fp8 checkpoint while training
                  using a higher precision.
-    fp8_recipe: recipe.DelayedScaling, default = `None`
+    fp8_recipe: recipe.Recipe, default = `None`
                 recipe used for FP8 training.
     fp8_group: torch._C._distributed_c10d.ProcessGroup, default = `None`
                distributed group over which amaxes for the fp8 tensors
@@ -733,7 +735,7 @@ class DelayedScalingRecipeState(RecipeState):
         self.recipe = recipe
         self.mode = mode
         self.num_quantizers = num_quantizers
-        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
+        self.dtype = get_fp8_te_dtype(recipe, mode=="forward")
 
         # Allocate buffers
         if device is None:
@@ -773,7 +775,7 @@ class BlockScalingRecipeState(RecipeState):
         self.recipe = recipe
         self.mode = mode
         self.num_quantizers = num_quantizers
-        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
+        self.dtype = get_fp8_te_dtype(recipe, mode=="forward")
 
         # Allocate buffers
         if device is None:
