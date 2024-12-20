@@ -71,8 +71,16 @@ py::object geglu(const at::Tensor& input, py::handle quantizer) {
   return activation_helper<nvte_geglu>(input, quantizer, 2);
 }
 
+py::object qgeglu(const at::Tensor& input, py::handle quantizer) {
+  return activation_helper<nvte_qgeglu>(input, quantizer, 2);
+}
+
 py::object dgeglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
   return dactivation_helper<nvte_dgeglu>(grad, input, quantizer);
+}
+
+py::object dqgeglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+  return dactivation_helper<nvte_dqgeglu>(grad, input, quantizer);
 }
 
 py::object reglu(const at::Tensor& input, py::handle quantizer) {
