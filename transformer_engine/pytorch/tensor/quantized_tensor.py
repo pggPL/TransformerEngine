@@ -16,24 +16,44 @@ import transformer_engine_torch as tex
 from ...common.recipe import Recipe
 
 
-def prepare_for_saving(tensor) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
-    if tensor is None:
-        return [None], None
-    if isinstance(tensor, torch.Tensor):
-        return [tensor], None
-    return tensor.prepare_for_saving()
+def prepare_for_saving(*tensors) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
+    tensor_list, tensor_objects_list = [], []
+    for tensor in tensors:
+        if tensor is None:
+            tensor_list.append(None)
+            tensor_objects_list.append(None)
+        elif type(tensor) == torch.Tensor or type(tensor) == torch.nn.Parameter: # TODO (pgadzinski) - check it
+            tensor_list.append(tensor)
+            tensor_objects_list.append(None)
+        else:
+            t, t_obj = tensor.prepare_for_saving()
+            tensor_list.extend(t)
+            tensor_objects_list.append(t_obj)
+    return tensor_list, tensor_objects_list
 
 
 def restore_from_saved(
-    tensor: Optional[Any], saved_tensors: list[Optional[torch.Tensor]]
-) -> Tuple[Optional[Any], list[Optional[torch.Tensor]]]:
-    if tensor is None:
-        return saved_tensors[0], saved_tensors[1:]
-    new_tensors = tensor.restore_from_saved(saved_tensors)
-    return tensor, new_tensors
+    tensors: list[Optional[Any]], saved_tensors: list[Optional[torch.Tensor]]
+) -> Tuple[Optional[Any]]:
+    tensor_objects = []
+    tensors_to_restore = len(tensors)
+    for i in range(tensors_to_restore):
+        tensor = tensors[i]
+        if tensor is None:
+            tensor_objects.append(saved_tensors[0])
+            saved_tensors = saved_tensors[1:]
+        else:
+            saved_tensors = tensor.restore_from_saved(saved_tensors)
+            tensor_objects.append(tensor)
+    return tensor_objects
 
 
-class Quantizer(abc.ABC):
+# Empty class which
+class TensorBase:
+    pass
+
+
+class Quantizer(abc.ABC, TensorBase):
 
     rowwise_usage: bool
     columnwise_usage: bool

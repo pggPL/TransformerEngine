@@ -78,7 +78,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("generic_gemm", transformer_engine::pytorch::gemm, "Compute GEMM (matrix-matrix multiply",
         py::arg("A"), py::arg("transA"), py::arg("B"), py::arg("transB"), py::arg("D"),
         py::arg("quantizer"), py::arg("output_dtype"), py::arg("bias"), py::arg("bias_type"),
-        py::arg("gelu"), py::arg("grad"), py::arg("workspace"), py::arg("workspace_size"),
+        py::arg("gelu"), py::arg("gelu_in"), py::arg("grad"), py::arg("workspace"), py::arg("workspace_size"),
         py::arg("accumulate"), py::arg("use_split_accumulator"));
 
   m.def("gelu", transformer_engine::pytorch::gelu, "GeLU activation", py::arg("input"),
@@ -176,11 +176,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("scale"),
         py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("grad_bias_type"),
         py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("fused_cast_transpose_bgrad_dgelu", &fused_cast_transpose_bgrad_dgelu,
-        "Fused Cast + Transpose + BGRAD + DGELU", py::call_guard<py::gil_scoped_release>(),
-        py::arg("grad_output"), py::arg("gelu_input"), py::arg("scale"), py::arg("amax"),
-        py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_dswiglu_cast_transpose", &fused_dswiglu_cast_transpose,
         "Fused SwiGLU backward + FP8 cast + FP8 transpose",
         py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("input"),

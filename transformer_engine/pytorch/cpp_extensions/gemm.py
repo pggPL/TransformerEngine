@@ -111,6 +111,7 @@ def general_gemm(
     out_dtype: Optional[torch.dtype] = None,
     quantization_params: Optional[Quantizer] = None,
     gelu: bool = False,
+    gelu_in: torch.Tensor = None,
     accumulate: bool = False,
     layout: str = "TN",
     out: Optional[torch.Tensor] = None,
@@ -148,6 +149,7 @@ def general_gemm(
         bias,
         bias_dtype,
         gelu,
+        gelu_in,
         grad,  # grad
         workspace,
         workspace.shape[0],
@@ -628,7 +630,6 @@ def general_grouped_gemm(
             for o in out
         ]  # this should differ with respect to single output
 
-    # import pdb; pdb.set_trace()
     bias = tex.te_general_grouped_gemm(
         A,
         transa,

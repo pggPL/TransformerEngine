@@ -977,12 +977,13 @@ def _fsdp_scatter_tensors(
     if fsdp_group is not None:
         for t in tensors:
             if isinstance(t, torch.Tensor):
-                target = t._data if isinstance(t, QuantizedTensor) else t
-                shapes.append(target.data.shape)
-                safely_set_viewless_tensor_data(
-                    target,
-                    split_tensor_into_1d_equal_chunks(target.data, fsdp_group, new_buffer=True),
-                )
+                targets = t.get_data_tensors() if isinstance(t, QuantizedTensor) else [t]
+                for target in targets:
+                    shapes.append(target.data.shape)
+                    safely_set_viewless_tensor_data(
+                        target,
+                        split_tensor_into_1d_equal_chunks(target.data, fsdp_group, new_buffer=True),
+                    )
             else:
                 shapes.append(None)
     return shapes
@@ -998,10 +999,11 @@ def _fsdp_gather_tensors(
         for s, t in zip(shapes, tensors):
             if isinstance(t, torch.Tensor):
                 assert s is not None, "Internal TE error."
-                target = t._data if isinstance(t, QuantizedTensor) else t
-                safely_set_viewless_tensor_data(
-                    target, gather_split_1d_tensor(target.data, fsdp_group).view(s)
-                )
+                targets = t.get_data_tensors() if isinstance(t, QuantizedTensor) else [t]
+                for target in targets:
+                    safely_set_viewless_tensor_data(
+                        target, gather_split_1d_tensor(target.data, fsdp_group).view(s)
+                    )
 
 
 def _is_te_module(module):
