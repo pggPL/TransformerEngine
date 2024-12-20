@@ -182,9 +182,6 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             float32 flag indicating whether to avoid performing update
 
         """
-        ### TODO Support noop_flag - (pgadzinski) - look also in base.py line
-        # "tex.quantize(tensor, quantizer, out)"
-        # need to support this flag too
         if isinstance(tensor, QuantizedTensor):
             return self.quantize_(tensor.dequantize(), noop_flag=noop_flag)
         self._get_quantizer().update_quantized(tensor, self, noop_flag=noop_flag)

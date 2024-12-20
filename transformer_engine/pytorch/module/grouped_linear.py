@@ -94,9 +94,7 @@ class _GroupedLinear(torch.autograd.Function):
         assert inp.shape[-1] == in_features, "GEMM not possible"
         inputmats = torch.split(inp.view(-1, in_features), m_splits)
         if fp8:
-            for i in range(num_gemms):
-                assert_dim_for_fp8_exec(inputmats[i])
-                assert_dim_for_fp8_exec(weights[i])
+            assert_dim_for_fp8_exec(*inputmats, *weights)
 
         # Cast input to expected dtype
         inputmats_no_fp8 = [cast_if_needed(mat, activation_dtype) for mat in inputmats]
@@ -184,30 +182,14 @@ class _GroupedLinear(torch.autograd.Function):
 
         if is_grad_enabled:
 
-            saved_input_tensors = []
-            saved_weight_tensors = []
             saved_inputs, saved_weights = [], []
             ctx.weights_shape_1 = weights[0].shape[1]
 
-            # TODO - deal with the activation offloading
-            for i in range(num_gemms):
-                saved_input_tensors_i, saved_input = prepare_for_saving(inputmats[i])
-                saved_weight_tensors_i, saved_weight = prepare_for_saving(weights_fp8[i])
-
-                saved_input_tensors.extend(saved_input_tensors_i)
-                saved_weight_tensors.extend(saved_weight_tensors_i)
-                saved_inputs.append(saved_input)
-                saved_weights.append(saved_weight)
-
+            tensors_to_save, tensor_objects = prepare_for_saving(*inputmats, *weights_fp8, *biases)
             ctx.save_for_backward(
-                *saved_input_tensors,
-                *saved_weight_tensors,
-                *biases,
-                *[
-                    w.main_grad if cpu_offloading and fuse_wgrad_accumulation else None
-                    for w in weights
-                ],
+                *tensors_to_save
             )
+            ctx.tensor_objects = tensor_objects
 
             ctx.weights_requires_grad = weights[0].requires_grad
             ctx.device = device
@@ -239,22 +221,12 @@ class _GroupedLinear(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
         # pylint: disable=missing-function-docstring
         with torch.cuda.nvtx.range("_GroupedLinear_backward"):
-            # inputmats
-            # weights
-            inputmats = []
-            weights = []
-            biases = []
-            saved_tensors = ctx.saved_tensors
-            for i in range(ctx.num_gemms):
-                inputmat, saved_tensors = restore_from_saved(ctx.saved_inputs[i], saved_tensors)
-                inputmats.append(inputmat)
-            for i in range(ctx.num_gemms):
-                weight, saved_tensors = restore_from_saved(ctx.saved_weights[i], saved_tensors)
-                weights.append(weight)
-            for i in range(ctx.num_gemms):
-                biases.append(saved_tensors[0])
-                saved_tensors = saved_tensors[1:]
-            main_grads = ctx.saved_tensors
+            saved_tensors = restore_from_saved(ctx.tensor_objects, ctx.saved_tensors)
+            N = ctx.num_gemms
+            inputmats = saved_tensors[:N]
+            weights = saved_tensors[N:2*N]
+            biases = saved_tensors[2*N:3*N]
+            main_grads = saved_tensors[3*N:]
 
             if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:  # TOSO
                 for i in ctx.num_gemms:

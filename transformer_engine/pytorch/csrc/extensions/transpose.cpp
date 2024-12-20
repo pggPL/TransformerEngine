@@ -132,54 +132,6 @@ std::vector<at::Tensor> fused_fp8_transpose_bgrad(at::Tensor grad_output, at::Te
   return {grad_bias, grad_output_transpose};
 }
 
-std::vector<at::Tensor> fused_cast_transpose_bgrad_dgelu(at::Tensor grad_output,
-                                                         at::Tensor gelu_input, at::Tensor scale,
-                                                         at::Tensor amax, at::Tensor scale_inv,
-                                                         transformer_engine::DType otype,
-                                                         int scale_offset, int amax_offset,
-                                                         int scale_inv_offset) {
-  using namespace transformer_engine::pytorch;
-
-  // Tensor dimensions
-  size_t M = static_cast<size_t>(grad_output.size(0));
-  size_t N = static_cast<size_t>(grad_output.size(1));
-
-  // Get pointers for FP8 scale, amax, scale-inverse
-  void* scale_dptr = getDataPtr(scale, scale_offset);
-  void* amax_dptr = getDataPtr(amax, amax_offset);
-  void* scale_inv_dptr = getDataPtr(scale_inv, scale_inv_offset);
-
-  // Construct Transformer Engine tensors
-  DType grad_output_type = GetTransformerEngineDType(grad_output.scalar_type());
-  auto grad_bias = allocateTorchTensor(grad_output.size(-1), grad_output_type);
-  auto dgelu = allocateTorchTensor(grad_output.size(0), grad_output.size(1), DType::kByte);
-  auto dgelu_transpose =
-      allocateTorchTensor(grad_output.size(1), grad_output.size(0), DType::kByte);
-  auto gelu_input_cu = makeTransformerEngineTensor(gelu_input);
-  auto input_cu = makeTransformerEngineTensor(grad_output);
-  auto output_cu =
-      makeTransformerEngineTensor(dgelu.data_ptr(), dgelu_transpose.data_ptr(), {M, N}, {N, M},
-                                  otype, amax_dptr, scale_dptr, scale_inv_dptr, scale_inv_dptr);
-
-  auto dbias_cu = makeTransformerEngineTensor(grad_bias);
-
-  // Query workspace size and allocate workspace
-  transformer_engine::TensorWrapper workspace;
-  nvte_cast_transpose_dbias_dgelu(input_cu.data(), gelu_input_cu.data(), output_cu.data(),
-                                  dbias_cu.data(), workspace.data(),
-                                  at::cuda::getCurrentCUDAStream());
-  auto workspace_data = allocateSpace(workspace.shape(), workspace.dtype());
-  workspace =
-      makeTransformerEngineTensor(workspace_data.data_ptr(), workspace.shape(), workspace.dtype());
-
-  // Launch kernel
-  nvte_cast_transpose_dbias_dgelu(input_cu.data(), gelu_input_cu.data(), output_cu.data(),
-                                  dbias_cu.data(), workspace.data(),
-                                  at::cuda::getCurrentCUDAStream());
-
-  return {grad_bias, dgelu, dgelu_transpose};
-}
-
 void fused_dswiglu_cast_transpose(at::Tensor grad_output, at::Tensor input, at::Tensor grad_input,
                                   at::Tensor grad_input_transpose, at::Tensor scale,
                                   at::Tensor amax, at::Tensor scale_inv,
