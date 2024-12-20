@@ -64,3 +64,29 @@ void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool roww
     input.set_columnwise_scale_inv(swizzled_scale_inv_dptr, DType::kFloat8E8M0, scale_inv_shape);
   }
 }
+
+
+// TODO(ksivamani): Remove this later; only for debugging.
+at::Tensor swizzle_te(at::Tensor input, at::Tensor scale_inv) {
+  using namespace transformer_engine::pytorch;
+
+  NVTE_CHECK(input.element_size() == 1, "8-bit input required for swizzling scaling factors.");
+
+  auto options = at::TensorOptions().dtype(scale_inv.dtype()).device(torch::kCUDA);
+  auto swizzled_scale_inv = at::empty_like(scale_inv, options);
+
+  void* scale_inv_dptr = getDataPtr(scale_inv, 0);
+  void* swizzled_scale_inv_dptr = getDataPtr(swizzled_scale_inv, 0);
+
+  auto input_cu = makeTransformerEngineTensor(
+      input.data_ptr(), getTensorShape(input), DType::kFloat8E4M3, nullptr, nullptr,
+      scale_inv_dptr, getTensorShape(scale_inv), NVTE_MXFP8_1D_SCALING);
+  auto output_cu = makeTransformerEngineTensor(
+      input.data_ptr(), getTensorShape(input), DType::kFloat8E4M3, nullptr, nullptr, swizzled_scale_inv_dptr,
+      getTensorShape(swizzled_scale_inv), NVTE_MXFP8_1D_SCALING);
+
+  // Launch kernel
+  nvte_swizzle_scaling_factors(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
+
+  return swizzled_scale_inv;
+}
