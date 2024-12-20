@@ -1076,6 +1076,8 @@ def _run_attention_extra_state(dtype, config, checkpoint=False, mimic_v1_6=False
                 config.num_attention_heads,
                 init_method=init_method,
                 output_layer_init_method=output_layer_init_method,
+                hidden_dropout=0.0,
+                attention_dropout=0.0,
                 fuse_qkv_params=True,
                 params_dtype=dtype,
                 device="cuda",

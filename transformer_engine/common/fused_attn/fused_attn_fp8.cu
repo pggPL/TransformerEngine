@@ -1931,10 +1931,10 @@ void fused_attn_fp8_fwd_impl_v1(
       variant_pack[seq_kv] = devActualSeqlenKV;
     }
 
-    /* if (is_dropout) {
+    if (is_dropout) {
       variant_pack[dropout_seed] = devPtrDropoutSeed;
       variant_pack[dropout_offset] = devPtrDropoutOffset;
-    } */
+    }
 
     NVTE_CHECK_CUDNN_FE(mha_graph->execute(handle, variant_pack, workspace));
   } catch (cudnn_frontend::cudnnException& e) {
@@ -2321,10 +2321,10 @@ void fused_attn_fp8_bwd_impl_v1(
       variant_pack[seq_kv] = devActualSeqlenKV;
     }
 
-    /* if (is_dropout) {
+    if (is_dropout) {
       variant_pack[dropout_seed] = devPtrDropoutSeed;
       variant_pack[dropout_offset] = devPtrDropoutOffset;
-    } */
+    }
 
     NVTE_CHECK_CUDNN_FE(mha_graph->execute(handle, variant_pack, workspace));
   } catch (cudnn_frontend::cudnnException& e) {
