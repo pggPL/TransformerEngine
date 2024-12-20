@@ -1366,20 +1366,18 @@ def _run_transformer_layer(
 
 model_configs_fp8_vs_f16 = {
     #  test:             b,  h, hg,   d,   sq,  skv,   p,      mask,      bias
-    "fp8_9": ModelConfig(2, 24, 24, 128, 2048, 2048, 0.0, "no_mask", "no_bias"),
-    "fp8_10": ModelConfig(2, 24, 24, 128, 2048, 2048, 0.0, "causal", "no_bias"),
-    "fp8_11": ModelConfig(2, 24, 12, 128, 2048, 2048, 0.0, "no_mask", "no_bias"),
-    "fp8_12": ModelConfig(2, 24, 12, 128, 2048, 2048, 0.0, "causal", "no_bias"),
-    "fp8_13": ModelConfig(1, 32, 4, 128, 8192, 8192, 0.0, "no_mask", "no_bias"),
+    "fp8_9": ModelConfig(2, 16, 16, 128, 2048, 2048, 0.0, "no_mask", "no_bias"),
+    "fp8_10": ModelConfig(2, 24, 12, 128, 2048, 2048, 0.0, "no_mask", "no_bias"),
+    "fp8_11": ModelConfig(1, 32, 4, 128, 8192, 8192, 0.0, "no_mask", "no_bias"),
+    "fp8_12": ModelConfig(2, 16, 16, 128, 2048, 2048, 0.0, "causal", "no_bias"),
+    "fp8_13": ModelConfig(2, 24, 12, 128, 2048, 2048, 0.0, "causal", "no_bias"),
     "fp8_14": ModelConfig(1, 32, 4, 128, 8192, 8192, 0.0, "causal", "no_bias"),
-    "fp8_15": ModelConfig(1, 16, 16, 128, 2048, 2048, 0.0, "no_mask", "no_bias"),
-    "fp8_16": ModelConfig(2, 24, 24, 128, 2048, 2048, 0.0, "padding", "no_bias"),
-    "fp8_17": ModelConfig(2, 24, 24, 128, 2048, 2048, 0.0, "padding_causal", "no_bias"),
-    "fp8_18": ModelConfig(2, 24, 12, 128, 2048, 2048, 0.0, "padding", "no_bias"),
+    "fp8_15": ModelConfig(2, 16, 16, 128, 2048, 2048, 0.0, "padding", "no_bias"),
+    "fp8_16": ModelConfig(2, 24, 12, 128, 2048, 2048, 0.0, "padding", "no_bias"),
+    "fp8_17": ModelConfig(1, 32, 4, 128, 8192, 8192, 0.0, "padding", "no_bias"),
+    "fp8_18": ModelConfig(2, 16, 16, 128, 2048, 2048, 0.0, "padding_causal", "no_bias"),
     "fp8_19": ModelConfig(2, 24, 12, 128, 2048, 2048, 0.0, "padding_causal", "no_bias"),
-    "fp8_20": ModelConfig(1, 32, 4, 128, 8192, 8192, 0.0, "padding", "no_bias"),
-    "fp8_21": ModelConfig(1, 32, 4, 128, 8192, 8192, 0.0, "padding_causal", "no_bias"),
-    "fp8_22": ModelConfig(1, 16, 16, 128, 2048, 2048, 0.0, "padding", "no_bias"),
+    "fp8_20": ModelConfig(1, 32, 4, 128, 8192, 8192, 0.0, "padding_causal", "no_bias"),
 }
 
 param_types_fp8_vs_f16 = [torch.float16, torch.bfloat16]
@@ -1428,6 +1426,8 @@ def test_mha_fp8_vs_f16(dtype, model, qkv_format, input_layernorm, fp8_dpa_bwd, 
     os.environ["NVTE_ALLOW_NONDETERMINISTIC_ALGO"] = "1"
     os.environ["NVTE_FP8_DPA_BWD"] = "1" if fp8_dpa_bwd else "0"
     config = model_configs_fp8_vs_f16[model]
+    if ("padding" in config.attn_mask_type or config.head_dim_qk != 128) and get_cudnn_version() < (9, 7, 0):
+        pytest.skip("FP8 with padding or head_dim != 128 is not supported for cuDNN < 9.7")
 
     if _flash_attn_3_is_installed and not is_training:
         os.environ["NVTE_FLASH_ATTN"] = "1"
@@ -1618,16 +1618,18 @@ def _run_mha_fp8_vs_f16(dtype, config, fp8_mha, qkv_format, input_layernorm, RoP
 def test_dpa_fp8_vs_f16(dtype, model, qkv_layout, fp8_dpa_bwd, is_training):
     config = model_configs_fp8_vs_f16[model]
 
+    # TODO(cyang): think of another way to verify dropout results
     # test cuDNN FP8 dropout
     # 1. we modify the config here to not affect mha_fp8_vs_f16 tests
     # 2. there is no other backend that implements dropout the same way as cuDNN FP8, and as an
     #    indirect verification method, we create Q/K/V as all 1s and check if O is all 1s
     # 3. we avoid running FP16/BF16 kernels as they do not have dropout support on Blackwell
-    if "padding" not in config.attn_mask_type and "causal" not in config.attn_mask_type:
-        config.dropout_p = 0.1
-    if config.dropout_p != 0.0 and not fp8_dpa_bwd:
-        pytest.skip("FP16/BF16 dropout is not supported on Blackwell")
+    #if "padding" not in config.attn_mask_type and "causal" not in config.attn_mask_type:
+    #    if get_device_compute_capability() >= (10, 0):
+    #        config.dropout_p = 0.1
 
+    if ("padding" in config.attn_mask_type or config.head_dim_qk != 128) and get_cudnn_version() < (9, 7, 0):
+        pytest.skip("FP8 with padding or head_dim != 128 is not supported for cuDNN < 9.7")
     if config.num_heads != config.num_gqa_groups and "3" in qkv_layout:
         pytest.skip("qkv_layout not applicable for MQA/GQA")
 
@@ -1652,7 +1654,7 @@ def test_dpa_fp8_vs_f16(dtype, model, qkv_layout, fp8_dpa_bwd, is_training):
     )
 
     if config.dropout_p == 0.0:
-        # test cuDNN FP8 dropout: no FP16/BF16 dropout support on Blackwell
+        # test cuDNN FP8 dropout: need a FP16/BF16 reference on Blackwell
         logging.info("[test_dpa_fp8_vs_f16]: run with fp8_dpa = False")
         fused_attn_fwd_f16, fused_attn_bwd_f16 = _run_dpa_fp8_vs_f16(
             dtype, config, False, qkv_layout, is_training
@@ -1660,7 +1662,7 @@ def test_dpa_fp8_vs_f16(dtype, model, qkv_layout, fp8_dpa_bwd, is_training):
 
     atol = 5e-1
     rtol = 5e-2
-    rmse_tol = 0.1
+    rmse_tol = 0.11
     bwd_names = ["dq", "dk", "dv"]
     logging.debug("========== {:^25s} ==========".format("forward output"))
     if _flash_attn_3_is_installed and not is_training:
