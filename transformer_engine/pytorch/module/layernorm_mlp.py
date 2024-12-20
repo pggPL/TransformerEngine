@@ -572,7 +572,7 @@ class _LayerNormMLP(torch.autograd.Function):
             act_out, saved_tensors = restore_from_saved(ctx.saved_act_out, saved_tensors)
             fc2_weight, saved_tensors = restore_from_saved(ctx.saved_fc2_weight, saved_tensors)
             fc2_bias, saved_tensors = restore_from_saved(ctx.saved_fc2_bias, saved_tensors)
-            fc1_weight_main_grad, fc2_weight_main_grad, mu, rsigma = saved_tensors
+            mu, rsigma = saved_tensors
 
             # Since main_grad can be modified inplace, it should not be a part of saved_tensors
             fc1_weight_main_grad = (
@@ -726,6 +726,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     grad=True,
                     accumulate=accumulate_wgrad_into_param_main_grad,
                     use_split_accumulator=_2X_ACC_WGRAD,
+                    bias=fc2_bias if (fc2_bias is not None and fc2_bias_grad is None and not ctx.fp8) else None,
                     out=fc2_weight_main_grad if ctx.fuse_wgrad_accumulation else None,
                 )
                 if fc2_bias_grad is None:
