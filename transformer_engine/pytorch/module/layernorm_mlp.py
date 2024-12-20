@@ -718,12 +718,12 @@ class _LayerNormMLP(torch.autograd.Function):
                     clear_tensor_data(fc1_out)
                 else:
                     if fc2_weight.requires_grad:
-                        gelu_out_c = tex.cast_from_fp8(
+                        gelu_out_c = torch.ops.tex_ts.cast_from_fp8_ts(
                             gelu_out,
                             fwd_scale_inverses,
+                            tex.FP8FwdTensors.GEMM2_INPUT,
                             fp8_dtype_forward,
                             TE_DType[ctx.activation_dtype],
-                            tex.FP8FwdTensors.GEMM2_INPUT,
                         )
                         clear_tensor_data(gelu_out)
                         fc2_wgrad, _, _ = pytex.gemm(
@@ -975,12 +975,12 @@ class _LayerNormMLP(torch.autograd.Function):
                         )
                         clear_tensor_data(ln_out_total_t, dgelu_t)
                     else:
-                        ln_out_total_c = tex.cast_from_fp8(
+                        ln_out_total_c = torch.ops.tex_ts.cast_from_fp8_ts(
                             ln_out_total,
                             fwd_scale_inverses,
+                            tex.FP8FwdTensors.GEMM1_INPUT,
                             fp8_dtype_forward,
                             TE_DType[ctx.activation_dtype],
-                            tex.FP8FwdTensors.GEMM1_INPUT,
                         )
                         fc1_wgrad, _, _ = pytex.gemm(
                             ln_out_total_c,

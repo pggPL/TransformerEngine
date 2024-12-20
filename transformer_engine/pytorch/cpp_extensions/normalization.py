@@ -109,7 +109,7 @@ def layernorm_fwd_fp8_inf(
     )
 
     # Launch kernel
-    ret = tex.layernorm_fwd_fp8_inf(
+    ret = torch.ops.tex_ts.layernorm_fwd_fp8_inf_ts(
         inp,
         weight,
         bias,
@@ -117,12 +117,10 @@ def layernorm_fwd_fp8_inf(
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
+        fp8_scales_offsets["scale_offset"],
         otype,
         sm_margin,
         zero_centered_gamma,
-        fp8_scales_offsets["scale_offset"],
-        fp8_scales_offsets["amax_offset"],
-        fp8_scales_offsets["scale_inv_offset"],
     )
     return ret
 
@@ -136,7 +134,7 @@ def layernorm_fwd_inf(
     zero_centered_gamma: bool,
 ) -> torch.Tensor:
     """LayerNorm with FP8 output"""
-    return tex.layernorm_fwd_inf(
+    return torch.ops.tex_ts.layernorm_fwd_inf_ts(
         inp,
         weight,
         bias,
@@ -230,19 +228,17 @@ def rmsnorm_fwd_fp8_inf(
     )
 
     # Launch kernel
-    ret = tex.rmsnorm_fwd_fp8_inf(
+    ret = torch.ops.tex_ts.rmsnorm_fwd_fp8_inf_ts(
         inp,
         weight,
         eps,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
+        fp8_scales_offsets["scale_offset"],
         otype,
         sm_margin,
         zero_centered_gamma,
-        fp8_scales_offsets["scale_offset"],
-        fp8_scales_offsets["amax_offset"],
-        fp8_scales_offsets["scale_inv_offset"],
     )
     return ret
 
@@ -255,7 +251,7 @@ def rmsnorm_fwd_inf(
     zero_centered_gamma: bool,
 ) -> torch.Tensor:
     """RMSNorm with FP8 output"""
-    return tex.rmsnorm_fwd_inf(
+    return torch.ops.tex_ts.rmsnorm_fwd_inf_ts(
         inp,
         weight,
         eps,

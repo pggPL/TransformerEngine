@@ -33,8 +33,6 @@ def canonicalize_fp8_scales(
     FP8 meta tensors. Returns dict with tensors and dict with tensor
     offsets.
 
-    If the `no_offsets` option is set, the precise single
-    element tensor is returned (only for FP8).
     """
 
     # Default: use provided scales with no offsets

@@ -25,14 +25,13 @@ def gelu(
     """GeLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, _ = canonicalize_fp8_scales(
+    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
@@ -57,14 +56,13 @@ def relu(
     """ReLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, _ = canonicalize_fp8_scales(
+    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
@@ -89,14 +87,13 @@ def geglu(
     """GeGLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, _ = canonicalize_fp8_scales(
+    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
@@ -121,14 +118,13 @@ def reglu(
     """ReGLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, _ = canonicalize_fp8_scales(
+    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
@@ -153,14 +149,13 @@ def swiglu(
     """SwiGLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, _ = canonicalize_fp8_scales(
+    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
@@ -185,14 +180,13 @@ def qgelu(
     """QuickGELU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, _ = canonicalize_fp8_scales(
+    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel
@@ -217,14 +211,13 @@ def srelu(
     """ReLU with FP8 output"""
 
     # Get FP8 scaling factors
-    fp8_scales, _ = canonicalize_fp8_scales(
+    fp8_scales, fp8_scales_offsets = canonicalize_fp8_scales(
         scale=scale,
         amax=amax,
         scale_inv=scale_inv,
         fp8_meta=fp8_meta_tensor,
         fp8_meta_index=fp8_tensor,
         allow_multiple_offsets=False,
-        no_offsets=fp8_meta_tensor is not None,
     )
 
     # Launch kernel

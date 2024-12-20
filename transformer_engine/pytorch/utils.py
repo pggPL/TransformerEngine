@@ -306,7 +306,6 @@ def devices_match(device1: torch.device, device2: torch.device) -> bool:
         return index1 == index2
     return device1 == device2
 
-
 @functools.lru_cache
 def get_sm_count() -> int:
     """Returns the number of streaming multiprocessors in the current device."""
