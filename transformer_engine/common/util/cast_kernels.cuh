@@ -30,6 +30,110 @@
 
 namespace transformer_engine {
 
+namespace {
+
+template <int num_barriers, int THREADS_PER_BLOCK>
+__forceinline__ __device__ void initialize_barriers(uint64_t *mbar, const bool is_master_thread) {
+#if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+  if (is_master_thread) {
+    // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
+#pragma unroll
+    for (int iter = 0; iter < num_barriers; ++iter) {
+      ptx::mbarrier_init(&mbar[iter], THREADS_PER_BLOCK);
+    }
+    ptx::fence_proxy_async_shared_cta();
+  }
+  // Syncthreads so initialized barrier is visible to all threads.
+  __syncthreads();
+#endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+}
+
+template <int num_barriers>
+__forceinline__ __device__ void destroy_barriers(uint64_t *mbar, const bool is_master_thread) {
+#if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+  // Destroy barrier. This invalidates the memory region of the barrier. If
+  // further computations were to take place in the kernel, this allows the
+  // memory location of the shared memory barrier to be reused.
+  if (is_master_thread) {
+#pragma unroll
+    for (int iter = 0; iter < num_barriers; ++iter) {
+      ptx::mbarrier_invalid(&mbar[iter]);
+    }
+  }
+#endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+}
+
+__forceinline__ __device__ void copy_1d_to_shared(void *dst, const void *src,
+                                                  const size_t num_bytes, uint64_t *barrier,
+                                                  const bool is_master_thread) {
+#if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+  if (is_master_thread) {
+    // Initiate bulk tensor copy
+    ptx::cp_async_bulk_tensor_1d_global_to_shared(reinterpret_cast<uint64_t *>(dst),
+                                                  reinterpret_cast<const uint64_t *>(src),
+                                                  num_bytes, barrier);
+
+    // Arrive on the barrier and tell how many bytes are expected to come in.
+    ptx::mbarrier_arrive_expect_tx(barrier, num_bytes);
+  } else {
+    // Other threads just arrive
+    ptx::mbarrier_arrive(barrier);
+  }
+#endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+}
+
+__forceinline__ __device__ void copy_2d_to_shared(void *dst, const void *src,
+                                                  const size_t chunk_X, const size_t chunk_Y,
+                                                  const size_t num_bytes,
+                                                  uint64_t *barrier,
+                                                  const bool is_master_thread) {
+#if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+  if (is_master_thread) {
+    // Initiate bulk tensor copy
+    ptx::cp_async_bulk_tensor_2d_global_to_shared(
+        reinterpret_cast<uint64_t *>(dst),
+        reinterpret_cast<const uint64_t *>(src),
+        chunk_X, chunk_Y, barrier);
+
+    // Arrive on the barrier and tell how many bytes are expected to come in.
+    ptx::mbarrier_arrive_expect_tx(barrier, num_bytes);
+  } else {
+    // Other threads just arrive
+    ptx::mbarrier_arrive(barrier);
+  }
+#endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+}
+
+__forceinline__ __device__ void copy_2d_to_sharedx2(void *dst, const void *src,
+                                                    void *dst2, const void *src2,
+                                                    const size_t chunk_X, const size_t chunk_Y,
+                                                    const size_t num_bytes,
+                                                    uint64_t *barrier,
+                                                    const bool is_master_thread) {
+#if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+  if (is_master_thread) {
+      // Initiate bulk tensor copy
+      ptx::cp_async_bulk_tensor_2d_global_to_shared(
+          reinterpret_cast<uint64_t *>(dst),
+          reinterpret_cast<const uint64_t *>(src), chunk_X,
+          chunk_Y, barrier);
+
+        ptx::cp_async_bulk_tensor_2d_global_to_shared(
+            reinterpret_cast<uint64_t *>(dst2),
+            reinterpret_cast<const uint64_t *>(src2), chunk_X,
+            chunk_Y, barrier);
+
+      // Arrive on the barrier and tell how many bytes are expected to come in.
+      ptx::mbarrier_arrive_expect_tx(barrier, 2 * num_bytes);
+  } else {
+    // Other threads just arrive
+    ptx::mbarrier_arrive(barrier);
+  }
+#endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+}
+
+}  // namespace
+
 constexpr size_t MXFP8_CHUNK_DIM_Y = 64;
 constexpr size_t MXFP8_CHUNK_DIM_X = 64;
 constexpr size_t MXFP8_CHUNKS_PER_BLOCK_Y = 1;
@@ -150,16 +254,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
 #pragma nv_diag_suppress static_var_with_dynamic_init
   __shared__ alignas(8) uint64_t mbar[MXFP8_ITERATIONS];
 
-  if (is_master_thread) {
-    // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
-#pragma unroll
-    for (int iter = 0; iter < MXFP8_ITERATIONS; ++iter) {
-      ptx::mbarrier_init(&mbar[iter], MXFP8_THREADS_PER_CHUNK);
-    }
-    ptx::fence_proxy_async_shared_cta();
-  }
-  // Syncthreads so initialized barrier is visible to all threads.
-  __syncthreads();
+  initialize_barriers<MXFP8_ITERATIONS, MXFP8_THREADS_PER_CHUNK>(mbar, is_master_thread);
 
   int parity = 0;
 #pragma unroll
@@ -179,32 +274,21 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
     const int scales_colwise_chunk_offset_X =
         scales_colwise_block_offset_X + chunk_X * SCALES_COLWISE_PER_CHUNK_X;
 
-    if (is_master_thread) {
-#pragma unroll
-      for (int prefetch_buff = 0; prefetch_buff < MXFP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
-        const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * MXFP8_BUFFER_DIM_Y;
-        const int chunk_stage_offset_X = chunk_offset_X;
-        // Initiate bulk tensor copy
-        ptx::cp_async_bulk_tensor_2d_global_to_shared(
-            reinterpret_cast<uint64_t *>(&in_sh[prefetch_buff]),
-            reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_stage_offset_X,
-            chunk_stage_offset_Y, &mbar[prefetch_buff]);
-
-        if constexpr (IS_DACT) {
-          ptx::cp_async_bulk_tensor_2d_global_to_shared(
-              reinterpret_cast<uint64_t *>(&act_in_sh[prefetch_buff]),
-              reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_stage_offset_X,
-              chunk_stage_offset_Y, &mbar[prefetch_buff]);
-        }
-
-        // Arrive on the barrier and tell how many bytes are expected to come in.
-        ptx::mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
-      }
-    } else {
-// Other threads just arrive
-#pragma unroll
-      for (int prefetch_buff = 0; prefetch_buff < MXFP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
-        ptx::mbarrier_arrive(&mbar[prefetch_buff]);
+    #pragma unroll
+    for (int prefetch_buff = 0; prefetch_buff < MXFP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
+      const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * MXFP8_BUFFER_DIM_Y;
+      const int chunk_stage_offset_X = chunk_offset_X;
+      if constexpr (IS_DACT) {
+        copy_2d_to_sharedx2(&in_sh[prefetch_buff], &tensor_map_input,
+                            &act_in_sh[prefetch_buff], &tensor_map_act_input,
+                            chunk_stage_offset_X, chunk_stage_offset_Y,
+                            shmem_buff_size, &mbar[prefetch_buff],
+                            is_master_thread);
+      } else {
+        copy_2d_to_shared(&in_sh[prefetch_buff], &tensor_map_input,
+                          chunk_stage_offset_X, chunk_stage_offset_Y,
+                          shmem_buff_size, &mbar[prefetch_buff],
+                          is_master_thread);
       }
     }
 
@@ -213,28 +297,20 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
       const int buff = iter % MXFP8_BUFFERS_NUM;
       const int next_iter = iter + MXFP8_PREFETCH_BUFFERS_NUM;
       if (next_iter < MXFP8_ITERATIONS) {
-        if (is_master_thread) {
-          const int next_buff = next_iter % MXFP8_BUFFERS_NUM;
-          const int chunk_it_offset_y = chunk_offset_Y + next_iter * MXFP8_BUFFER_DIM_Y;
-          const int chunk_it_offset_x = chunk_offset_X;
-          // Initiate bulk tensor copy
-          ptx::cp_async_bulk_tensor_2d_global_to_shared(
-              reinterpret_cast<uint64_t *>(&in_sh[next_buff]),
-              reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_it_offset_x,
-              chunk_it_offset_y, &mbar[next_iter]);
-
-          if constexpr (IS_DACT) {
-            ptx::cp_async_bulk_tensor_2d_global_to_shared(
-                reinterpret_cast<uint64_t *>(&act_in_sh[next_buff]),
-                reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_it_offset_x,
-                chunk_it_offset_y, &mbar[next_iter]);
-          }
-
-          // Arrive on the barrier and tell how many bytes are expected to come in.
-          ptx::mbarrier_arrive_expect_tx(&mbar[next_iter], transaction_size);
+        const int next_buff = next_iter % MXFP8_BUFFERS_NUM;
+        const int chunk_it_offset_y = chunk_offset_Y + next_iter * MXFP8_BUFFER_DIM_Y;
+        const int chunk_it_offset_x = chunk_offset_X;
+        if constexpr (IS_DACT) {
+          copy_2d_to_sharedx2(&in_sh[next_buff], &tensor_map_input,
+                              &act_in_sh[next_buff], &tensor_map_act_input,
+                              chunk_it_offset_x, chunk_it_offset_y,
+                              shmem_buff_size, &mbar[next_iter],
+                              is_master_thread);
         } else {
-          // Other threads just arrive
-          ptx::mbarrier_arrive(&mbar[next_iter]);
+          copy_2d_to_shared(&in_sh[next_buff], &tensor_map_input,
+                            chunk_it_offset_x, chunk_it_offset_y,
+                            shmem_buff_size, &mbar[next_iter],
+                            is_master_thread);
         }
       }
 
@@ -277,9 +353,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
               partial_dbias_rowwise[chunk_X].data.elt[j] += elt;
             }
             in_compute[j] = elt;
-            if (isfinite(elt)) {
-              thread_amax = fmaxf(thread_amax, fabsf(elt));
-            }
+            thread_amax = fmaxf(thread_amax, fabsf(elt));
           }
 
           __builtin_assume(block_amax >= 0);
@@ -438,15 +512,7 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
     atomicMaxFloat(amax_ptr, block_amax);
   }
 
-  // Destroy barrier. This invalidates the memory region of the barrier. If
-  // further computations were to take place in the kernel, this allows the
-  // memory location of the shared memory barrier to be reused.
-  if (is_master_thread) {
-#pragma unroll
-    for (int iter = 0; iter < MXFP8_ITERATIONS; ++iter) {
-      ptx::mbarrier_invalid(&mbar[iter]);
-    }
-  }
+  destroy_barriers<MXFP8_ITERATIONS>(mbar, is_master_thread);
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
@@ -487,7 +553,8 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   const int thread_offset_X = tid_X;
 
   const int dbias_offset_Y = blockIdx.y + tid_Y;
-  const int dbias_block_offset_X = blockIdx.x * FP8_CHUNK_DIM_X + thread_offset_X;
+  const int my_column = blockIdx.x * FP8_CHUNK_DIM_X + thread_offset_X;
+  const bool col_out_of_bounds = my_column >= cols;
   const int dbias_stride = cols;
 
   float partial_dbias = 0.f;
@@ -509,48 +576,28 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
 #pragma nv_diag_suppress static_var_with_dynamic_init
   __shared__ alignas(8) uint64_t mbar[FP8_ITERATIONS];
 
-  if (is_master_thread) {
-    // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
-#pragma unroll
-    for (int iter = 0; iter < FP8_ITERATIONS; ++iter) {
-      ptx::mbarrier_init(&mbar[iter], FP8_THREADS_PER_CHUNK);
-    }
-    ptx::fence_proxy_async_shared_cta();
-  }
-  // Syncthreads so initialized barrier is visible to all threads.
-  __syncthreads();
+  initialize_barriers<FP8_ITERATIONS, FP8_THREADS_PER_CHUNK>(mbar, is_master_thread);
 
   int parity = 0;
 
   const int chunk_offset_Y = block_offset_Y;
   const int chunk_offset_X = block_offset_X;
 
-  if (is_master_thread) {
-#pragma unroll
-    for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
-      const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * FP8_BUFFER_DIM_Y;
-      const int chunk_stage_offset_X = chunk_offset_X;
-      // Initiate bulk tensor copy
-      ptx::cp_async_bulk_tensor_2d_global_to_shared(
-          reinterpret_cast<uint64_t *>(&in_sh[prefetch_buff]),
-          reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_stage_offset_X,
-          chunk_stage_offset_Y, &mbar[prefetch_buff]);
-
-      if constexpr (IS_DACT) {
-        ptx::cp_async_bulk_tensor_2d_global_to_shared(
-            reinterpret_cast<uint64_t *>(&act_in_sh[prefetch_buff]),
-            reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_stage_offset_X,
-            chunk_stage_offset_Y, &mbar[prefetch_buff]);
-      }
-
-      // Arrive on the barrier and tell how many bytes are expected to come in.
-      ptx::mbarrier_arrive_expect_tx(&mbar[prefetch_buff], transaction_size);
-    }
-  } else {
-// Other threads just arrive
-#pragma unroll
-    for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
-      ptx::mbarrier_arrive(&mbar[prefetch_buff]);
+  #pragma unroll
+  for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
+    const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * FP8_BUFFER_DIM_Y;
+    const int chunk_stage_offset_X = chunk_offset_X;
+    if constexpr (IS_DACT) {
+      copy_2d_to_sharedx2(&in_sh[prefetch_buff], &tensor_map_input,
+                          &act_in_sh[prefetch_buff], &tensor_map_act_input,
+                          chunk_stage_offset_X, chunk_stage_offset_Y,
+                          shmem_buff_size, &mbar[prefetch_buff],
+                          is_master_thread);
+    } else {
+      copy_2d_to_shared(&in_sh[prefetch_buff], &tensor_map_input,
+                        chunk_stage_offset_X, chunk_stage_offset_Y,
+                        shmem_buff_size, &mbar[prefetch_buff],
+                        is_master_thread);
     }
   }
 
@@ -558,33 +605,24 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   for (int iter = 0; iter < FP8_ITERATIONS; ++iter) {
     const int buff = iter % FP8_BUFFERS_NUM;
     const int next_iter = iter + FP8_PREFETCH_BUFFERS_NUM;
+    const size_t row_base = block_offset_Y + iter * FP8_BUFFER_DIM_Y;
     if (next_iter < FP8_ITERATIONS) {
-      if (is_master_thread) {
-        const int next_buff = next_iter % FP8_BUFFERS_NUM;
-        const int chunk_it_offset_y = chunk_offset_Y + next_iter * FP8_BUFFER_DIM_Y;
-        const int chunk_it_offset_x = chunk_offset_X;
-        // Initiate bulk tensor copy
-        ptx::cp_async_bulk_tensor_2d_global_to_shared(
-            reinterpret_cast<uint64_t *>(&in_sh[next_buff]),
-            reinterpret_cast<const uint64_t *>(&tensor_map_input), chunk_it_offset_x,
-            chunk_it_offset_y, &mbar[next_iter]);
-
-        if constexpr (IS_DACT) {
-          ptx::cp_async_bulk_tensor_2d_global_to_shared(
-              reinterpret_cast<uint64_t *>(&act_in_sh[next_buff]),
-              reinterpret_cast<const uint64_t *>(&tensor_map_act_input), chunk_it_offset_x,
-              chunk_it_offset_y, &mbar[next_iter]);
-        }
-
-        // Arrive on the barrier and tell how many bytes are expected to come in.
-        ptx::mbarrier_arrive_expect_tx(&mbar[next_iter], transaction_size);
+      const int next_buff = next_iter % FP8_BUFFERS_NUM;
+      const int chunk_it_offset_y = chunk_offset_Y + next_iter * FP8_BUFFER_DIM_Y;
+      const int chunk_it_offset_x = chunk_offset_X;
+      if constexpr (IS_DACT) {
+        copy_2d_to_sharedx2(&in_sh[next_buff], &tensor_map_input,
+                            &act_in_sh[next_buff], &tensor_map_act_input,
+                            chunk_it_offset_x, chunk_it_offset_y,
+                            shmem_buff_size, &mbar[next_iter],
+                            is_master_thread);
       } else {
-        // Other threads just arrive
-        ptx::mbarrier_arrive(&mbar[next_iter]);
+        copy_2d_to_shared(&in_sh[next_buff], &tensor_map_input,
+                          chunk_it_offset_x, chunk_it_offset_y,
+                          shmem_buff_size, &mbar[next_iter],
+                          is_master_thread);
       }
     }
-
-    ptx::fence_proxy_async_shared_cta();
 
     // Wait for the data to have arrived
     ptx::mbarrier_wait_parity(&mbar[iter], parity);
@@ -593,7 +631,10 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
     for (int stage = 0; stage < FP8_BUFF_STAGES_NUM; ++stage) {
       const int stage_offset_Y = stage;
       const int shmem_offset_y = thread_offset_Y + stage_offset_Y;
+      const size_t row = row_base + shmem_offset_y;
+      const bool row_out_of_bounds = row >= rows;
       const int shmem_offset_x = thread_offset_X;
+      const bool out_of_bounds = col_out_of_bounds || row_out_of_bounds;
 
       float elt = static_cast<float>(in_sh[buff][shmem_offset_y][shmem_offset_x]);
       if constexpr (IS_DACT) {
@@ -601,9 +642,22 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
         elt *= static_cast<float>(act_in_sh[buff][shmem_offset_y][shmem_offset_x]);
       }
       if constexpr (IS_DBIAS) {
-        partial_dbias += elt;
+        if constexpr (IS_DACT) {
+          if (!out_of_bounds) {
+            partial_dbias += elt;
+          }
+        } else {
+          // If no activation, elt is 0 so we can safely do this
+          partial_dbias += elt;
+        }
       }
-      if (isfinite(elt)) {
+      __builtin_assume(amax >= 0);
+      if (IS_DACT) {
+        if (!out_of_bounds) {
+          amax = fmaxf(amax, fabsf(elt));
+        }
+      } else {
+        // If no activation, elt is 0 so we can safely do this
         amax = fmaxf(amax, fabsf(elt));
       }
       out_sh[buff][shmem_offset_y][shmem_offset_x] = static_cast<OType>(elt * scale);
@@ -635,9 +689,11 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   parity ^= 1;
 
   if constexpr (IS_DBIAS) {
-    const int dbias_offset_X = dbias_block_offset_X;
+    const int dbias_offset_X = my_column;
     const int dbias_offset = dbias_offset_Y * dbias_stride + dbias_offset_X;
-    dbias_workspace[dbias_offset] = partial_dbias;
+    if (!col_out_of_bounds) {
+      dbias_workspace[dbias_offset] = partial_dbias;
+    }
   }
 
   if (amax_ptr != nullptr) {
@@ -655,15 +711,7 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
     reciprocal<float>(scale_inv_ptr, scale);
   }
 
-  // Destroy the barriers. This invalidates the memory region of the barrier.
-  // If further computations were to take place in the kernel, this allows the
-  // memory location of the shared memory barrier to be reused.
-  if (is_master_thread) {
-#pragma unroll
-    for (int iter = 0; iter < FP8_ITERATIONS; ++iter) {
-      ptx::mbarrier_invalid(&mbar[iter]);
-    }
-  }
+  destroy_barriers<FP8_ITERATIONS>(mbar, is_master_thread);
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
@@ -704,34 +752,11 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
 #pragma nv_diag_suppress static_var_with_dynamic_init
   __shared__ alignas(8) uint64_t mbar[ITERATIONS];
 
-  if (is_master_thread) {
-    // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
-#pragma unroll
-    for (int iter = 0; iter < ITERATIONS; ++iter) {
-      ptx::mbarrier_init(&mbar[iter], THREADS_PER_BLOCK);
-    }
-    ptx::fence_proxy_async_shared_cta();
-  }
-  // Syncthreads so initialized barrier is visible to all threads.
-  __syncthreads();
+  initialize_barriers<ITERATIONS, THREADS_PER_BLOCK>(mbar, is_master_thread);
 
   int parity = 0;
 
-  constexpr int iter_zero = 0;
-  constexpr int buff_zero = 0;
-
-  if (is_master_thread) {
-    // Initiate bulk tensor copy
-    ptx::cp_async_bulk_tensor_1d_global_to_shared(reinterpret_cast<uint64_t *>(&in_sh[buff_zero]),
-                                                  reinterpret_cast<const uint64_t *>(input),
-                                                  transaction_size_IN, &mbar[iter_zero]);
-
-    // Arrive on the barrier and tell how many bytes are expected to come in.
-    ptx::mbarrier_arrive_expect_tx(&mbar[iter_zero], transaction_size_IN);
-  } else {
-    // Other threads just arrive
-    ptx::mbarrier_arrive(&mbar[iter_zero]);
-  }
+  copy_1d_to_shared(&(in_sh[0]), input, transaction_size_IN, &(mbar[0]), is_master_thread);
 
 #pragma unroll
   for (int iter = 0; iter < ITERATIONS; ++iter) {
@@ -743,19 +768,9 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
     const int next_iter_offset = next_iter * SHMEM_DIM;
 
     if (next_iter < ITERATIONS) {
-      if (is_master_thread) {
-        // Initiate bulk tensor copy
-        ptx::cp_async_bulk_tensor_1d_global_to_shared(
-            reinterpret_cast<uint64_t *>(&in_sh[next_buff]),
-            reinterpret_cast<const uint64_t *>(input + next_iter_offset), transaction_size_IN,
-            &mbar[next_iter]);
-
-        // Arrive on the barrier and tell how many bytes are expected to come in.
-        ptx::mbarrier_arrive_expect_tx(&mbar[next_iter], transaction_size_IN);
-      } else {
-        // Other threads just arrive
-        ptx::mbarrier_arrive(&mbar[next_iter]);
-      }
+      copy_1d_to_shared(&(in_sh[next_buff]), input + next_iter_offset,
+                        transaction_size_IN, &(mbar[next_iter]),
+                        is_master_thread);
     }
 
     ptx::fence_proxy_async_shared_cta();
@@ -770,9 +785,8 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
       if constexpr (IS_ACT) {
         elt = OP(elt, {});
       }
-      if (isfinite(elt)) {
-        amax = fmaxf(amax, fabsf(elt));
-      }
+      __builtin_assume(amax >= 0);
+      amax = fmaxf(amax, fabsf(elt));
       out_sh[buff][shmem_offset] = static_cast<OType>(elt * scale);
     }
 
@@ -812,15 +826,7 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
     reciprocal<float>(scale_inv_ptr, scale);
   }
 
-  // Destroy the barriers. This invalidates the memory region of the barrier.
-  // If further computations were to take place in the kernel, this allows the
-  // memory location of the shared memory barrier to be reused.
-  if (is_master_thread) {
-#pragma unroll
-    for (int iter = 0; iter < ITERATIONS; ++iter) {
-      ptx::mbarrier_invalid(&mbar[iter]);
-    }
-  }
+  destroy_barriers<ITERATIONS>(mbar, is_master_thread);
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
@@ -921,8 +927,11 @@ void cast_fp8_2D(const Tensor &input, const Tensor *act_input, Tensor *output, T
   const size_t dbias_rows = blocks_Y;
   const size_t dbias_cols = cols;
 
-  const bool isFullTile = (rows % FP8_CHUNK_DIM_Y == 0) && (cols % FP8_CHUNK_DIM_X == 0);
-  NVTE_CHECK(isFullTile, "Only full tiles are supported.");
+  const int TMA_needed_size = 16 / typeToSize(output->data.dtype);
+  NVTE_CHECK(cols % TMA_needed_size == 0,
+             "Shape not supported. Expected multiple of " +
+             std::to_string(TMA_needed_size) +
+             ", got " + std::to_string(cols));
   NVTE_CHECK(is_fp8_dtype(output->dtype()), "Output must have FP8 type.");
   NVTE_CHECK(output->scale_inv.dptr != nullptr, "Scaling tensor must be allocated");
 

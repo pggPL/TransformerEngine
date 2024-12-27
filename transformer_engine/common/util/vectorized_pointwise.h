@@ -44,6 +44,14 @@ class VectorizedStorage {
     return *this;
   }
   inline __device__ ~VectorizedStorage() {}
+
+  /* \brief Access to separate elements. */
+  inline __device__ DType *separate() { return scratch_.separate; }
+
+  inline __device__ const DType *separate() const { return scratch_.separate; }
+
+  inline __device__ LType& aligned() { return scratch_.aligned; }
+
 };
 
 // Returns const LType is DType is const
