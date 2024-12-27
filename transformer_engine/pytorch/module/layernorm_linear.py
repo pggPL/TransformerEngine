@@ -279,11 +279,9 @@ class _LayerNormLinear(torch.autograd.Function):
                 weightmat if quantized_weight else None,
                 ln_out if weight.requires_grad else None,
             )
-            # We save main grad, because cpu offloading offloads only tensors marked for saving.
-            # Saving tensors does not make a copy, so we can do it safely.
+
             tensors_to_save, tensor_objects = prepare_for_saving(
                 inputmat, weightmat, weight, bias, ln_weight, ln_out, mu, rsigma,
-                weight.main_grad if cpu_offloading and fuse_wgrad_accumulation and ctx.requires_wgrad else None
             )
             ctx.save_for_backward(
                 *tensors_to_save
@@ -353,9 +351,15 @@ class _LayerNormLinear(torch.autograd.Function):
 
         with torch.cuda.nvtx.range("_LayerNormLinear_backward"):
             saved_tensors = ctx.saved_tensors
-            inputmat, weight, _, bias, ln_weight, ln_out, mu, rsigma, main_grad = \
+            inputmat, weight, _, bias, ln_weight, ln_out, mu, rsigma = \
                 restore_from_saved(ctx.tensor_objects, saved_tensors)
 
+            # Since main_grad can be modified inplace, it should not be a part of saved_tensors
+            main_grad = (
+                ctx.main_grad
+                if weight is not None and ctx.fuse_wgrad_accumulation and ctx.requires_wgrad
+                else None
+            )
 
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(

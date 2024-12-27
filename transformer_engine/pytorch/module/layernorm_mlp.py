@@ -443,14 +443,14 @@ class _LayerNormMLP(torch.autograd.Function):
                 clear_tensor_data(act_out)
                 act_out = None
             
-            # We save main grad, because cpu offloading offloads only tensors marked for saving.
-            # Saving tensors does not make a copy, so we can do it safely.
             tensors_to_save, tensor_objects = prepare_for_saving(
                 inputmat, ln_weight, ln_out, fc1_weight, fc1_weight_final, fc1_bias, 
                 fc1_out, fc1_out_without_bias, act_out, fc2_weight, fc2_weight_final, fc2_bias, mu, rsigma,
-                fc1_weight.main_grad if cpu_offloading and fuse_wgrad_accumulation and fc1_weight.requires_grad else None,
-                fc2_weight.main_grad if cpu_offloading and fuse_wgrad_accumulation and fc2_weight.requires_grad else None
             )
+
+            if fuse_wgrad_accumulation:
+                ctx.fc1_main_grad = fc1_weight.main_grad
+                ctx.fc2_main_grad = fc2_weight.main_grad
 
             ctx.save_for_backward(
                 *tensors_to_save
@@ -538,7 +538,23 @@ class _LayerNormMLP(torch.autograd.Function):
             saved_tensors = ctx.saved_tensors
             inputmat, ln_weight, ln_out, _, fc1_weight, fc1_bias, \
             fc1_out, fc1_out_without_bias, act_out, _, fc2_weight, fc2_bias, mu, rsigma, \
-            fc1_weight_main_grad, fc2_weight_main_grad = restore_from_saved(ctx.tensor_objects, saved_tensors)
+            = restore_from_saved(ctx.tensor_objects, saved_tensors)
+
+            # Since main_grad can be modified inplace, it should not be a part of saved_tensors
+            fc1_weight_main_grad = (
+                ctx.fc1_main_grad
+                if fc1_weight is not None
+                and ctx.fuse_wgrad_accumulation
+                and ctx.fc1_weight_requires_grad
+                else None
+            )
+            fc2_weight_main_grad = (
+                ctx.fc2_main_grad
+                if fc2_weight is not None
+                and ctx.fuse_wgrad_accumulation
+                and ctx.fc2_weight_requires_grad
+                else None
+            )
 
             # For CPU offloading, we offloaded weight and weight.main_grad to different tensors,
             # we need to connect them into one.

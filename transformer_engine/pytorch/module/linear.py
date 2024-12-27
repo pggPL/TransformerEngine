@@ -231,11 +231,9 @@ class _Linear(torch.autograd.Function):
                 weightmat if fp8 and not isinstance(weight, QuantizedTensor) else None,
             )
             
-            # We save main grad, because cpu offloading offloads only tensors marked for saving.
-            # Saving tensors does not make a copy, so we can do it safely.
+            # TODO(ksivamani): Check memory usage
             tensors_to_save, tensor_objects = prepare_for_saving(
                 saved_inputmat, weightmat, weight,  bias,
-                weight.main_grad if cpu_offloading and fuse_wgrad_accumulation and ctx.requires_wgrad else None
             )
             ctx.save_for_backward(
                 *tensors_to_save
@@ -289,7 +287,14 @@ class _Linear(torch.autograd.Function):
 
         with torch.cuda.nvtx.range("_Linear_backward"):
             saved_tensors = ctx.saved_tensors
-            inputmat, weight_fp8, weight, bias, main_grad  = restore_from_saved(ctx.tensor_objects, saved_tensors)
+            inputmat, weight_fp8, weight, bias = restore_from_saved(ctx.tensor_objects, saved_tensors)
+
+            # Since main_grad can be modified inplace, it should not be a part of saved_tensors
+            main_grad = (
+                ctx.main_grad
+                if weight is not None and ctx.fuse_wgrad_accumulation and ctx.requires_wgrad
+                else None
+            )
 
             if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
                 weight = torch.nn.Parameter(weight, weight.requires_grad)
