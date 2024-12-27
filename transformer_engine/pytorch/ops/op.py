@@ -509,11 +509,6 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         # See: https://github.com/NVIDIA/TransformerEngine/pull/351
         # See: https://github.com/NVIDIA/TransformerEngine/pull/363
 
-        # Return immediately if op has no FP8 state
-        has_fp8_state = any(self.num_fp8_scales(mode) > 0 for mode in ("forward", "backward"))
-        if not has_fp8_state:
-            return torch.Tensor()
-
         def to_cpu(src: torch.Tensor) -> torch.Tensor:
             """Helper function to make CPU copy of tensor
 
@@ -529,11 +524,7 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         state = {}
         for mode in ("forward", "backward"):
 
-            # Get state for a given FP8 tensor
-            if self.num_fp8_scales(mode) == 0:
-                state[mode] = None
-                continue
-            fp8_meta = self.get_fp8_meta(mode)
+            fp8_meta = self._fp8_metas
             if fp8_meta is None:
                 continue
             state[mode] = {}
