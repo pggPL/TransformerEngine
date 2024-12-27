@@ -261,12 +261,15 @@ def general_gemm(
         bias_grad = None
     else:
         if isinstance(A, MXFP8TensorBase) or isinstance(B, MXFP8TensorBase):
+            tmp_scale_inverses = A._rowwise_scale_inv, A._columnwise_scale_inv, B._rowwise_scale_inv, B._columnwise_scale_inv
             A._rowwise_scale_inv, A._columnwise_scale_inv, B._rowwise_scale_inv, B._columnwise_scale_inv = (
                 swizzle(A._rowwise_data, A._rowwise_scale_inv, True),
                 swizzle(A._columnwise_data, A._columnwise_scale_inv, False),
                 swizzle(B._rowwise_data, B._rowwise_scale_inv, True),
                 swizzle(B._columnwise_data, B._columnwise_scale_inv, False))
         out, bias_grad, gelu_input = fn(*args)
+        if isinstance(A, MXFP8TensorBase) or isinstance(B, MXFP8TensorBase):
+            A._rowwise_scale_inv, A._columnwise_scale_inv, B._rowwise_scale_inv, B._columnwise_scale_inv = tmp_scale_inverses
 
     return out, bias_grad, gelu_input
 
