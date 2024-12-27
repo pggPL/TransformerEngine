@@ -628,10 +628,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             state = {}
             state["scale_fwd"] = to_cpu(self.fp8_meta["scaling_fwd"].scale)
             state["amax_history_fwd"] = to_cpu(self.fp8_meta["scaling_fwd"].amax_history)
-            state["scale_inv_fwd"] = to_cpu(self.fp8_meta["scaling_fwd"].scale_inv)
             state["scale_bwd"] = to_cpu(self.fp8_meta["scaling_bwd"].scale)
             state["amax_history_bwd"] = to_cpu(self.fp8_meta["scaling_bwd"].amax_history)
-            state["scale_inv_bwd"] = to_cpu(self.fp8_meta["scaling_bwd"].scale_inv)
 
             # Store other pickelable values
             extra = {}
@@ -688,10 +686,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         # Load tensors
         copy_tensor(state["scale_fwd"], self.fp8_meta["scaling_fwd"].scale)
         copy_tensor(state["amax_history_fwd"], self.fp8_meta["scaling_fwd"].amax_history)
-        copy_tensor(state["scale_inv_fwd"], self.fp8_meta["scaling_fwd"].scale_inv)
         copy_tensor(state["scale_bwd"], self.fp8_meta["scaling_bwd"].scale)
         copy_tensor(state["amax_history_bwd"], self.fp8_meta["scaling_bwd"].amax_history)
-        copy_tensor(state["scale_inv_bwd"], self.fp8_meta["scaling_bwd"].scale_inv)
         torch.cuda.synchronize()
 
     def set_activation_dtype(self, inp: torch.Tensor) -> None:
