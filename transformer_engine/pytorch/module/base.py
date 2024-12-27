@@ -630,6 +630,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             state["amax_history_fwd"] = to_cpu(self.fp8_meta["scaling_fwd"].amax_history)
             state["scale_bwd"] = to_cpu(self.fp8_meta["scaling_bwd"].scale)
             state["amax_history_bwd"] = to_cpu(self.fp8_meta["scaling_bwd"].amax_history)
+            state["recipe"] = self.fp8_meta["recipe"]
 
             # Store other pickelable values
             extra = {}
@@ -667,7 +668,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         # Load extra items
         self.fp8_meta.update(state["extra_fp8_variables"])
-        self.fp8_meta["recipe"].amax_history_len = state["amax_history_fwd"].shape[0]
+        self.fp8_meta["recipe"] = state["recipe"]
         if "global_fp8_buffer_pos_fwd_recompute" in self.fp8_meta:
             del self.fp8_meta["global_fp8_buffer_pos_fwd_recompute"]
 
