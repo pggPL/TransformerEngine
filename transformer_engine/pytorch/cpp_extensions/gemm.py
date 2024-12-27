@@ -19,6 +19,8 @@ from ..tensor.quantized_tensor import (
     restore_from_saved,
 )
 
+from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
+
 __all__ = [
     "general_gemm",
     "gemm",
@@ -102,6 +104,14 @@ def _get_blocking_scaling_scale_inv(t, t_scale_inv):
 def _empty_tensor() -> torch.Tensor:
     """Get tensor with no entries and no data"""
     return torch.Tensor().cuda()
+
+
+def swizzle(tensor, scale_inv, rowwise):
+    if scale_inv is None:
+        return None
+
+    swizzle_func = tex.rowwise_swizzle if rowwise else tex.columnwise_swizzle
+    return swizzle_func(tensor, scale_inv)
 
 
 def general_gemm(
@@ -250,6 +260,12 @@ def general_gemm(
         gelu_input = None
         bias_grad = None
     else:
+        if isinstance(A, MXFP8TensorBase) or isinstance(B, MXFP8TensorBase):
+            A._rowwise_scale_inv, A._columnwise_scale_inv, B._rowwise_scale_inv, B._columnwise_scale_inv = (
+                swizzle(A._rowwise_data, A._rowwise_scale_inv, True),
+                swizzle(A._columnwise_data, A._columnwise_scale_inv, False),
+                swizzle(B._rowwise_data, B._rowwise_scale_inv, True),
+                swizzle(B._columnwise_data, B._columnwise_scale_inv, False))
         out, bias_grad, gelu_input = fn(*args)
 
     return out, bias_grad, gelu_input
