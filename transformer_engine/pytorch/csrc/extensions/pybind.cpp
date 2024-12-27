@@ -80,7 +80,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("quantizer"), py::arg("output_dtype"), py::arg("bias"), py::arg("bias_type"),
         py::arg("gelu"), py::arg("gelu_in"), py::arg("grad"), py::arg("workspace"), py::arg("workspace_size"),
         py::arg("accumulate"), py::arg("use_split_accumulator"));
-  m.def("swizzle_te", &swizzle_te, "Swizzle scale inverses.",
+  m.def("rowwise_swizzle", &rowwise_swizzle, "Swizzle rowwise scale inverses.",
+        py::call_guard<py::gil_scoped_release>());
+  m.def("columnwise_swizzle", &columnwise_swizzle, "Swizzle columnwise scale inverses.",
         py::call_guard<py::gil_scoped_release>());
   m.def("gelu", transformer_engine::pytorch::gelu, "GeLU activation", py::arg("input"),
         py::arg("quantizer"));
