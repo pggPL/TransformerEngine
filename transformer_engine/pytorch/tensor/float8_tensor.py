@@ -17,6 +17,19 @@ from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
 
 aten = torch.ops.aten
 
+_ops_to_preserve_subclass_in_fsdp2 = {
+    torch.ops.aten.empty_like.default,
+    torch.ops.aten.new_zeros.default,
+    torch.ops.aten.slice.Tensor,
+    torch.ops.aten.copy_.default,
+    torch.ops.aten.view.default,
+    torch.ops.aten.as_strided.default,
+    torch.ops.aten._to_copy.default,
+    torch.ops.aten._pin_memory.default,
+    torch.ops.aten.split.Tensor,
+    torch.ops.aten.clone.default,
+}
+
 
 class Float8Quantizer(Quantizer):
 
@@ -302,7 +315,53 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
                 quantizer=tensor._quantizer,
             )
 
-        # Default case
+        # Related to FSDP2
+        if func == aten.split.Tensor:
+            tensor = args[0]
+            data = tensor._data
+            func_out = data.__torch_dispatch__(
+                func,
+                types,
+                [data] + list(args[1:]),
+                kwargs,
+            )
+            return [Float8Tensor.make_like(tensor, data=split_tensor) for split_tensor in func_out]
+        if func == aten.new_zeros.default:
+            tensor = args[0]
+            data = tensor._data
+            func_out = data.__torch_dispatch__(
+                func,
+                types,
+                [data] + list(args[1:]),
+                kwargs,
+            )
+            return Float8Tensor.make_like(tensor, data=func_out)
+        if func == torch.ops.aten.as_strided.default:
+            tensor = args[0]
+            data = tensor._data
+            func_out = data.__torch_dispatch__(
+                func,
+                types,
+                [data] + list(args[1:]),
+                kwargs,
+            )
+            return Float8Tensor.make_like(tensor, data=func_out)
+        if func == torch.ops.aten.detach.default:
+            return cls.detach(args[0])
+        if func == torch.ops.aten.clone.default:
+            return cls.clone(args[0])
+        if func == torch.ops.aten.copy_.default:
+            # Implementation in the superclass (QuantizedTensor) returns a proper output
+            pass
+        elif func in _ops_to_preserve_subclass_in_fsdp2:
+            # Ops in the _ops_to_preserve_subclass_in_fsdp2 are recommened to return the same class instance to work fine with the torch fsdp2
+            warnings.warn(
+                f"A function call({func}) in {cls} may not return {cls} tensor as an output. It"
+                " might cause an error in torch FSDP2!"
+            )
+        else:
+            pass
+
         return super().__torch_dispatch__(func, types, args, kwargs)
 
     @classmethod
