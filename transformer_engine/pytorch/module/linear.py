@@ -472,12 +472,7 @@ class _Linear(torch.autograd.Function):
                         requires_grad=False,
                     )
                 else:
-                    wgrad = torch.empty(
-                        weight.main_grad.shape,
-                        dtype=weight.dtype,
-                        device=torch.cuda.current_device(),
-                        requires_grad=False,
-                    )
+                    wgrad = None
             elif ctx.fuse_wgrad_accumulation:
                 wgrad = None
         else:
@@ -489,6 +484,7 @@ class _Linear(torch.autograd.Function):
         # Scatter fp8 weight buffers
         if ctx.fp8 and not isinstance(weight, QuantizedTensor):
             _fsdp_scatter_tensors(ctx.fsdp_group, weight_fp8)
+
         return (
             wgrad,
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,

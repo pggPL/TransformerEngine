@@ -568,12 +568,7 @@ class _LayerNormLinear(torch.autograd.Function):
                         requires_grad=False,
                     )
                 else:
-                    wgrad = torch.empty(
-                        weight.main_grad.shape,
-                        dtype=weight.dtype,
-                        device=torch.cuda.current_device(),
-                        requires_grad=False,
-                    )
+                    wgrad = None
             elif ctx.fuse_wgrad_accumulation:
                 wgrad = None
         else:

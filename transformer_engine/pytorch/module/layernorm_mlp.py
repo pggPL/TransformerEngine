@@ -889,12 +889,7 @@ class _LayerNormMLP(torch.autograd.Function):
                         requires_grad=False,
                     )
                 else:
-                    fc1_wgrad = torch.empty(
-                        fc1_weight.main_grad.shape,
-                        dtype=fc1_weight.dtype,
-                        device=torch.cuda.current_device(),
-                        requires_grad=False,
-                    )
+                    fc1_wgrad = None
             elif ctx.fuse_wgrad_accumulation:
                 fc1_wgrad = None
         else:
@@ -912,12 +907,7 @@ class _LayerNormMLP(torch.autograd.Function):
                         requires_grad=False,
                     )
                 else:
-                    fc2_wgrad = torch.empty(
-                        fc2_weight.main_grad.shape,
-                        dtype=fc2_weight.dtype,
-                        device=torch.cuda.current_device(),
-                        requires_grad=False,
-                    )
+                    fc2_wgrad = None
             elif ctx.fuse_wgrad_accumulation:
                 fc2_wgrad = None
         else:

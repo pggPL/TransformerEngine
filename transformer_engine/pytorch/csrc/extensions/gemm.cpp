@@ -125,7 +125,8 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
     if (!grad) {
       bias_tensor = makeTransformerEngineTensor(*bias);
     } else {
-      bias_grad = at::empty_like(*bias);
+      auto opts = torch::TensorOptions().dtype(GetATenDType(D_tensor.dtype())).device(torch::kCUDA);
+      bias_grad = at::empty({B_shape.data[B_shape.ndim - 1]}, opts);
       bias_tensor = makeTransformerEngineTensor(*bias_grad);
     }
   }
