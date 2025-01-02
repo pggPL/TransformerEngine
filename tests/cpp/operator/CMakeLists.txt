@@ -31,4 +31,4 @@ target_link_libraries(test_operator PUBLIC ${test_operator_LINKER_LIBS} OpenMP::
 target_compile_options(test_operator PRIVATE -O2 -fopenmp)
 
 include(GoogleTest)
-gtest_discover_tests(test_operator)
+gtest_discover_tests(test_operator DISCOVERY_TIMEOUT 600)
