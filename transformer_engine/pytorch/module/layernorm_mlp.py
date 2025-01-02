@@ -11,6 +11,8 @@ import torch
 from torch.nn.parameter import Parameter
 from torch.nn import init
 
+import transformer_engine_torch as tex
+
 from .base import (
     get_workspace,
     _ub_communicators,
@@ -49,7 +51,6 @@ from ..distributed import (
 )
 
 from .. import cpp_extensions as pytex
-import transformer_engine_torch as tex
 
 from ..constants import dist_group_type, TE_DType
 from ..jit import no_torch_dynamo

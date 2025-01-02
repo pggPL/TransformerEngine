@@ -13,7 +13,6 @@ import transformer_engine_torch as tex
 from transformer_engine_torch import DType as TE_DType
 from ..constants import TE_DType as torch_to_transformer_engine_dtype
 from ..cpp_extensions import (
-    cast_from_fp8,
     cast_to_fp8,
     fp8_cast_transpose_fused,
 )

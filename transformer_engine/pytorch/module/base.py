@@ -524,7 +524,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                             self.fp8_meta[meta_key].amax_history
                         )
 
-    def set_meta_tensor(self, fwd: bool, inp_shape: Optional[torch.Size] = None) -> None:
+    def set_meta_tensor(self, fwd: bool, _inp_shape: Optional[torch.Size] = None) -> None:
         """Init scales and amaxes for fwd | bwd."""
         fp8_meta_tensor_key = "scaling_fwd" if fwd else "scaling_bwd"
 

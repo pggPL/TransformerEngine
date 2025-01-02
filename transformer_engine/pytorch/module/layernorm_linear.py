@@ -10,8 +10,8 @@ from typing import Any, Callable, Dict, Optional, Tuple, Union
 import torch
 from torch.nn import init
 
-from .. import cpp_extensions as pytex
 import transformer_engine_torch as tex
+from .. import cpp_extensions as pytex
 
 from .base import (
     get_workspace,
