@@ -1,4 +1,7 @@
-#!/bin/bash
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+#
+# See LICENSE for license information.
+
 
 if [ -z "$OUTPUT_FILE" ]; then
   OUTPUT_FILE="output_norms.txt"
