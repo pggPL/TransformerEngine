@@ -168,7 +168,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
-  
+
   if (getDeviceComputeCapability() < blackwellComputeCapability) {
     GTEST_SKIP();
   }
