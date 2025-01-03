@@ -10,6 +10,8 @@
 
 #include "./common.h"
 #include "./utils.cuh"
+#include "common/util/cuda_runtime.h"
+#include "common/util/logging.h"
 
 namespace transformer_engine {
 
@@ -54,12 +56,6 @@ void checkCuDriverContext(CUstream stream) {
   }
 }
 
-// Get a function pointer to the cuTensorMapEncodeTiled driver API
-static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = []() {
-  const void *driver_ptr = cuda_driver::get_symbol("cuTensorMapEncodeTiled");
-  return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
-}();
-
 CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
   static const std::unordered_map<DType, CUtensorMapDataType> dtypeMapping = {
       {DType::kByte, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8},
@@ -80,6 +76,11 @@ inline bool isPointerAligned(const void *const ptr, const int alignment) {
 void create_2D_tensor_map(CUtensorMap &tensorMap, const SimpleTensor &tensor,
                           const uint64_t globalY, const uint64_t globalX, const uint32_t shmemY,
                           const uint32_t shmemX, const size_t type_size) {
+  // Get a function pointer to the cuTensorMapEncodeTiled driver API
+  static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = []() {
+    void *driver_ptr = cuda_driver::get_symbol("cuTensorMapEncodeTiled");
+    return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
+  }();
   // rank is the number of dimensions of the array
   constexpr uint32_t rank = 2;
   uint64_t size[rank] = {globalX, globalY};
@@ -124,12 +125,10 @@ void create_2D_tensor_map(CUtensorMap &tensorMap, const SimpleTensor &tensor,
       CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE));
 }
 
-static const int32_t deviceComputeCapability = []() {
-  cudaDeviceProp deviceProp;
-  cudaGetDeviceProperties(&deviceProp, 0);
-  return 10 * deviceProp.major + deviceProp.minor;
-}();
+bool is_supported_by_CC_100() {
+  int deviceComputeCapability = cuda::sm_arch(cuda::current_device());
 
-bool is_supported_by_CC_100() { return deviceComputeCapability >= 100; }
+  return deviceComputeCapability >= 100;
+}
 
 }  // namespace transformer_engine
