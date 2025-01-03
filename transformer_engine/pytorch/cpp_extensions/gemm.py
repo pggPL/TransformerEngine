@@ -29,77 +29,6 @@ __all__ = [
 ]
 
 
-# TODO(ksivamani): only for debug; to remove.
-import os
-
-
-def _dummy_block_scaling():
-    return bool(int(os.getenv("_NVTE_MXFP8_GEMM_DEBUG", "0")))
-
-
-_DUMMY_BLOCK_SCALING_SIZE = 32
-
-
-def _remainder2bit(remainder, num_bits=127):
-    dtype = remainder.type()
-    exponent_bits = torch.arange(num_bits).type(dtype)
-    exponent_bits = exponent_bits.repeat(remainder.shape + (1,))
-    out = (remainder.unsqueeze(-1) * 2**exponent_bits) % 1
-    return torch.floor(2 * out)
-
-
-def _integer2bit(integer, num_bits=8):
-    dtype = integer.type()
-    exponent_bits = -torch.arange(-(num_bits - 1), 1).type(dtype)
-    exponent_bits = exponent_bits.repeat(integer.shape + (1,))
-    out = integer.unsqueeze(-1) / 2**exponent_bits
-    return (out - (out % 1)) % 2
-
-
-def _float2bit(f, num_e_bits=8, num_m_bits=23, bias=127.0, dtype=torch.float32):
-    s = torch.sign(f)
-    f = f * s
-    s = (s * (-1) + 1.0) * 0.5
-    s = s.unsqueeze(-1)
-    e_scientific = torch.floor(torch.log2(f))
-    e_decimal = e_scientific + bias
-    e = _integer2bit(e_decimal, num_bits=num_e_bits)
-    m1 = _integer2bit(f - f % 1, num_bits=num_e_bits)
-    m2 = _remainder2bit(f % 1, num_bits=bias)
-    m = torch.cat([m1, m2], dim=-1)
-    dtype = f.type()
-    idx = torch.arange(num_m_bits).unsqueeze(0).type(dtype) + (8.0 - e_scientific).unsqueeze(-1)
-    idx = idx.long()
-    m = torch.gather(m, dim=-1, index=idx)
-    return torch.cat([s, e, m], dim=-1).type(dtype)
-
-
-def _fp32_to_e8m0(t):
-    assert t.is_cuda and t.dim() == 1, "Wrong input!"
-    t = _float2bit(t, num_m_bits=0)
-    t = [[str(int(value)) for value in binary_t] for binary_t in t.tolist()]
-    return [int("".join(value), 2) for value in t]
-
-
-def _get_blocking_scaling_scale_inv(t, t_scale_inv):
-    """Dummy func to convert block scaling factors to correct format."""
-    assert t.dim() == 2, "Incorrect tensor dimensions for block scaling."
-    assert t.shape[0] % _DUMMY_BLOCK_SCALING_SIZE == 0, "Wrong nelems for input."
-    assert (
-        t.shape[0] % (_DUMMY_BLOCK_SCALING_SIZE * 4) == 0
-    ), "Wrong nelems for input."  # This should be padded but keeping it simple.
-    shape = (t_scale_inv.shape[0], t.shape[0] // _DUMMY_BLOCK_SCALING_SIZE, t.shape[1])
-    s_inv = (
-        torch.Tensor([_fp32_to_e8m0(t_scale_inv)])
-        .view(-1, 1, 1)
-        .to("cuda")
-        .to(torch.uint8)
-        .expand(shape)
-        .contiguous()
-    )
-    return s_inv
-
-
 @functools.lru_cache(maxsize=None)
 def _empty_tensor() -> torch.Tensor:
     """Get tensor with no entries and no data"""
@@ -331,16 +260,6 @@ def fp8_gemm(
 
     out_dtype = TE_DType[out.dtype] if D_dtype is None else D_dtype
 
-    if _dummy_block_scaling():
-        assert A_scaling_mode == [-1, -1, 1] and B_scaling_mode == [
-            -1,
-            -1,
-            1,
-        ], "Wrong mode for dummy block scaling."
-        A_scaling_mode = [32, 1, 0]
-        B_scaling_mode = [32, 1, 0]
-        A_scale_inv = _get_blocking_scaling_scale_inv(A, A_scale_inv)
-        B_scale_inv = _get_blocking_scaling_scale_inv(B, B_scale_inv)
 
     fn = tex.te_gemm
     sm_count = get_sm_count()
@@ -489,7 +408,6 @@ def gemm(
     transa = layout[0] == "T"
     transb = layout[1] == "T"
     empty_tensor = _empty_tensor()
-    fp8_index = -1  # dummy index
 
     if out is None:
         out = torch.empty(

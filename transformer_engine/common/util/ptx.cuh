@@ -44,7 +44,6 @@ __device__ __forceinline__ void mbarrier_arrive_expect_tx(uint64_t* mbar, const 
                : "memory");
 }
 
-// http://sw-mobile-docs/CUDA/GPGPU/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-membar
 __device__ __forceinline__ void fence_mbarrier_init_release_cluster() {
   asm volatile("fence.mbarrier_init.release.cluster;");
 }
@@ -159,7 +158,6 @@ __device__ __forceinline__ void cp_async_bulk_wait_group_read<4>() {
   asm volatile("cp.async.bulk.wait_group.read 4;");
 }
 
-// http://sw-mobile-docs/CUDA/GPGPU/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-membar
 // Proxy fence (bi-directional):
 __device__ __forceinline__ void fence_proxy_async() { asm volatile("fence.proxy.async;"); }
 __device__ __forceinline__ void fence_proxy_async_shared_cta() {

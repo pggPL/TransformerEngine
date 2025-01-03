@@ -450,7 +450,7 @@ class CommOverlap : torch::CustomClassHolder, public transformer_engine::CommOve
 
   torch::Tensor get_ubuf_output(int comm_type);
 
-  /*s
+  /*
   ** Bulk GEMM + COMM
   ** This function assumes the communication input is pre-copied to _ubuf
   */
