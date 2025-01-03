@@ -47,7 +47,7 @@ _multi_stream_cublas_workspace = []
 _cublas_workspace = None
 _ub_communicators = None
 _NUM_MAX_UB_STREAMS = 3
-_MIN_STREAM_PRIORITY, _MAX_STREAM_PRIORITY = tex.get_stream_priority_range()
+_MIN_STREAM_PRIORITY, _MAX_STREAM_PRIORITY = None, None
 layers_atomic_ring_exchange = []
 
 
@@ -295,8 +295,11 @@ def initialize_ub(
         raise KeyError(f"Given layer name {name} does not exist.")
 
     def get_default_config(name):
+        global _MIN_STREAM_PRIORITY, _MAX_STREAM_PRIORITY
         method = get_method(name)
         is_reduce_scatter = name in layers_reduce_scatter_overlap
+        if _MIN_STREAM_PRIORITY is None or _MAX_STREAM_PRIORITY is None:
+            _MIN_STREAM_PRIORITY, _MAX_STREAM_PRIORITY = tex.get_stream_priority_range()
         default_cfg = {
             "method": method,
             "is_reduce_scatter": is_reduce_scatter,
