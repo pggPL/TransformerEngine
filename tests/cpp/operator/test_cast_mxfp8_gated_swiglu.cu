@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * See LICENSE for license information.
  ************************************************************************/
@@ -345,17 +345,9 @@ class CastMXFP8_GatedActTestSuite : public ::testing::TestWithParam
                 InputsFillCase,
                 bool>> {};
 
-static const int32_t deviceComputeCapability = [](){
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, 0);
-    return 10 * deviceProp.major + deviceProp.minor;
-}();
-
-constexpr int32_t blackwellComputeCapability = 100;
-
 TEST_P(CastMXFP8_GatedActTestSuite, TestCastMXFP8Swiglu) {
     // Skip tests for pre-Blackwell architectures
-    if (deviceComputeCapability < blackwellComputeCapability) {
+    if (getDeviceComputeCapability() < blackwellComputeCapability) {
         GTEST_SKIP();
     }
 

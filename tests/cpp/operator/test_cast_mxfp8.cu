@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * See LICENSE for license information.
  ************************************************************************/
@@ -469,17 +469,9 @@ switch (OP_FUNC_TYPE) { \
     case ActivationType::SReLU:    { constexpr auto OP = &srelu;   { __VA_ARGS__ } } break; \
 }
 
-static const int32_t deviceComputeCapability = [](){
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, 0);
-    return 10 * deviceProp.major + deviceProp.minor;
-}();
-
-constexpr int32_t blackwellComputeCapability = 100;
-
 TEST_P(FusedCastMXFP8TestSuite, TestFusedCastMXFP8) {
     // Skip tests for pre-Blackwell architectures
-    if (deviceComputeCapability < blackwellComputeCapability) {
+    if (getDeviceComputeCapability() < blackwellComputeCapability) {
         GTEST_SKIP();
     }
 

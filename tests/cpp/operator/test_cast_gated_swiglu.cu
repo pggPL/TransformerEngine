@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * See LICENSE for license information.
  ************************************************************************/
@@ -119,6 +119,10 @@ class CastSwiGLUTestSuite
 TEST_P(CastSwiGLUTestSuite, TestCastSwiGLU) {
   using namespace transformer_engine;
   using namespace test;
+  // Skip tests for pre-Blackwell architectures
+  if (getDeviceComputeCapability() < blackwellComputeCapability) {
+      GTEST_SKIP();
+  }
 
   const DType input_type = std::get<0>(GetParam());
   const DType output_type = std::get<1>(GetParam());

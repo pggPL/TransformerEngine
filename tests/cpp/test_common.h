@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * See LICENSE for license information.
  ************************************************************************/
@@ -423,6 +423,9 @@ const std::string& caseName(InputsFillCase type);
 extern std::vector<DType> all_fp_types;
 
 bool isFp8Type(DType type);
+
+int32_t getDeviceComputeCapability();
+constexpr int32_t blackwellComputeCapability = 100;
 
 }  // namespace test
 

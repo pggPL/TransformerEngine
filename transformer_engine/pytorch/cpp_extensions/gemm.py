@@ -1,10 +1,11 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
 
 """Python interface for GEMM extensions"""
 import functools
 from typing import Iterable, Optional, Tuple, Union, List
+import os
 import torch
 from ..tensor.quantized_tensor import Quantizer
 import transformer_engine_torch as tex
@@ -214,8 +215,8 @@ def fp8_gemm(
     B_dtype: tex.DType,
     out_dtype: torch.dtype,
     workspace: torch.Tensor,
-    A_scaling_mode: List = [-1, -1, 1],
-    B_scaling_mode: List = [-1, -1, 1],
+    A_scaling_mode: Optional[List] = None,
+    B_scaling_mode: Optional[List] = None,
     gelu: bool = False,
     accumulate: bool = False,
     out: Optional[torch.Tensor] = None,
@@ -227,9 +228,13 @@ def fp8_gemm(
     D_dtype: Optional[tex.DType] = None,
     ub_algo: tex.CommOverlapAlgo = None,
     ub: Union[tex.CommOverlap, tex.CommOverlapP2P] = None,
-    extra_output_tensor: torch.Tensor = None,
+    extra_output_tensor: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """TN layout GEMM with fp8 inputs."""
+    if A_scaling_mode is None:
+        A_scaling_mode = [-1, -1, 1]
+    if B_scaling_mode is None:
+        B_scaling_mode = [-1, -1, 1]
 
     empty_tensor = _empty_tensor()
     if D_dtype is not None and D_dtype in [tex.DType.kFloat8E4M3, tex.DType.kFloat8E5M2]:
