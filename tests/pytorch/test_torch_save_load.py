@@ -261,7 +261,7 @@ def test_fp8_model_checkpoint(
     # to load the fp8 metadata before loading tensors.
     #
     # Load checkpoint
-    model.load_state_dict(torch.load(io.BytesIO(model_bytes)))
+    model.load_state_dict(torch.load(io.BytesIO(model_bytes), weights_only=False))
     del model_bytes
 
     # Check that loaded model matches saved model

@@ -2136,10 +2136,6 @@ def test_fp8_grouped_gemm(shape, fp8_dtype, accumulate):
             scale_inv,
             i,  # fp8 meta tensor index
             tex.DType.kFloat8E4M3,
-            [-1, -1, 1],
-            i,
-            i,
-            i,  # fp8 meta tensor index
         )
         for i in range(z)
     ]
@@ -2151,10 +2147,6 @@ def test_fp8_grouped_gemm(shape, fp8_dtype, accumulate):
             scale_inv,
             z + i,  # fp8 meta tensor index
             fp8_dtype,
-            [-1, -1, 1],
-            z + i,
-            z + i,
-            z + i,  # fp8 meta tensor index
         )
         for i in range(z)
     ]
