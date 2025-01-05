@@ -380,7 +380,8 @@ class FusedAdam(torch.optim.Optimizer):
                 param = id_map[k]
                 self.state[param] = {}
                 for name in v:
-                    self.set_scaled_state(param, name, v[name].float())
+                    if v[name] is not None:
+                        self.set_scaled_state(param, name, v[name].float())
 
     def step(self, closure=None, grad_scaler=None):
         """Performs a single optimization step.
