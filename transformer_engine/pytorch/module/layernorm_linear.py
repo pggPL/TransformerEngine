@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
 
@@ -10,8 +10,8 @@ from typing import Any, Callable, Dict, Optional, Tuple, Union
 import torch
 from torch.nn import init
 
-from .. import cpp_extensions as pytex
 import transformer_engine_torch as tex
+from .. import cpp_extensions as pytex
 
 from .base import (
     get_workspace,

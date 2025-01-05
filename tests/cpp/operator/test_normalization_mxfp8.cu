@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * See LICENSE for license information.
  ************************************************************************/
@@ -168,7 +168,7 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
 
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
-  
+
   if (getDeviceComputeCapability() < blackwellComputeCapability) {
     GTEST_SKIP();
   }

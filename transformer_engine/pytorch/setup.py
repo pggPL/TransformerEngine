@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
 
@@ -15,6 +15,7 @@ import setuptools
 from torch.utils.cpp_extension import BuildExtension
 
 from importlib.metadata import version as get_pkg_version
+from importlib.metadata import PackageNotFoundError
 from packaging.version import Version as PkgVersion
 
 try:

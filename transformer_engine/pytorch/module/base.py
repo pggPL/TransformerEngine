@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
 
@@ -48,7 +48,7 @@ _multi_stream_cublas_workspace = []
 _cublas_workspace = None
 _ub_communicators = None
 _NUM_MAX_UB_STREAMS = 3
-_MIN_STREAM_PRIORITY, _MAX_STREAM_PRIORITY = tex.get_stream_priority_range()
+_MIN_STREAM_PRIORITY, _MAX_STREAM_PRIORITY = None, None
 layers_atomic_ring_exchange = []
 
 
@@ -296,8 +296,11 @@ def initialize_ub(
         raise KeyError(f"Given layer name {name} does not exist.")
 
     def get_default_config(name):
+        global _MIN_STREAM_PRIORITY, _MAX_STREAM_PRIORITY
         method = get_method(name)
         is_reduce_scatter = name in layers_reduce_scatter_overlap
+        if _MIN_STREAM_PRIORITY is None or _MAX_STREAM_PRIORITY is None:
+            _MIN_STREAM_PRIORITY, _MAX_STREAM_PRIORITY = tex.get_stream_priority_range()
         default_cfg = {
             "method": method,
             "is_reduce_scatter": is_reduce_scatter,
@@ -525,7 +528,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                             self.fp8_meta[meta_key].amax_history
                         )
 
-    def set_meta_tensor(self, fwd: bool, inp_shape: Optional[torch.Size] = None) -> None:
+    def set_meta_tensor(self, fwd: bool, _inp_shape: Optional[torch.Size] = None) -> None:
         """Init scales and amaxes for fwd | bwd."""
         fp8_meta_tensor_key = "scaling_fwd" if fwd else "scaling_bwd"
 

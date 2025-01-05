@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
 
@@ -51,6 +51,9 @@ class _OverrideLinearPrecision(NamedTuple):
 
 
 class FP8Recipe:
+    """
+    Base class for different FP8 recipes.
+    """
     def current(self):
         """Whether the given recipe is current scaling."""
         return isinstance(self, CurrentScaling)

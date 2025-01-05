@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * See LICENSE for license information.
  ************************************************************************/
@@ -10,6 +10,8 @@
 
 #include "./common.h"
 #include "./utils.cuh"
+#include "common/util/cuda_runtime.h"
+#include "common/util/logging.h"
 
 namespace transformer_engine {
 
@@ -54,12 +56,6 @@ void checkCuDriverContext(CUstream stream) {
   }
 }
 
-// Get a function pointer to the cuTensorMapEncodeTiled driver API
-static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = []() {
-  const void *driver_ptr = cuda_driver::get_symbol("cuTensorMapEncodeTiled");
-  return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
-}();
-
 CUtensorMapDataType get_CUtensorMapDataType(DType dtype) {
   static const std::unordered_map<DType, CUtensorMapDataType> dtypeMapping = {
       {DType::kByte, CUtensorMapDataType::CU_TENSOR_MAP_DATA_TYPE_UINT8},
@@ -80,6 +76,12 @@ inline bool isPointerAligned(const void *const ptr, const int alignment) {
 template <typename T>
 void create_2D_tensor_map(CUtensorMap &tensorMap, const Tensor *tensor_ptr, const uint64_t globalY,
                           const uint64_t globalX, const uint32_t shmemY, const uint32_t shmemX) {
+  // Get a function pointer to the cuTensorMapEncodeTiled driver API
+  static PFN_cuTensorMapEncodeTiled cuDriverTensorMapEncodeTiled = []() {
+    void *driver_ptr = cuda_driver::get_symbol("cuTensorMapEncodeTiled");
+    return reinterpret_cast<PFN_cuTensorMapEncodeTiled>(driver_ptr);
+  }();
+
   const Tensor &tensor = *tensor_ptr;
   // rank is the number of dimensions of the array
   constexpr uint32_t rank = 2;
@@ -137,13 +139,11 @@ TRANSFORMER_ENGINE_CREATE_2D_TMAP(fp8e4m3)
 TRANSFORMER_ENGINE_CREATE_2D_TMAP(fp8e5m2)
 #undef TRANSFORMER_ENGINE_CREATE_2D_TMAP
 
-static const int32_t deviceComputeCapability = []() {
-  cudaDeviceProp deviceProp;
-  cudaGetDeviceProperties(&deviceProp, 0);
-  return 10 * deviceProp.major + deviceProp.minor;
-}();
+bool is_supported_by_CC_100() {
+  int deviceComputeCapability = cuda::sm_arch(cuda::current_device());
 
-bool is_supported_by_CC_100() { return deviceComputeCapability >= 100; }
+  return deviceComputeCapability >= 100;
+}
 
 bool is_mxfp8_cast_supported_shape(const Tensor *output) {
   const NVTEScalingMode &scaling_mode = output->scaling_mode;

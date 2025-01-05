@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * See LICENSE for license information.
  ************************************************************************/
@@ -175,6 +175,11 @@ void performTest(const size_t N, const size_t H, const bool zero_centered_gamma,
     GTEST_SKIP() << "LN kernel does not support OutputType > InputType";
     return;
   }
+
+  if (getDeviceComputeCapability() < blackwellComputeCapability && use_cudnn) {
+    GTEST_SKIP() << "cuDNN normalizations not supported on pre-Blackwell GPUs yet!";
+  }
+
   using WeightType = InputType;
   DType itype = TypeInfo<InputType>::dtype;
   DType wtype = TypeInfo<WeightType>::dtype;
