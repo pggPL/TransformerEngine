@@ -35,13 +35,11 @@ from transformer_engine.pytorch import (
 from transformer_engine.common import recipe
 import transformer_engine_torch as tex
 from transformer_engine.pytorch.cpp_extensions import (
-    gemm,
-    fp8_gemm,
-    gelu,
-    cast_to_fp8,
-    cast_from_fp8,
+    general_gemm,
+    gelu
 )
 from transformer_engine.pytorch.module.base import get_workspace
+from transformer_engine.pytorch.tensor import Float8Quantizer
 from test_numerics import reset_rng_states, dtype_tols
 
 # Only run FP8 tests on H100.
@@ -964,7 +962,7 @@ def test_sanity_gemm_with_unalignment(N, offset, datatype):
     inp = torch.reshape(scratchpad[offset:-offset], (N, N))
     weight = torch.reshape(scratchpad[offset * 2 :], (N, N))
 
-    _, _, _ = gemm(A=weight, B=inp, dtype=datatype, workspace=get_workspace())
+    _, _, _ = general_gemm(A=weight, B=inp, workspace=get_workspace())
     torch.cuda.synchronize()
 
 
@@ -975,33 +973,22 @@ def test_sanity_fp8_gemm_with_unalignment(N, datatype):
     offset = 16
     scratchpad = torch.randn(N, N * N + offset, device="cuda", dtype=datatype)
 
-    fp8_tensor_inp = tex.FP8FwdTensors.GEMM1_INPUT
-    fp8_tensor_weight = tex.FP8FwdTensors.GEMM1_WEIGHT
+    scales = torch.ones(1).cuda().squeeze()
+    amaxes = torch.ones(1).cuda().squeeze()
+    dtype = tex.DType.kFloat8E4M3
+    fp8_quantizer = Float8Quantizer(scales, amaxes, dtype)
 
-    nb_inp_scales, nb_weight_scales = 1, N
-    scale_factor = 1.0
-    meta_inp = create_meta(scale_factor, nb_inp_scales)
-    meta_weight = create_meta(scale_factor, nb_weight_scales)
-    inp_type = tex.DType.kFloat8E4M3
-    weights_type = tex.DType.kFloat8E4M3
     outp_type = datatype
 
-    scratchpad_fp8 = cast_to_fp8(scratchpad, meta_weight, fp8_tensor_inp, inp_type)
+    scratchpad_fp8 = fp8_quantizer(scratchpad)
     inp_fp8 = torch.reshape(scratchpad_fp8[0][:-offset], (N, N))
     weight_fp8 = torch.reshape(scratchpad_fp8[0][offset:], (N, N))
-    _, _ = fp8_gemm(
+    general_gemm(
         weight_fp8,
-        meta_weight.scale_inv,
-        fp8_tensor_weight,
-        inp_type,
         inp_fp8,
-        meta_inp.scale_inv,
-        fp8_tensor_inp,
-        weights_type,
-        outp_type,
         get_workspace(),
+        outp_type,
         bias=None,
-        use_bias=False,
         use_split_accumulator=False,
     )
     torch.cuda.synchronize()

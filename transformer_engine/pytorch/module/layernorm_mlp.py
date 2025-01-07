@@ -80,7 +80,7 @@ def _act_func(activation: str):
         "reglu": (tex.reglu, tex.dreglu, None),
         "swiglu": (tex.swiglu, tex.dswiglu, None),
         "qgelu": (tex.qgelu, tex.dqgelu, tex.dbias_dqgelu),
-        #"qgeglu": (tex.qgeglu, tex.dqgeglu), TODO (pgadzinski) - uncomment
+        "qgeglu": (tex.qgeglu, tex.dqgeglu, None),
         "srelu": (tex.srelu, tex.dsrelu, tex.dbias_dsrelu),
     }
     if activation not in funcs:
@@ -231,17 +231,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 tp_group,
                 quantizer=(fc1_input_quantizer if with_quantized_all_gather else None),
             )
-            if return_layernorm_output and return_layernorm_output_gathered:
-                ln_out_return = ln_out_total
-            if fp8 and not with_quantized_all_gather:
-                ln_out_total = fc1_input_quantizer(ln_out_total)
         else:
-            if fp8 and not with_quantized_norm:
-                fc1_input_quantizer.set_usage(
-                    rowwise=True,
-                    columnwise=(is_grad_enabled and fc1_weight.requires_grad),
-                )
-                ln_out = fc1_input_quantizer(ln_out)
             ln_out_total = ln_out
 
         # If residual connection is after LN, we need `ln_out`
@@ -352,6 +342,7 @@ class _LayerNormMLP(torch.autograd.Function):
         # ACTIVATION - sometimes activation is fused with the GEMM above.
 
         fc1_out_without_bias = None
+
         if bias_gelu_fusion:
             fc1_out = None
             fc1_out_without_bias, _, _ = fc1_outputs
@@ -443,15 +434,14 @@ class _LayerNormMLP(torch.autograd.Function):
             if not fc2_weight.requires_grad:
                 clear_tensor_data(act_out)
                 act_out = None
-            
             tensors_to_save, tensor_objects = prepare_for_saving(
                 inputmat, ln_weight, ln_out, fc1_weight, fc1_weight_final, fc1_bias, 
                 fc1_out, fc1_out_without_bias, act_out, fc2_weight, fc2_weight_final, fc2_bias, mu, rsigma,
             )
 
             if fuse_wgrad_accumulation:
-                ctx.fc1_main_grad = fc1_weight.main_grad
-                ctx.fc2_main_grad = fc2_weight.main_grad
+                ctx.fc1_main_grad = fc1_weight.main_grad if fc1_weight.requires_grad else None
+                ctx.fc2_main_grad = fc2_weight.main_grad if fc2_weight.requires_grad else None
 
             ctx.save_for_backward(
                 *tensors_to_save
@@ -540,7 +530,6 @@ class _LayerNormMLP(torch.autograd.Function):
             inputmat, ln_weight, ln_out, _, fc1_weight, fc1_bias, \
             fc1_out, fc1_out_without_bias, act_out, _, fc2_weight, fc2_bias, mu, rsigma, \
             = restore_from_saved(ctx.tensor_objects, saved_tensors)
-
             # Since main_grad can be modified inplace, it should not be a part of saved_tensors
             fc1_weight_main_grad = (
                 ctx.fc1_main_grad
@@ -556,13 +545,12 @@ class _LayerNormMLP(torch.autograd.Function):
                 and ctx.fc2_weight_requires_grad
                 else None
             )
+            
 
             # For CPU offloading, we offloaded weight and weight.main_grad to different tensors,
             # we need to connect them into one.
-            if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
-                fc1_weight = torch.nn.Parameter(fc1_weight, fc1_weight.requires_grad)
+            if ctx.fuse_wgrad_accumulation:
                 fc1_weight.main_grad = fc1_weight_main_grad
-                fc2_weight = torch.nn.Parameter(fc2_weight, fc2_weight.requires_grad)
                 fc2_weight.main_grad = fc2_weight_main_grad
 
 
@@ -660,7 +648,6 @@ class _LayerNormMLP(torch.autograd.Function):
                 )
             else:
                 accumulate_wgrad_into_param_main_grad = ctx.fuse_wgrad_accumulation
-
             # There are 5 possible fusion paths
             # 1 high-precision bias_gelu_fusion: gemm, FC1_bias + gelu, 
             # 2 high-precision fc2_dgrad_gemm_gelu_fusion: gemm + gelu, FC1_bias + quantize
@@ -739,14 +726,15 @@ class _LayerNormMLP(torch.autograd.Function):
                 else:
                     fuse_gemm_and_bias_fc1_wgrad = True # fc1_bias_grad is computed later, fused with wgrad gemm for the FC1
                     # it may  not be calculated in case wgrad is not required.
-                    if not ctx.fc1_weight_requires_grad and fc1_bias.requires_grad:
-                        fc1_bias_grad = dact.sum(dim=0)
+                    if fc1_bias is not None:
+                        if not ctx.fc1_weight_requires_grad and fc1_bias.requires_grad:
+                            fc1_bias_grad = dact.sum(dim=0)
 
             # Overwrite data. Deleting the tensor does not release underlying memory.
             clear_tensor_data(fc1_out, fc1_out_without_bias)
 
             fc1_dgrad_size = list(inputmat.size())
-            fc1_dgrad_size[1] = ctx.fc1_weight.size(1)
+            fc1_dgrad_size[1] = fc1_weight.size(1)
             if ctx.ub_bulk_wgrad:  # allocate dgrad output
                 raise NotImplementedError
                 ub_obj_dgrad = get_ub("fc1_wgrad")
@@ -765,7 +753,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 raise NotImplementedError
                 dim_size = list(inputmat.size())
                 dim_size[0] = dim_size[0] // tp_world_size
-                dim_size[1] = ctx.fc1_weight.size(1)
+                dim_size[1] = fc1_weight.size(1)
                 rs_out = torch.empty(dim_size, dtype=ctx.activation_dtype, device=ctx.device)
                 if ub_obj_dgrad.is_p2p_overlap():
                     ub_algo = tex.CommOverlapAlgo.SPLIT_PIPELINED_RS_P2P
@@ -1165,7 +1153,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
             self.layer_norm_bias = None
 
         # FC1 init
-        if self.activation in ["reglu", "geglu", "swiglu"]:
+        if self.activation in ["reglu", "geglu", "qgeglu", "swiglu"]:
             fc1_output_features = 2 * self.size_per_partition
         else:
             fc1_output_features = self.size_per_partition

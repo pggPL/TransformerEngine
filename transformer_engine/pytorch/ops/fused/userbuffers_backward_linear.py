@@ -13,9 +13,7 @@ import torch
 
 from transformer_engine_torch import CommOverlapAlgo
 from ...cpp_extensions import (
-    fp8_cast_transpose_bgrad_fused,
-    fp8_gemm,
-    gemm,
+    general_gemm
 )
 from ...distributed import get_distributed_world_size
 from ...float8_tensor import Float8Tensor

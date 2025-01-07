@@ -7967,6 +7967,7 @@ class MultiheadAttention(torch.nn.Module):
                 cp_size=self.cp_size,
                 cp_rank=self.cp_rank,
             )
+        
 
         # ===========================
         # Core attention computation

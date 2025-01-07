@@ -64,7 +64,7 @@ class Float8Quantizer(Quantizer):
             src = src.contiguous()
 
         # Launch cast kernel
-        tex.quantize(src, self, noop_flag, dst)
+        tex.quantize(src, self, dst, noop_flag)
 
         # Update FP8 dtype
         dst._fp8_dtype = self.dtype
@@ -351,6 +351,16 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         if func == torch.ops.aten.clone.default:
             return cls.clone(args[0])
         if func == torch.ops.aten.copy_.default:
+            dst, src = args[0], args[1]
+
+            # This case is handled separately.
+            if isinstance(src, Float8Tensor) and isinstance(dst, Float8Tensor):
+                dst._data.copy_(src._data.detach())
+                dst._scale_inv.copy_(src._scale_inv)
+                if src._transpose is not None or dst._transpose is not None:
+                    dst._create_transpose()
+                return dst
+            
             # Implementation in the superclass (QuantizedTensor) returns a proper output
             pass
         elif func in _ops_to_preserve_subclass_in_fsdp2:
@@ -371,6 +381,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         fp8_dtype: TE_DType,
         fp8_scale_inv: torch.Tensor,
         dtype: torch.dtype,
+        shape: torch.shape
     ) -> Float8Tensor:
         """Build Float8Tensor, for use in __reduce__
 
@@ -378,18 +389,20 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         arguments.
 
         """
-        return Float8Tensor(
+        a =  Float8Tensor(
             data=data,
             fp8_dtype=fp8_dtype,
             fp8_scale_inv=fp8_scale_inv,
             dtype=dtype,
+            shape=shape,
         )
+        return a
 
     def __reduce_ex__(self, protocol: int) -> tuple:
         """Custom pickling to remove references to FP8 metadata objects"""
         return (
             Float8Tensor._make_in_reduce_ex,
-            (self._data, self._fp8_dtype, self._scale_inv, self.dtype),
+            (self._data, self._fp8_dtype, self._scale_inv, self.dtype, self.shape),
         )
 
     def _get_data(self) -> Float8Tensor:

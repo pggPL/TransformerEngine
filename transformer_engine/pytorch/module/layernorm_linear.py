@@ -255,11 +255,11 @@ class _LayerNormLinear(torch.autograd.Function):
                 ln_out = ln_out_total = None
                 clear_tensor_data(ln_out, ln_out_total)
 
+
         if is_grad_enabled:
             if cpu_offloading:
                 if fp8 and weightmat is not None:
                     set_offloading_param(weightmat, "weight_offloading", True)
-                ln_weight.data = torch.Tensor()
                 set_offloading_param(ln_weight, "weight_offloading", True)
                 set_offloading_param(weight, "weight_offloading", True)
 
@@ -290,7 +290,7 @@ class _LayerNormLinear(torch.autograd.Function):
             ctx.requires_dgrad = inp.requires_grad
             ctx.requires_wgrad = weight.requires_grad
             ctx.quantized_weight = quantized_weight
-            if fuse_wgrad_accumulation:
+            if fuse_wgrad_accumulation and weight.requires_grad:
                 ctx.main_grad = weight.main_grad
             ctx.grad_input_quantizer = grad_input_quantizer
             ctx.grad_output_quantizer = grad_output_quantizer
@@ -334,6 +334,7 @@ class _LayerNormLinear(torch.autograd.Function):
 
         # [*, in_features] -> [*, out_features] except first dimension changes for SP
         out = out.view(-1, *inp_shape[1:-1], out_features)
+
 
         if return_layernorm_output:
             if return_layernorm_output_gathered:
@@ -384,7 +385,6 @@ class _LayerNormLinear(torch.autograd.Function):
             # For CPU offloading, we offloaded weight and weight.main_grad to different tensors,
             # we need to connect them into one.
             if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:
-                weight = torch.nn.Parameter(weight, weight.requires_grad)
                 weight.main_grad = main_grad
 
             if ctx.ub_overlap_rs_dgrad:
@@ -1019,6 +1019,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
                         )
                 else:
                     unfused_weights = [w.dequantize() for w in unfused_weights]
+            
             weight_tensor = _noop_cat(unfused_weights)
             if self.use_bias:
                 bias_tensor = _noop_cat([getattr(self, name) for name in self.bias_names])
