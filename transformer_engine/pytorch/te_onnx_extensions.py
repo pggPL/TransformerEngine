@@ -303,6 +303,7 @@ def onnx_fp8_geglu(g, inp, scale, amax, scale_inv, fp8_tensor, otype):
     "i",
     "i",
     "i",
+    "i",
 )
 def onnx_te_gemm(
     g,
@@ -330,6 +331,7 @@ def onnx_te_gemm(
     workspaceSize,
     accumulate,
     use_split_accumulator,
+    num_math_sms,
 ):
     """ONNX graph for te_gemm"""
     # pylint: disable=unused-argument

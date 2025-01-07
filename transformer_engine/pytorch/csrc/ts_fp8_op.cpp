@@ -243,7 +243,7 @@ at::Tensor te_gemm_ts(at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_te
                       at::Tensor D, at::Tensor D_scale, int64_t D_type, at::Tensor D_amax,
                       at::Tensor bias, int64_t bias_type, at::Tensor pre_gelu_out, int64_t grad,
                       at::Tensor workspace, int64_t workspaceSize, int64_t accumulate,
-                      int64_t use_split_accumulator) {
+                      int64_t use_split_accumulator, int64_t num_math_sms) {
   // cast inputs to types accepted by te_gemm
   transformer_engine::DType A_type_arg = reverse_map_dtype(A_type);
   bool transa_arg = static_cast<bool>(transa);
@@ -261,12 +261,6 @@ at::Tensor te_gemm_ts(at::Tensor A, at::Tensor A_scale_inverse, int64_t A_fp8_te
              "Scaling factors must be on device.");
   NVTE_CHECK(!(D_scale.numel()) || D_scale.is_cuda(), "Scaling factor must be on device.");
   NVTE_CHECK(!(D_amax.numel()) || D_amax.is_cuda(), "Amax tensor must be on device.");
-
-  // Set an external SM Margin to all the GEMMs.
-  // This comes in handy when DP is overlapped with GEMMs
-  const int device_id = at::cuda::current_device();
-  const int sm_count = transformer_engine::cuda::sm_count(device_id);
-  int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
   if (A_scale_inverse.numel()) A_scale_inverse = A_scale_inverse[A_fp8_tensor];
 
@@ -287,7 +281,7 @@ std::vector<at::Tensor> te_grouped_gemm_ts(
     int64_t D_offset, at::Tensor D_scale, int64_t D_type, at::Tensor D_amax,
     std::vector<at::Tensor> bias, int64_t bias_type, std::vector<at::Tensor> pre_gelu_out,
     int64_t grad, std::vector<at::Tensor> workspace, int64_t workspaceSize, int64_t accumulate,
-    int64_t use_split_accumulator) {
+    int64_t use_split_accumulator, int64_t num_math_sms) {
   // cast inputs to types accepted by te_gemm
   transformer_engine::DType A_type_arg = reverse_map_dtype(A_type);
   bool transa_arg = static_cast<bool>(transa);
@@ -299,13 +293,6 @@ std::vector<at::Tensor> te_grouped_gemm_ts(
   size_t workspaceSize_arg = static_cast<size_t>(workspaceSize);
   bool accumulate_arg = static_cast<bool>(accumulate);
   bool use_split_accumulator_arg = static_cast<bool>(use_split_accumulator);
-
-  // Set an external SM Margin to all the GEMMs.
-  // This comes in handy when DP is overlapped with GEMMs
-
-  const int device_id = at::cuda::current_device();
-  const int sm_count = transformer_engine::cuda::sm_count(device_id);
-  int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
   te_grouped_gemm(A, A_scale_inverse, A_offset, A_type_arg, A_scaling_mode, transa_arg, B,
                   B_scale_inverse, B_offset, B_type_arg, B_scaling_mode, transb_arg, D, D_offset,
@@ -322,7 +309,7 @@ at::Tensor te_grouped_gemm_single_output_ts(
     int64_t D_offset, at::Tensor D_scale, int64_t D_type, at::Tensor D_amax,
     std::vector<at::Tensor> bias, int64_t bias_type, std::vector<at::Tensor> pre_gelu_out,
     int64_t grad, std::vector<at::Tensor> workspace, int64_t workspaceSize, int64_t accumulate,
-    int64_t use_split_accumulator) {
+    int64_t use_split_accumulator, int64_t num_math_sms) {
   // cast inputs to types accepted by te_gemm
   transformer_engine::DType A_type_arg = reverse_map_dtype(A_type);
   bool transa_arg = static_cast<bool>(transa);
@@ -334,13 +321,6 @@ at::Tensor te_grouped_gemm_single_output_ts(
   size_t workspaceSize_arg = static_cast<size_t>(workspaceSize);
   bool accumulate_arg = static_cast<bool>(accumulate);
   bool use_split_accumulator_arg = static_cast<bool>(use_split_accumulator);
-
-  // Set an external SM Margin to all the GEMMs.
-  // This comes in handy when DP is overlapped with GEMMs
-
-  const int device_id = at::cuda::current_device();
-  const int sm_count = transformer_engine::cuda::sm_count(device_id);
-  int num_math_sms = sm_count - transformer_engine::getenv<int>("NVTE_EXT_MARGIN_SM", sm_count);
 
   te_grouped_gemm_single_output(A, A_scale_inverse, A_offset, A_type_arg, transa_arg, B,
                                 B_scale_inverse, B_offset, B_type_arg, transb_arg, m_splits, D,

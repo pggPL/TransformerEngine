@@ -35,11 +35,12 @@ def gelu(
     )
 
     # Launch kernel
-    return tex.gelu(
+    return torch.ops.tex_ts.gelu_ts(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
+        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -66,11 +67,12 @@ def relu(
     )
 
     # Launch kernel
-    return tex.relu(
+    return torch.ops.tex_ts.relu_ts(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
+        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -97,11 +99,12 @@ def geglu(
     )
 
     # Launch kernel
-    return tex.geglu(
+    return torch.ops.tex_ts.geglu_ts(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
+        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -128,11 +131,12 @@ def reglu(
     )
 
     # Launch kernel
-    return tex.reglu(
+    return torch.ops.tex_ts.reglu_ts(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
+        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -159,11 +163,12 @@ def swiglu(
     )
 
     # Launch kernel
-    return tex.swiglu(
+    return torch.ops.tex_ts.swiglu_ts(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
+        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -190,11 +195,12 @@ def qgelu(
     )
 
     # Launch kernel
-    return tex.qgelu(
+    return torch.ops.tex_ts.qgelu_ts(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
+        fp8_scales_offsets["scale_offset"],
         otype,
     )
 
@@ -221,10 +227,11 @@ def srelu(
     )
 
     # Launch kernel
-    return tex.srelu(
+    return torch.ops.tex_ts.srelu_ts(
         inp,
         fp8_scales["scale"],
         fp8_scales["amax"],
         fp8_scales["scale_inv"],
+        fp8_scales_offsets["scale_offset"],
         otype,
     )

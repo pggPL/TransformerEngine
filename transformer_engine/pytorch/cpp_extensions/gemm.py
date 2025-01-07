@@ -88,16 +88,17 @@ def fp8_gemm(
     out_dtype = TE_DType[out.dtype] if D_dtype is None else D_dtype
 
 
-    fn = tex.te_gemm
     sm_count = get_sm_count()
     args = (
         A,
-        A_scale_inv[A_fp8_tensor],
+        A_scale_inv,
+        A_fp8_tensor,
         A_dtype,
         A_scaling_mode,
         True,  # transa
         B,
-        B_scale_inv[B_fp8_tensor],
+        B_scale_inv,
+        B_fp8_tensor,
         B_dtype,
         B_scaling_mode,
         False,  # transb
@@ -114,6 +115,7 @@ def fp8_gemm(
         accumulate,
         use_split_accumulator,
     )
+    fn = torch.ops.tex_ts.te_gemm_ts
     if ub_algo is None:
         args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),))
     else:
@@ -235,6 +237,7 @@ def gemm(
     transa = layout[0] == "T"
     transb = layout[1] == "T"
     empty_tensor = _empty_tensor()
+    fp8_index = -1  # dummy index
 
     if out is None:
         out = torch.empty(
@@ -269,16 +272,17 @@ def gemm(
     else:
         bias_dtype = output_dtype
 
-    fn = tex.te_gemm
     sm_count = get_sm_count()
     args = (
         A,
         empty_tensor,
+        fp8_index,
         input_dtype,
         [-1, -1, 1],  # A_scaling_mode
         transa,
         B,
         empty_tensor,
+        fp8_index,
         input_dtype,
         [-1, -1, 1],  # B_scaling_mode
         transb,
@@ -295,6 +299,7 @@ def gemm(
         accumulate,
         False,  # use_split_accumulator
     )
+    fn = torch.ops.tex_ts.te_gemm_ts
     if ub_algo is None:
         args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),))
     else:
@@ -386,7 +391,7 @@ def grouped_gemm(
 
     sm_count = get_sm_count()
 
-    tex.te_grouped_gemm(
+    torch.ops.tex_ts.te_grouped_gemm_ts(
         A,
         empty_tensor,
         0,  # A_offset
@@ -490,7 +495,7 @@ def fp8_grouped_gemm(
                 for o in out
             ]
 
-        tex.te_grouped_gemm(
+        torch.ops.tex_ts.te_grouped_gemm_ts(
             A,
             A_scale_inv[0],
             A_fp8_tensor_offset,
@@ -522,7 +527,7 @@ def fp8_grouped_gemm(
         if gelu:
             gelu_input = [torch.empty((m, A[0].size(0)), dtype=bias_dtype) for m in m_splits]
 
-        tex.te_grouped_gemm_single_output(
+        torch.ops.tex_ts.te_grouped_gemm_single_output_ts(
             A,
             A_scale_inv,
             A_fp8_tensor_offset,
