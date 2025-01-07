@@ -17,7 +17,6 @@
 #include <transformer_engine/cast.h>
 
 #include <cfloat>
-#include <limits>
 
 #include "../common.h"
 #include "../transpose/cast_transpose.h"
@@ -25,8 +24,7 @@
 #include "../utils.cuh"
 #include "math.h"
 #include "ptx.cuh"
-#include "transformer_engine/activation.h"
-#include "transformer_engine/transpose.h"
+#include "transformer_engine/transformer_engine.h"
 
 namespace transformer_engine {
 
@@ -1151,54 +1149,62 @@ void CastVectorizedUnaryGradKernelLauncher(const Tensor *grad, const Tensor &inp
   );           // NOLINT(*)
 }
 
+namespace {
+
 static bool is_full_tile_1D_tensor(const Tensor *const t) {
   const size_t N = product(t->data.shape);
   const bool isFullTile = (N % ELEMS_PER_BLOCK == 0);
   return isFullTile;
 }
 
-static bool is_full_tile_2D_tensor(const Tensor *const t) {
-  const bool is_2D_tensor = (t->data.shape.size() == 2);
-  const size_t rows = t->data.shape[0];
-  const size_t cols = t->data.shape[1];
-  const bool isFullTile = (rows % FP8_CHUNK_DIM_Y == 0) && (cols % FP8_CHUNK_DIM_X == 0);
-  return isFullTile;
+bool dimensions_supported_by_TMA(const Tensor *const t) {
+  const size_t cols = t->flat_last_dim();
+  constexpr int TMA_bytes = 16;
+  const int alignment_requirement = TMA_bytes / t->dtype();
+  return cols % alignment_requirement == 0;
 }
+
+}  // namespace
 
 // Supported by the Arch >= 10.0
 template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
           float (*OP)(float, const ParamOP &)>
 void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor *act_input, Tensor *output,
                               Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
-  if (is_mxfp_scaling(output->scaling_mode)) {
-    // MXFP8 Scaling
-    mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(input, act_input, output, dbias,
-                                                           workspace, stream);
-  } else if (is_delayed_tensor_scaling(output->scaling_mode)) {
-    // Regular FP8 Scaling (+Act)
-    if (!IS_DBIAS && !IS_DACT) {
-      if (is_full_tile_1D_tensor(output) && is_fp8_dtype(output->dtype())) {
-        // Aligned AND FP8
-        cast_fp8_1D<IS_ACT, ParamOP, OP>(input, output, stream);
-      } else {
-        // Unaligned
-        CastVectorizedUnaryKernelLauncher<ParamOP, OP>(input, output, stream);
+  switch (output->scaling_mode) {
+    case NVTE_DELAYED_TENSOR_SCALING:
+      {
+        if (!IS_DBIAS && !IS_DACT) {
+          if (is_full_tile_1D_tensor(output) && is_fp8_dtype(output->dtype())) {
+            // Aligned AND FP8
+            cast_fp8_1D<IS_ACT, ParamOP, OP>(input, output, stream);
+          } else {
+            // Unaligned
+            CastVectorizedUnaryKernelLauncher<ParamOP, OP>(input, output, stream);
+          }
+        } else if (!IS_DBIAS && IS_DACT) {
+          if (dimensions_supported_by_TMA(output) && is_fp8_dtype(output->dtype())) {
+            // Aligned AND FP8 (+dAct)
+            cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
+                                                        stream);
+          } else {
+            // Unaligned
+            CastVectorizedUnaryGradKernelLauncher<ParamOP, OP>(act_input, input, output, stream);
+          }
+        } else {
+          cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
+                                                      stream);
+        }
+        break;
       }
-    } else if (!IS_DBIAS && IS_DACT) {
-      if (is_full_tile_2D_tensor(output) && is_fp8_dtype(output->dtype())) {
-        // Aligned AND FP8 (+dAct)
-        cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
-                                                    stream);
-      } else {
-        // Unaligned
-        CastVectorizedUnaryGradKernelLauncher<ParamOP, OP>(act_input, input, output, stream);
+    case NVTE_MXFP8_1D_SCALING:
+      {
+        mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(input, act_input, output, dbias,
+            workspace, stream);
+        break;
       }
-    } else {
-      cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
-                                                  stream);
-    }
-  } else {
-    NVTE_ERROR("Not implemented on Arch >= 10.0: " + to_string(output->scaling_mode) + ".");
+    default:
+      NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
   }
 }
 
@@ -1208,7 +1214,8 @@ template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
 void fp8_quantize_arch_l_100(const Tensor &input, const Tensor *act_input, Tensor *output,
                              Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
   if (!is_delayed_tensor_scaling(output->scaling_mode) || IS_DBIAS) {
-    NVTE_ERROR("Not implemented on Arch < 10.0: " + to_string(output->scaling_mode) + ".");
+    NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) +
+               " on GPU with compute capability < 10.0.");
   }
   if (!IS_DACT) {
     CastVectorizedUnaryKernelLauncher<ParamOP, OP>(input, output, stream);
@@ -1287,37 +1294,44 @@ void quantize_helper(const NVTETensor input, const NVTETensor activation_input,
   auto dbias_tensor = reinterpret_cast<Tensor *>(dbias);
   auto workspace_tensor = reinterpret_cast<Tensor *>(workspace);
 
-  if (is_tensor_scaling(output_tensor->scaling_mode)) {
-    if (output_tensor->has_columnwise_data()) {
-      NVTE_CHECK(output_tensor->has_data(),
-                 "Quantizing in only the columnwise direction not supported yet!");
-      // TODO: Change to calling some C++ function and finish
-      // cast+transpose
-      // TODO: handle noop
-      if constexpr (!IS_DBIAS && !IS_DACT && !IS_ACT) {
-        const auto noop_tensor =
-            noop != nullptr ? *(reinterpret_cast<const Tensor *>(noop)) : Tensor();
-        cast_transpose(input_tensor, noop_tensor, output_tensor, stream);
+  switch (output_tensor->scaling_mode) {
+    case NVTE_DELAYED_TENSOR_SCALING:
+      {
+        if (output_tensor->has_columnwise_data()) {
+          NVTE_CHECK(output_tensor->has_data(),
+              "Quantizing in only the columnwise direction not supported yet!");
+          // TODO: handle noop
+          if constexpr (!IS_DBIAS && !IS_DACT && !IS_ACT) {
+            const auto noop_tensor =
+              noop != nullptr ? *(reinterpret_cast<const Tensor *>(noop)) : Tensor();
+            cast_transpose(input_tensor, noop_tensor, output_tensor, stream);
+          }
+          if constexpr (IS_DBIAS && !IS_ACT) {
+            cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(
+                input_tensor, activation_tensor, output_tensor, dbias_tensor,
+                workspace_tensor, stream);
+          }
+          if constexpr (!IS_DBIAS && (IS_DACT || IS_ACT)) {
+            NVTE_ERROR("Not implemented yet!");
+          }
+        } else if (output_tensor->has_data()) {
+          fp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
+              input_tensor, activation_tensor, output_tensor, dbias_tensor,
+              workspace_tensor, stream);
+        }
+        break;
       }
-      if constexpr (IS_DBIAS && !IS_ACT) {
-        cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(
+    case NVTE_MXFP8_1D_SCALING:
+      {
+        mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
             input_tensor, activation_tensor, output_tensor, dbias_tensor, workspace_tensor, stream);
+        break;
       }
-      if constexpr (!IS_DBIAS && (IS_DACT || IS_ACT)) {
-        NVTE_ERROR("Not implemented yet!");
-      }
-    } else if (output_tensor->has_data()) {
-      fp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
-          input_tensor, activation_tensor, output_tensor, dbias_tensor, workspace_tensor, stream);
-    }
-  } else if (is_mxfp_scaling(output_tensor->scaling_mode)) {
-    // MX scaling
-    mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
-        input_tensor, activation_tensor, output_tensor, dbias_tensor, workspace_tensor, stream);
-  } else {
-    NVTE_ERROR("Not implemented yet!");
+    default:
+      NVTE_ERROR("Not implemented scaling mode: " + to_string(output_tensor->scaling_mode) + ".");
   }
 }
+
 }  // namespace detail
 }  // namespace transformer_engine
 
