@@ -5632,21 +5632,19 @@ class FusedAttnFunc(torch.autograd.Function):
         ctx.is_input_fp8 = is_input_fp8
         ctx.is_output_fp8 = is_output_fp8
         qkvo_tensors = (q, k, v, out_save) if not ctx.fp8 else (None, None, None, None)
-        save_fp8_tensors = []
-        ctx.fp8_tensors_obj = []
-        for tensor in fp8_tensors:
-            x, x_obj = prepare_for_saving(tensor)
-            save_fp8_tensors.extend(x)
-            ctx.fp8_tensors_obj.append(x_obj)
-        ctx.save_for_backward(
-            *qkvo_tensors,
+        tensors_to_save, tensor_objects = prepare_for_saving(
+            *fp8_tensors, 
+            *qkvo_tensors, 
             cu_seqlens_q,
             cu_seqlens_kv,
             cu_seqlens_q_padded,
             cu_seqlens_kv_padded,
-            *save_fp8_tensors,
             *aux_ctx_tensors,
         )
+        ctx.save_for_backward(
+            *tensors_to_save
+        )
+        ctx.tensor_objects = tensor_objects
         ctx.fp8_meta = fp8_meta
 
         ctx.dQKV_quantizer = dQKV_quantizer
@@ -5682,6 +5680,10 @@ class FusedAttnFunc(torch.autograd.Function):
 
         d_out = d_out.contiguous()
         (
+            q_fp8, 
+            k_fp8, 
+            v_fp8, 
+            out_fp8,
             q,
             k,
             v,
@@ -5691,13 +5693,8 @@ class FusedAttnFunc(torch.autograd.Function):
             cu_seqlens_q_padded,
             cu_seqlens_kv_padded,
             *other_tensors,
-        ) = ctx.saved_tensors
+        ) = restore_from_saved(ctx.tensor_objects, ctx.saved_tensors)
 
-        fp8_tensors = []
-        for obj in ctx.fp8_tensors_obj:
-            x, other_tensors = restore_from_saved(obj, other_tensors)
-            fp8_tensors.append(x)
-        q_fp8, k_fp8, v_fp8, out_fp8 = fp8_tensors
         aux_ctx_tensors = other_tensors
 
         if not aux_ctx_tensors[0].is_contiguous():
