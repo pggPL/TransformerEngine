@@ -15,6 +15,8 @@ from ..utils import devices_match, non_tn_fp8_gemm_supported
 from ._internal.float8_tensor_base import Float8TensorBase, _FromFloat8Func
 from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
 
+import warnings
+
 aten = torch.ops.aten
 
 _ops_to_preserve_subclass_in_fsdp2 = {
@@ -389,14 +391,13 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         arguments.
 
         """
-        a =  Float8Tensor(
+        return Float8Tensor(
             data=data,
             fp8_dtype=fp8_dtype,
             fp8_scale_inv=fp8_scale_inv,
             dtype=dtype,
             shape=shape,
         )
-        return a
 
     def __reduce_ex__(self, protocol: int) -> tuple:
         """Custom pickling to remove references to FP8 metadata objects"""
@@ -462,6 +463,8 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
 
     # Cast to FP8 when setting Float8Tensor.data
     data = property(_get_data, _set_data)
+
+
 
 
 class _ViewFunc(torch.autograd.Function):

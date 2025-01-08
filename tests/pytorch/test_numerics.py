@@ -2139,7 +2139,7 @@ def test_fp8_grouped_gemm(shape, fp8_dtype, accumulate):
     out_ref = [o.clone() for o in out]
 
     # fp8 should be robust enough to this fake scale
-    scale = 1 + torch.rand(1, dtype=torch.float32, device="cuda")
+    scale = 1 + torch.rand(1, dtype=torch.float32, device="cuda").squeeze()
     amax = torch.zeros(1, 1, dtype=torch.float32, device="cuda")
 
     a_quantizers = [

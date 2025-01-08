@@ -47,7 +47,7 @@ class _moe_permute(torch.autograd.Function):
         fp8 = isinstance(inp, Float8Tensor)
         if fp8:
             assert (
-                len(inp._quantizer.scale) == 1
+                inp._quantizer.scale.ndim == 0
             ), "Only one factor scaling per tensor (Delayed Scaling) supported by moe_permute."
             dtype = inp._fp8_dtype
             fp8_scale_inv = inp._scale_inv

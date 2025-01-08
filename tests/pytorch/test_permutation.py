@@ -160,13 +160,13 @@ def _test_permutation(
             size=(num_tokens, hidden_size), dtype=torch.float32, device="cuda"
         )
         _permute_fwd_input_quantizer = Float8Quantizer(
-            scale=torch.full([1], 1.0).cuda(), amax=torch.full([1], 1.0).cuda(), fp8_dtype=te_dtype
+            scale=torch.full([1], 1.0).cuda().squeeze(), amax=torch.full([1], 1.0).cuda(), fp8_dtype=te_dtype
         )
         _permute_bwd_input_quantizer = Float8Quantizer(
-            scale=torch.full([1], 1.0).cuda(), amax=torch.full([1], 1.0).cuda(), fp8_dtype=te_dtype
+            scale=torch.full([1], 1.0).cuda().squeeze(), amax=torch.full([1], 1.0).cuda(), fp8_dtype=te_dtype
         )
         _unpermute_bwd_quantizer = Float8Quantizer(
-            scale=torch.full([1], 1.0).cuda(), amax=torch.full([1], 1.0).cuda(), fp8_dtype=te_dtype
+            scale=torch.full([1], 1.0).cuda().squeeze(), amax=torch.full([1], 1.0).cuda(), fp8_dtype=te_dtype
         )
         permute_fwd_input = _permute_fwd_input_quantizer(permute_fwd_input)
         permute_bwd_input = _permute_bwd_input_quantizer(permute_bwd_input)

@@ -90,7 +90,7 @@ def make_reference_and_test_tensors(
     test = ref.to(device=test_device, dtype=test_dtype)
     if test_is_fp8:
         quantizer = Float8Quantizer(
-            scale=torch.ones(1, dtype=torch.float32, device=test_device),
+            scale=torch.ones(1, dtype=torch.float32, device=test_device).squeeze(),
             amax=torch.zeros(1, dtype=torch.float32, device=test_device),
             fp8_dtype=tex.DType.kFloat8E4M3,
         )

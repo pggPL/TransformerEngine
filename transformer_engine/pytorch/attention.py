@@ -3018,6 +3018,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                             deterministic=ctx.deterministic,
                             **fp8_meta_kwargs,
                         )
+                        
                     else:
                         if ctx.qkv_format == "thd":
                             # [t, np, hn] -> [t/2, np, hn]
@@ -4614,9 +4615,10 @@ class _SplitAlongDim(torch.autograd.Function):
                 return Float8Tensor.make_like(grad_outputs[0], data=ret), None, None
 
             grad_outputs_data = [x._data for x in grad_outputs]
+            data = torch.cat(grad_outputs_data, dim=split_dim)
             return (
                 Float8Tensor.make_like(
-                    grad_outputs[0], data=torch.cat(grad_outputs_data, dim=split_dim)
+                    grad_outputs[0], data=data, shape=data.shape
                 ),
                 None,
                 None,
@@ -5439,9 +5441,9 @@ def _combine_tensors(
     num_tensors = len(tensors)
     new_shape = list(tensors[0].shape)
     new_shape.insert(dim, num_tensors)
-    new_stride = list(tensors[0].stride())
-    new_stride.insert(dim, int(new_stride[dim - 1] / num_tensors))
     if isinstance(tensors[0], Float8Tensor):
+        new_stride = list(tensors[0]._data.stride())
+        new_stride.insert(dim, int(new_stride[dim - 1] / num_tensors))
         combined_tensor = torch.Tensor().to(device=tensors[0].device, dtype=tensors[0]._data.dtype)
         combined_tensor.set_(
             tensors[0]._data.untyped_storage(),
@@ -5449,8 +5451,10 @@ def _combine_tensors(
             new_shape,
             new_stride,
         )
-        combined_tensor = Float8Tensor.make_like(tensors[0], data=combined_tensor)
+        combined_tensor = Float8Tensor.make_like(tensors[0], data=combined_tensor, shape=new_shape)
     else:
+        new_stride = list(tensors[0].stride())
+        new_stride.insert(dim, int(new_stride[dim - 1] / num_tensors))
         combined_tensor = torch.Tensor().to(device=tensors[0].device, dtype=tensors[0].dtype)
         combined_tensor.set_(
             tensors[0].untyped_storage(), tensors[0].storage_offset(), new_shape, new_stride
@@ -5790,6 +5794,8 @@ class FusedAttnFunc(torch.autograd.Function):
                             dq = dq_fp8.dequantize()
                             dk = dk_fp8.dequantize()
                             dv = dv_fp8.dequantize()
+                    else:
+                        dq, dk, dv = dq_fp8, dk_fp8, dv_fp8
                 else:
                     if isinstance(d_out, QuantizedTensor):
                         d_out = d_out.dequantize()
@@ -7993,12 +7999,14 @@ class MultiheadAttention(torch.nn.Module):
             inference_params=inference_params,
         )
 
+
         # ===================
         # Output. [sq, b, h]
         # ===================
         projection_output = self.proj(
             context_layer,
             is_first_microbatch=is_first_microbatch,
+            fp8_grad=isinstance(context_layer, QuantizedTensor)
         )
 
         if self.return_bias:

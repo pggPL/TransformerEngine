@@ -48,6 +48,12 @@ from transformer_engine.pytorch.utils import (
 from transformer_engine.pytorch.utils import get_cudnn_version
 import transformer_engine_torch as tex
 from transformer_engine_torch import NVTE_Fused_Attn_Backend
+from transformer_engine.pytorch.tensor.quantized_tensor import (
+    QuantizedTensor,
+    Quantizer,
+    prepare_for_saving,
+    restore_from_saved,
+)
 
 # Only run FP8 tests on H100
 fp8_available, reason_for_no_fp8 = fp8.FP8GlobalStateManager.is_fp8_available()
@@ -1881,7 +1887,7 @@ def test_custom_mha_fp8_vs_f16(dtype, model):
 
     atol = 5e-1
     rtol = 5e-1
-    rmse_tol = 0.1
+    rmse_tol = 0.13
     _error(
         fused_attn_fwd_fp8,
         unfused_attn_fwd_f16,
@@ -2035,6 +2041,7 @@ class _custom_mha_fp8(torch.autograd.Function):
         workspace: torch.Tensor,
         is_training: bool,
         mask_type: str,
+        quantizers: list[Quantizer]
     ) -> torch.Tensor:
 
         assert inp.dim() == 2
@@ -2043,49 +2050,31 @@ class _custom_mha_fp8(torch.autograd.Function):
         d = in_features // h
         b = cu_seqlens.numel() - 1
 
-        fp8_dtype_forward = fp8.get_fp8_te_dtype(fp8_meta["recipe"], fprop_tensor=True)
+        input_quantizer = quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_INPUT]
+        qkv_quantizer = quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM2_INPUT]
+        qkv_weight_quantizer = quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
+        o_quantizer = quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_OUTPUT]
+        dO_quantizer = quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
+        dQKV_quantizer = quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT1]
+        s_quantizer = quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT2]
+        dP_quantizer = quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT3]
 
-        inp_fp8, inp_t_fp8 = ext.fp8_cast_transpose_fused(
-            inp,
-            fp8_meta["scaling_fwd"],
-            tex.FP8FwdTensors.GEMM1_INPUT,
-            fp8_dtype_forward,
-        )
+        inp_fp8 = input_quantizer(inp)
 
-        qkv_weight_fp8, qkv_weight_t_fp8 = ext.fp8_cast_transpose_fused(
-            qkv_weight,
-            fp8_meta["scaling_fwd"],
-            tex.FP8FwdTensors.GEMM1_WEIGHT,
-            fp8_dtype_forward,
-        )
+        qkv_weight_fp8 = qkv_weight_quantizer(qkv_weight)
 
-        M = None
-        ZInv = None
-        philox_unpacked = None
-
-        qkv, _ = ext.fp8_gemm(
+        qkv, _, _ = ext.general_gemm(
             qkv_weight_fp8,
-            fp8_meta["scaling_fwd"].scale_inv,
-            tex.FP8FwdTensors.GEMM1_WEIGHT,
-            fp8_dtype_forward,
             inp_fp8,
-            fp8_meta["scaling_fwd"].scale_inv,
-            tex.FP8FwdTensors.GEMM1_INPUT,
-            fp8_dtype_forward,
-            torch.uint8,
             workspace,
             bias=qkv_bias,
-            use_bias=True,
-            out_index=META_QKV,
-            fp8_meta_tensor=fp8_meta["scaling_fwd"],
-            use_split_accumulator=_2X_ACC_FPROP,
-            D_dtype=fp8_dtype_forward,
+            out_dtype=qkv_weight_fp8.dtype,
+            quantization_params=qkv_quantizer,
+            use_split_accumulator=_2X_ACC_FPROP
         )
         qkv = qkv.view(-1, 3, h, d)
         qkv_fp16 = (
-            ext.cast_from_fp8(
-                qkv, fp8_meta["scaling_fwd"], META_QKV, fp8_dtype_forward, tex.DType.kFloat16
-            )
+            qkv.dequantize()
             .view(b, max_s, 3, h, d)
             .contiguous()
         )
@@ -2094,32 +2083,29 @@ class _custom_mha_fp8(torch.autograd.Function):
             qkv = qkv.view(b, max_s, 3, h, d)  # bs3hd
 
         # FMHA
-        out, aux_ctx_tensors, *rest = fused_attn_fwd(
+        q_data = qkv._data[:, :, 0, :, :] if cudnn_frontend_version == 1 else qkv._data[:, 0, :, :]
+        k_data = qkv._data[:, :, 1, :, :] if cudnn_frontend_version == 1 else qkv._data[:, 1, :, :]
+        v_data = qkv._data[:, :, 2, :, :] if cudnn_frontend_version == 1 else qkv._data[:, 2, :, :]
+        q = qkv.make_like(
+            tensor=qkv, data=q_data, shape=q_data.shape
+        )
+        k = qkv.make_like(
+            tensor=qkv, data=k_data, shape=k_data.shape
+        )
+        v = qkv.make_like(
+            tensor=qkv, data=v_data, shape=v_data.shape
+        )
+        
+        out, aux_ctx_tensors = fused_attn_fwd(
             is_training,
             max_s,
             max_s,
             cu_seqlens,
             cu_seqlens,
-            qkv[:, :, 0, :, :] if cudnn_frontend_version == 1 else qkv[:, 0, :, :],
-            qkv[:, :, 1, :, :] if cudnn_frontend_version == 1 else qkv[:, 1, :, :],
-            qkv[:, :, 2, :, :] if cudnn_frontend_version == 1 else qkv[:, 2, :, :],
-            fp8_dtype_forward,
+            q,
+            k,
+            v,
             FusedAttnBackend["FP8"],
-            None,
-            None,
-            None,
-            fp8_meta["scaling_fwd"].scale_inv,  # d_scale_qkv
-            META_QKV,  # d_scale_qkv_offset
-            fp8_meta["scaling_fwd"].scale_inv,  # d_scale_s
-            META_S,  # d_scale_s_offset
-            fp8_meta["scaling_fwd"].scale,  # q_scale_s
-            META_S,  # q_scale_s_offset
-            fp8_meta["scaling_fwd"].scale,  # q_scale_o
-            META_O,  # q_scale_o_offset
-            fp8_meta["scaling_fwd"].amax_history,  # amax_s
-            META_S,  # amax_s_offset
-            fp8_meta["scaling_fwd"].amax_history,  # amax_o
-            META_O,  # amax_o_offset
             attn_scale=None,
             dropout=p_dropout,
             fast_zero_fill=fast_zero_fill,
@@ -2127,19 +2113,17 @@ class _custom_mha_fp8(torch.autograd.Function):
             attn_bias_type="no_bias",
             attn_mask_type=mask_type if cudnn_frontend_version == 1 else "padding",
             rng_gen=None,
+            o_quantizer=o_quantizer,
+            s_quantizer=s_quantizer,
         )
 
-        M, ZInv, philox_unpacked = aux_ctx_tensors
+        tensors_to_save, tensor_objects = prepare_for_saving(
+            q, k, v, inp_fp8, qkv_weight_fp8, workspace, out)
 
         ctx.save_for_backward(
-            inp_t_fp8,
-            qkv_weight_t_fp8,
-            workspace,
-            qkv,
-            out,
-            fp8_meta["scaling_fwd"].scale,
-            fp8_meta["scaling_fwd"].scale_inv,
-        )
+                *tensors_to_save
+            )
+        ctx.tensor_objects = tensor_objects
         ctx.aux_ctx_tensors = aux_ctx_tensors
         ctx.fp8_meta = fp8_meta
         ctx.cu_seqlens = cu_seqlens
@@ -2151,58 +2135,52 @@ class _custom_mha_fp8(torch.autograd.Function):
         ctx.mask_type = mask_type
         ctx.dtype = inp.dtype
 
+        ctx.dQKV_quantizer = dQKV_quantizer
+        ctx.dO_quantizer = dO_quantizer
+        ctx.dP_quantizer = dP_quantizer
+        ctx.S_quantizer = s_quantizer
+
+
         out = out.view(-1, in_features)  # (bs)(hd)
-        out_fp16 = ext.cast_from_fp8(
-            out, fp8_meta["scaling_fwd"], META_O, fp8_dtype_forward, tex.DType.kFloat16
-        )
+        out_fp16 = out.dequantize()
         torch.save(out_fp16, "out.pt")  # (bs)(hd)
         return out_fp16
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
         with torch.cuda.nvtx.range("_DPA"):
+            saved_tensors = ctx.saved_tensors
             (
-                inp_t_fp8,
-                qkv_weight_t_fp8,
+                q, 
+                k, 
+                v,
+                inp_fp8,
+                qkv_weight_fp8,
                 workspace,
-                qkv,
-                out,
-                fwd_scales,
-                fwd_scale_inverses,
-            ) = ctx.saved_tensors
-            fp8_dtype_forward = fp8.get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=True)
+                out
+            ) = restore_from_saved(ctx.tensor_objects, saved_tensors)
+            
+            proj_dgrad = ctx.dO_quantizer(grad_output)
             fp8_dtype_backward = fp8.get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=False)
-
-            proj_dgrad = ext.cast_to_fp8(
-                grad_output, ctx.fp8_meta["scaling_bwd"], META_DO, fp8_dtype_backward
-            )  # (bs)(hd)
 
             dq, dk, dv, *rest = fused_attn_bwd(
                 ctx.max_s,
                 ctx.max_s,
                 ctx.cu_seqlens,
                 ctx.cu_seqlens,
-                qkv[:, :, 0, :, :] if cudnn_frontend_version == 1 else qkv[:, 0, :, :],
-                qkv[:, :, 1, :, :] if cudnn_frontend_version == 1 else qkv[:, 1, :, :],
-                qkv[:, :, 2, :, :] if cudnn_frontend_version == 1 else qkv[:, 2, :, :],
+                q,
+                k,
+                v,
                 out,
                 proj_dgrad.view_as(out),
-                fp8_dtype_forward,
                 fp8_dtype_backward,
                 ctx.aux_ctx_tensors,
                 FusedAttnBackend["FP8"],
                 None,
                 None,
-                fwd_scale_inverses[META_QKV],  # d_scale_qkv,
-                fwd_scale_inverses[META_S],  # d_scale_s,
-                fwd_scale_inverses[META_O],  # d_scale_o,
-                ctx.fp8_meta["scaling_bwd"].scale_inv[META_DO],  # d_scale_do
-                ctx.fp8_meta["scaling_bwd"].scale_inv[META_DP],  # d_scale_dp
-                fwd_scales[META_S],  # q_scale_s
-                ctx.fp8_meta["scaling_bwd"].scale[META_DP],  # q_scale_dp
-                ctx.fp8_meta["scaling_bwd"].scale[META_DQKV],  # q_scale_dqkv
-                ctx.fp8_meta["scaling_bwd"].amax_history[0][META_DP],  # amax_dp
-                ctx.fp8_meta["scaling_bwd"].amax_history[0][META_DQKV],  # amax_dqkv
+                ctx.S_quantizer,
+                ctx.dP_quantizer,
+                ctx.dQKV_quantizer,
                 attn_scale=None,
                 dropout=ctx.p_dropout,
                 fast_zero_fill=ctx.fast_zero_fill,
@@ -2211,59 +2189,47 @@ class _custom_mha_fp8(torch.autograd.Function):
                 attn_mask_type=ctx.mask_type if cudnn_frontend_version == 1 else "padding",
             )
             dim = 2 if cudnn_frontend_version == 1 else 1
-            dqkv = torch.Tensor().to(device=dq.device, dtype=dq.dtype)
-            dqkv_shape = list(dq.shape)
+            dqkv = torch.Tensor().to(device=dq._data.device, dtype=dq._data.dtype)
+            dqkv_shape = list(dq._data.shape)
             dqkv_shape.insert(dim, 3)
-            dqkv_stride = list(dq.stride())
+            dqkv_stride = list(dq._data.stride())
             dqkv_stride.insert(dim, int(dqkv_stride[-3] / 3))
-            dqkv.set_(dq.untyped_storage(), dq.storage_offset(), dqkv_shape, dqkv_stride)  # bs3hd
+            dqkv.set_(dq._data.untyped_storage(), dq._data.storage_offset(), dqkv_shape, dqkv_stride)  # bs3hd
 
             dqkv_c = dqkv.view(-1, 3 * ctx.hidden_size)
-            dqkv_c_fp16 = ext.cast_from_fp8(
-                dqkv_c,
-                ctx.fp8_meta["scaling_bwd"],
-                META_DQKV,
-                fp8_dtype_backward,
-                tex.DType.kFloat16,
-            )
+            dqkv_c = dq.make_like(tensor=dq, data=dqkv_c, shape=dqkv_c.shape)
+            dqkv_c_fp16 = dqkv_c.dequantize()
             torch.save(dqkv_c_fp16, "dqkv.pt")
 
-            qkv_bgrad, dqkv_t = ext.fp8_transpose_bgrad_fused(
-                dqkv_c,
-                ctx.fp8_meta["scaling_bwd"],
-                META_DQKV,
-                fp8_dtype_backward,
-                ctx.dtype,
+            qkv_bgrad, dqkv = ext.bgrad_quantize(
+                dqkv_c_fp16,
+                ctx.dQKV_quantizer
             )
+            dqkv_c._transpose = None
+            dqkv_c._create_transpose()
 
             # QKV DGRAD
-            qkv_dgrad, _ = ext.fp8_gemm(
-                qkv_weight_t_fp8,
-                fwd_scale_inverses,
-                tex.FP8FwdTensors.GEMM1_WEIGHT,
-                fp8_dtype_forward,
+            qkv_dgrad, _, _ = ext.general_gemm(
+                qkv_weight_fp8,
                 dqkv_c,
-                ctx.fp8_meta["scaling_bwd"].scale_inv,
-                META_DQKV,
-                fp8_dtype_backward,
-                ctx.dtype,
                 workspace,
+                ctx.dtype,
                 use_split_accumulator=_2X_ACC_DGRAD,
+                layout="NN"
             )
+            
             # QKV WGRAD
-            qkv_wgrad, _ = ext.fp8_gemm(
-                inp_t_fp8,
-                fwd_scale_inverses,
-                tex.FP8FwdTensors.GEMM1_INPUT,
-                fp8_dtype_forward,
-                dqkv_t,
-                ctx.fp8_meta["scaling_bwd"].scale_inv,
-                META_DQKV,
-                fp8_dtype_backward,
-                ctx.dtype,
+            qkv_wgrad, _, _ = ext.general_gemm(
+                inp_fp8,
+                dqkv,
                 workspace,
+                ctx.dtype,
                 use_split_accumulator=_2X_ACC_WGRAD,
+                layout="NT"
             )
+            
+
+            
 
         return (
             qkv_dgrad,
@@ -2320,7 +2286,7 @@ class Custom_MHA_FP8(TransformerEngineBaseModule):
         cu_seqlens,
         max_s,
     ) -> torch.Tensor:
-        with self.prepare_forward(inp, None, num_gemms=3) as inp:
+        with self.prepare_forward(inp, num_gemms=3) as inp:
             out = _custom_mha_fp8.apply(
                 inp,
                 self.qkv_weight,
@@ -2334,5 +2300,6 @@ class Custom_MHA_FP8(TransformerEngineBaseModule):
                 self.workspace,
                 self.training,
                 self.mask_type,
+                self.quantizers
             )
         return out

@@ -52,6 +52,8 @@ from ..tensor.quantized_tensor import (
     prepare_for_saving,
     restore_from_saved,
 )
+from ..tensor._internal.float8_tensor_base import Float8TensorBase
+from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
 
 from ..cpp_extensions import (
@@ -451,6 +453,11 @@ class _LayerNormLinear(torch.autograd.Function):
             # dgrad GEMM
             if ctx.grad_input_quantizer is not None:
                 ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
+            
+            if isinstance(grad_output, QuantizedTensor):
+                if grad_output._transpose is None:
+                    grad_output._create_transpose()
+
             dgrad, _, _ = general_gemm(
                 weight,
                 grad_output,
