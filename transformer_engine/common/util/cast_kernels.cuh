@@ -1160,7 +1160,7 @@ static bool is_full_tile_1D_tensor(const Tensor *const t) {
 bool dimensions_supported_by_TMA(const Tensor *const t) {
   const size_t cols = t->flat_last_dim();
   constexpr int TMA_bytes = 16;
-  const int alignment_requirement = TMA_bytes / t->dtype();
+  const int alignment_requirement = TMA_bytes / typeToSize(t->dtype());
   return cols % alignment_requirement == 0;
 }
 
