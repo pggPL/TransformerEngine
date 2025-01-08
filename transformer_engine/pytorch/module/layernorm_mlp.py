@@ -220,8 +220,8 @@ class _LayerNormMLP(torch.autograd.Function):
 
         # Prepare GEMM input
         # Note: Cast to expected dtype and perform tensor-parallel communication
+        with_quantized_all_gather = fp8
         if with_input_all_gather:
-            with_quantized_all_gather = fp8
             if return_layernorm_output and return_layernorm_output_gathered:
                 with_quantized_all_gather = False
             if fp8:
@@ -231,8 +231,10 @@ class _LayerNormMLP(torch.autograd.Function):
                 tp_group,
                 quantizer=(fc1_input_quantizer if with_quantized_all_gather else None),
             )
+            ln_out_gathered = True
         else:
             ln_out_total = ln_out
+            with_quantized_all_gather = False
 
         # If residual connection is after LN, we need `ln_out`
         # tensor in higher precision, this comes at the cost
@@ -247,13 +249,13 @@ class _LayerNormMLP(torch.autograd.Function):
                         tex.FP8FwdTensors.GEMM1_INPUT,
                         fp8_dtype_forward,
                     )
-                else:
-                    ln_out_total = fc1_input_quantizer(ln_out)
+                elif not with_quantized_all_gather:
+                    ln_out_total = fc1_input_quantizer(ln_out_total)
                     if ln_out_gathered:
                         rank = torch.distributed.get_rank(tp_group)
                         slice_start = rank * ln_out.size(0)
                         slice_end = (rank + 1) * ln_out.size(0)
-                        ln_out = ln_out_total[slice_start:slice_end, ...]
+                        ln_out = ln_out_total[slice_start:slice_end, ...] # TODO(pgadzinski) - check this
                     else:
                         ln_out = ln_out_total
 

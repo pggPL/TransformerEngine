@@ -343,7 +343,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 shape = list(inp.shape)
                 shape[0] *= tp_size
                 return out, ln_out_return.view(shape)
-            return out, ln_out_return.view_as(inputmat)
+            return out, ln_out_return.view_as(inp)
         return out
 
     @staticmethod
