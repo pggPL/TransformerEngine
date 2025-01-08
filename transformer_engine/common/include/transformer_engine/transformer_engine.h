@@ -67,19 +67,14 @@ enum NVTETensorParam {
   kNVTENumTensorParams
 };
 
-/*! \struct NVTEScalingMode
- * \brief Granularity of scaling in each direction:
- *  - {-1, -1, 1} - per tensor delayed scaling
- *  - {-1, -1, 0} - per tensor current scaling
- *  - {1, -1, 0} - rowwise scaling (not implemented)
- *  - {-1, 1, 0} - columnwise scaling (not implemented)
- *  - {1, 32, 0} - 1D blockwise scaling (rowwise)
- *  - {32, 1, 0} - 1D blockwise scaling (columnwise)
- *  - {32, 32, 0} - 2D blockwise scaling
+/*! \enum NVTEScalingMode
+ * \brief Granularity of scaling:
  */
 enum NVTEScalingMode {
-  NVTE_DELAYED_TENSOR_SCALING = 0,
-  NVTE_MXFP8_1D_SCALING = 1,
+  NVTE_DELAYED_TENSOR_SCALING = 0, /*!< Single scale per tensor, computed in delayed manner.
+                                        Used also for high precision data, without scaling */
+  NVTE_MXFP8_1D_SCALING = 1,       /*!< Single scale per block of 32 elements consecutive in either
+                                        rowwise or columnwise direction */
   NVTE_INVALID_SCALING
 };
 
@@ -112,19 +107,19 @@ NVTETensor nvte_create_tensor(NVTEScalingMode scaling_mode);
  */
 void nvte_destroy_tensor(NVTETensor tensor);
 
-/*! \brief Get a raw pointer to the tensor's data.
+/*! \brief Get a raw pointer to the tensor's rowwise data.
  *
  *  \param[in] tensor Tensor.
  *
- *  \return A raw pointer to tensor's data.
+ *  \return A raw pointer to tensor's rowwise data.
  */
 void *nvte_tensor_data(const NVTETensor tensor);
 
-/*! \brief Get a raw pointer to the tensor's data.
+/*! \brief Get a raw pointer to the tensor's columnwise data.
  *
  *  \param[in] tensor Tensor.
  *
- *  \return A raw pointer to tensor's data.
+ *  \return A raw pointer to tensor's columnwise data.
  */
 void *nvte_tensor_columnwise_data(const NVTETensor tensor);
 
