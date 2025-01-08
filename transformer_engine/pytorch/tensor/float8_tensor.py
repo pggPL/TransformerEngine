@@ -5,6 +5,7 @@
 """Tensor class with FP8 data"""
 from __future__ import annotations
 from typing import Optional, Tuple, Iterable
+import warnings
 
 import torch
 import transformer_engine_torch as tex
@@ -356,11 +357,11 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             # This case is handled separately.
             if isinstance(src, Float8Tensor) and isinstance(dst, Float8Tensor):
                 dst._data.copy_(src._data.detach())
-                dst._scale_inv.copy_(src._scale_inv)
+                dst._scale_inv.copy_(src._scale_inv.view(dst._scale_inv.size()))
                 if src._transpose is not None or dst._transpose is not None:
                     dst._create_transpose()
                 return dst
-            
+
             # Implementation in the superclass (QuantizedTensor) returns a proper output
             pass
         elif func in _ops_to_preserve_subclass_in_fsdp2:
