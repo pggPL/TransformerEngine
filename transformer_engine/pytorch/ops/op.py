@@ -524,9 +524,10 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         state = {}
         for mode in ("forward", "backward"):
 
-            fp8_meta = self._fp8_metas
-            if fp8_meta is None:
+            # Get state for a given FP8 tensor
+            if self.num_quantizers(mode) == 0:
                 continue
+            fp8_meta = self.get_fp8_meta(mode)
             state[mode] = {}
 
             # Store tensors
@@ -560,7 +561,7 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
 
         # Deserialize state from byte tensor
         state = pickle.loads(state.detach().numpy(force=True).tobytes())
-        if state is None:
+        if state is None or len(state) == 0:
             return
 
         def copy_tensor(src: torch.Tensor, dst: torch.Tensor) -> None:
@@ -580,7 +581,7 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             # Get state for a given FP8 tensor
             if mode not in state:
                 continue
-            if self.num_fp8_scales(mode) == 0:
+            if self.num_quantizers(mode) == 0:
                 continue
             fp8_meta = self.get_fp8_meta(mode)
             if fp8_meta is None:
