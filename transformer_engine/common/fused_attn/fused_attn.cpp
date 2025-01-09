@@ -94,16 +94,15 @@ NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
       (!requires_64bit_ragged_offset || cudnn_runtime_version >= 90500);
 
   if ((q_dtype == NVTEDType::kNVTEFloat8E4M3 || q_dtype == NVTEDType::kNVTEFloat8E5M2) &&
-       sm_arch_ >= 90 && bias_type == NVTE_Bias_Type::NVTE_NO_BIAS &&
+      sm_arch_ >= 90 && bias_type == NVTE_Bias_Type::NVTE_NO_BIAS &&
       // 8.9: t3hd, max_s=512, d=64, padding
       ((cudnn_runtime_version >= 8900 && sm_arch_ < 100 &&
-        qkv_layout == NVTE_QKV_Layout::NVTE_T3HD &&
-        max_seqlen_q == max_seqlen_kv && max_seqlen_q <= 512 && head_dim_qk == 64 &&
-        head_dim_v == 64 && attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_MASK) ||
+        qkv_layout == NVTE_QKV_Layout::NVTE_T3HD && max_seqlen_q == max_seqlen_kv &&
+        max_seqlen_q <= 512 && head_dim_qk == 64 && head_dim_v == 64 &&
+        attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_MASK) ||
        // 9.2: {bshd, sbhd}, any seqlen, d=128, {no_mask, causal}
-       (cudnn_runtime_version >= 90201 && sm_arch_ < 100 &&
-        max_seqlen_q % 128 == 0 && max_seqlen_kv % 128 == 0 &&
-        head_dim_qk == 128 && head_dim_v == 128 &&
+       (cudnn_runtime_version >= 90201 && sm_arch_ < 100 && max_seqlen_q % 128 == 0 &&
+        max_seqlen_kv % 128 == 0 && head_dim_qk == 128 && head_dim_v == 128 &&
         (attn_mask_type == NVTE_Mask_Type::NVTE_CAUSAL_MASK ||
          attn_mask_type == NVTE_Mask_Type::NVTE_NO_MASK)) ||
        // 9.7: {bshd, sbhd}, any seqlen, d<=256 for sm90 and d<=128 for sm100, {padding, padding_causal}
@@ -118,8 +117,7 @@ NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
          attn_mask_type == NVTE_Mask_Type::NVTE_CAUSAL_MASK ||
          attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_MASK ||
          attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_CAUSAL_MASK))) &&
-      (qkv_format == NVTE_QKV_Format::NVTE_BSHD ||
-       qkv_format == NVTE_QKV_Format::NVTE_SBHD) &&
+      (qkv_format == NVTE_QKV_Format::NVTE_BSHD || qkv_format == NVTE_QKV_Format::NVTE_SBHD) &&
       !requires_64bit_ragged_offset) {
     if (cudnn_runtime_version >= 8900) {
       backend = NVTE_Fused_Attn_Backend::NVTE_FP8;
@@ -155,8 +153,7 @@ NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
         // TODO(cyang): replace with cudnn-frontend check_support for cleaner logic and better error messaging
         // special conditions for blackwell
         // TODO: enable THD max_t in f16_arbitrary_seqlen when support becomes available in 9.7
-        !(sm_arch_ == 100 &&
-          (head_dim_qk > 128 || head_dim_v > 128)) &&
+        !(sm_arch_ == 100 && (head_dim_qk > 128 || head_dim_v > 128)) &&
         // architecture
         ((cudnn_runtime_version >= 8903 && sm_arch_ >= 80) ||
          (cudnn_runtime_version < 8903 && (sm_arch_ == 80 || sm_arch_ == 90))) &&

@@ -118,8 +118,8 @@ std::vector<at::Tensor> fused_fp8_transpose_bgrad(at::Tensor grad_output, at::Te
                                                   int scale_offset = 0, int amax_offset = 0,
                                                   int scale_inv_offset = 0);
 
-std::vector<py::object> fused_bgrad_dgelu_quanitze(py::handle grad_output,
-                                                   py::handle gelu_input, py::handle dinput_quantizer,
+std::vector<py::object> fused_bgrad_dgelu_quanitze(py::handle grad_output, py::handle gelu_input,
+                                                   py::handle dinput_quantizer,
                                                    transformer_engine::DType otype);
 
 void fused_dswiglu_cast_transpose(at::Tensor grad_output, at::Tensor input, at::Tensor grad_input,
@@ -221,9 +221,9 @@ std::vector<py::object> bgrad_quantize(const at::Tensor &input, py::handle py_qu
 
 std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb, py::object D,
                              py::handle quantizer, std::optional<DType> out_dtype, MaybeTensor bias,
-                             DType bias_type, bool gelu, MaybeTensor gelu_in,
-                             bool grad, at::Tensor workspace, size_t workspaceSize, 
-                             bool accumulate, bool use_split_accumulator) ;
+                             DType bias_type, bool gelu, MaybeTensor gelu_in, bool grad,
+                             at::Tensor workspace, size_t workspaceSize, bool accumulate,
+                             bool use_split_accumulator);
 
 /***************************************************************************************************
  * Cast fusions

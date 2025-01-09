@@ -80,18 +80,15 @@ __forceinline__ __device__ void copy_1d_to_shared(void *dst, const void *src,
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-__forceinline__ __device__ void copy_2d_to_shared(void *dst, const void *src,
-                                                  const size_t chunk_X, const size_t chunk_Y,
-                                                  const size_t num_bytes,
-                                                  uint64_t *barrier,
-                                                  const bool is_master_thread) {
+__forceinline__ __device__ void copy_2d_to_shared(void *dst, const void *src, const size_t chunk_X,
+                                                  const size_t chunk_Y, const size_t num_bytes,
+                                                  uint64_t *barrier, const bool is_master_thread) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
   if (is_master_thread) {
     // Initiate bulk tensor copy
-    ptx::cp_async_bulk_tensor_2d_global_to_shared(
-        reinterpret_cast<uint64_t *>(dst),
-        reinterpret_cast<const uint64_t *>(src),
-        chunk_X, chunk_Y, barrier);
+    ptx::cp_async_bulk_tensor_2d_global_to_shared(reinterpret_cast<uint64_t *>(dst),
+                                                  reinterpret_cast<const uint64_t *>(src), chunk_X,
+                                                  chunk_Y, barrier);
 
     // Arrive on the barrier and tell how many bytes are expected to come in.
     ptx::mbarrier_arrive_expect_tx(barrier, num_bytes);
@@ -102,27 +99,24 @@ __forceinline__ __device__ void copy_2d_to_shared(void *dst, const void *src,
 #endif  // #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
 }
 
-__forceinline__ __device__ void copy_2d_to_sharedx2(void *dst, const void *src,
-                                                    void *dst2, const void *src2,
-                                                    const size_t chunk_X, const size_t chunk_Y,
-                                                    const size_t num_bytes,
+__forceinline__ __device__ void copy_2d_to_sharedx2(void *dst, const void *src, void *dst2,
+                                                    const void *src2, const size_t chunk_X,
+                                                    const size_t chunk_Y, const size_t num_bytes,
                                                     uint64_t *barrier,
                                                     const bool is_master_thread) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
   if (is_master_thread) {
-      // Initiate bulk tensor copy
-      ptx::cp_async_bulk_tensor_2d_global_to_shared(
-          reinterpret_cast<uint64_t *>(dst),
-          reinterpret_cast<const uint64_t *>(src), chunk_X,
-          chunk_Y, barrier);
+    // Initiate bulk tensor copy
+    ptx::cp_async_bulk_tensor_2d_global_to_shared(reinterpret_cast<uint64_t *>(dst),
+                                                  reinterpret_cast<const uint64_t *>(src), chunk_X,
+                                                  chunk_Y, barrier);
 
-        ptx::cp_async_bulk_tensor_2d_global_to_shared(
-            reinterpret_cast<uint64_t *>(dst2),
-            reinterpret_cast<const uint64_t *>(src2), chunk_X,
-            chunk_Y, barrier);
+    ptx::cp_async_bulk_tensor_2d_global_to_shared(reinterpret_cast<uint64_t *>(dst2),
+                                                  reinterpret_cast<const uint64_t *>(src2), chunk_X,
+                                                  chunk_Y, barrier);
 
-      // Arrive on the barrier and tell how many bytes are expected to come in.
-      ptx::mbarrier_arrive_expect_tx(barrier, 2 * num_bytes);
+    // Arrive on the barrier and tell how many bytes are expected to come in.
+    ptx::mbarrier_arrive_expect_tx(barrier, 2 * num_bytes);
   } else {
     // Other threads just arrive
     ptx::mbarrier_arrive(barrier);
@@ -272,20 +266,17 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
     const int scales_colwise_chunk_offset_X =
         scales_colwise_block_offset_X + chunk_X * SCALES_COLWISE_PER_CHUNK_X;
 
-    #pragma unroll
+#pragma unroll
     for (int prefetch_buff = 0; prefetch_buff < MXFP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
       const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * MXFP8_BUFFER_DIM_Y;
       const int chunk_stage_offset_X = chunk_offset_X;
       if constexpr (IS_DACT) {
-        copy_2d_to_sharedx2(&in_sh[prefetch_buff], &tensor_map_input,
-                            &act_in_sh[prefetch_buff], &tensor_map_act_input,
-                            chunk_stage_offset_X, chunk_stage_offset_Y,
-                            shmem_buff_size, &mbar[prefetch_buff],
-                            is_master_thread);
+        copy_2d_to_sharedx2(&in_sh[prefetch_buff], &tensor_map_input, &act_in_sh[prefetch_buff],
+                            &tensor_map_act_input, chunk_stage_offset_X, chunk_stage_offset_Y,
+                            shmem_buff_size, &mbar[prefetch_buff], is_master_thread);
       } else {
-        copy_2d_to_shared(&in_sh[prefetch_buff], &tensor_map_input,
-                          chunk_stage_offset_X, chunk_stage_offset_Y,
-                          shmem_buff_size, &mbar[prefetch_buff],
+        copy_2d_to_shared(&in_sh[prefetch_buff], &tensor_map_input, chunk_stage_offset_X,
+                          chunk_stage_offset_Y, shmem_buff_size, &mbar[prefetch_buff],
                           is_master_thread);
       }
     }
@@ -299,16 +290,12 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
         const int chunk_it_offset_y = chunk_offset_Y + next_iter * MXFP8_BUFFER_DIM_Y;
         const int chunk_it_offset_x = chunk_offset_X;
         if constexpr (IS_DACT) {
-          copy_2d_to_sharedx2(&in_sh[next_buff], &tensor_map_input,
-                              &act_in_sh[next_buff], &tensor_map_act_input,
-                              chunk_it_offset_x, chunk_it_offset_y,
-                              shmem_buff_size, &mbar[next_iter],
-                              is_master_thread);
+          copy_2d_to_sharedx2(&in_sh[next_buff], &tensor_map_input, &act_in_sh[next_buff],
+                              &tensor_map_act_input, chunk_it_offset_x, chunk_it_offset_y,
+                              shmem_buff_size, &mbar[next_iter], is_master_thread);
         } else {
-          copy_2d_to_shared(&in_sh[next_buff], &tensor_map_input,
-                            chunk_it_offset_x, chunk_it_offset_y,
-                            shmem_buff_size, &mbar[next_iter],
-                            is_master_thread);
+          copy_2d_to_shared(&in_sh[next_buff], &tensor_map_input, chunk_it_offset_x,
+                            chunk_it_offset_y, shmem_buff_size, &mbar[next_iter], is_master_thread);
         }
       }
 
@@ -581,20 +568,17 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
   const int chunk_offset_Y = block_offset_Y;
   const int chunk_offset_X = block_offset_X;
 
-  #pragma unroll
+#pragma unroll
   for (int prefetch_buff = 0; prefetch_buff < FP8_PREFETCH_BUFFERS_NUM; ++prefetch_buff) {
     const int chunk_stage_offset_Y = chunk_offset_Y + prefetch_buff * FP8_BUFFER_DIM_Y;
     const int chunk_stage_offset_X = chunk_offset_X;
     if constexpr (IS_DACT) {
-      copy_2d_to_sharedx2(&in_sh[prefetch_buff], &tensor_map_input,
-                          &act_in_sh[prefetch_buff], &tensor_map_act_input,
-                          chunk_stage_offset_X, chunk_stage_offset_Y,
-                          shmem_buff_size, &mbar[prefetch_buff],
-                          is_master_thread);
+      copy_2d_to_sharedx2(&in_sh[prefetch_buff], &tensor_map_input, &act_in_sh[prefetch_buff],
+                          &tensor_map_act_input, chunk_stage_offset_X, chunk_stage_offset_Y,
+                          shmem_buff_size, &mbar[prefetch_buff], is_master_thread);
     } else {
-      copy_2d_to_shared(&in_sh[prefetch_buff], &tensor_map_input,
-                        chunk_stage_offset_X, chunk_stage_offset_Y,
-                        shmem_buff_size, &mbar[prefetch_buff],
+      copy_2d_to_shared(&in_sh[prefetch_buff], &tensor_map_input, chunk_stage_offset_X,
+                        chunk_stage_offset_Y, shmem_buff_size, &mbar[prefetch_buff],
                         is_master_thread);
     }
   }
@@ -609,16 +593,12 @@ __global__ void __launch_bounds__(FP8_THREADS_PER_CHUNK)
       const int chunk_it_offset_y = chunk_offset_Y + next_iter * FP8_BUFFER_DIM_Y;
       const int chunk_it_offset_x = chunk_offset_X;
       if constexpr (IS_DACT) {
-        copy_2d_to_sharedx2(&in_sh[next_buff], &tensor_map_input,
-                            &act_in_sh[next_buff], &tensor_map_act_input,
-                            chunk_it_offset_x, chunk_it_offset_y,
-                            shmem_buff_size, &mbar[next_iter],
-                            is_master_thread);
+        copy_2d_to_sharedx2(&in_sh[next_buff], &tensor_map_input, &act_in_sh[next_buff],
+                            &tensor_map_act_input, chunk_it_offset_x, chunk_it_offset_y,
+                            shmem_buff_size, &mbar[next_iter], is_master_thread);
       } else {
-        copy_2d_to_shared(&in_sh[next_buff], &tensor_map_input,
-                          chunk_it_offset_x, chunk_it_offset_y,
-                          shmem_buff_size, &mbar[next_iter],
-                          is_master_thread);
+        copy_2d_to_shared(&in_sh[next_buff], &tensor_map_input, chunk_it_offset_x,
+                          chunk_it_offset_y, shmem_buff_size, &mbar[next_iter], is_master_thread);
       }
     }
 
@@ -766,9 +746,8 @@ __global__ void __launch_bounds__(THREADS_PER_BLOCK)
     const int next_iter_offset = next_iter * SHMEM_DIM;
 
     if (next_iter < ITERATIONS) {
-      copy_1d_to_shared(&(in_sh[next_buff]), input + next_iter_offset,
-                        transaction_size_IN, &(mbar[next_iter]),
-                        is_master_thread);
+      copy_1d_to_shared(&(in_sh[next_buff]), input + next_iter_offset, transaction_size_IN,
+                        &(mbar[next_iter]), is_master_thread);
     }
 
     ptx::fence_proxy_async_shared_cta();
@@ -926,10 +905,9 @@ void cast_fp8_2D(const Tensor &input, const Tensor *act_input, Tensor *output, T
   const size_t dbias_cols = cols;
 
   const int TMA_needed_size = 16 / typeToSize(output->data.dtype);
-  NVTE_CHECK(cols % TMA_needed_size == 0,
-             "Shape not supported. Expected multiple of " +
-             std::to_string(TMA_needed_size) +
-             ", got " + std::to_string(cols));
+  NVTE_CHECK(cols % TMA_needed_size == 0, "Shape not supported. Expected multiple of " +
+                                              std::to_string(TMA_needed_size) + ", got " +
+                                              std::to_string(cols));
   NVTE_CHECK(is_fp8_dtype(output->dtype()), "Output must have FP8 type.");
   NVTE_CHECK(output->scale_inv.dptr != nullptr, "Scaling tensor must be allocated");
 
@@ -1172,37 +1150,35 @@ template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
 void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor *act_input, Tensor *output,
                               Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
   switch (output->scaling_mode) {
-    case NVTE_DELAYED_TENSOR_SCALING:
-      {
-        if (!IS_DBIAS && !IS_DACT) {
-          if (is_full_tile_1D_tensor(output) && is_fp8_dtype(output->dtype())) {
-            // Aligned AND FP8
-            cast_fp8_1D<IS_ACT, ParamOP, OP>(input, output, stream);
-          } else {
-            // Unaligned
-            CastVectorizedUnaryKernelLauncher<ParamOP, OP>(input, output, stream);
-          }
-        } else if (!IS_DBIAS && IS_DACT) {
-          if (dimensions_supported_by_TMA(output) && is_fp8_dtype(output->dtype())) {
-            // Aligned AND FP8 (+dAct)
-            cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
-                                                        stream);
-          } else {
-            // Unaligned
-            CastVectorizedUnaryGradKernelLauncher<ParamOP, OP>(act_input, input, output, stream);
-          }
+    case NVTE_DELAYED_TENSOR_SCALING: {
+      if (!IS_DBIAS && !IS_DACT) {
+        if (is_full_tile_1D_tensor(output) && is_fp8_dtype(output->dtype())) {
+          // Aligned AND FP8
+          cast_fp8_1D<IS_ACT, ParamOP, OP>(input, output, stream);
         } else {
+          // Unaligned
+          CastVectorizedUnaryKernelLauncher<ParamOP, OP>(input, output, stream);
+        }
+      } else if (!IS_DBIAS && IS_DACT) {
+        if (dimensions_supported_by_TMA(output) && is_fp8_dtype(output->dtype())) {
+          // Aligned AND FP8 (+dAct)
           cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
                                                       stream);
+        } else {
+          // Unaligned
+          CastVectorizedUnaryGradKernelLauncher<ParamOP, OP>(act_input, input, output, stream);
         }
-        break;
+      } else {
+        cast_fp8_2D<IS_DBIAS, IS_DACT, ParamOP, OP>(input, act_input, output, dbias, workspace,
+                                                    stream);
       }
-    case NVTE_MXFP8_1D_SCALING:
-      {
-        mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(input, act_input, output, dbias,
-            workspace, stream);
-        break;
-      }
+      break;
+    }
+    case NVTE_MXFP8_1D_SCALING: {
+      mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(input, act_input, output, dbias,
+                                                             workspace, stream);
+      break;
+    }
     default:
       NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) + ".");
   }
@@ -1295,38 +1271,35 @@ void quantize_helper(const NVTETensor input, const NVTETensor activation_input,
   auto workspace_tensor = reinterpret_cast<Tensor *>(workspace);
 
   switch (output_tensor->scaling_mode) {
-    case NVTE_DELAYED_TENSOR_SCALING:
-      {
-        if (output_tensor->has_columnwise_data()) {
-          NVTE_CHECK(output_tensor->has_data(),
-              "Quantizing in only the columnwise direction not supported yet!");
-          // TODO: handle noop
-          if constexpr (!IS_DBIAS && !IS_DACT && !IS_ACT) {
-            const auto noop_tensor =
+    case NVTE_DELAYED_TENSOR_SCALING: {
+      if (output_tensor->has_columnwise_data()) {
+        NVTE_CHECK(output_tensor->has_data(),
+                   "Quantizing in only the columnwise direction not supported yet!");
+        // TODO: handle noop
+        if constexpr (!IS_DBIAS && !IS_DACT && !IS_ACT) {
+          const auto noop_tensor =
               noop != nullptr ? *(reinterpret_cast<const Tensor *>(noop)) : Tensor();
-            cast_transpose(input_tensor, noop_tensor, output_tensor, stream);
-          }
-          if constexpr (IS_DBIAS && !IS_ACT) {
-            cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(
-                input_tensor, activation_tensor, output_tensor, dbias_tensor,
-                workspace_tensor, stream);
-          }
-          if constexpr (!IS_DBIAS && (IS_DACT || IS_ACT)) {
-            NVTE_ERROR("Not implemented yet!");
-          }
-        } else if (output_tensor->has_data()) {
-          fp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
-              input_tensor, activation_tensor, output_tensor, dbias_tensor,
-              workspace_tensor, stream);
+          cast_transpose(input_tensor, noop_tensor, output_tensor, stream);
         }
-        break;
-      }
-    case NVTE_MXFP8_1D_SCALING:
-      {
-        mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
+        if constexpr (IS_DBIAS && !IS_ACT) {
+          cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(
+              input_tensor, activation_tensor, output_tensor, dbias_tensor, workspace_tensor,
+              stream);
+        }
+        if constexpr (!IS_DBIAS && (IS_DACT || IS_ACT)) {
+          NVTE_ERROR("Not implemented yet!");
+        }
+      } else if (output_tensor->has_data()) {
+        fp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
             input_tensor, activation_tensor, output_tensor, dbias_tensor, workspace_tensor, stream);
-        break;
       }
+      break;
+    }
+    case NVTE_MXFP8_1D_SCALING: {
+      mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
+          input_tensor, activation_tensor, output_tensor, dbias_tensor, workspace_tensor, stream);
+      break;
+    }
     default:
       NVTE_ERROR("Not implemented scaling mode: " + to_string(output_tensor->scaling_mode) + ".");
   }

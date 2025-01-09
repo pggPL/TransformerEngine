@@ -34,10 +34,7 @@ from transformer_engine.pytorch import (
 )
 from transformer_engine.common import recipe
 import transformer_engine_torch as tex
-from transformer_engine.pytorch.cpp_extensions import (
-    general_gemm,
-    gelu
-)
+from transformer_engine.pytorch.cpp_extensions import general_gemm, gelu
 from transformer_engine.pytorch.module.base import get_workspace
 from transformer_engine.pytorch.tensor import Float8Quantizer
 from test_numerics import reset_rng_states, dtype_tols

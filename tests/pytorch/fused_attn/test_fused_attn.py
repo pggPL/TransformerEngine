@@ -1432,7 +1432,11 @@ def test_mha_fp8_vs_f16(dtype, model, qkv_format, input_layernorm, fp8_dpa_bwd, 
     os.environ["NVTE_ALLOW_NONDETERMINISTIC_ALGO"] = "1"
     os.environ["NVTE_FP8_DPA_BWD"] = "1" if fp8_dpa_bwd else "0"
     config = model_configs_fp8_vs_f16[model]
-    if ("padding" in config.attn_mask_type or config.head_dim_qk != 128) and get_cudnn_version() < (9, 7, 0):
+    if ("padding" in config.attn_mask_type or config.head_dim_qk != 128) and get_cudnn_version() < (
+        9,
+        7,
+        0,
+    ):
         pytest.skip("FP8 with padding or head_dim != 128 is not supported for cuDNN < 9.7")
 
     if _flash_attn_3_is_installed and not is_training:
@@ -1630,11 +1634,15 @@ def test_dpa_fp8_vs_f16(dtype, model, qkv_layout, fp8_dpa_bwd, is_training):
     # 2. there is no other backend that implements dropout the same way as cuDNN FP8, and as an
     #    indirect verification method, we create Q/K/V as all 1s and check if O is all 1s
     # 3. we avoid running FP16/BF16 kernels as they do not have dropout support on Blackwell
-    #if "padding" not in config.attn_mask_type and "causal" not in config.attn_mask_type:
+    # if "padding" not in config.attn_mask_type and "causal" not in config.attn_mask_type:
     #    if get_device_compute_capability() >= (10, 0):
     #        config.dropout_p = 0.1
 
-    if ("padding" in config.attn_mask_type or config.head_dim_qk != 128) and get_cudnn_version() < (9, 7, 0):
+    if ("padding" in config.attn_mask_type or config.head_dim_qk != 128) and get_cudnn_version() < (
+        9,
+        7,
+        0,
+    ):
         pytest.skip("FP8 with padding or head_dim != 128 is not supported for cuDNN < 9.7")
     if config.num_heads != config.num_gqa_groups and "3" in qkv_layout:
         pytest.skip("qkv_layout not applicable for MQA/GQA")
@@ -2041,7 +2049,7 @@ class _custom_mha_fp8(torch.autograd.Function):
         workspace: torch.Tensor,
         is_training: bool,
         mask_type: str,
-        quantizers: list[Quantizer]
+        quantizers: list[Quantizer],
     ) -> torch.Tensor:
 
         assert inp.dim() == 2
@@ -2070,14 +2078,10 @@ class _custom_mha_fp8(torch.autograd.Function):
             bias=qkv_bias,
             out_dtype=qkv_weight_fp8.dtype,
             quantization_params=qkv_quantizer,
-            use_split_accumulator=_2X_ACC_FPROP
+            use_split_accumulator=_2X_ACC_FPROP,
         )
         qkv = qkv.view(-1, 3, h, d)
-        qkv_fp16 = (
-            qkv.dequantize()
-            .view(b, max_s, 3, h, d)
-            .contiguous()
-        )
+        qkv_fp16 = qkv.dequantize().view(b, max_s, 3, h, d).contiguous()
         torch.save(qkv_fp16, "qkv.pt")
         if cudnn_frontend_version == 1:
             qkv = qkv.view(b, max_s, 3, h, d)  # bs3hd
@@ -2086,16 +2090,10 @@ class _custom_mha_fp8(torch.autograd.Function):
         q_data = qkv._data[:, :, 0, :, :] if cudnn_frontend_version == 1 else qkv._data[:, 0, :, :]
         k_data = qkv._data[:, :, 1, :, :] if cudnn_frontend_version == 1 else qkv._data[:, 1, :, :]
         v_data = qkv._data[:, :, 2, :, :] if cudnn_frontend_version == 1 else qkv._data[:, 2, :, :]
-        q = qkv.make_like(
-            tensor=qkv, data=q_data, shape=q_data.shape
-        )
-        k = qkv.make_like(
-            tensor=qkv, data=k_data, shape=k_data.shape
-        )
-        v = qkv.make_like(
-            tensor=qkv, data=v_data, shape=v_data.shape
-        )
-        
+        q = qkv.make_like(tensor=qkv, data=q_data, shape=q_data.shape)
+        k = qkv.make_like(tensor=qkv, data=k_data, shape=k_data.shape)
+        v = qkv.make_like(tensor=qkv, data=v_data, shape=v_data.shape)
+
         out, aux_ctx_tensors = fused_attn_fwd(
             is_training,
             max_s,
@@ -2118,11 +2116,10 @@ class _custom_mha_fp8(torch.autograd.Function):
         )
 
         tensors_to_save, tensor_objects = prepare_for_saving(
-            q, k, v, inp_fp8, qkv_weight_fp8, workspace, out)
+            q, k, v, inp_fp8, qkv_weight_fp8, workspace, out
+        )
 
-        ctx.save_for_backward(
-                *tensors_to_save
-            )
+        ctx.save_for_backward(*tensors_to_save)
         ctx.tensor_objects = tensor_objects
         ctx.aux_ctx_tensors = aux_ctx_tensors
         ctx.fp8_meta = fp8_meta
@@ -2140,7 +2137,6 @@ class _custom_mha_fp8(torch.autograd.Function):
         ctx.dP_quantizer = dP_quantizer
         ctx.S_quantizer = s_quantizer
 
-
         out = out.view(-1, in_features)  # (bs)(hd)
         out_fp16 = out.dequantize()
         torch.save(out_fp16, "out.pt")  # (bs)(hd)
@@ -2150,16 +2146,10 @@ class _custom_mha_fp8(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
         with torch.cuda.nvtx.range("_DPA"):
             saved_tensors = ctx.saved_tensors
-            (
-                q, 
-                k, 
-                v,
-                inp_fp8,
-                qkv_weight_fp8,
-                workspace,
-                out
-            ) = restore_from_saved(ctx.tensor_objects, saved_tensors)
-            
+            (q, k, v, inp_fp8, qkv_weight_fp8, workspace, out) = restore_from_saved(
+                ctx.tensor_objects, saved_tensors
+            )
+
             proj_dgrad = ctx.dO_quantizer(grad_output)
             fp8_dtype_backward = fp8.get_fp8_te_dtype(ctx.fp8_meta["recipe"], fprop_tensor=False)
 
@@ -2194,17 +2184,16 @@ class _custom_mha_fp8(torch.autograd.Function):
             dqkv_shape.insert(dim, 3)
             dqkv_stride = list(dq._data.stride())
             dqkv_stride.insert(dim, int(dqkv_stride[-3] / 3))
-            dqkv.set_(dq._data.untyped_storage(), dq._data.storage_offset(), dqkv_shape, dqkv_stride)  # bs3hd
+            dqkv.set_(
+                dq._data.untyped_storage(), dq._data.storage_offset(), dqkv_shape, dqkv_stride
+            )  # bs3hd
 
             dqkv_c = dqkv.view(-1, 3 * ctx.hidden_size)
             dqkv_c = dq.make_like(tensor=dq, data=dqkv_c, shape=dqkv_c.shape)
             dqkv_c_fp16 = dqkv_c.dequantize()
             torch.save(dqkv_c_fp16, "dqkv.pt")
 
-            qkv_bgrad, dqkv = ext.bgrad_quantize(
-                dqkv_c_fp16,
-                ctx.dQKV_quantizer
-            )
+            qkv_bgrad, dqkv = ext.bgrad_quantize(dqkv_c_fp16, ctx.dQKV_quantizer)
             dqkv_c._transpose = None
             dqkv_c._create_transpose()
 
@@ -2215,9 +2204,9 @@ class _custom_mha_fp8(torch.autograd.Function):
                 workspace,
                 ctx.dtype,
                 use_split_accumulator=_2X_ACC_DGRAD,
-                layout="NN"
+                layout="NN",
             )
-            
+
             # QKV WGRAD
             qkv_wgrad, _, _ = ext.general_gemm(
                 inp_fp8,
@@ -2225,11 +2214,8 @@ class _custom_mha_fp8(torch.autograd.Function):
                 workspace,
                 ctx.dtype,
                 use_split_accumulator=_2X_ACC_WGRAD,
-                layout="NT"
+                layout="NT",
             )
-            
-
-            
 
         return (
             qkv_dgrad,
@@ -2300,6 +2286,6 @@ class Custom_MHA_FP8(TransformerEngineBaseModule):
                 self.workspace,
                 self.training,
                 self.mask_type,
-                self.quantizers
+                self.quantizers,
             )
         return out

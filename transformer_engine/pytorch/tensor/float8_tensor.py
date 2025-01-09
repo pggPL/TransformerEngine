@@ -384,7 +384,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         fp8_dtype: TE_DType,
         fp8_scale_inv: torch.Tensor,
         dtype: torch.dtype,
-        shape: torch.shape
+        shape: torch.shape,
     ) -> Float8Tensor:
         """Build Float8Tensor, for use in __reduce__
 
@@ -464,8 +464,6 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
 
     # Cast to FP8 when setting Float8Tensor.data
     data = property(_get_data, _set_data)
-
-
 
 
 class _ViewFunc(torch.autograd.Function):

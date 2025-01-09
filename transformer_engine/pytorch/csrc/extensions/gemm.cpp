@@ -82,9 +82,9 @@ std::pair<TensorWrapper, py::object> createOutputTensor(const std::vector<size_t
 
 std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool transb, py::object D,
                              py::handle quantizer, std::optional<DType> out_dtype, MaybeTensor bias,
-                             DType bias_type, bool gelu, MaybeTensor gelu_in,
-                             bool grad, at::Tensor workspace, size_t workspaceSize, 
-                             bool accumulate, bool use_split_accumulator) {
+                             DType bias_type, bool gelu, MaybeTensor gelu_in, bool grad,
+                             at::Tensor workspace, size_t workspaceSize, bool accumulate,
+                             bool use_split_accumulator) {
   // Input tensors
   NVTE_CHECK(!A.is_none(), "Tensor A has not been provided");
   NVTE_CHECK(!B.is_none(), "Tensor B has not been provided");
@@ -143,11 +143,10 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
         torch_shape.push_back(v);
       }
       pre_gelu_out = at::empty(torch_shape, opts);
-    }
-    else {
-        if(gelu_in.has_value()) {
-          pre_gelu_out = *gelu_in;
-        }
+    } else {
+      if (gelu_in.has_value()) {
+        pre_gelu_out = *gelu_in;
+      }
     }
   }
   const auto gelu_shape = gelu ? D_shape : std::vector<size_t>{0};

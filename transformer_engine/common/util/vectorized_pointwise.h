@@ -50,8 +50,7 @@ class VectorizedStorage {
 
   inline __device__ const DType *separate() const { return scratch_.separate; }
 
-  inline __device__ LType& aligned() { return scratch_.aligned; }
-
+  inline __device__ LType &aligned() { return scratch_.aligned; }
 };
 
 // Returns const LType is DType is const

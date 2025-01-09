@@ -3018,7 +3018,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                             deterministic=ctx.deterministic,
                             **fp8_meta_kwargs,
                         )
-                        
+
                     else:
                         if ctx.qkv_format == "thd":
                             # [t, np, hn] -> [t/2, np, hn]
@@ -4617,9 +4617,7 @@ class _SplitAlongDim(torch.autograd.Function):
             grad_outputs_data = [x._data for x in grad_outputs]
             data = torch.cat(grad_outputs_data, dim=split_dim)
             return (
-                Float8Tensor.make_like(
-                    grad_outputs[0], data=data, shape=data.shape
-                ),
+                Float8Tensor.make_like(grad_outputs[0], data=data, shape=data.shape),
                 None,
                 None,
                 None,
@@ -5637,17 +5635,15 @@ class FusedAttnFunc(torch.autograd.Function):
         ctx.is_output_fp8 = is_output_fp8
         qkvo_tensors = (q, k, v, out_save) if not ctx.fp8 else (None, None, None, None)
         tensors_to_save, tensor_objects = prepare_for_saving(
-            *fp8_tensors, 
-            *qkvo_tensors, 
+            *fp8_tensors,
+            *qkvo_tensors,
             cu_seqlens_q,
             cu_seqlens_kv,
             cu_seqlens_q_padded,
             cu_seqlens_kv_padded,
             *aux_ctx_tensors,
         )
-        ctx.save_for_backward(
-            *tensors_to_save
-        )
+        ctx.save_for_backward(*tensors_to_save)
         ctx.tensor_objects = tensor_objects
         ctx.fp8_meta = fp8_meta
 
@@ -5684,9 +5680,9 @@ class FusedAttnFunc(torch.autograd.Function):
 
         d_out = d_out.contiguous()
         (
-            q_fp8, 
-            k_fp8, 
-            v_fp8, 
+            q_fp8,
+            k_fp8,
+            v_fp8,
             out_fp8,
             q,
             k,
@@ -7973,7 +7969,6 @@ class MultiheadAttention(torch.nn.Module):
                 cp_size=self.cp_size,
                 cp_rank=self.cp_rank,
             )
-        
 
         # ===========================
         # Core attention computation
@@ -7999,14 +7994,13 @@ class MultiheadAttention(torch.nn.Module):
             inference_params=inference_params,
         )
 
-
         # ===================
         # Output. [sq, b, h]
         # ===================
         projection_output = self.proj(
             context_layer,
             is_first_microbatch=is_first_microbatch,
-            fp8_grad=isinstance(context_layer, QuantizedTensor)
+            fp8_grad=isinstance(context_layer, QuantizedTensor),
         )
 
         if self.return_bias:

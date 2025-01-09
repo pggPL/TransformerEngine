@@ -186,9 +186,7 @@ class _GroupedLinear(torch.autograd.Function):
             ctx.weights_shape_1 = weights[0].shape[1]
 
             tensors_to_save, tensor_objects = prepare_for_saving(*inputmats, *weights_fp8, *biases)
-            ctx.save_for_backward(
-                *tensors_to_save
-            )
+            ctx.save_for_backward(*tensors_to_save)
             ctx.tensor_objects = tensor_objects
 
             ctx.weights_requires_grad = weights[0].requires_grad
@@ -224,9 +222,9 @@ class _GroupedLinear(torch.autograd.Function):
             saved_tensors = restore_from_saved(ctx.tensor_objects, ctx.saved_tensors)
             N = ctx.num_gemms
             inputmats = saved_tensors[:N]
-            weights = saved_tensors[N:2*N]
-            biases = saved_tensors[2*N:3*N]
-            main_grads = saved_tensors[3*N:]
+            weights = saved_tensors[N : 2 * N]
+            biases = saved_tensors[2 * N : 3 * N]
+            main_grads = saved_tensors[3 * N :]
 
             if ctx.cpu_offloading and ctx.fuse_wgrad_accumulation:  # TOSO
                 for i in ctx.num_gemms:

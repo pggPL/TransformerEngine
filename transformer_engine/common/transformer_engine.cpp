@@ -65,8 +65,8 @@ void CheckScaleTensorShape(const Tensor &t) {
   if (is_tensor_scaling(t.scaling_mode)) {
     // per-tensor scaling
     if (t.has_data()) {
-      NVTE_CHECK(t.scale_inv.numel() == 1,
-                 "Tensor has invalid scale_inv shape (expected (1), got ", t.scale_inv.shape, ")");
+      NVTE_CHECK(t.scale_inv.numel() == 1, "Tensor has invalid scale_inv shape (expected (1), got ",
+                 t.scale_inv.shape, ")");
     }
     if (t.has_columnwise_data()) {
       NVTE_CHECK(t.columnwise_scale_inv.numel() == 1,

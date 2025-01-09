@@ -113,7 +113,9 @@ class _Linear(torch.autograd.Function):
             if input_quantizer is None:
                 raise ValueError("Missing quantizer for input tensor")
             if with_input_all_gather:
-                assert not isinstance(inputmat, QuantizedTensor), "All gather of fp8 input is not supported"
+                assert not isinstance(
+                    inputmat, QuantizedTensor
+                ), "All gather of fp8 input is not supported"
                 input_quantizer.set_usage(rowwise=True, columnwise=False)
                 inputmat_total, _ = gather_along_first_dim(
                     inputmat,
@@ -128,7 +130,7 @@ class _Linear(torch.autograd.Function):
                 if not isinstance(inputmat, QuantizedTensor):
                     inputmat = input_quantizer(inputmat)
                 elif backward_needs_input:
-                    inputmat._create_transpose() # Even if input is in fp8, it needs to have transpose.
+                    inputmat._create_transpose()  # Even if input is in fp8, it needs to have transpose.
                 inputmat_total = inputmat
         else:
             inputmat = cast_if_needed(inp, activation_dtype)
@@ -234,14 +236,15 @@ class _Linear(torch.autograd.Function):
                 saved_inputmat,
                 weightmat if fp8 and not isinstance(weight, QuantizedTensor) else None,
             )
-            
+
             # TODO(ksivamani): Check memory usage
             tensors_to_save, tensor_objects = prepare_for_saving(
-                saved_inputmat, weightmat, weight,  bias,
+                saved_inputmat,
+                weightmat,
+                weight,
+                bias,
             )
-            ctx.save_for_backward(
-                *tensors_to_save
-            )
+            ctx.save_for_backward(*tensors_to_save)
             ctx.tensor_objects = tensor_objects
 
             ctx.activation_dtype = activation_dtype
@@ -274,7 +277,6 @@ class _Linear(torch.autograd.Function):
                 ctx.reduce_and_update_bwd_fp8_tensors = FP8GlobalStateManager.is_first_fp8_module()
                 if in_fp8_activation_recompute_phase():
                     FP8GlobalStateManager.IS_FIRST_FP8_MODULE = _first_fp8_module
-            
 
         # Row Parallel Linear
         if not ub_overlap_rs:
@@ -291,7 +293,9 @@ class _Linear(torch.autograd.Function):
 
         with torch.cuda.nvtx.range("_Linear_backward"):
             saved_tensors = ctx.saved_tensors
-            inputmat, weight_fp8, weight, bias = restore_from_saved(ctx.tensor_objects, saved_tensors)
+            inputmat, weight_fp8, weight, bias = restore_from_saved(
+                ctx.tensor_objects, saved_tensors
+            )
 
             # Since main_grad can be modified inplace, it should not be a part of saved_tensors
             main_grad = (
@@ -420,7 +424,7 @@ class _Linear(torch.autograd.Function):
                             grad_output_t = grad_output_c.transpose_2d()
                         else:
                             grad_output_t = tex.fp8_transpose(grad_output_c, fp8_dtype_backward)
-                
+
                 if isinstance(grad_output, QuantizedTensor):
                     if grad_output._transpose is None:
                         grad_output._create_transpose()
@@ -796,7 +800,7 @@ class Linear(TransformerEngineBaseModule):
         inp: torch.Tensor,
         is_first_microbatch: Optional[bool] = None,
         fp8_output: Optional[bool] = False,
-        fp8_grad: Optional[bool] = False
+        fp8_grad: Optional[bool] = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         """
         Apply the linear transformation to the input.
@@ -846,10 +850,14 @@ class Linear(TransformerEngineBaseModule):
                 bias_tensor = _noop_cat([getattr(self, name) for name in self.bias_names])
             else:
                 bias_tensor = None
-            
-            input_quantizer, weight_quantizer, output_quantizer,\
-            grad_output_quantizer, grad_input_quantizer = self._get_quantizers(fp8_output, fp8_grad)
 
+            (
+                input_quantizer,
+                weight_quantizer,
+                output_quantizer,
+                grad_output_quantizer,
+                grad_input_quantizer,
+            ) = self._get_quantizers(fp8_output, fp8_grad)
 
             # Make sure weight tensor has correct quantizer
             # Note: Quantizer might have changed if quantization
@@ -900,7 +908,6 @@ class Linear(TransformerEngineBaseModule):
             return out, cast_if_needed(bias_tensor, self.activation_dtype)
         return out
 
-    
     def _get_quantizers(self, fp8_output, fp8_grad):
         if not self.fp8:
             return [None] * 5
@@ -912,17 +919,16 @@ class Linear(TransformerEngineBaseModule):
         weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
         weight_quantizer.internal = True
         if fp8_output:
-            output_quantizer = self.quantizers["scaling_fwd"][
-                tex.FP8FwdTensors.GEMM1_OUTPUT
-            ]
+            output_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_OUTPUT]
         if torch.is_grad_enabled():
-            grad_output_quantizer = self.quantizers["scaling_bwd"][
-                tex.FP8BwdTensors.GRAD_OUTPUT1
-            ]
+            grad_output_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_OUTPUT1]
             grad_output_quantizer.internal = True
             if fp8_grad:
-                grad_input_quantizer = self.quantizers["scaling_bwd"][
-                tex.FP8BwdTensors.GRAD_INPUT1
-            ]
-        return input_quantizer, weight_quantizer, output_quantizer,\
-            grad_output_quantizer, grad_input_quantizer
+                grad_input_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT1]
+        return (
+            input_quantizer,
+            weight_quantizer,
+            output_quantizer,
+            grad_output_quantizer,
+            grad_input_quantizer,
+        )

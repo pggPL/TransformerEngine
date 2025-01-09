@@ -65,7 +65,6 @@ void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool roww
   }
 }
 
-
 // TODO(ksivamani): Remove these later; only for debugging.
 at::Tensor rowwise_swizzle(at::Tensor input, at::Tensor scale_inv) {
   using namespace transformer_engine::pytorch;
@@ -78,19 +77,18 @@ at::Tensor rowwise_swizzle(at::Tensor input, at::Tensor scale_inv) {
   void* scale_inv_dptr = getDataPtr(scale_inv, 0);
   void* swizzled_scale_inv_dptr = getDataPtr(swizzled_scale_inv, 0);
 
-  auto input_cu = makeTransformerEngineTensor(
-      input.data_ptr(), getTensorShape(input), DType::kFloat8E4M3, nullptr, nullptr,
-      scale_inv_dptr, getTensorShape(scale_inv), NVTE_MXFP8_1D_SCALING);
+  auto input_cu = makeTransformerEngineTensor(input.data_ptr(), getTensorShape(input),
+                                              DType::kFloat8E4M3, nullptr, nullptr, scale_inv_dptr,
+                                              getTensorShape(scale_inv), NVTE_MXFP8_1D_SCALING);
   auto output_cu = makeTransformerEngineTensor(
-      input.data_ptr(), getTensorShape(input), DType::kFloat8E4M3, nullptr, nullptr, swizzled_scale_inv_dptr,
-      getTensorShape(swizzled_scale_inv), NVTE_MXFP8_1D_SCALING);
+      input.data_ptr(), getTensorShape(input), DType::kFloat8E4M3, nullptr, nullptr,
+      swizzled_scale_inv_dptr, getTensorShape(swizzled_scale_inv), NVTE_MXFP8_1D_SCALING);
 
   // Launch kernel
   nvte_swizzle_scaling_factors(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
 
   return swizzled_scale_inv;
 }
-
 
 at::Tensor columnwise_swizzle(at::Tensor input, at::Tensor scale_inv) {
   using namespace transformer_engine::pytorch;
@@ -107,8 +105,9 @@ at::Tensor columnwise_swizzle(at::Tensor input, at::Tensor scale_inv) {
       nullptr, input.data_ptr(), {1}, getTensorShape(input), DType::kFloat8E4M3, nullptr, nullptr,
       nullptr, scale_inv_dptr, {1}, getTensorShape(scale_inv), NVTE_MXFP8_1D_SCALING);
   auto output_cu = makeTransformerEngineTensor(
-      nullptr, input.data_ptr(), {1}, getTensorShape(input), DType::kFloat8E4M3, nullptr, nullptr, nullptr,
-      swizzled_scale_inv_dptr, {1}, getTensorShape(swizzled_scale_inv), NVTE_MXFP8_1D_SCALING);
+      nullptr, input.data_ptr(), {1}, getTensorShape(input), DType::kFloat8E4M3, nullptr, nullptr,
+      nullptr, swizzled_scale_inv_dptr, {1}, getTensorShape(swizzled_scale_inv),
+      NVTE_MXFP8_1D_SCALING);
 
   // Launch kernel
   nvte_swizzle_scaling_factors(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());

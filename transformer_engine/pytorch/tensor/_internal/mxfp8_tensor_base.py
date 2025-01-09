@@ -98,10 +98,10 @@ class MXFP8TensorBase:
         self._rowwise_data = tensors[0]
         self._columnwise_data = tensors[1]
         return tensors[2:]
-    
+
     def get_data_tensors(self):
         return self._data, self._transpose
-    
+
     def dequantize(self, *, dtype: torch.dtype = torch.float32) -> torch.Tensor:
         return _FromMXFP8Func.forward(None, self, dtype)
 

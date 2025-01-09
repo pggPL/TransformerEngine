@@ -45,7 +45,7 @@ def check_mxfp8_support() -> Tuple[bool, str]:
 
 def get_default_fp8_recipe() -> Recipe:
     """FP8 recipe with default args."""
-    #if get_device_compute_capability() >= (10, 0):  # blackwell and above
+    # if get_device_compute_capability() >= (10, 0):  # blackwell and above
     #    return BlockScaling()
     return DelayedScaling()
 
@@ -735,7 +735,7 @@ class DelayedScalingRecipeState(RecipeState):
         self.recipe = recipe
         self.mode = mode
         self.num_quantizers = num_quantizers
-        self.dtype = get_fp8_te_dtype(recipe, mode=="forward")
+        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
 
         # Allocate buffers
         if device is None:
@@ -775,7 +775,7 @@ class BlockScalingRecipeState(RecipeState):
         self.recipe = recipe
         self.mode = mode
         self.num_quantizers = num_quantizers
-        self.dtype = get_fp8_te_dtype(recipe, mode=="forward")
+        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
 
         # Allocate buffers
         if device is None:

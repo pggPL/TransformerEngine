@@ -22,7 +22,9 @@ def prepare_for_saving(*tensors) -> Tuple[list[Optional[torch.Tensor]], Optional
         if tensor is None:
             tensor_list.append(None)
             tensor_objects_list.append(None)
-        elif type(tensor) == torch.Tensor or type(tensor) == torch.nn.Parameter: # TODO (pgadzinski) - check it
+        elif (
+            type(tensor) == torch.Tensor or type(tensor) == torch.nn.Parameter
+        ):  # TODO (pgadzinski) - check it
             tensor_list.append(tensor if type(tensor) == torch.Tensor else tensor.data)
             tensor_objects_list.append(None)
         else:

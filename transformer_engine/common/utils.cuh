@@ -939,8 +939,7 @@ __device__ __forceinline__ e8m0_t float_to_e8m0(float val) {
   if (isinf(val)) {
     return 0xFE;
   }
-#if ((__CUDA_ARCH_HAS_FEATURE__(SM100_ALL)) || \
-     (__CUDA_ARCH_HAS_FEATURE__(SM101_ALL)) || \
+#if ((__CUDA_ARCH_HAS_FEATURE__(SM100_ALL)) || (__CUDA_ARCH_HAS_FEATURE__(SM101_ALL)) || \
      (__CUDA_ARCH_HAS_FEATURE__(SM120_ALL)))
   uint16_t out;
   asm volatile(

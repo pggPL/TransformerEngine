@@ -234,7 +234,7 @@ def check_dim_for_fp8_exec(tensor: torch.Tensor) -> bool:
 
 def assert_dim_for_fp8_exec(*tensors: List[torch.Tensor]) -> None:
     """Assert that tensor or tensors dimensions are supported for FP8 TN GEMM."""
-    
+
     for tensor in tensors:
         assert tensor.dim() == 2 and tensor.size(0) % 8 == 0 and tensor.size(1) % 16 == 0, (
             "FP8 execution requires 2D input matrices with "

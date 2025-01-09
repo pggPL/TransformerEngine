@@ -78,8 +78,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("generic_gemm", transformer_engine::pytorch::gemm, "Compute GEMM (matrix-matrix multiply",
         py::arg("A"), py::arg("transA"), py::arg("B"), py::arg("transB"), py::arg("D"),
         py::arg("quantizer"), py::arg("output_dtype"), py::arg("bias"), py::arg("bias_type"),
-        py::arg("gelu"), py::arg("gelu_in"), py::arg("grad"), py::arg("workspace"), py::arg("workspace_size"),
-        py::arg("accumulate"), py::arg("use_split_accumulator"));
+        py::arg("gelu"), py::arg("gelu_in"), py::arg("grad"), py::arg("workspace"),
+        py::arg("workspace_size"), py::arg("accumulate"), py::arg("use_split_accumulator"));
   m.def("rowwise_swizzle", &rowwise_swizzle, "Swizzle rowwise scale inverses.",
         py::call_guard<py::gil_scoped_release>());
   m.def("columnwise_swizzle", &columnwise_swizzle, "Swizzle columnwise scale inverses.",
