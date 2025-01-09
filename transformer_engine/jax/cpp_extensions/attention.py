@@ -27,7 +27,6 @@ from transformer_engine.transformer_engine_jax import (
     NVTE_QKV_Format,
     NVTE_Fused_Attn_Backend,
     nvte_get_qkv_format,
-    get_device_compute_capability,
 )
 from .base import BasePrimitive, register_primitive
 from .custom_call import custom_caller, CustomCallArgsWrapper
@@ -281,7 +280,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
             softmax_dtype = q_dtype
         elif backend == NVTE_Fused_Attn_Backend.NVTE_F16_arbitrary_seqlen:
             # cuDNN 9.6 reduces the required softmax shape
-            if get_cudnn_version() >= (9, 6, 0) and not (get_cudnn_version() >= (9, 7, 0) and get_device_compute_capability(0) >= 100):
+            if get_cudnn_version() >= (9, 6, 0):
                 softmax_shape = (*batch_shape, attn_heads, q_max_seqlen, 1)
             else:
                 softmax_shape = (
