@@ -67,12 +67,8 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
                                 mu->data.dptr, rsigma->data.dptr);
   }
 
-  bool training = true;
-  if (is_block_scaling(z->scaling_mode)) {
-    training = (z->columnwise_data).dptr != nullptr;
-    NVTE_CHECK(!training || z->columnwise_scale_inv.dptr != nullptr,
-               "Columnwise scale_inv must be allocated for NormFwdTraining!");
-  }
+  bool training =
+      is_delayed_tensor_scaling(z->scaling_mode) || (z->columnwise_data).dptr != nullptr;
 
   auto plan = NormalizationPlanRegistry::getInstance().getNormalizationPlan(
       norm_backend, NVTE_Norm_Type::LayerNorm, NVTE_Norm_Stage::Forward,
@@ -90,6 +86,9 @@ void layernorm_fwd(const Tensor& x,      // BxSxhidden_size
   }
 
   NVTE_CHECK(workspace->data.shape == plan->getWorkspaceShape());
+  NVTE_CHECK(
+      !is_block_scaling(z->scaling_mode) || (!training || z->columnwise_scale_inv.dptr != nullptr),
+      "Columnwise scale_inv must be allocated for NormFwdTraining!");
   plan->execute(z, x.data.dptr, gamma.data.dptr, beta.data.dptr, mu->data.dptr,
                 reinterpret_cast<void*>(const_cast<float*>(&epsilon)), rsigma->data.dptr,
                 workspace->data.dptr, stream);

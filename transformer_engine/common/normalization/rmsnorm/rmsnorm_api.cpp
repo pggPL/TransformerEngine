@@ -48,12 +48,8 @@ void rmsnorm_fwd(const Tensor &x, const Tensor &gamma, const float epsilon, Tens
   bool is_aligned = true;
   bool cudnn_backend = use_cudnn_norm_fwd() || is_block_scaling(z->scaling_mode);
 
-  bool training = true;
-  if (is_block_scaling(z->scaling_mode)) {
-    training = (z->columnwise_data).dptr != nullptr;
-    NVTE_CHECK(!training || z->columnwise_scale_inv.dptr != nullptr,
-               "Columnwise scale_inv must be allocated for NormFwdTraining!");
-  }
+  bool training =
+      is_delayed_tensor_scaling(z->scaling_mode) || (z->columnwise_data).dptr != nullptr;
 
   if (cudnn_backend) {
     // TODO: add check for GPU ARCH
@@ -79,6 +75,9 @@ void rmsnorm_fwd(const Tensor &x, const Tensor &gamma, const float epsilon, Tens
   }
 
   NVTE_CHECK(workspace->data.shape == plan->getWorkspaceShape());
+  NVTE_CHECK(
+      !is_block_scaling(z->scaling_mode) || (!training || z->columnwise_scale_inv.dptr != nullptr),
+      "Columnwise scale_inv must be allocated for NormFwdTraining!");
   plan->execute(z, x.data.dptr, gamma.data.dptr, nullptr /*beta*/, nullptr /*mu*/,
                 reinterpret_cast<void *>(const_cast<float *>(&epsilon)), rsigma->data.dptr,
                 workspace->data.dptr, stream);
