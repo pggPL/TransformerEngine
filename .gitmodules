@@ -5,7 +5,3 @@
 	path = 3rdparty/cudnn-frontend
 	url = ../../../cudnn/cudnn_frontend.git
 	branch = develop
-[submodule "3rdparty/flashattn_internal"]
-	path = 3rdparty/flashattn_internal
-	url = ../../../ksivamani/flashattn_internal.git
-	branch = fa_2.4.2_b100
