@@ -6,8 +6,18 @@ set -e
 
 : ${TE_PATH:=/opt/transformerengine}
 
-pip install pytest==8.2.1
 FA_versions=(2.1.1 2.3.0 2.4.0.post1 2.4.1 2.5.7 2.6.3 3.0.0b1)
+device_compute_capability=$(CUDA_VISIBLE_DEVICES=0 deviceQuery | grep -oP 'CUDA Capability Major/Minor version number:\s*\K[0-9]+\.[0-9]+')
+apt-get update; apt-get install bc
+
+if (( $(echo "$device_compute_capability >= 10.0" | bc -l) )); then
+  echo "Skipping FA version tests ..."
+  exit 0
+else
+  echo "Running fused attention tests for FA versions: ${FA_versions[*]}"
+fi
+
+pip install pytest==8.2.1
 for fa_version in "${FA_versions[@]}"
 do
   if [ "${fa_version}" \< "3.0.0" ]
