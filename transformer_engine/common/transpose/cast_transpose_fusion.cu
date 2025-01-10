@@ -247,11 +247,13 @@ void reduce_dbias(const Tensor &workspace, Tensor *dbias, const size_t row_lengt
           reduce_dbias_num_rows);
 }
 
-template <bool IS_DBIAS, bool IS_DACT, typename ComputeType, typename Param, int nvec_in,
-          int nvec_out, typename ParamOP, ComputeType (*OP)(ComputeType, const ParamOP &)>
+template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ComputeType, typename Param,
+          int nvec_in, int nvec_out, typename ParamOP,
+          ComputeType (*OP)(ComputeType, const ParamOP &)>
 __global__ void __launch_bounds__(cast_transpose_num_threads)
     cast_transpose_fused_kernel_notaligned(const Param param, const size_t row_length,
                                            const size_t num_rows, const size_t num_tiles) {
+  static_assert(!(IS_DACT && IS_ACT), "forward and backward activation are mutually exclusive");
   using IType = typename Param::InputType;
   using IType2 = typename Param::InputType2;
   using OType = typename Param::OutputType;
@@ -372,6 +374,8 @@ __global__ void __launch_bounds__(cast_transpose_num_threads)
         if constexpr (IS_DACT) {
           after_dact[j].data.elt[k] = CType(in[current_in ^ 1][j].data.elt[k]) *
                                       OP(act_in[current_in ^ 1][j].data.elt[k], {});
+        } else if constexpr (IS_ACT) {
+          after_dact[j].data.elt[k] = OP(in[current_in ^ 1][j].data.elt[k], {});
         } else {
           after_dact[j].data.elt[k] = CType(in[current_in ^ 1][j].data.elt[k]);
         }
@@ -458,29 +462,38 @@ static const char *ActTypeToString[] = {
 };
 
 template <typename ComputeType, typename ParamOP, ComputeType (*OP)(ComputeType, const ParamOP &)>
-int get_dactivation_type() {
-  if (OP == &sigmoid<ComputeType, ComputeType>) {
-    return 1;
-  } else if (OP == &dgelu<ComputeType, ComputeType>) {
-    return 2;
-  } else if (OP == &dqgelu<ComputeType, ComputeType>) {
-    return 3;
-  } else if (OP == &dsilu<ComputeType, ComputeType>) {
-    return 4;
-  } else if (OP == &drelu<ComputeType, ComputeType>) {
-    return 5;
-  } else if (OP == &dsrelu<ComputeType, ComputeType>) {
-    return 6;
-  } else {
-    return 0;
+constexpr int get_activation_type() {
+  constexpr decltype(OP) ActivationList[] = {
+    nullptr,                              // 0
+    &sigmoid<ComputeType, ComputeType>,   // 1
+    &dsigmoid<ComputeType, ComputeType>,  // 2
+    &gelu<ComputeType, ComputeType>,      // 3
+    &dgelu<ComputeType, ComputeType>,     // 4
+    &qgelu<ComputeType, ComputeType>,     // 5
+    &dqgelu<ComputeType, ComputeType>,    // 6
+    &silu<ComputeType, ComputeType>,      // 7
+    &dsilu<ComputeType, ComputeType>,     // 8
+    &relu<ComputeType, ComputeType>,      // 9
+    &drelu<ComputeType, ComputeType>,     // 10
+    &srelu<ComputeType, ComputeType>,     // 11
+    &dsrelu<ComputeType, ComputeType>     // 12
+  };
+  #pragma unroll
+  for (int i=0; i<sizeof(ActivationList) / sizeof(ActivationList[0]); ++i) {
+    if (OP == ActivationList[i]) {
+      return i;
+    }
   }
+  return 0;
 }
 
-template <bool IS_DBIAS, bool IS_DACT, typename ComputeType, typename ParamOP,
+template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ComputeType, typename ParamOP,
           ComputeType (*OP)(ComputeType, const ParamOP &)>
 void cast_transpose_fused(const Tensor &input, const Tensor *act_input, Tensor *output,
                           Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
-  if (workspace->data.dptr != nullptr) {
+
+  // Check tensors, unless querying dbias workspace
+  if (!IS_DBIAS || workspace->data.dptr != nullptr) {
     CheckInputTensor(input, "cast_transpose_fused_input");
     CheckOutputTensor(*output, "output");
     if constexpr (IS_DBIAS) {
@@ -651,9 +664,9 @@ void cast_transpose_fused(const Tensor &input, const Tensor *act_input, Tensor *
             constexpr const char *itype2_name = TypeInfo<InputType2>::name;
             constexpr const char *otype_name = TypeInfo<OutputType>::name;
 
-            int dActType = 0;
-            if constexpr (IS_DACT) {
-              dActType = get_dactivation_type<ComputeType, ParamOP, OP>();
+            int actType = 0;
+            if constexpr (IS_DACT || IS_ACT) {
+              actType = get_activation_type<ComputeType, ParamOP, OP>();
             }
 
             // Compile NVRTC kernel if needed and launch
@@ -663,7 +676,8 @@ void cast_transpose_fused(const Tensor &input, const Tensor *act_input, Tensor *
                 ",itype=",
                 itype_name, ",itype2=", itype2_name, ",otype=", otype_name,
                 ",load_size=", load_size, ",store_size=", store_size, ",IS_DBIAS=", IS_DBIAS,
-                ",IS_DACT=", IS_DACT, ",dactivationType=", ActTypeToString[dActType]);
+                ",IS_DACT=", IS_DACT, ",IS_ACT=", IS_ACT,
+                ",activationType=", ActTypeToString[actType]);
 
             if (!rtc_manager.is_compiled(kernel_label)) {
               std::string code = string_code_transpose_rtc_cast_transpose_fusion_cu;
@@ -676,7 +690,8 @@ void cast_transpose_fused(const Tensor &input, const Tensor *act_input, Tensor *
               code = regex_replace(code, "__BLOCK_SIZE__", cast_transpose_num_threads);
               code = regex_replace(code, "__IS_DBIAS__", IS_DBIAS);
               code = regex_replace(code, "__IS_DACT__", IS_DACT);
-              code = regex_replace(code, "__DACTIVATION_TYPE__", dActType);
+              code = regex_replace(code, "__IS_ACT__", IS_ACT);
+              code = regex_replace(code, "__ACTIVATION_TYPE__", actType);
 
               rtc_manager.compile(
                   kernel_label, "cast_transpose_fusion_kernel_optimized", code,
@@ -698,11 +713,11 @@ void cast_transpose_fused(const Tensor &input, const Tensor *act_input, Tensor *
             NVTE_CHECK(num_rows % nvec_out == 0, "Unsupported shape.");
 
             cudaFuncSetAttribute(
-                cast_transpose_fused_kernel_notaligned<IS_DBIAS, IS_DACT, ComputeType, Param,
-                                                       nvec_in, nvec_out, Empty, OP>,
+                cast_transpose_fused_kernel_notaligned<IS_DBIAS, IS_DACT, IS_ACT, ComputeType,
+                                                       Param, nvec_in, nvec_out, Empty, OP>,
                 cudaFuncAttributePreferredSharedMemoryCarveout, 100);
-            cast_transpose_fused_kernel_notaligned<IS_DBIAS, IS_DACT, ComputeType, Param, nvec_in,
-                                                   nvec_out, Empty, OP>
+            cast_transpose_fused_kernel_notaligned<IS_DBIAS, IS_DACT, IS_ACT, ComputeType, Param,
+                                                   nvec_in, nvec_out, Empty, OP>
                 <<<num_blocks, cast_transpose_num_threads, shared_size_transpose, stream>>>(
                     param, row_length, num_rows, num_tiles);
           }
@@ -1193,8 +1208,22 @@ void dgated_act_cast_transpose(const Tensor &input, const Tensor &gated_act_inpu
   );           // NOLINT(*)
 }
 
-template void cast_transpose_fused<true, false, float, transformer_engine::Empty, nullptr>(
+// Explicit template instantiation
+template void cast_transpose_fused<true, false, false, float, transformer_engine::Empty, nullptr>(
     const Tensor &, const Tensor *, Tensor *, Tensor *, Tensor *, cudaStream_t);
+#define NVTE_INSTANTIATE_ACTIVATION(op) \
+  template void cast_transpose_fused<false, false, true, float, transformer_engine::Empty, \
+                                     transformer_engine:: op <float, float>>( \
+    const Tensor &, const Tensor *, Tensor *, Tensor *, Tensor *, cudaStream_t);    \
+  template void cast_transpose_fused<false, true, false, float, transformer_engine::Empty, \
+                                     transformer_engine:: d ## op <float, float>>( \
+    const Tensor &, const Tensor *, Tensor *, Tensor *, Tensor *, cudaStream_t);
+NVTE_INSTANTIATE_ACTIVATION(relu);
+NVTE_INSTANTIATE_ACTIVATION(srelu);
+NVTE_INSTANTIATE_ACTIVATION(gelu);
+NVTE_INSTANTIATE_ACTIVATION(qgelu);
+NVTE_INSTANTIATE_ACTIVATION(silu);
+#undef NVTE_INSTANTIATE_ACTIVATION
 
 }  // namespace detail
 
@@ -1210,10 +1239,11 @@ void nvte_cast_transpose_dbias(const NVTETensor input, NVTETensor output, NVTETe
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = false;
+  constexpr bool IS_ACT = false;
 
   constexpr const NVTETensor activation_input = nullptr;
 
-  cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, nullptr>(
+  cast_transpose_fused<IS_DBIAS, IS_DACT, IS_ACT, ComputeType, Empty, nullptr>(
       *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(activation_input),
       reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
       reinterpret_cast<Tensor *>(workspace), stream);
@@ -1228,8 +1258,9 @@ void nvte_cast_transpose_dbias_dgelu(const NVTETensor input, const NVTETensor ac
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
+  constexpr bool IS_ACT = false;
 
-  cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, dgelu<fp32, fp32>>(
+  cast_transpose_fused<IS_DBIAS, IS_DACT, IS_ACT, ComputeType, Empty, dgelu<fp32, fp32>>(
       *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(act_input),
       reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
       reinterpret_cast<Tensor *>(workspace), stream);
@@ -1244,8 +1275,9 @@ void nvte_cast_transpose_dbias_dsilu(const NVTETensor input, const NVTETensor si
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
+  constexpr bool IS_ACT = false;
 
-  cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, dsilu<fp32, fp32>>(
+  cast_transpose_fused<IS_DBIAS, IS_DACT, IS_ACT, ComputeType, Empty, dsilu<fp32, fp32>>(
       *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(silu_input),
       reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
       reinterpret_cast<Tensor *>(workspace), stream);
@@ -1260,8 +1292,9 @@ void nvte_cast_transpose_dbias_drelu(const NVTETensor input, const NVTETensor re
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
+  constexpr bool IS_ACT = false;
 
-  cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, drelu<fp32, fp32>>(
+  cast_transpose_fused<IS_DBIAS, IS_DACT, IS_ACT, ComputeType, Empty, drelu<fp32, fp32>>(
       *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(relu_input),
       reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
       reinterpret_cast<Tensor *>(workspace), stream);
@@ -1276,8 +1309,9 @@ void nvte_cast_transpose_dbias_dsrelu(const NVTETensor input, const NVTETensor s
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
+  constexpr bool IS_ACT = false;
 
-  cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, dsrelu<fp32, fp32>>(
+  cast_transpose_fused<IS_DBIAS, IS_DACT, IS_ACT, ComputeType, Empty, dsrelu<fp32, fp32>>(
       *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(srelu_input),
       reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
       reinterpret_cast<Tensor *>(workspace), stream);
@@ -1292,8 +1326,9 @@ void nvte_cast_transpose_dbias_dqgelu(const NVTETensor input, const NVTETensor q
 
   constexpr bool IS_DBIAS = true;
   constexpr bool IS_DACT = true;
+  constexpr bool IS_ACT = false;
 
-  cast_transpose_fused<IS_DBIAS, IS_DACT, ComputeType, Empty, dqgelu<fp32, fp32>>(
+  cast_transpose_fused<IS_DBIAS, IS_DACT, IS_ACT, ComputeType, Empty, dqgelu<fp32, fp32>>(
       *reinterpret_cast<const Tensor *>(input), reinterpret_cast<const Tensor *>(qgelu_input),
       reinterpret_cast<Tensor *>(output), reinterpret_cast<Tensor *>(dbias),
       reinterpret_cast<Tensor *>(workspace), stream);

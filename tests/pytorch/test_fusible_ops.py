@@ -1361,7 +1361,7 @@ class TestBasicOps:
         torch.testing.assert_close(dx_test, x_ref.grad, **tols)
 
     @pytest.mark.parametrize("activation", ("relu", "gelu", "geglu", "reglu", "swiglu"))
-    @pytest.mark.parametrize("out_shape", ((37,), (2, 13), (4, 1, 16)))
+    @pytest.mark.parametrize("out_shape", ((37,), (2, 13), (16, 1, 16)))
     @pytest.mark.parametrize("dtype", _dtypes)
     @pytest.mark.parametrize("fp8_input", (False, True))
     @pytest.mark.parametrize("fp8_output", (False, True))
@@ -1383,19 +1383,26 @@ class TestBasicOps:
             in_shape[-1] *= 2
 
         # Skip invalid configurations
-        if fp8_input or fp8_output:
+        fp8 = fp8_input or fp8_output
+        if fp8:
             if not fp8_available:
                 pytest.skip(reason_for_no_fp8)
             if torch.device(device).type != "cuda":
                 pytest.skip("FP8 is only supported on CUDA devices")
+        if fp8_output:
+            if math.prod(out_shape[:-1]) % 16 != 0 or out_shape[-1] % 16 != 0:
+                pytest.skip("FP8 activation requires dims that are divisible by 16")
 
         # Random data
         x_ref, x_test = make_reference_and_test_tensors(
             in_shape,
             test_dtype=dtype,
             test_device=device,
-            test_is_fp8=fp8_input,
+            test_is_fp8=fp8,
         )
+        if fp8 and not fp8_input:
+            with torch.no_grad():
+                x_test = x_test.dequantize().requires_grad_()
         dy_ref, dy_test = make_reference_and_test_tensors(
             out_shape,
             test_dtype=dtype,
@@ -1442,6 +1449,8 @@ class TestBasicOps:
         tols = dtype_tols(dtype)
         if fp8_output:
             tols = dtype_tols(tex.DType.kFloat8E4M3)
+        if activation == "relu":
+            tols = { "atol": 0, "rtol": 0 }
 
         # Check results
         y_test = y_test.to(dtype=torch.float64, device="cpu")

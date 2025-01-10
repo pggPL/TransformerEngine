@@ -13,7 +13,7 @@ namespace transformer_engine::detail {
 
 void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *output_, cudaStream_t stream);
 
-template <bool IS_DBIAS, bool IS_DACT, typename ComputeType, typename ParamOP,
+template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ComputeType, typename ParamOP,
           ComputeType (*OP)(ComputeType, const ParamOP &)>
 void cast_transpose_fused(const Tensor &input, const Tensor *act_input, Tensor *output,
                           Tensor *dbias, Tensor *workspace, cudaStream_t stream);
