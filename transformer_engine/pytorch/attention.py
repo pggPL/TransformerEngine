@@ -686,6 +686,12 @@ def get_attention_backend(
     if window_size is None:
         window_size = check_set_window_size(attn_mask_type, window_size)
     else:
+        if use_fused_attention and window_size == (2, 0):
+            if get_device_compute_capability() == (10, 0):
+                logger.debug(
+                    "Disabling FusedAttention for SWA (2, 0) on blackwell."
+                )
+                use_fused_attention = False
         if use_fused_attention and (window_size[0] != -1 or window_size[1] not in [-1, 0]):
             if fp8 and (fp8_meta["recipe"].fp8_dpa or fp8_meta["recipe"].fp8_mha):
                 logger.debug(
