@@ -239,9 +239,12 @@ NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
          (cudnn_runtime_version >= 90600 &&
           ((window_size_left == -1 && (window_size_right == -1 || window_size_right == 0)) ||
            ((window_size_left >= 0 || window_size_left == -1) && window_size_right == 0 &&
-            (attn_mask_type == NVTE_Mask_Type::NVTE_CAUSAL_BOTTOM_RIGHT_MASK ||
+            ((attn_mask_type == NVTE_Mask_Type::NVTE_CAUSAL_BOTTOM_RIGHT_MASK &&
+             // TODO(cyang): fix bug for BRCM + cross-attention on sm100
+             (sm_arch_ < 100 || (sm_arch_ == 100 && max_seqlen_q == max_seqlen_kv))) ||
              attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_CAUSAL_MASK ||
-             attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_CAUSAL_BOTTOM_RIGHT_MASK) &&
+             (attn_mask_type == NVTE_Mask_Type::NVTE_PADDING_CAUSAL_BOTTOM_RIGHT_MASK &&
+             (sm_arch_ < 100 || (sm_arch_ == 100 && max_seqlen_q == max_seqlen_kv)))) &&
             max_seqlen_q <= max_seqlen_kv && bias_type == NVTE_Bias_Type::NVTE_NO_BIAS &&
             dropout == 0.0)))) &&
         // check 64-bit ragged offset support
