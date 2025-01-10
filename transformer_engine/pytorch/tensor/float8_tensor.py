@@ -12,11 +12,8 @@ import transformer_engine_torch as tex
 
 from transformer_engine_torch import DType as TE_DType
 from ..utils import devices_match, non_tn_fp8_gemm_supported
-
 from ._internal.float8_tensor_base import Float8TensorBase, _FromFloat8Func
 from .quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc
-
-import warnings
 
 aten = torch.ops.aten
 
@@ -35,9 +32,21 @@ _ops_to_preserve_subclass_in_fsdp2 = {
 
 
 class Float8Quantizer(Quantizer):
+    """Builder class for FP8 tensors with per-tensor delayed scaling
 
+    High-precision tensors (e.g. in FP32 or BF16) are quantized by
+    multiplying with a scaling factor and casting to FP8. The max-abs
+    value ("amax") in the tensor is also computed, which can be used
+    for updating the scaling factor (handled externally by
+    DelayedScalingRecipeState and FP8GlobalStateManager).
+
+    """
+
+    """Scaling factor to multiply when quantizing to FP8"""
     scale: torch.Tensor
+    """Max-abs value from last FP8 cast"""
     amax: torch.Tensor
+    """FP8 datatype"""
     dtype: TE_DType
 
     def __init__(
@@ -55,7 +64,11 @@ class Float8Quantizer(Quantizer):
         self.dtype = fp8_dtype
 
     def update_quantized(
-        self, src: torch.Tensor, dst: QuantizedTensor, noop_flag: Optional[torch.Tensor]
+        self,
+        src: torch.Tensor,
+        dst: QuantizedTensor,
+        *,
+        noop_flag: Optional[torch.Tensor] = None,
     ) -> QuantizedTensor:
         if not isinstance(dst, Float8Tensor):
             raise ValueError("Float8Quantizer can only update Float8Tensor")
@@ -165,8 +178,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
 
         if torch.is_grad_enabled():
             return _FromFloat8Func.apply(self, dtype)
-        else:
-            return _FromFloat8Func.forward(None, self, dtype)
+        return _FromFloat8Func.forward(None, self, dtype)
 
     def _get_quantizer(self) -> Quantizer:
         """Get builder for quantized tensor
@@ -179,7 +191,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         return Float8Quantizer(
             scale=torch.reciprocal(self._scale_inv),
             amax=torch.empty(1, dtype=torch.float32, device=self.device),
-            dtype=self._fp8_dtype,
+            fp8_dtype=self._fp8_dtype,
         )
 
     def quantize_(
@@ -355,17 +367,13 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             return cls.clone(args[0])
         if func == torch.ops.aten.copy_.default:
             dst, src = args[0], args[1]
-
-            # This case is handled separately.
+            # Just copy FP8 attrs if copying between Float8Tensors
             if isinstance(src, Float8Tensor) and isinstance(dst, Float8Tensor):
                 dst._data.copy_(src._data.detach())
                 dst._scale_inv.copy_(src._scale_inv.view(dst._scale_inv.size()))
                 if src._transpose is not None or dst._transpose is not None:
                     dst._create_transpose()
                 return dst
-
-            # Implementation in the superclass (QuantizedTensor) returns a proper output
-            pass
         elif func in _ops_to_preserve_subclass_in_fsdp2:
             # Ops in the _ops_to_preserve_subclass_in_fsdp2 are recommened to return the same class instance to work fine with the torch fsdp2
             warnings.warn(

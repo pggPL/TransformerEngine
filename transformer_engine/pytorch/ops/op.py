@@ -13,7 +13,6 @@ from typing import Any, Optional
 
 import torch
 
-import transformer_engine_torch as tex
 from transformer_engine.common.recipe import Recipe
 from ..fp8 import FP8GlobalStateManager, RecipeState
 from ..tensor import Quantizer

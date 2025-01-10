@@ -11,12 +11,8 @@ from typing import Optional
 import torch
 
 import transformer_engine_torch as tex
-from ...constants import TE_DType
-from ...cpp_extensions import (
-    fp8_dswiglu_cast_transpose_fused,
-)
-from ...fp8 import FP8GlobalStateManager, get_fp8_te_dtype
-from ...tensor import Float8Tensor, QuantizedTensor
+from ...fp8 import FP8GlobalStateManager
+from ...tensor import QuantizedTensor
 from ...utils import clear_tensor_data, devices_match
 from ..op import BasicOperation, OperationContext
 from .._common import reshape

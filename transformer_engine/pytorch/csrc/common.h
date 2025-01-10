@@ -113,18 +113,18 @@ class Quantizer {
   py::handle quantizer;
 
  protected:
-  Quantizer(const py::handle& quantizer);
+  explicit Quantizer(const py::handle& quantizer);
 };
 
 class NoneQuantizer : public Quantizer {
  public:
-  NoneQuantizer(const py::handle& quantizer) : Quantizer(quantizer) {}
+  explicit NoneQuantizer(const py::handle& quantizer) : Quantizer(quantizer) {}
 
-  virtual NVTEScalingMode get_scaling_mode() const override { return NVTE_DELAYED_TENSOR_SCALING; }
+  NVTEScalingMode get_scaling_mode() const override { return NVTE_DELAYED_TENSOR_SCALING; }
 
-  virtual void set_quantization_params(TensorWrapper* tensor) const override {}
+  void set_quantization_params(TensorWrapper* tensor) const override {}
 
-  virtual std::pair<TensorWrapper, py::object> create_tensor(
+  std::pair<TensorWrapper, py::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
       std::optional<at::Tensor> rowwise_data = std::nullopt) const override;
 };
@@ -136,13 +136,13 @@ class Float8Quantizer : public Quantizer {
   at::Tensor amax;
   DType dtype;
 
-  Float8Quantizer(const py::handle& quantizer);
+  explicit Float8Quantizer(const py::handle& quantizer);
 
-  virtual NVTEScalingMode get_scaling_mode() const override { return NVTE_DELAYED_TENSOR_SCALING; }
+  NVTEScalingMode get_scaling_mode() const override { return NVTE_DELAYED_TENSOR_SCALING; }
 
-  virtual void set_quantization_params(TensorWrapper* tensor) const override;
+  void set_quantization_params(TensorWrapper* tensor) const override;
 
-  virtual std::pair<TensorWrapper, py::object> create_tensor(
+  std::pair<TensorWrapper, py::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
       std::optional<at::Tensor> rowwise_data = std::nullopt) const override;
 };
@@ -151,13 +151,13 @@ class MXFP8Quantizer : public Quantizer {
  public:
   DType dtype;
 
-  MXFP8Quantizer(const py::handle& quantizer);
+  explicit MXFP8Quantizer(const py::handle& quantizer);
 
-  virtual NVTEScalingMode get_scaling_mode() const override { return NVTE_MXFP8_1D_SCALING; }
+  NVTEScalingMode get_scaling_mode() const override { return NVTE_MXFP8_1D_SCALING; }
 
-  virtual void set_quantization_params(TensorWrapper* tensor) const override;
+  void set_quantization_params(TensorWrapper* tensor) const override;
 
-  virtual std::pair<TensorWrapper, py::object> create_tensor(
+  std::pair<TensorWrapper, py::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
       std::optional<at::Tensor> rowwise_data = std::nullopt) const override;
 };

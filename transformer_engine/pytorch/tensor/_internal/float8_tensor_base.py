@@ -5,7 +5,7 @@
 """Mixin class holding data specific for Float8Tensor"""
 
 from __future__ import annotations
-from typing import Optional, Dict, Any, Union, Tuple
+from typing import Any, Dict, Optional, Tuple
 import torch
 
 import transformer_engine_torch as tex
@@ -13,7 +13,7 @@ from transformer_engine_torch import DType as TE_DType
 
 from ...constants import TE_DType as torch_to_transformer_engine_dtype
 
-from ..quantized_tensor import _QuantizeFunc, Quantizer
+from ..quantized_tensor import Quantizer
 
 
 class _FromFloat8Func(torch.autograd.Function):
@@ -32,8 +32,8 @@ class _FromFloat8Func(torch.autograd.Function):
         if tensor._data is not None:
             # Cast from FP8
             return tex.dequantize(tensor, dtype)
-        else:
-            raise NotImplementedError("Casting back from the transpose not implemented yet!")
+
+        raise NotImplementedError("Casting back from the transpose not implemented yet!")
 
     @staticmethod
     def backward(
@@ -46,6 +46,15 @@ class _FromFloat8Func(torch.autograd.Function):
 
 
 class Float8TensorBase:
+    """Mixin class that holds data attributes of Float8Tensor.
+
+    Float8Tensor inherits from the PyTorch tensor class and this mixin
+    class. If this class is instantiated directly, it has the same
+    data, lower CPU overhead, and less functionality. It should only
+    be instantiated directly for performance-critical internal usages.
+
+    """
+
     _data: Optional[torch.Tensor]
     _quantizer: Optional[Quantizer]
     _fp8_dtype: TE_DType
@@ -76,6 +85,7 @@ class Float8TensorBase:
         return instance
 
     def get_metadata(self) -> Dict[str, Any]:
+        # pylint: disable=missing-function-docstring
         return {
             "data": self._data,
             "fp8_scale_inv": self._scale_inv,
@@ -85,8 +95,12 @@ class Float8TensorBase:
         }
 
     def prepare_for_saving(self) -> Tuple[list[Optional[torch.Tensor]], Float8TensorBase]:
-        """Prepare the tensor base for saving for backward.
-        After calling this, this tensor base does not hold any data."""
+        """Prepare the tensor base for saving for backward
+
+        After calling this, the tensor instance does not hold any
+        data.
+
+        """
         tensors = [self._data, self._transpose]
         # self._data = None
         # self._transpose = None # TODO - why
@@ -95,7 +109,7 @@ class Float8TensorBase:
     def restore_from_saved(
         self, tensors: list[Optional[torch.Tensor]]
     ) -> list[Optional[torch.Tensor]]:
-        """Restore the tensor base data from the saved tensors list."""
+        """Restore the tensor base data from the saved tensors list"""
         self._data = tensors[0]
         self._transpose = tensors[1]
         return tensors[2:]
@@ -104,9 +118,11 @@ class Float8TensorBase:
         return self._data, self._transpose
 
     def dequantize(self, *, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+        # pylint: disable=missing-function-docstring
         return _FromFloat8Func.forward(None, self, dtype)
 
     def size(self, *args, **kwargs):
+        # pylint: disable=missing-function-docstring
         return self._data.size(*args, **kwargs)
 
     def __repr__(self):

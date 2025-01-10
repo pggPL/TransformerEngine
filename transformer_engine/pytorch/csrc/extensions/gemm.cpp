@@ -111,7 +111,7 @@ std::vector<py::object> gemm(py::handle A, bool transa, py::handle B, bool trans
                std::to_string(D_tensor.shape()), ")");
     if (out_dtype) {
       NVTE_CHECK(*out_dtype == D_tensor.dtype(), "GEMM output has invalid dtype (expected ",
-                 int(*out_dtype), ", found ", int(D_tensor.dtype()), ")");
+                 static_cast<int>(*out_dtype), ", found ", static_cast<int>(D_tensor.dtype()), ")");
     }
   }
 

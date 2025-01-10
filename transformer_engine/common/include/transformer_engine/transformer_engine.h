@@ -71,10 +71,12 @@ enum NVTETensorParam {
  * \brief Granularity of scaling:
  */
 enum NVTEScalingMode {
-  NVTE_DELAYED_TENSOR_SCALING = 0, /*!< Single scale per tensor, computed in delayed manner.
-                                        Used also for high precision data, without scaling */
-  NVTE_MXFP8_1D_SCALING = 1,       /*!< Single scale per block of 32 elements consecutive in either
-                                        rowwise or columnwise direction */
+  /*! Single scale per tensor, computed in delayed manner.
+      Used also for high precision data, without scaling */
+  NVTE_DELAYED_TENSOR_SCALING = 0,
+  /*! Single scale per block of 32 elements consecutive in either
+      rowwise or columnwise direction */
+  NVTE_MXFP8_1D_SCALING = 1,
   NVTE_INVALID_SCALING
 };
 
@@ -350,7 +352,7 @@ class TensorWrapper {
    *
    * Create a new empty TE tensor which holds nothing.
    */
-  TensorWrapper(const NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING)
+  explicit TensorWrapper(const NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING)
       : tensor_(nvte_create_tensor(scaling_mode)) {}
 
   /*! \brief TensorWrapper destructor. */
