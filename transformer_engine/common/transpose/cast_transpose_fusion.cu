@@ -452,13 +452,19 @@ __global__ void __launch_bounds__(cast_transpose_num_threads)
 }
 
 static const char *ActTypeToString[] = {
-    "NoAct",    // 0
-    "Sigmoid",  // 1
-    "GeLU",     // 2
-    "QGeLU",    // 3
-    "SiLU",     // 4
-    "ReLU",     // 5
-    "SReLU"     // 6
+    "none",     // 0
+    "sigmoid",  // 1
+    "dsigmoid", // 2
+    "gelu",     // 3
+    "dgelu",    // 4
+    "qgelu",    // 5
+    "dqgelu",   // 6
+    "silu",     // 7
+    "dsilu",    // 8
+    "relu",     // 9
+    "drelu",    // 10
+    "srelu",    // 11
+    "dsrelu"    // 12
 };
 
 template <typename ComputeType, typename ParamOP, ComputeType (*OP)(ComputeType, const ParamOP &)>
