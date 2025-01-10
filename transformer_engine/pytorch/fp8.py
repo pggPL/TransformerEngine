@@ -687,6 +687,16 @@ def split_and_copy(
 
 
 class RecipeState(abc.ABC):
+    """Configuration and state for a quantization recipe.
+
+    This is a builder class for quantizers, which are in turn builder
+    classes for quantized tensors.
+
+    This class may pack together the state for multiple quantizers,
+    which is helpful for applying fused kernels with less overhead.
+
+    """
+
 
     @staticmethod
     def create(
@@ -696,16 +706,34 @@ class RecipeState(abc.ABC):
         num_quantizers: int = 1,
         device: Optional[torch.device] = None,
     ) -> RecipeState:
+        """Factory method to create the state for a quantization recipe
 
-        RecipeState = None
+        Parameters
+        ----------
+        recipe: Recipe
+            Quantization recipe.
+        mode: {"forward", "backward"}
+            Training stage where quantization will be performed.
+        num_quantizers: int, default = 1
+            Number of quantizers to create state for.
+        device: torch.device, default = default CUDA device
+            Device for quantized tensors.
+
+        Returns
+        -------
+        RecipeState:
+            Quantization recipe state.
+
+        """
+
+        cls = None
         if recipe.delayed():
-            RecipeState = DelayedScalingRecipeState
+            cls = DelayedScalingRecipeState
         elif recipe.block():
-            RecipeState = BlockScalingRecipeState
+            cls = BlockScalingRecipeState
         else:
             raise ValueError("{recipe.__class__.__name__} is not supported")
-
-        return RecipeState(
+        return cls(
             recipe,
             mode=mode,
             num_quantizers=num_quantizers,
@@ -713,10 +741,25 @@ class RecipeState(abc.ABC):
         )
 
     @abc.abstractmethod
-    def make_quantizers(self) -> list: ...
+    def make_quantizers(self) -> list:
+        """Convert recipe state to quantizers.
+
+        Quantizers are builder classes for quantized tensors. They are
+        typically used to convert a high-precision tensor (e.g. in
+        FP32 or BF16) into a quantized tensor (e.g. in FP8).
+
+        """
 
 
 class DelayedScalingRecipeState(RecipeState):
+    """State for FP8 quantization with per-tensor delayed scaling.
+
+    Delayed scaling recipe requires a scaling factor (applied when
+    casting to FP8) and a history of max-abs values ("amax") from
+    recent FP8 casts for updating the scaling factor. The scale update
+    is handled externally by `FP8GlobalStateManager`.
+
+    """
 
     recipe: DelayedScaling
     mode: str
@@ -759,6 +802,12 @@ class DelayedScalingRecipeState(RecipeState):
 
 
 class BlockScalingRecipeState(RecipeState):
+    """Configuration for MXFP8 quantization.
+
+    MXFP8 quantization does not require state.
+
+    """
+
 
     recipe: BlockScaling
     mode: str

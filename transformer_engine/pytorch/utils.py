@@ -6,7 +6,7 @@
 from __future__ import annotations
 import functools
 import math
-from typing import Any, Callable, Optional, Tuple, List, Union
+from typing import Any, Callable, List, Optional, Tuple
 
 import torch
 import transformer_engine.pytorch.cpp_extensions as ext

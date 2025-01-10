@@ -14,7 +14,6 @@ from transformer_engine.pytorch.ops.op import (
     BasicOperation,
     OperationContext,
 )
-from .._common import reshape
 
 
 class Reshape(BasicOperation):

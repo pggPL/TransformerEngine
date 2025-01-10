@@ -13,7 +13,6 @@ import torch
 from torch.utils._pytree import tree_map
 
 import transformer_engine_torch as tex
-from ...common.recipe import Recipe
 
 
 def prepare_for_saving(*tensors) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
@@ -22,10 +21,8 @@ def prepare_for_saving(*tensors) -> Tuple[list[Optional[torch.Tensor]], Optional
         if tensor is None:
             tensor_list.append(None)
             tensor_objects_list.append(None)
-        elif (
-            type(tensor) == torch.Tensor or type(tensor) == torch.nn.Parameter
-        ):  # TODO (pgadzinski) - check it
-            tensor_list.append(tensor if type(tensor) == torch.Tensor else tensor.data)
+        elif isinstance(tensor, (torch.Tensor, torch.nn.Parameter)):  # TODO (pgadzinski) - check it
+            tensor_list.append(tensor if isinstance(tensor, torch.Tensor) else tensor.data)
             tensor_objects_list.append(None)
         else:
             t, t_obj = tensor.prepare_for_saving()
@@ -50,17 +47,43 @@ def restore_from_saved(
     return tensor_objects
 
 
-# Empty class which
-class TensorBase:
-    pass
+class Quantizer(abc.ABC):
+    """Builder class for quantized tensors.
 
+    This class is typically used to convert a high-precision tensor
+    (e.g. in FP32 or BF16) into a quantized tensor (e.g. in FP8).
 
-class Quantizer(abc.ABC, TensorBase):
+    """
 
+    """Whether to construct quantized tensors with "row-wise usage"
+
+    Hand-wave explanation: Consider the matrix multiplication C = A *
+    B^T (used in linear forward). Tensor Cores prefer "TN GEMMs" (in
+    Fortran-style column-major order), so A and B should be in
+    row-major order.
+
+    """
     rowwise_usage: bool
+
+    """Whether to construct quantized tensors with "column-wise usage"
+
+    Hand-wave explanation: Consider the matrix multiplication C = A^T
+    * B (used in linear backward wgrad). Tensor Cores prefer "TN
+    GEMMs" (in Fortran-style column-major order), so A and B should be
+    in column-major order.
+
+    """
     columnwise_usage: bool
+
+    """Whether to instantiates tensor for purely internal usage
+
+    Internal tensors are storage classes with minimal logic. They have
+    less overhead than PyTorch tensor sub-classes, but are not
+    compatible with PyTorch's autograd infrastructure nor PyTorch
+    operations.
+
+    """
     internal: bool
-    single_usage_sufficient: bool = False
 
     def __init__(self, *, rowwise: bool, columnwise: bool) -> None:
         self.rowwise_usage = rowwise
@@ -73,14 +96,17 @@ class Quantizer(abc.ABC, TensorBase):
             f"rowwise_usage={self.rowwise_usage}, "
             f"columnwise_usage={self.columnwise_usage}, "
             f"internal={self.internal}, "
-            f"single_usage_sufficient={self.single_usage_sufficient}"
             ")"
         )
 
     @abc.abstractmethod
     def update_quantized(
-        self, src: torch.Tensor, dst: QuantizedTensor, noop_flag: Optional[torch.Tensor]
-    ) -> QuantizedTensor: ...
+        self, src: torch.Tensor,
+        dst: QuantizedTensor,
+        *,
+        noop_flag: Optional[torch.Tensor] = None,
+    ) -> QuantizedTensor:
+        """Quantize tensor in-place"""
 
     def quantize(
         self,
@@ -88,6 +114,7 @@ class Quantizer(abc.ABC, TensorBase):
         *,
         out: Optional[QuantizedTensor] = None,
     ) -> QuantizedTensor:
+        """Quantize tensor"""
         if out is not None:
             return self.update_quantized(tensor, out)
         if (not self.internal) and torch.is_grad_enabled():
@@ -95,12 +122,14 @@ class Quantizer(abc.ABC, TensorBase):
         return _QuantizeFunc.forward(None, tensor, self)
 
     def multi_quantize(self, list_of_tensors):
+        """Quantize multiple tensors"""
         list_of_output_tensors = []
         for tensor in list_of_tensors:
             list_of_output_tensors.append(self.quantize(tensor))
         return list_of_output_tensors
 
     def __call__(self, tensor: torch.Tensor) -> QuantizedTensor:
+        """Quantize tensor"""
         return self.quantize(tensor)
 
     @abc.abstractmethod
@@ -110,10 +139,17 @@ class Quantizer(abc.ABC, TensorBase):
         *,
         dtype: torch.dtype = torch.float32,
         device: Optional[torch.device] = None,
-    ) -> QuantizedTensor: ...
+    ) -> QuantizedTensor:
+        """Construct quantized tensor with uninitialized data"""
 
     @abc.abstractmethod
-    def calibrate(self, tensor: torch.Tensor) -> None: ...
+    def calibrate(self, tensor: torch.Tensor) -> None:
+        """Calibrate quantizer state
+
+        Updates quantization state as if quantizing a tensor, but
+        without actually performing the quantization.
+
+        """
 
     def set_usage(
         self,
@@ -121,6 +157,12 @@ class Quantizer(abc.ABC, TensorBase):
         rowwise: Optional[bool] = None,
         columnwise: Optional[bool] = None,
     ) -> None:
+        """Set how the quantized tensor is expected to be used
+
+        See documentation for `rowwise_usage` and `columnwise_usage`
+        variables.
+
+        """
         if rowwise is not None:
             self.rowwise_usage = rowwise
         if columnwise is not None:
@@ -141,7 +183,7 @@ class _QuantizeFunc(torch.autograd.Function):
         quantizer: Quantizer,
     ) -> QuantizedTensor:
         # pylint: disable=missing-function-docstring
-        return tex.quantize(tensor, quantizer)  # TODO(ksivamani): Fix call -- what path is this?
+        return tex.quantize(tensor, quantizer)
 
     @staticmethod
     def backward(
@@ -181,18 +223,21 @@ class _IdentityFunc(torch.autograd.Function):
         return type(tensor)(tensor.shape, tensor.dtype, **kwargs)
 
     @staticmethod
-    def backward(ctx, grad):
+    def backward(ctx, grad_output):
         # pylint: disable=missing-function-docstring
-        # TODO: Why this cast?
-        return grad.to(ctx.input_dtype), None
+        grad_input = grad_output
+        if grad_input.dtype == ctx.input_dtype:
+            grad_input = grad_input.detach()
+        else:
+            grad_input = grad_input.to(ctx.input_dtype)
+        return grad_input, None
 
 
 def _stride_from_shape(shape: list[int]):
-    # TODO: This is probably pretty inefficient
-    stride = [1] * len(shape)
-    for i in range(len(stride) - 1, 0, -1):
-        stride[i - 1] = stride[i] * shape[i]
-    return stride
+    rstride = [1]
+    for d in reversed(shape[1:]):
+        rstride.append(rstride[-1] * d)
+    return list(reversed(rstride))
 
 
 class QuantizedTensor(torch.Tensor):
@@ -245,7 +290,8 @@ class QuantizedTensor(torch.Tensor):
         )
 
     def update_usage(self, rowwise_usage=True, columnwise_usage=True):
-        """Indicate to the tensor how it is going to be used.
+        """Indicate to the tensor how it is going to be used
+
         This enables optimizations to memory usage in some cases
         where forward and backward passes use the tensor in
         different directions.
@@ -255,8 +301,7 @@ class QuantizedTensor(torch.Tensor):
         )
 
     def clear(self):
-        """Deallocate this tensor's memory. Typically not needed and must be used carefully."""
-        pass
+        """Deallocate this tensor's memory. Typically not needed and must be used carefully"""
 
     def __repr__(self, *, tensor_contents=None) -> str:
         return f"{self.__class__.__name__}(data={self.dequantize(dtype=self.dtype)})"
@@ -357,12 +402,21 @@ class QuantizedTensor(torch.Tensor):
         self,
         memory_format: torch.memory_format = torch.contiguous_format,
     ) -> QuantizedTensor:
+        # pylint: disable=missing-function-docstring
         raise NotImplementedError(
             f"{self.__class__.__name__} class does not implement contiguous function"
         )
 
     def get_metadata(self) -> Dict[str, Any]:
-        return {}
+        """Get keyword arguments for quantized tensor constructor
+
+        Contains metadata so that the new quantized tensor has the
+        same underlying quantized data.
+
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} class does not implement get_metadata function"
+        )
 
     @classmethod
     def make_like(
@@ -374,8 +428,11 @@ class QuantizedTensor(torch.Tensor):
         requires_grad: bool = False,
         data: Optional[torch.Tensor] = None,
     ) -> QuantizedTensor:
-        """Use attributes of a QuantizedTensor to create another QuantizedTensor,
-        potentially changing shape, type or data.
+        """Create new quantized tensor
+
+        By default, new tensor has the same attributes and underlying
+        data.
+
         """
         shape = shape if shape is not None else tensor.shape
         dtype = dtype if dtype is not None else tensor.dtype
@@ -387,7 +444,7 @@ class QuantizedTensor(torch.Tensor):
     def to_dtype(self, dtype: torch.dtype) -> QuantizedTensor:
         """Create `QuantizedTensor` with given nominal dtype
 
-        The new tensor has the same underlying quantized data.
+        The new tensor has the same underlying data.
 
         """
         return self.__class__.make_like(self, dtype=dtype)

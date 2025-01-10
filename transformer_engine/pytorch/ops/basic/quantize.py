@@ -9,8 +9,8 @@ from typing import Optional
 
 import torch
 
-from ...fp8 import FP8GlobalStateManager, get_fp8_te_dtype
-from ...tensor import Float8Tensor, QuantizedTensor
+from ...fp8 import FP8GlobalStateManager
+from ...tensor import QuantizedTensor
 from ..op import BasicOperation, OperationContext
 
 

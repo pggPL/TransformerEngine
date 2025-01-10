@@ -54,7 +54,7 @@ struct SimpleTensor {
   SimpleTensor(void *dptr, const std::vector<size_t> &shape, DType dtype)
       : dptr(dptr), shape(shape), dtype(dtype) {}
 
-  SimpleTensor(const NVTEBasicTensor &tensor)
+  SimpleTensor(const NVTEBasicTensor &tensor)  // NOLINT
       : dptr(tensor.data_ptr),
         shape(tensor.shape.data, tensor.shape.data + tensor.shape.ndim),
         dtype(static_cast<DType>(tensor.dtype)) {}

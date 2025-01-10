@@ -9,13 +9,12 @@ from itertools import chain
 import torch
 import transformer_engine_torch as tex
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor, Float8Quantizer
-from transformer_engine.pytorch.fp8 import FP8GlobalStateManager
 from .multi_tensor_apply import multi_tensor_applier
 
 
 def get_fp8_meta(fp8_tensor):
     """FP8 metadata getter."""
-    assert type(fp8_tensor) is Float8Tensor, "Fused optimizer supports only Float8Tensor class"
+    assert isinstance(fp8_tensor, Float8Tensor), "Fused optimizer supports only Float8Tensor class"
     if fp8_tensor._quantizer is None:
         raise RuntimeError("FP8 quantizer data is not initialized.")
 

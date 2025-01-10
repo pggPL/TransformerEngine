@@ -13,9 +13,9 @@ from typing import Optional
 import torch
 
 from transformer_engine_torch import layernorm_bwd, layernorm_fwd
-from ...fp8 import FP8GlobalStateManager, get_fp8_te_dtype
+from ...fp8 import FP8GlobalStateManager
 from ...constants import TE_DType
-from ...tensor import Float8Tensor, QuantizedTensor
+from ...tensor import QuantizedTensor
 from ...utils import (
     canonicalize_device,
     canonicalize_dtype,
