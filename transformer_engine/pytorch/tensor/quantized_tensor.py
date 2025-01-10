@@ -234,6 +234,8 @@ class _IdentityFunc(torch.autograd.Function):
 
 
 def _stride_from_shape(shape: list[int]):
+    if len(shape) == 0:
+        return []
     rstride = [1]
     for d in reversed(shape[1:]):
         rstride.append(rstride[-1] * d)

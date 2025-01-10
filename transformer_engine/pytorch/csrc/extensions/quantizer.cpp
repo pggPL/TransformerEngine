@@ -82,7 +82,9 @@ std::pair<TensorWrapper, py::object> Float8Quantizer::create_tensor(
   std::vector<int64_t> rowwise_torch_shape;
   std::vector<int64_t> columnwise_torch_shape;
 
-  columnwise_torch_shape.emplace_back(static_cast<int64_t>(shape.back()));
+  if (!shape.empty()) {
+    columnwise_torch_shape.emplace_back(static_cast<int64_t>(shape.back()));
+  }
   for (size_t i = 0; i < shape.size(); ++i) {
     if (i < shape.size() - 1) {
       columnwise_torch_shape.emplace_back(static_cast<int64_t>(shape[i]));

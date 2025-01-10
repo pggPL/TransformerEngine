@@ -141,18 +141,24 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
 
     Parameters
     ----------
+    shape: int or iterable of int
+        Tensor dimensions.
+    dtype: torch.dtype
+        Nominal tensor datatype.
+    requires_grad: bool, optional = False
+        Whether to compute gradients for this tensor.
     data: torch.Tensor
-          Raw FP8 data in a uint8 tensor
-    fp8_dtype: transformer_engine_torch.DType, default = kFloat8E4M3
-               FP8 format.
+        Raw FP8 data in a uint8 tensor
     fp8_scale_inv: torch.Tensor
-                   Reciprocal of the scaling factor applied when
-                   casting to FP8, i.e. the scaling factor that must
-                   be applied when casting from FP8 to higher
-                   precision. Can be inferred from fp8_meta if
-                   provided.
-    dtype: torch.dtype, default = torch.float32
-           Nominal tensor datatype.
+        Reciprocal of the scaling factor applied when casting to FP8,
+        i.e. the scaling factor that must be applied when casting from
+        FP8 to higher precision.
+    fp8_dtype: transformer_engine_torch.DType
+        FP8 format.
+    data_transpose: torch.Tensor, optional
+        FP8 transpose data in a uint8 tensor
+    quantizer: Float8Quantizer, optional
+        Builder class for FP8 tensors
 
     """
 
@@ -460,6 +466,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             self._data = tensor._data
             self._quantizer = tensor._quantizer
             self._fp8_dtype = tensor._fp8_dtype
+            self._scale_inv = tensor._scale_inv
             self._transpose = tensor._transpose
             self._transpose_invalid = tensor._transpose_invalid
             return
