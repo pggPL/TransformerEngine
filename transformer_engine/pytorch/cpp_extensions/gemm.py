@@ -119,6 +119,30 @@ def fp8_gemm(
     if ub_algo is None:
         args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),))
     else:
+        args = (
+            A,
+            A_scale_inv[A_fp8_tensor],
+            A_dtype,
+            A_scaling_mode,
+            True,  # transa
+            B,
+            B_scale_inv[B_fp8_tensor],
+            B_dtype,
+            B_scaling_mode,
+            False,  # transb
+            out,
+            empty_tensor if out_index is None else fp8_meta_tensor.scale[out_index],
+            out_dtype,
+            empty_tensor if out_index is None else fp8_meta_tensor.amax_history[0][out_index],
+            bias if use_bias else empty_tensor,
+            bias_dtype,
+            gelu_input,  # this is pre_gelu_out
+            False,  # grad
+            workspace,
+            workspace.shape[0],
+            accumulate,
+            use_split_accumulator,
+        )
         assert ub is not None, "ub object is None!"
         if ub_algo == tex.CommOverlapAlgo.BULK_OVERLAP_AG:
             fn = ub.bulk_overlap
@@ -303,6 +327,30 @@ def gemm(
     if ub_algo is None:
         args = tuple(args + (sm_count - int(os.getenv("NVTE_EXT_MARGIN_SM", str(sm_count))),))
     else:
+        args = (
+            A,
+            empty_tensor,
+            input_dtype,
+            [-1, -1, 1],  # A_scaling_mode
+            transa,
+            B,
+            empty_tensor,
+            input_dtype,
+            [-1, -1, 1],  # B_scaling_mode
+            transb,
+            out,
+            empty_tensor,  # out_scale
+            output_dtype,
+            empty_tensor,  # out_amax
+            grad_bias if grad else bias,
+            bias_dtype,
+            gelu_input,
+            grad,
+            workspace,
+            workspace.shape[0],
+            accumulate,
+            False,  # use_split_accumulator
+        )
         assert ub is not None, "ub object is None!"
         if ub_algo == tex.CommOverlapAlgo.BULK_OVERLAP_AG:
             fn = ub.bulk_overlap
