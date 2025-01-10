@@ -1280,14 +1280,10 @@ void quantize_helper(const NVTETensor input, const NVTETensor activation_input,
           const auto noop_tensor =
               noop != nullptr ? *(reinterpret_cast<const Tensor *>(noop)) : Tensor();
           cast_transpose(input_tensor, noop_tensor, output_tensor, stream);
-        }
-        if constexpr (IS_DBIAS && !IS_ACT) {
-          cast_transpose_fused<IS_DBIAS, IS_DACT, float, ParamOP, OP>(
-              input_tensor, activation_tensor, output_tensor, dbias_tensor, workspace_tensor,
-              stream);
-        }
-        if constexpr (!IS_DBIAS && (IS_DACT || IS_ACT)) {
-          NVTE_ERROR("Not implemented yet!");
+        } else {
+          cast_transpose_fused<IS_DBIAS, IS_DACT, IS_ACT, float, ParamOP, OP>(
+            input_tensor, activation_tensor, output_tensor, dbias_tensor,
+            workspace_tensor, stream);
         }
       } else if (output_tensor->has_data()) {
         fp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
