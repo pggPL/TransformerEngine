@@ -117,7 +117,8 @@ _NVTE_UNFUSED_ATTN = int(os.getenv("NVTE_UNFUSED_ATTN", "1"))
 _flash_attn_is_installed = False
 _flash_attn_version = PkgVersion("0")
 _flash_attn_version_required = PkgVersion("2.1.1")
-_flash_attn_max_version = PkgVersion("2.6.3")
+_flash_attn_version_required_blackwell = PkgVersion("2.7.3")
+_flash_attn_max_version = PkgVersion("2.7.3")
 _flash_attn_2_plus = False
 _flash_attn_2_1_plus = False
 _flash_attn_2_3_plus = False
@@ -141,7 +142,13 @@ except PackageNotFoundError:
             """ "pip install flash-attn".""",
         )
 else:
-    if _flash_attn_version_required <= _flash_attn_version <= _flash_attn_max_version:
+    if torch.cuda.is_available() and get_device_compute_capability() >= (10, 0):
+        if _flash_attn_version_required_blackwell <= _flash_attn_version <= _flash_attn_max_version:
+            _flash_attn_is_installed = True
+    elif _flash_attn_version_required <= _flash_attn_version <= _flash_attn_max_version:
+        _flash_attn_is_installed = True
+
+    if _flash_attn_is_installed:
         from flash_attn.flash_attn_interface import flash_attn_func, flash_attn_varlen_func
         from flash_attn.flash_attn_interface import (
             _flash_attn_varlen_forward as flash_attn_varlen_fwd,
