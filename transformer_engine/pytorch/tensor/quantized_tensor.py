@@ -16,13 +16,14 @@ import transformer_engine_torch as tex
 
 
 def prepare_for_saving(*tensors) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
+    # pylint: disable=unidiomatic-typecheck  # Using type instead of isinstance to check exact type
     tensor_list, tensor_objects_list = [], []
     for tensor in tensors:
         if tensor is None:
             tensor_list.append(None)
             tensor_objects_list.append(None)
-        elif isinstance(tensor, (torch.Tensor, torch.nn.Parameter)):  # TODO (pgadzinski) - check it
-            tensor_list.append(tensor if isinstance(tensor, torch.Tensor) else tensor.data)
+        elif type(tensor) in (torch.Tensor, torch.nn.Parameter):  # TODO (pgadzinski) - check it
+            tensor_list.append(tensor if type(tensor) == torch.Tensor else tensor.data)
             tensor_objects_list.append(None)
         else:
             t, t_obj = tensor.prepare_for_saving()
