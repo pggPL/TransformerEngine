@@ -214,6 +214,11 @@ def general_gemm(
                 B._rowwise_scale_inv,
                 B._columnwise_scale_inv,
             ) = tmp_scale_inverses
+    
+    if quantization_params is not None:
+        # used by debug quantizers for the hooks
+        out = quantization_params.process_after_quantization(out)
+
 
     return out, bias_grad, gelu_input
 

@@ -102,6 +102,7 @@ class FP8GlobalStateManager:
     skip_fp8_weight_update_tensor = None
     mxfp8_available = None
     reason_for_no_mxfp8 = ""
+    debug_enabled = False
 
     @classmethod
     def reset(cls) -> None:
@@ -371,6 +372,9 @@ class FP8GlobalStateManager:
                     _amax_and_scale_update(
                         amax_history, scale, get_fp8_max(recipe, forward), recipe
                     )
+        if cls.enabled:
+            from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS
+            STATS_BUFFERS.log_stats(forward=forward)
 
     @classmethod
     def get_unique_autocast_key(

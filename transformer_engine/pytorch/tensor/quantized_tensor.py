@@ -451,3 +451,7 @@ class QuantizedTensor(torch.Tensor):
 
         """
         return self.__class__.make_like(self, dtype=dtype)
+
+    # to overwrite, used in debug quantizers
+    def get_tensor(self, gemm_name):
+        return self

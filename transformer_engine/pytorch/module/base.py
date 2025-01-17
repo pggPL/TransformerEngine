@@ -13,6 +13,7 @@ import struct
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 from contextlib import contextmanager
+import logging
 
 import torch
 import torch.nn.functional as F
@@ -824,6 +825,13 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 inp = inp.contiguous()
             yield inp
 
+        # If not in fp8 autocast and debug, should log tensor stats.
+        if self.debug:
+            if FP8GlobalStateManager.FP8_AUTOCAST_DEPTH == 0:
+                from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS
+                STATS_BUFFERS.log_stats(forward=True)
+
+
         if self.fp8 and in_fp8_activation_recompute_phase():
             FP8GlobalStateManager.restore_fp8_meta_tensors(self.fp8_meta)
 
@@ -1028,6 +1036,10 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 out.quantize_(tensor, noop_flag=skip_update_flag)
             else:
                 tex.quantize(tensor, quantizer, out, skip_update_flag)
+        
+        # here some debug call
+        if self.debug:
+            quantizer.get_weight_workspace(tensor, out)
 
         return out
 
@@ -1051,3 +1063,33 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         super()._load_from_state_dict(
             state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
         )
+    
+    def _validate_debug_name(self, overwrite_debug_name):
+        """
+        Validate name passed to the module.
+        This is invoked in the forward() method as module names are assigned after Model is initialized in Megatron-LM.
+        If no name is assigned, it creates a default name with layer count as the variable.
+
+        Args
+        overwrite_name: str, default = None
+            This will overwrite the name of the module with the specified name. This is needed for debug layers re-using this Linear
+            module such as LayerNormLinear. The idea is to re-name the Linear module which is a part of another layer with that layers name.
+            Only needed if layer names are assigned after model initialization like in Megatron-LM.
+        """
+        assert self.debug
+
+        from ...debug.debug_state import DebugLayerState
+
+        try:
+            import nvtorch_inspect.api as nvinspect_api
+        except (ModuleNotFoundError, ImportError):
+            raise ModuleNotFoundError("ERROR: Could not locate nvtorch_inspect package. Make sure it is installed correctly.")
+        
+        if overwrite_debug_name:
+            self.name = overwrite_debug_name
+
+        if self.name == None:
+            nvinspect_api.log_message("[DEBUG-WARNING] Names are not provided to debug modules. ",
+                                  "Creating and using generic names. Pass names to debug modules for better insight. ",
+                                    level=logging.WARNING)
+            self.name = f"Layer_{DebugLayerState.get_layer_count()}"
