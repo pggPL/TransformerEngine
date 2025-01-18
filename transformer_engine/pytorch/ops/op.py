@@ -14,7 +14,12 @@ from typing import Any, Optional
 import torch
 
 from transformer_engine.common.recipe import Recipe
-from ..fp8 import FP8GlobalStateManager, RecipeState
+from ..fp8 import (
+    BlockScalingRecipeState,
+    DelayedScalingRecipeState,
+    FP8GlobalStateManager,
+    RecipeState,
+)
 from ..tensor import Quantizer
 
 
@@ -246,6 +251,20 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         if self._fp8_metas is None or self._quantizers is None:
             self._reset_quantization_recipe_state(recipe=recipe)
             return
+        for mode in ("forward", "backward"):
+            fp8_meta_key = FP8GlobalStateManager.get_meta_tensor_key(
+                forward=(mode == "forward"),
+            )
+            if self._fp8_metas[mode] is None or fp8_meta_key not in self._fp8_metas[mode]:
+                continue
+            recipe_state = self._fp8_metas[mode][fp8_meta_key]
+            need_to_reset_recipe_state = (
+                (recipe.delayed() and not isinstance(recipe_state, DelayedScalingRecipeState))
+                or (recipe.block() and not isinstance(recipe_state, BlockScalingRecipeState))
+            )
+            if need_to_reset_recipe_state:
+                self._reset_quantization_recipe_state(recipe=recipe)
+                return
 
         # Quantization recipe state for forward and backward pass
         for mode in ("forward", "backward"):
