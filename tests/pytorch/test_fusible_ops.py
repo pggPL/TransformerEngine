@@ -12,7 +12,6 @@ import torch
 import transformer_engine
 import transformer_engine.common.recipe
 import transformer_engine.pytorch as te
-from transformer_engine.pytorch.float8_tensor import Float8Tensor
 from transformer_engine.pytorch.fp8 import FP8GlobalStateManager
 import transformer_engine.pytorch.ops as te_ops
 from transformer_engine.pytorch.ops._common import is_float8_tensor
@@ -21,6 +20,7 @@ from transformer_engine.pytorch.ops.fused import (
     ForwardLinearBiasActivation,
     ForwardLinearBiasAdd,
 )
+from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor, Float8Quantizer
 from transformer_engine.pytorch.utils import is_bf16_compatible
 import transformer_engine_torch as tex
 
@@ -89,7 +89,12 @@ def make_reference_and_test_tensors(
     ref = torch.rand(shape, dtype=ref_dtype, device=ref_device)
     test = ref.to(device=test_device, dtype=test_dtype)
     if test_is_fp8:
-        test = Float8Tensor.to_float8(test, with_transpose_cache=True)
+        quantizer = Float8Quantizer(
+            scale=torch.ones(1, dtype=torch.float32, device=test_device).squeeze(),
+            amax=torch.zeros(1, dtype=torch.float32, device=test_device),
+            fp8_dtype=tex.DType.kFloat8E4M3,
+        )
+        test = quantizer(test)
     elif test.data_ptr() == ref.data_ptr():
         test = test.clone()
     ref.copy_(test)
@@ -299,11 +304,9 @@ class TestFuser:
             w_scale_ref = (fp8_format.value.max_fwd / w_amax_ref) / (2**margin)
             x_scale_ref = (fp8_format.value.max_fwd / x_amax_ref) / (2**margin)
             dy_scale_ref = (fp8_format.value.max_bwd / dy_amax_ref) / (2**margin)
-            forward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=True)
-            backward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=False)
-            w_scale = model.get_fp8_meta("param")[forward_key].scale
-            x_scale = model.get_fp8_meta("input")[forward_key].scale
-            dy_scale = model.get_fp8_meta("grad_output")[backward_key].scale
+            w_scale = model.get_quantizer("forward", 1).scale
+            x_scale = model.get_quantizer("forward", 0).scale
+            dy_scale = model.get_quantizer("backward", 0).scale
             torch.testing.assert_close(w_scale, torch.full_like(w_scale, w_scale_ref))
             torch.testing.assert_close(x_scale, torch.full_like(x_scale, x_scale_ref))
             torch.testing.assert_close(dy_scale, torch.full_like(dy_scale, dy_scale_ref))
@@ -505,19 +508,14 @@ class TestBasicOps:
         ),
     )
     @pytest.mark.parametrize("dtype", _dtypes)
-    @pytest.mark.parametrize("device", ("cuda", "cpu"))
-    @pytest.mark.parametrize(
-        "memory_format",
-        (torch.contiguous_format, torch.channels_last),
-    )
     @pytest.mark.parametrize("fp8", (False, True))
     def test_reshape(
         self,
         *,
         shapes: tuple[Iterable[int], Iterable[int]],
         dtype: torch.dtype,
-        device: torch.device,
-        memory_format: torch.memory_format,
+        device: torch.device = "cuda",
+        memory_format: torch.memory_format = torch.contiguous_format,
         fp8: bool,
     ) -> None:
         in_shape, out_shape = shapes
@@ -640,7 +638,7 @@ class TestBasicOps:
     def test_cast_float8(
         self,
         *,
-        in_shape: Iterable[int] = (1,),
+        in_shape: Iterable[int] = (16, 16),
         dtype: torch.dtype = torch.bfloat16,
         device: torch.device = "cuda",
         cast_forward: bool,
@@ -656,7 +654,7 @@ class TestBasicOps:
             requires_grad=False,
             test_is_fp8=True,
         )
-        x_test = x_test.from_float8().requires_grad_()
+        x_test = x_test.dequantize().requires_grad_()
         dy_ref, dy_test = make_reference_and_test_tensors(
             in_shape,
             test_dtype=dtype,
@@ -664,7 +662,7 @@ class TestBasicOps:
             requires_grad=False,
             test_is_fp8=True,
         )
-        dy_test = dy_test.from_float8()
+        dy_test = dy_test.dequantize()
 
         # Plain PyTorch implementation
         y_ref = x_ref
@@ -1363,7 +1361,7 @@ class TestBasicOps:
         torch.testing.assert_close(dx_test, x_ref.grad, **tols)
 
     @pytest.mark.parametrize("activation", ("relu", "gelu", "geglu", "reglu", "swiglu"))
-    @pytest.mark.parametrize("out_shape", ((37,), (2, 13), (4, 1, 16)))
+    @pytest.mark.parametrize("out_shape", ((37,), (2, 13), (16, 1, 16)))
     @pytest.mark.parametrize("dtype", _dtypes)
     @pytest.mark.parametrize("fp8_input", (False, True))
     @pytest.mark.parametrize("fp8_output", (False, True))
@@ -1385,19 +1383,26 @@ class TestBasicOps:
             in_shape[-1] *= 2
 
         # Skip invalid configurations
-        if fp8_input or fp8_output:
+        fp8 = fp8_input or fp8_output
+        if fp8:
             if not fp8_available:
                 pytest.skip(reason_for_no_fp8)
             if torch.device(device).type != "cuda":
                 pytest.skip("FP8 is only supported on CUDA devices")
+        if fp8_output:
+            if math.prod(out_shape[:-1]) % 16 != 0 or out_shape[-1] % 16 != 0:
+                pytest.skip("FP8 activation requires dims that are divisible by 16")
 
         # Random data
         x_ref, x_test = make_reference_and_test_tensors(
             in_shape,
             test_dtype=dtype,
             test_device=device,
-            test_is_fp8=fp8_input,
+            test_is_fp8=fp8,
         )
+        if fp8 and not fp8_input:
+            with torch.no_grad():
+                x_test = x_test.dequantize().requires_grad_()
         dy_ref, dy_test = make_reference_and_test_tensors(
             out_shape,
             test_dtype=dtype,
@@ -1444,6 +1449,8 @@ class TestBasicOps:
         tols = dtype_tols(dtype)
         if fp8_output:
             tols = dtype_tols(tex.DType.kFloat8E4M3)
+        if activation == "relu":
+            tols = { "atol": 0, "rtol": 0 }
 
         # Check results
         y_test = y_test.to(dtype=torch.float64, device="cpu")

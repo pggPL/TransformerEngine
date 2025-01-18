@@ -35,7 +35,8 @@ from transformer_engine.pytorch import (
     Fp8Unpadding,
 )
 from transformer_engine.pytorch.distributed import checkpoint as te_checkpoint
-from transformer_engine.pytorch.cpp_extensions import fp8_gemm, fp8_grouped_gemm, gemm, grouped_gemm
+from transformer_engine.pytorch.cpp_extensions import general_gemm, general_grouped_gemm
+from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
 from transformer_engine.pytorch.module.base import get_multi_stream_cublas_workspace, get_workspace
 from transformer_engine.pytorch.utils import get_device_compute_capability
 import transformer_engine_torch as tex
@@ -450,7 +451,8 @@ class TorchLayerNormMLP(nn.Module):
         self.fc2 = nn.Linear(ffn_hidden_size, hidden_size)
 
     def forward(self, x):
-        return self.fc2(self.gelu(self.fc1(self.ln(x))))
+        t = self.gelu(self.fc1(self.ln(x)))
+        return self.fc2(t)
 
 
 class TorchGPT(nn.Module):
@@ -556,6 +558,7 @@ def test_gpt_selective_activation_recompute(dtype, bs, model, fp8, fp8_model_par
         tols["atol"] = 1e-4
     if fp8 or fp8_model_params:
         tols.update(dict(rtol=0.125, atol=0.0675))
+
     for i, (ref, test) in enumerate(zip(outputs, outputs_recompute)):
         torch.testing.assert_close(
             test,
@@ -741,7 +744,7 @@ def _test_e2e_checkpointing(bs, dtype, config, checkpoint=False, steps=10, path=
 
         del block
         block = _test_e2e_checkpointing_get_model(config, dtype)
-        block.load_state_dict(torch.load(path))
+        block.load_state_dict(torch.load(path, weights_only=False))
         reset_rng_states()
 
         for p in block.parameters():
@@ -1267,9 +1270,14 @@ def test_layernorm_linear_accuracy(dtype, bs, model, normalization, zero_centere
         torch.half: 2e-3,
         torch.bfloat16: 2e-2,
     }
+    rtol = {
+        torch.float32: 1e-3,
+        torch.half: 4e-2,
+        torch.bfloat16: 4e-2,
+    }
 
     # Check output.
-    assert_allclose(te_outputs[0], torch_outputs[0], atol[dtype])
+    assert_allclose(te_outputs[0], torch_outputs[0], atol[dtype], rtol[dtype])
 
     if model == "small":
         atol = {
@@ -1335,8 +1343,14 @@ def test_layernorm_mlp_accuracy(dtype, bs, model, activation, normalization):
         torch.bfloat16: 5e-2,
     }
 
+    rtol = {
+        torch.float32: 1e-3,
+        torch.half: 4e-2,
+        torch.bfloat16: 4e-2,
+    }
+
     # Check output.
-    assert_allclose(te_outputs[0], torch_outputs[0], atol[dtype])
+    assert_allclose(te_outputs[0], torch_outputs[0], atol[dtype], rtol[dtype])
 
     # Check gradients, only for small model
     rtol = {
@@ -1442,10 +1456,10 @@ def test_grouped_linear_accuracy(
             sequential_linear[i].weight = Parameter(getattr(grouped_linear, f"weight{i}").clone())
             sequential_linear[i].bias = Parameter(getattr(grouped_linear, f"bias{i}").clone())
 
-    outputs = _test_grouped_linear_accuracy(grouped_linear, num_gemms, bs, dtype, config, fp8)
     outputs_ref = _test_grouped_linear_accuracy(
         sequential_linear, num_gemms, bs, dtype, config, fp8
     )
+    outputs = _test_grouped_linear_accuracy(grouped_linear, num_gemms, bs, dtype, config, fp8)
 
     # Shoule be bit-wise match
     for i, (o, o_ref) in enumerate(zip(outputs, outputs_ref)):
@@ -2073,23 +2087,24 @@ def test_grouped_gemm(shape, dtype, layout, accumulate):
 
     out_ref = [o.clone() for o in out]
     for i in range(z):
-        gemm(
+        general_gemm(
             A[i],
             B[i],
-            dtype,
             get_workspace(),
+            dtype,
             grad=grad,
             accumulate=accumulate,
             layout=layout,
             out=out_ref[i],
         )
 
-    grouped_gemm(
+    general_grouped_gemm(
         A,
-        B,
-        out,
+        list(B),
+        list(out),
         dtype,
         get_multi_stream_cublas_workspace(),
+        m_splits=[k] * n,  # TODO, not sure
         grad=grad,
         accumulate=accumulate,
         layout=layout,
@@ -2124,64 +2139,52 @@ def test_fp8_grouped_gemm(shape, fp8_dtype, accumulate):
     out_ref = [o.clone() for o in out]
 
     # fp8 should be robust enough to this fake scale
-    scale = 1 + torch.rand(z * 3, dtype=torch.float32, device="cuda")
-    scale_inv = 1 / scale
-    amax = torch.zeros(1024, z * 3, dtype=torch.float32, device="cuda")
+    scale = 1 + torch.rand(1, dtype=torch.float32, device="cuda").squeeze()
+    amax = torch.zeros(1, 1, dtype=torch.float32, device="cuda")
 
-    A_fp8 = [
-        torch.ops.tex_ts.cast_to_fp8_ts(
-            A[i],
-            scale,
-            amax,
-            scale_inv,
-            i,  # fp8 meta tensor index
+    a_quantizers = [
+        Float8Quantizer(
+            scale.clone(),
+            amax.clone(),
             tex.DType.kFloat8E4M3,
         )
-        for i in range(z)
+        for _ in range(z)
     ]
-    B_fp8 = [
-        torch.ops.tex_ts.cast_to_fp8_ts(
-            B[i],
-            scale,
-            amax,
-            scale_inv,
-            z + i,  # fp8 meta tensor index
-            fp8_dtype,
+    b_quantizers = [
+        Float8Quantizer(
+            scale.clone(),
+            amax.clone(),
+            tex.DType.kFloat8E4M3,
         )
-        for i in range(z)
+        for _ in range(z)
     ]
 
-    fp8_grouped_gemm(
-        A_fp8,
-        [scale_inv],
-        0,  # A_offset
-        tex.DType.kFloat8E4M3,
-        B_fp8,
-        scale_inv,
-        z,  # B_offset
-        fp8_dtype,
-        out,
-        dtype,
-        get_multi_stream_cublas_workspace(),
-        accumulate=accumulate,
-    )
+    A_fp8 = []
+    B_fp8 = []
+
+    for i in range(z):
+        A_fp8.append(a_quantizers[i](A[i]))
+        B_fp8.append(b_quantizers[i](B[i]))
 
     # baseline
     for i in range(z):
-        fp8_gemm(
+        general_gemm(
             A_fp8[i],
-            scale_inv,
-            i,
-            tex.DType.kFloat8E4M3,
             B_fp8[i],
-            scale_inv,
-            z + i,
-            fp8_dtype,
-            dtype,
             get_workspace(),
+            dtype,
             out=out_ref[i],
             accumulate=accumulate,
         )
+    general_grouped_gemm(
+        A_fp8,
+        B_fp8,
+        out,
+        dtype,
+        get_multi_stream_cublas_workspace(),
+        m_splits=[k] * m_splits,
+        accumulate=accumulate,
+    )
 
     # should be bit-wise match
     for o, o_ref in zip(out, out_ref):

@@ -8,8 +8,6 @@
 #include <transformer_engine/transpose.h>
 
 #include <cfloat>
-#include <iostream>
-#include <type_traits>
 
 #include "../common.h"
 #include "../utils.cuh"

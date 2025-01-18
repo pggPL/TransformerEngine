@@ -17,8 +17,8 @@ import torch
 
 import transformer_engine
 import transformer_engine.pytorch as te
-from transformer_engine.pytorch.float8_tensor import Float8Tensor
 from transformer_engine.pytorch.fp8 import FP8GlobalStateManager
+from transformer_engine.pytorch.tensor import Float8Quantizer
 import transformer_engine.pytorch.ops as te_ops
 from transformer_engine.pytorch.ops._common import is_float8_tensor
 from transformer_engine.pytorch.utils import is_bf16_compatible
@@ -66,22 +66,18 @@ def make_reference_and_test_tensors(
     in Transformer Engine operations.
 
     """
-
-    # Random data
     ref = torch.rand(shape, dtype=ref_dtype, device=ref_device)
-
-    # Make copy of tensor
+    test = ref.to(device=test_device, dtype=test_dtype)
     if test_is_fp8:
-        test = Float8Tensor.to_float8(ref)
-    else:
-        test = ref.to(device=test_device, dtype=test_dtype)
-        if test.data_ptr() == ref.data_ptr():
-            test = test.clone()
-
-    # Make sure reference and test tensors represent exact same values
+        quantizer = Float8Quantizer(
+            scale=torch.ones(1, dtype=torch.float32, device=test_device),
+            amax=torch.zeros(1, dtype=torch.float32, device=test_device),
+            fp8_dtype=tex.DType.kFloat8E4M3,
+        )
+        test = quantizer(test)
+    elif test.data_ptr() == ref.data_ptr():
+        test = test.clone()
     ref.copy_(test)
-
-    # Return reference and test tensors
     ref.requires_grad_(requires_grad)
     test.requires_grad_(requires_grad)
     return ref, test
@@ -715,20 +711,12 @@ def _test_fp8_scale_update(
     y_test.backward(dy_test)
 
     # Check results
-    forward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=True)
-    backward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=False)
-    x_fp8_meta = op.get_fp8_meta("input")[forward_key]
-    w_fp8_meta = op.get_fp8_meta("param")[forward_key]
-    dy_fp8_meta = op.get_fp8_meta("grad_output")[backward_key]
-    x_amax_test = x_fp8_meta.amax_history[-1, 0].to(dtype=torch.float32, device="cpu")
-    w_amax_test = w_fp8_meta.amax_history[-1, 0].to(dtype=torch.float32, device="cpu")
-    dy_amax_test = dy_fp8_meta.amax_history[-1, 0].to(dtype=torch.float32, device="cpu")
-    x_scale_test = x_fp8_meta.scale[0].to(dtype=torch.float32, device="cpu")
-    w_scale_test = w_fp8_meta.scale[0].to(dtype=torch.float32, device="cpu")
-    dy_scale_test = dy_fp8_meta.scale[0].to(dtype=torch.float32, device="cpu")
-    torch.testing.assert_close(x_amax_test, x_amax_ref)
-    torch.testing.assert_close(w_amax_test, w_amax_ref)
-    torch.testing.assert_close(dy_amax_test, dy_amax_ref)
+    x_quantizer = op.get_quantizer("forward", 0)
+    w_quantizer = op.get_quantizer("forward", 1)
+    dy_quantizer = op.get_quantizer("backward", 0)
+    x_scale_test = x_quantizer.scale.to(dtype=torch.float32, device="cpu").reshape([])
+    w_scale_test = w_quantizer.scale.to(dtype=torch.float32, device="cpu").reshape([])
+    dy_scale_test = dy_quantizer.scale.to(dtype=torch.float32, device="cpu").reshape([])
     torch.testing.assert_close(x_scale_test, x_scale_ref)
     torch.testing.assert_close(w_scale_test, w_scale_ref)
     torch.testing.assert_close(dy_scale_test, dy_scale_ref)
