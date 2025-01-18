@@ -863,9 +863,7 @@ class _LayerNormMLP(torch.autograd.Function):
 
             # Residual gradient
             dgrad = fc1_dgrad.view(inputmat.shape)
-            if (
-                ctx.return_layernorm_output and not ctx.return_layernorm_output_gathered
-            ):
+            if ctx.return_layernorm_output and not ctx.return_layernorm_output_gathered:
                 dgrad = dgrad + grad_outputs[1].view_as(dgrad)
 
             # Norm gradient
@@ -1430,7 +1428,9 @@ class LayerNormMLP(TransformerEngineBaseModule):
             fc1_weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
             fc1_weight_quantizer.internal = True
             fc2_input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM2_INPUT]
-            fc2_input_quantizer.set_usage(rowwise=True, columnwise=isinstance(fc2_input_quantizer, MXFP8Quantizer))
+            fc2_input_quantizer.set_usage(
+                rowwise=True, columnwise=isinstance(fc2_input_quantizer, MXFP8Quantizer)
+            )
             fc2_weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM2_WEIGHT]
             fc2_weight_quantizer.internal = True
             if torch.is_grad_enabled():

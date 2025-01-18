@@ -31,13 +31,17 @@ NCCL_WORLD = None
 LOSS_FN = nn.MSELoss()
 QUANTIZATION = None
 
+
 # Quantization recipe setup
 def quantization_recipe() -> Recipe:
     if QUANTIZATION == "fp8":
-        return DelayedScaling(fp8_format=Format.HYBRID, amax_history_len=32, amax_compute_algo="max")
+        return DelayedScaling(
+            fp8_format=Format.HYBRID, amax_history_len=32, amax_compute_algo="max"
+        )
     if QUANTIZATION == "mxfp8":
         return BlockScaling()
     return te.fp8.get_default_fp8_recipe()
+
 
 def main(argv=None, namespace=None):
     global WORLD_RANK, WORLD_SIZE, NCCL_WORLD, QUANTIZATION
@@ -567,7 +571,7 @@ def _test_layernorm_mlp(set_parallel_mode=None, sequence_parallel=False, **kwarg
     """
     # Set parameter data type
     params_dtype = kwargs.get("params_dtype", torch.float32)
-    FFN_HIDDEN_SIZE = { None: 32, "fp8": 64, "mxfp8": 256}[QUANTIZATION]
+    FFN_HIDDEN_SIZE = {None: 32, "fp8": 64, "mxfp8": 256}[QUANTIZATION]
 
     # Create models
     model_single_node = te.LayerNormMLP(HIDDEN_SIZE, FFN_HIDDEN_SIZE, **kwargs)
@@ -657,7 +661,7 @@ def test_layernorm_mlp():
 @run_distributed_test()
 def _test_transformer_layer_parallel(sequence_parallel=False, **kwargs):
     params_dtype = kwargs.get("params_dtype", torch.float32)
-    FFN_HIDDEN_SIZE = { None: 32, "fp8": 64, "mxfp8": 256}[QUANTIZATION]
+    FFN_HIDDEN_SIZE = {None: 32, "fp8": 64, "mxfp8": 256}[QUANTIZATION]
 
     model_single_node = te.TransformerLayer(
         HIDDEN_SIZE, FFN_HIDDEN_SIZE, NR_HEADS, attention_dropout=0, hidden_dropout=0, **kwargs

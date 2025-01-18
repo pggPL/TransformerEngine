@@ -170,7 +170,11 @@ else:
         fa_logger.warning(
             "Supported flash-attn versions are %s. Found flash-attn %s.",
             _get_supported_versions(
-                _flash_attn_version_required if get_device_compute_capability() < (10, 0) else _flash_attn_version_required_blackwell,
+                (
+                    _flash_attn_version_required
+                    if get_device_compute_capability() < (10, 0)
+                    else _flash_attn_version_required_blackwell
+                ),
                 _flash_attn_max_version,
             ),
             _flash_attn_version,
@@ -952,7 +956,6 @@ def get_attention_backend(
     _attention_backends["use_unfused_attention"] = use_unfused_attention
     _attention_backends["backend_selection_requires_update"] = False
 
-
     return (
         use_flash_attention,
         use_fused_attention,
@@ -1723,7 +1726,7 @@ def flash_attn_a2a_communicate(
 
 
 def get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=False):
-    """ Get the list of quantizers used in attention from the quantizers list."""
+    """Get the list of quantizers used in attention from the quantizers list."""
     if not fp8:
         num_of_nones = 8 if cp_specific_quantizers else 6
         return [None] * num_of_nones
@@ -1872,7 +1875,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
             dP_quantizer,
         ) = get_attention_quantizers(fp8, quantizers, cp_specific_quantizers=True)
 
-
         if fp8:
             if use_fused_attention:
                 fused_attn_backend = FusedAttnBackend["FP8"]
@@ -1914,7 +1916,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
             elif not is_input_fp8 and not int(os.getenv("NVTE_FP8_DPA_BWD", "1")):
                 q_f16 = q
                 q = QKV_quantizer(q_f16)._data
-
 
         assert qkv_format == "thd" or (
             q.shape[seq_dim] % 2 == 0 and k.shape[seq_dim] % 2 == 0
@@ -1987,7 +1988,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         softmax_lse_per_step = [None for _ in range(cp_size)]
         rng_states = [None for _ in range(cp_size)]
         attn_biases = [None for _ in range(cp_size)]
-
 
         # create two streams to resolve wave quantization issue of Flash Attn in each step
         flash_attn_streams = [torch.cuda.current_stream(), cp_stream]
@@ -2068,7 +2068,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                         dim=-1,
                                     ).contiguous()
 
-
                                 q_part = q_inputs[i % 2]
                                 k_part = (
                                     kv_inputs[i % 2][..., 0, :, :]
@@ -2081,9 +2080,15 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                     else kv_inputs[i % 2][1]
                                 )
                                 if fp8:
-                                    q_part = QKV_quantizer.create_tensor_from_data(q_part, fake_dtype=qkv_dtype, internal=True)
-                                    k_part = QKV_quantizer.create_tensor_from_data(k_part, fake_dtype=qkv_dtype, internal=True)
-                                    v_part = QKV_quantizer.create_tensor_from_data(v_part, fake_dtype=qkv_dtype, internal=True)
+                                    q_part = QKV_quantizer.create_tensor_from_data(
+                                        q_part, fake_dtype=qkv_dtype, internal=True
+                                    )
+                                    k_part = QKV_quantizer.create_tensor_from_data(
+                                        k_part, fake_dtype=qkv_dtype, internal=True
+                                    )
+                                    v_part = QKV_quantizer.create_tensor_from_data(
+                                        v_part, fake_dtype=qkv_dtype, internal=True
+                                    )
 
                                 out_per_step[i], aux_ctx_tensors = fused_attn_fwd(
                                     is_training,
@@ -2191,9 +2196,15 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                     else kv_inputs[i % 2][1]
                                 )
                                 if fp8:
-                                    q_part = QKV_quantizer.create_tensor_from_data(q_part, fake_dtype=qkv_dtype, internal=True)
-                                    k_part = QKV_quantizer.create_tensor_from_data(k_part, fake_dtype=qkv_dtype, internal=True)
-                                    v_part = QKV_quantizer.create_tensor_from_data(v_part, fake_dtype=qkv_dtype, internal=True)
+                                    q_part = QKV_quantizer.create_tensor_from_data(
+                                        q_part, fake_dtype=qkv_dtype, internal=True
+                                    )
+                                    k_part = QKV_quantizer.create_tensor_from_data(
+                                        k_part, fake_dtype=qkv_dtype, internal=True
+                                    )
+                                    v_part = QKV_quantizer.create_tensor_from_data(
+                                        v_part, fake_dtype=qkv_dtype, internal=True
+                                    )
                                 out_per_step[i], aux_ctx_tensors = fused_attn_fwd(
                                     is_training,
                                     max_seqlen_q,
@@ -2315,9 +2326,15 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                     else kv_inputs[i % 2][1]
                                 )
                                 if fp8:
-                                    q_part = QKV_quantizer.create_tensor_from_data(q_part, fake_dtype=qkv_dtype, internal=True)
-                                    k_part = QKV_quantizer.create_tensor_from_data(k_part, fake_dtype=qkv_dtype, internal=True)
-                                    v_part = QKV_quantizer.create_tensor_from_data(v_part, fake_dtype=qkv_dtype, internal=True)
+                                    q_part = QKV_quantizer.create_tensor_from_data(
+                                        q_part, fake_dtype=qkv_dtype, internal=True
+                                    )
+                                    k_part = QKV_quantizer.create_tensor_from_data(
+                                        k_part, fake_dtype=qkv_dtype, internal=True
+                                    )
+                                    v_part = QKV_quantizer.create_tensor_from_data(
+                                        v_part, fake_dtype=qkv_dtype, internal=True
+                                    )
                                 out_per_step[i], aux_ctx_tensors = fused_attn_fwd(
                                     is_training,
                                     max_seqlen_q // 2,
@@ -2407,7 +2424,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                     dim=-1,
                                 ).contiguous()
 
-
                             q_part = q
                             k_part = (
                                 kv_inputs[i % 2][..., 0, :, :]
@@ -2420,9 +2436,15 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                 else kv_inputs[i % 2][1]
                             )
                             if fp8:
-                                q_part = QKV_quantizer.create_tensor_from_data(q_part, fake_dtype=qkv_dtype, internal=True)
-                                k_part = QKV_quantizer.create_tensor_from_data(k_part, fake_dtype=qkv_dtype, internal=True)
-                                v_part = QKV_quantizer.create_tensor_from_data(v_part, fake_dtype=qkv_dtype, internal=True)
+                                q_part = QKV_quantizer.create_tensor_from_data(
+                                    q_part, fake_dtype=qkv_dtype, internal=True
+                                )
+                                k_part = QKV_quantizer.create_tensor_from_data(
+                                    k_part, fake_dtype=qkv_dtype, internal=True
+                                )
+                                v_part = QKV_quantizer.create_tensor_from_data(
+                                    v_part, fake_dtype=qkv_dtype, internal=True
+                                )
                             out_per_step[i], aux_ctx_tensors = fused_attn_fwd(
                                 is_training,
                                 max_seqlen_q,
@@ -2612,12 +2634,17 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
             q_f16 = q_f16.view(q.shape)
             q_save, kv_save, out_save = q_f16, kv, out_f16
 
-
         tensors_to_save, tensor_objects = prepare_for_saving(
-            q_save, kv_save, out_save,
-            softmax_lse, cu_seqlens_q_padded, cu_seqlens_kv_padded,
-            *cu_seqlens_q_per_step, *cu_seqlens_kv_per_step,
-            *rng_states, *attn_biases
+            q_save,
+            kv_save,
+            out_save,
+            softmax_lse,
+            cu_seqlens_q_padded,
+            cu_seqlens_kv_padded,
+            *cu_seqlens_q_per_step,
+            *cu_seqlens_kv_per_step,
+            *rng_states,
+            *attn_biases,
         )
         ctx.save_for_backward(*tensors_to_save)
         ctx.tensor_objects = tensor_objects
@@ -2671,14 +2698,13 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
 
         saved_tensors = ctx.saved_tensors
 
-        q, kv, out, softmax_lse, cu_seqlens_q_padded,\
-            cu_seqlens_kv_padded, *other_tensors = restore_from_saved(
-            ctx.tensor_objects, saved_tensors
+        q, kv, out, softmax_lse, cu_seqlens_q_padded, cu_seqlens_kv_padded, *other_tensors = (
+            restore_from_saved(ctx.tensor_objects, saved_tensors)
         )
         cu_seqlens_q_per_step = other_tensors[:cp_size]
-        cu_seqlens_kv_per_step = other_tensors[cp_size:cp_size * 2]
-        rng_states = other_tensors[cp_size * 2 :cp_size * 3]
-        attn_biases = other_tensors[cp_size * 3 :cp_size * 4]
+        cu_seqlens_kv_per_step = other_tensors[cp_size : cp_size * 2]
+        rng_states = other_tensors[cp_size * 2 : cp_size * 3]
+        attn_biases = other_tensors[cp_size * 3 : cp_size * 4]
 
         causal = "causal" in ctx.attn_mask_type
         padding = "padding" in ctx.attn_mask_type
@@ -2759,8 +2785,12 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                 assert False, "FP8 is only supported with Fused Attention!"
         else:
             if ctx.fp8_meta is not None and ctx.is_input_fp8:
-                q = ctx.QKV_quantizer.create_tensor_from_data(q, fake_dtype=ctx.qkv_dtype, internal=True)
-                kv = ctx.QKV_quantizer.create_tensor_from_data(kv, fake_dtype=ctx.qkv_dtype, internal=True)
+                q = ctx.QKV_quantizer.create_tensor_from_data(
+                    q, fake_dtype=ctx.qkv_dtype, internal=True
+                )
+                kv = ctx.QKV_quantizer.create_tensor_from_data(
+                    kv, fake_dtype=ctx.qkv_dtype, internal=True
+                )
                 q, kv = q.dequantize(), kv.dequantize()
                 if cp_size_a2a == 1:
                     dout = dout.dequantize()
@@ -2774,7 +2804,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                 fp8_meta_kwargs = {}
                 fused_attn_dqkv_dtype = TE_DType[dout_dtype]
                 fused_attn_backend = FusedAttnBackend["F16_arbitrary_seqlen"]
-
 
         if cp_size_a2a > 1:
             if not ctx.use_fused_attention:
@@ -2897,11 +2926,21 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                         dout_part = dout_
 
                         if ctx.fp8:
-                            q_part = ctx.QKV_quantizer.create_tensor_from_data(q_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            k_part = ctx.QKV_quantizer.create_tensor_from_data(k_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            v_part = ctx.QKV_quantizer.create_tensor_from_data(v_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            out_part = ctx.O_quantizer.create_tensor_from_data(out_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            dout_part = ctx.dO_quantizer.create_tensor_from_data(dout_part, fake_dtype=ctx.qkv_dtype, internal=True)
+                            q_part = ctx.QKV_quantizer.create_tensor_from_data(
+                                q_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            k_part = ctx.QKV_quantizer.create_tensor_from_data(
+                                k_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            v_part = ctx.QKV_quantizer.create_tensor_from_data(
+                                v_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            out_part = ctx.O_quantizer.create_tensor_from_data(
+                                out_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            dout_part = ctx.dO_quantizer.create_tensor_from_data(
+                                dout_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
                         dq_, dk_, dv_, dbias_ = fused_attn_bwd(
                             ctx.max_seqlen_q,
                             ctx.max_seqlen_kv,
@@ -2994,11 +3033,21 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                         dout_part = dout_
 
                         if ctx.fp8:
-                            q_part = ctx.QKV_quantizer.create_tensor_from_data(q_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            k_part = ctx.QKV_quantizer.create_tensor_from_data(k_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            v_part = ctx.QKV_quantizer.create_tensor_from_data(v_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            out_part = ctx.O_quantizer.create_tensor_from_data(out_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            dout_part = ctx.dO_quantizer.create_tensor_from_data(dout_part, fake_dtype=ctx.qkv_dtype, internal=True)
+                            q_part = ctx.QKV_quantizer.create_tensor_from_data(
+                                q_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            k_part = ctx.QKV_quantizer.create_tensor_from_data(
+                                k_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            v_part = ctx.QKV_quantizer.create_tensor_from_data(
+                                v_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            out_part = ctx.O_quantizer.create_tensor_from_data(
+                                out_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            dout_part = ctx.dO_quantizer.create_tensor_from_data(
+                                dout_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
                         dq_, dk_, dv_, dbias_ = fused_attn_bwd(
                             ctx.max_seqlen_q,
                             ctx.max_seqlen_kv // 2,
@@ -3095,11 +3144,21 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                         dout_part = dout_
 
                         if ctx.fp8:
-                            q_part = ctx.QKV_quantizer.create_tensor_from_data(q_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            k_part = ctx.QKV_quantizer.create_tensor_from_data(k_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            v_part = ctx.QKV_quantizer.create_tensor_from_data(v_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            out_part = ctx.O_quantizer.create_tensor_from_data(out_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                            dout_part = ctx.dO_quantizer.create_tensor_from_data(dout_part, fake_dtype=ctx.qkv_dtype, internal=True)
+                            q_part = ctx.QKV_quantizer.create_tensor_from_data(
+                                q_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            k_part = ctx.QKV_quantizer.create_tensor_from_data(
+                                k_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            v_part = ctx.QKV_quantizer.create_tensor_from_data(
+                                v_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            out_part = ctx.O_quantizer.create_tensor_from_data(
+                                out_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
+                            dout_part = ctx.dO_quantizer.create_tensor_from_data(
+                                dout_part, fake_dtype=ctx.qkv_dtype, internal=True
+                            )
                         dq_, dk_, dv_, dbias_ = fused_attn_bwd(
                             ctx.max_seqlen_q // 2,
                             ctx.max_seqlen_kv,
@@ -3174,11 +3233,21 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                     dout_part = dout
 
                     if ctx.fp8:
-                        q_part = ctx.QKV_quantizer.create_tensor_from_data(q_part, fake_dtype=ctx.qkv_dtype)
-                        k_part = ctx.QKV_quantizer.create_tensor_from_data(k_part, fake_dtype=ctx.qkv_dtype)
-                        v_part = ctx.QKV_quantizer.create_tensor_from_data(v_part, fake_dtype=ctx.qkv_dtype)
-                        out_part = ctx.O_quantizer.create_tensor_from_data(out_part, fake_dtype=ctx.qkv_dtype)
-                        dout_part = ctx.dO_quantizer.create_tensor_from_data(dout_part, fake_dtype=ctx.qkv_dtype)
+                        q_part = ctx.QKV_quantizer.create_tensor_from_data(
+                            q_part, fake_dtype=ctx.qkv_dtype
+                        )
+                        k_part = ctx.QKV_quantizer.create_tensor_from_data(
+                            k_part, fake_dtype=ctx.qkv_dtype
+                        )
+                        v_part = ctx.QKV_quantizer.create_tensor_from_data(
+                            v_part, fake_dtype=ctx.qkv_dtype
+                        )
+                        out_part = ctx.O_quantizer.create_tensor_from_data(
+                            out_part, fake_dtype=ctx.qkv_dtype
+                        )
+                        dout_part = ctx.dO_quantizer.create_tensor_from_data(
+                            dout_part, fake_dtype=ctx.qkv_dtype
+                        )
                     dq_, dk_, dv_, dbias_ = fused_attn_bwd(
                         ctx.max_seqlen_q,
                         ctx.max_seqlen_kv,
@@ -4061,9 +4130,15 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
         if use_fused_attention:
             q_part, k_part, v_part = q, k, v
             if fp8:
-                q_part = QKV_quantizer.create_tensor_from_data(q, fake_dtype=qkv_dtype, internal=True)
-                k_part = QKV_quantizer.create_tensor_from_data(k, fake_dtype=qkv_dtype, internal=True)
-                v_part = QKV_quantizer.create_tensor_from_data(v, fake_dtype=qkv_dtype, internal=True)
+                q_part = QKV_quantizer.create_tensor_from_data(
+                    q, fake_dtype=qkv_dtype, internal=True
+                )
+                k_part = QKV_quantizer.create_tensor_from_data(
+                    k, fake_dtype=qkv_dtype, internal=True
+                )
+                v_part = QKV_quantizer.create_tensor_from_data(
+                    v, fake_dtype=qkv_dtype, internal=True
+                )
             out, aux_ctx_tensors = fused_attn_fwd(
                 is_training,
                 max_seqlen_q,
@@ -4141,11 +4216,15 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
             q_save, k_save, v_save, out_save = q, k, v, out
 
         tensors_to_save, tensor_objects = prepare_for_saving(
-            q_save, k_save, v_save, out_save,
-            cu_seqlens_q, cu_seqlens_kv,
-            cu_seqlens_q_padded, cu_seqlens_kv_padded,
+            q_save,
+            k_save,
+            v_save,
+            out_save,
+            cu_seqlens_q,
+            cu_seqlens_kv,
+            cu_seqlens_q_padded,
+            cu_seqlens_kv_padded,
             *aux_ctx_tensors,
-
         )
         ctx.save_for_backward(*tensors_to_save)
         ctx.tensor_objects = tensor_objects
@@ -4182,12 +4261,17 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
         # pylint: disable=missing-function-docstring
         cp_size = get_distributed_world_size(ctx.cp_group)
 
-        q, k, v, out, cu_seqlens_q,\
-            cu_seqlens_kv, cu_seqlens_q_padded,\
-            cu_seqlens_kv_padded,\
-            *aux_ctx_tensors =\
-                restore_from_saved(
-                    ctx.tensor_objects, ctx.saved_tensors)
+        (
+            q,
+            k,
+            v,
+            out,
+            cu_seqlens_q,
+            cu_seqlens_kv,
+            cu_seqlens_q_padded,
+            cu_seqlens_kv_padded,
+            *aux_ctx_tensors,
+        ) = restore_from_saved(ctx.tensor_objects, ctx.saved_tensors)
 
         qkv_layout = ctx.qkv_format + "_" + ctx.qkv_format + "_" + ctx.qkv_format
         causal = "causal" in ctx.attn_mask_type
@@ -4263,12 +4347,22 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
             dout_part = dout
 
             if ctx.fp8:
-                q_part = ctx.QKV_quantizer.create_tensor_from_data(q_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                k_part = ctx.QKV_quantizer.create_tensor_from_data(k_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                v_part = ctx.QKV_quantizer.create_tensor_from_data(v_part, fake_dtype=ctx.qkv_dtype, internal=True)
+                q_part = ctx.QKV_quantizer.create_tensor_from_data(
+                    q_part, fake_dtype=ctx.qkv_dtype, internal=True
+                )
+                k_part = ctx.QKV_quantizer.create_tensor_from_data(
+                    k_part, fake_dtype=ctx.qkv_dtype, internal=True
+                )
+                v_part = ctx.QKV_quantizer.create_tensor_from_data(
+                    v_part, fake_dtype=ctx.qkv_dtype, internal=True
+                )
                 if ctx.is_output_fp8:
-                    out_part = ctx.O_quantizer.create_tensor_from_data(out_part, fake_dtype=ctx.qkv_dtype, internal=True)
-                    dout_part = ctx.dO_quantizer.create_tensor_from_data(dout_part, fake_dtype=ctx.qkv_dtype, internal=True)
+                    out_part = ctx.O_quantizer.create_tensor_from_data(
+                        out_part, fake_dtype=ctx.qkv_dtype, internal=True
+                    )
+                    dout_part = ctx.dO_quantizer.create_tensor_from_data(
+                        dout_part, fake_dtype=ctx.qkv_dtype, internal=True
+                    )
                 else:
                     out_part = ctx.O_quantizer(out_part)
                     dout_part = ctx.dO_quantizer(dout_part)
@@ -6291,7 +6385,7 @@ class FusedAttention(torch.nn.Module):
                     window_size=window_size,
                     fp8=fp8,
                     fp8_meta=fp8_meta,
-                    quantizers=quantizers
+                    quantizers=quantizers,
                 )
         else:
             with self.attention_dropout_ctx():

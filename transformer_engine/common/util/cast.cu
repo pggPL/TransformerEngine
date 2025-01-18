@@ -143,5 +143,5 @@ void nvte_dequantize(const NVTETensor input, NVTETensor output, cudaStream_t str
   NVTE_API_CALL(nvte_dequantize);
   using namespace transformer_engine;
   detail::dequantize_helper(*reinterpret_cast<const Tensor *>(input),
-                             reinterpret_cast<Tensor *>(output), stream);
+                            reinterpret_cast<Tensor *>(output), stream);
 }

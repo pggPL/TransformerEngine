@@ -7,7 +7,6 @@
 #include "extensions.h"
 #include "transformer_engine/transformer_engine.h"
 
-
 void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool rowwise) {
   using namespace transformer_engine::pytorch;
 
@@ -66,7 +65,6 @@ void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool roww
   }
 }
 
-
 at::Tensor pad_scale_inv(at::Tensor scale_inv, bool rowwise) {
   size_t dim_1_mod = (rowwise) ? 128 : 4;
   size_t dim_2_mod = (rowwise) ? 4 : 128;
@@ -77,7 +75,6 @@ at::Tensor pad_scale_inv(at::Tensor scale_inv, bool rowwise) {
   }
   return at::constant_pad_nd(scale_inv, {0, dim_2_pad, 0, dim_1_pad}, 0.0);
 }
-
 
 at::Tensor rowwise_swizzle(at::Tensor input, at::Tensor _scale_inv) {
   using namespace transformer_engine::pytorch;
@@ -104,7 +101,6 @@ at::Tensor rowwise_swizzle(at::Tensor input, at::Tensor _scale_inv) {
 
   return swizzled_scale_inv;
 }
-
 
 at::Tensor columnwise_swizzle(at::Tensor input, at::Tensor _scale_inv) {
   using namespace transformer_engine::pytorch;

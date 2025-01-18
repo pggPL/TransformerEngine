@@ -98,7 +98,7 @@ void generate_scales(fp8e8m0 * const scales_ref,
                      std::uniform_int_distribution<fp8e8m0> dis)
 {
     for (size_t i = 0; i < blocks_num; ++i) {
-        const fp8e8m0 val = dis(gen); 
+        const fp8e8m0 val = dis(gen);
         scales_ref[i] = val;
         scales[i] = val;
     }
@@ -110,7 +110,7 @@ void generate_data(InputType * const data,
                    const size_t cols,
                    std::mt19937& gen,
                    std::uniform_real_distribution<>& dis,
-                   std::uniform_real_distribution<>& dis_sign) 
+                   std::uniform_real_distribution<>& dis_sign)
 {
     for (size_t i = 0; i < rows; ++i) {
         for (size_t j = 0; j < cols; ++j) {
@@ -175,8 +175,8 @@ void performTest_x1(const size_t rows,
     const size_t blocks_num = blocks_Y * blocks_X;
 
     Tensor input({ rows, cols }, itype, rowwise, colwise, NVTE_MXFP8_1D_SCALING);
-    
-    // Output data are written to the rowwise ptr regardless of the scaling direction  
+
+    // Output data are written to the rowwise ptr regardless of the scaling direction
     Tensor output({ rows, cols }, otype, true, false);
 
     std::unique_ptr<OutputType[]> ref_output = std::make_unique<OutputType[]>(rows * cols);
@@ -186,7 +186,7 @@ void performTest_x1(const size_t rows,
                                 blocks_num, blocks_num);
 
     nvte_dequantize(input.data(), output.data(), 0);
-    
+
     cudaDeviceSynchronize();
     auto err = cudaGetLastError();
     ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
@@ -228,16 +228,16 @@ void performTest_quantize_then_dequantize(const size_t rows,
     // input == output
     Tensor input({ rows, cols }, in_type);
     Tensor quantized({ rows, cols }, intermed_type, rowwise, colwise, NVTE_MXFP8_1D_SCALING);
-    
-    // Output data are written to the rowwise ptr regardless of the scaling direction  
+
+    // Output data are written to the rowwise ptr regardless of the scaling direction
     Tensor output({ rows, cols }, out_type, true, false);
 
     // fillCase<EncodingType>(&input, InputsFillCase::minNorm_to_maxNorm);
     fillCase<EncodingType>(&input, InputsFillCase::uniform);
 
-    const size_t copy_size = sizeof(InputType) * rows * cols; 
+    const size_t copy_size = sizeof(InputType) * rows * cols;
     cudaMemcpy(input_cpu.get(), input.rowwise_dptr(), copy_size, cudaMemcpyDeviceToHost);
- 
+
     nvte_quantize(input.data(), quantized.data(), 0);
     cudaDeviceSynchronize();
 
@@ -248,10 +248,10 @@ void performTest_quantize_then_dequantize(const size_t rows,
     if (colwise) {
         cudaMemcpy(quantized_cpu.get(), quantized.columnwise_dptr(), copy_size_quantized, cudaMemcpyDeviceToHost);
     }
- 
+
     nvte_dequantize(quantized.data(), output.data(), 0);
     cudaDeviceSynchronize();
-    
+
     cudaMemcpy(output_cpu.get(), output.rowwise_dptr(), copy_size, cudaMemcpyDeviceToHost);
 
     auto err = cudaGetLastError();
@@ -292,7 +292,7 @@ void performTest_x2(const size_t rows,
                                 rowwise, colwise, rows, cols, blocks_num_rowwise, blocks_num_colwise);
 
     nvte_dequantize(input.data(), output.data(), 0);
-    
+
     cudaDeviceSynchronize();
     auto err = cudaGetLastError();
     ASSERT_EQ(err, cudaSuccess) << cudaGetErrorString(err);
@@ -357,7 +357,7 @@ TEST_P(DequantizeMXFP8TestSuite, TestDequantizeMXFP8)
     const bool rowwise = block_size.second != 1;
     const bool colwise = block_size.first != 1;
 
-    // Skip tests for dequantization along both dimensions 
+    // Skip tests for dequantization along both dimensions
     if (rowwise && colwise) {
         GTEST_SKIP();
     }

@@ -45,7 +45,7 @@ extern "C" {
 /*! \brief Casts input tensor to FP8/MXFP8.
  *         If the scaling mode of the output tensor is set to NVTE_MXFP8_1D_SCALING,
  *         the block quantization (MXFP8) of the specified shape of the block will be used.
- * 
+ *
  *  \param[in]     input            Input tensor to be cast.
  *  \param[in,out] output           Output FP8/MXFP8 tensor.
  *  \param[in]     stream           CUDA stream used for the operation.
@@ -204,7 +204,7 @@ void nvte_quantize_dbias_dsrelu(const NVTETensor input, const NVTETensor act_inp
  *         If the scaling mode of the input tensor is set to NVTE_MXFP8_1D_SCALING,
  *         the block dequantization (MXFP8) of the specified shape of the block will be used.
  *         In case of the MXFP8 dequantization, the dequantized values are stored to the rowwise
- *         data of the output tensor, regardless of whether the row- or columnwise scaling is used.      
+ *         data of the output tensor, regardless of whether the row- or columnwise scaling is used.
  *
  *  \param[in]     input     Input FP8/MXFP8 tensor to be cast.
  *  \param[in,out] output    Output tensor.

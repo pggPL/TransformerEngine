@@ -130,11 +130,13 @@ class Float8Quantizer(Quantizer):
         amin, amax = tensor.aminmax()
         self.amax.copy_(torch.max(-amin, amax))
 
-    def create_tensor_from_data(self,
-                                data: torch.Tensor,
-                                fake_dtype = torch.float32,
-                                requires_grad: bool = False,
-                                internal: bool = False):
+    def create_tensor_from_data(
+        self,
+        data: torch.Tensor,
+        fake_dtype=torch.float32,
+        requires_grad: bool = False,
+        internal: bool = False,
+    ):
         """Create Float8Tensor from raw uint8 data"""
         assert data.dtype == torch.uint8
         if internal:
@@ -317,7 +319,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             return self
         return Float8Tensor.make_like(tensor=self, data=self._data.contiguous())
 
-        #raise ValueError("Float8Tensor does not support different memory formats!")
+        # raise ValueError("Float8Tensor does not support different memory formats!")
 
     def _reset_caches(self) -> None:
         """

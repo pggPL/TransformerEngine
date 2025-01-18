@@ -984,10 +984,7 @@ def gather_along_first_dim(
     out_shape[0] *= world_size
 
     # FP8 case
-    if (
-        isinstance(input_, Float8TensorBase)
-        or isinstance(quantizer, Float8Quantizer)
-    ):
+    if isinstance(input_, Float8TensorBase) or isinstance(quantizer, Float8Quantizer):
         return _all_gather_fp8(
             input_,
             process_group,
@@ -997,10 +994,7 @@ def gather_along_first_dim(
         )
 
     # MXFP8 case
-    if (
-        isinstance(input_, MXFP8TensorBase)
-        or isinstance(quantizer, MXFP8Quantizer)
-    ):
+    if isinstance(input_, MXFP8TensorBase) or isinstance(quantizer, MXFP8Quantizer):
         assert isinstance(quantizer, MXFP8Quantizer)
         return _all_gather_mxfp8(
             input_,

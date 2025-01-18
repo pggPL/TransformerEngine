@@ -41,12 +41,16 @@ def swizzle_inputs(A: torch.Tensor, B: torch.Tensor, layout: str):
     if layout[0] == "T":
         A._rowwise_scale_inv = tex.rowwise_swizzle(A._rowwise_data, A._rowwise_scale_inv)
     else:
-        A._columnwise_scale_inv = tex.columnwise_swizzle(A._columnwise_data, A._columnwise_scale_inv)
+        A._columnwise_scale_inv = tex.columnwise_swizzle(
+            A._columnwise_data, A._columnwise_scale_inv
+        )
 
     if layout[1] == "N":
         B._rowwise_scale_inv = tex.rowwise_swizzle(B._rowwise_data, B._rowwise_scale_inv)
     else:
-        B._columnwise_scale_inv = tex.columnwise_swizzle(B._columnwise_data, B._columnwise_scale_inv)
+        B._columnwise_scale_inv = tex.columnwise_swizzle(
+            B._columnwise_data, B._columnwise_scale_inv
+        )
 
     return original_scale_inverses
 

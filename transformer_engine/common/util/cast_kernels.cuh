@@ -160,13 +160,13 @@ __global__ void __launch_bounds__(MXFP8_THREADS_PER_CHUNK)
                          const __grid_constant__ CUtensorMap tensor_map_act_input,
                          const __grid_constant__ CUtensorMap tensor_map_output_rowwise,
                          const __grid_constant__ CUtensorMap tensor_map_output_colwise,
-                         e8m0_t *const scales_rowwise, e8m0_t *const scales_colwise, const float *noop,
-                         float *const dbias_workspace, float *const amax_ptr, const size_t rows,
-                         const size_t cols, const size_t scale_stride_rowwise,
+                         e8m0_t *const scales_rowwise, e8m0_t *const scales_colwise,
+                         const float *noop, float *const dbias_workspace, float *const amax_ptr,
+                         const size_t rows, const size_t cols, const size_t scale_stride_rowwise,
                          const size_t scale_stride_colwise) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
   if constexpr (!IS_DBIAS && !IS_DACT && !IS_ACT) {
-     if (noop != nullptr && noop[0] == 1.0f) return;
+    if (noop != nullptr && noop[0] == 1.0f) return;
   }
 
   constexpr bool USE_ROWWISE_SCALING = SCALE_DIM_X > 1;
@@ -965,7 +965,8 @@ void cast_fp8_2D(const Tensor &input, const Tensor *act_input, Tensor *output, T
 
 template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
           float (*OP)(float, const ParamOP &)>
-void mxfp8_quantize(const Tensor &input, const Tensor *act_input, const Tensor *noop,  // TODO (ksivamani)
+void mxfp8_quantize(const Tensor &input, const Tensor *act_input,
+                    const Tensor *noop,  // TODO (ksivamani)
                     Tensor *output, Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
   bool use_rowwise_scaling = output->has_data();
   bool use_colwise_scaling = output->has_columnwise_data();
@@ -1045,12 +1046,10 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input, const Tensor *
                   if constexpr (IS_DACT) {
                     create_2D_tensor_map(tensor_map_act_input, act_input->data, rows, cols,
                                          MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X, sizeof(IType));
-                  }
-                  if (use_rowwise_scaling) {
+                  } if (use_rowwise_scaling) {
                     create_2D_tensor_map(tensor_map_output_rowwise, output->data, rows, cols,
                                          MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X, sizeof(OType));
-                  }
-                  if (use_colwise_scaling) {
+                  } if (use_colwise_scaling) {
                     create_2D_tensor_map(tensor_map_output_colwise, output->columnwise_data, rows,
                                          cols, MXFP8_SHMEM_DIM_Y, MXFP8_SHMEM_DIM_X, sizeof(OType));
                   }
@@ -1059,9 +1058,8 @@ void mxfp8_quantize(const Tensor &input, const Tensor *act_input, const Tensor *
                                        SCALE_DIM_Y, SCALE_DIM_X><<<grid, block, 0, stream>>>(
                       tensor_map_input, tensor_map_act_input, tensor_map_output_rowwise,
                       tensor_map_output_colwise, scales_rowwise_ptr, scales_colwise_ptr,
-                      reinterpret_cast<const float *>(noop->data.dptr),
-                      workspace_ptr, amax_ptr, rows, cols, scale_stride_rowwise,
-                      scale_stride_colwise);
+                      reinterpret_cast<const float *>(noop->data.dptr), workspace_ptr, amax_ptr,
+                      rows, cols, scale_stride_rowwise, scale_stride_colwise);
 
                   if constexpr (IS_DBIAS) {
                     reduce_dbias<IType>(workspace_ptr, dbias, dbias_rows, dbias_cols, stream);
@@ -1088,7 +1086,8 @@ __device__ inline float dequantize_func(float value, const DequantizeParam &para
 }  // namespace detail
 
 template <typename ParamOP, float (*OP)(float, const ParamOP &)>
-void CastVectorizedUnaryKernelLauncher(const Tensor &input, const Tensor *noop, Tensor *output, cudaStream_t stream) {
+void CastVectorizedUnaryKernelLauncher(const Tensor &input, const Tensor *noop, Tensor *output,
+                                       cudaStream_t stream) {
   constexpr float (*UnaryOP)(float, const ParamOP &) = (OP == nullptr) ? detail::identity : OP;
   const size_t N = product(input.data.shape);
   TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
@@ -1156,8 +1155,9 @@ bool dimensions_supported_by_TMA(const Tensor *const t) {
 // Supported by the Arch >= 10.0
 template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
           float (*OP)(float, const ParamOP &)>
-void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor *act_input, const Tensor *noop, Tensor *output,
-                              Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
+void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor *act_input, const Tensor *noop,
+                              Tensor *output, Tensor *dbias, Tensor *workspace,
+                              cudaStream_t stream) {
   switch (output->scaling_mode) {
     case NVTE_DELAYED_TENSOR_SCALING: {
       if (!IS_DBIAS && !IS_DACT) {
@@ -1196,8 +1196,9 @@ void fp8_quantize_arch_ge_100(const Tensor &input, const Tensor *act_input, cons
 // Supported by the Arch < 10.0
 template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
           float (*OP)(float, const ParamOP &)>
-void fp8_quantize_arch_l_100(const Tensor &input, const Tensor *act_input, const Tensor *noop, Tensor *output,
-                             Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
+void fp8_quantize_arch_l_100(const Tensor &input, const Tensor *act_input, const Tensor *noop,
+                             Tensor *output, Tensor *dbias, Tensor *workspace,
+                             cudaStream_t stream) {
   if (!is_delayed_tensor_scaling(output->scaling_mode) || IS_DBIAS) {
     NVTE_ERROR("Not implemented scaling mode: " + to_string(output->scaling_mode) +
                " on GPU with compute capability < 10.0.");
@@ -1211,8 +1212,8 @@ void fp8_quantize_arch_l_100(const Tensor &input, const Tensor *act_input, const
 
 template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
           float (*OP)(float, const ParamOP &)>
-void fp8_quantize(const Tensor &input, const Tensor *act_input, const Tensor *noop,
-                  Tensor *output, Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
+void fp8_quantize(const Tensor &input, const Tensor *act_input, const Tensor *noop, Tensor *output,
+                  Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
   CheckNoopTensor(*noop, "cast_noop");
   CheckInputTensor(input, "cast_input");
   CheckOutputTensor(*output, "cast_output");
@@ -1290,18 +1291,20 @@ void quantize_helper(const NVTETensor input, const NVTETensor activation_input,
           cast_transpose(input_tensor, noop_tensor, output_tensor, stream);
         } else {
           cast_transpose_fused<IS_DBIAS, IS_DACT, IS_ACT, float, ParamOP, OP>(
-            input_tensor, activation_tensor, output_tensor, dbias_tensor,
-            workspace_tensor, stream);
+              input_tensor, activation_tensor, output_tensor, dbias_tensor, workspace_tensor,
+              stream);
         }
       } else if (output_tensor->has_data()) {
         fp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
-            input_tensor, activation_tensor, &noop_tensor, output_tensor, dbias_tensor, workspace_tensor, stream);
+            input_tensor, activation_tensor, &noop_tensor, output_tensor, dbias_tensor,
+            workspace_tensor, stream);
       }
       break;
     }
     case NVTE_MXFP8_1D_SCALING: {
       mxfp8_quantize<IS_DBIAS, IS_DACT, IS_ACT, ParamOP, OP>(
-          input_tensor, activation_tensor, &noop_tensor, output_tensor, dbias_tensor, workspace_tensor, stream);
+          input_tensor, activation_tensor, &noop_tensor, output_tensor, dbias_tensor,
+          workspace_tensor, stream);
       break;
     }
     default:

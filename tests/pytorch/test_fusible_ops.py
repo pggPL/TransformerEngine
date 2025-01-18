@@ -1450,7 +1450,7 @@ class TestBasicOps:
         if fp8_output:
             tols = dtype_tols(tex.DType.kFloat8E4M3)
         if activation == "relu":
-            tols = { "atol": 0, "rtol": 0 }
+            tols = {"atol": 0, "rtol": 0}
 
         # Check results
         y_test = y_test.to(dtype=torch.float64, device="cpu")

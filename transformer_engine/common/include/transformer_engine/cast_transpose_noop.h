@@ -17,9 +17,9 @@
 extern "C" {
 #endif
 
-/*! \brief Transposes the input, providing the option to immediately exit the kernel 
+/*! \brief Transposes the input, providing the option to immediately exit the kernel
  *         based on the value of the 'noop' tensor.
- * 
+ *
  *  \param[in]     input     Input tensor.
  *  \param[in]     noop      Noop tensor.
  *  \param[in,out] output    Output tensor.
@@ -28,9 +28,9 @@ extern "C" {
 void nvte_transpose_with_noop(const NVTETensor input, const NVTETensor noop, NVTETensor output,
                               cudaStream_t stream);
 
-/*! \brief Casts and transposes the input, providing the option to immediately exit the kernel 
+/*! \brief Casts and transposes the input, providing the option to immediately exit the kernel
  *         based on the value of the 'noop' tensor.
- * 
+ *
  *  \param[in]     input     Input tensor.
  *  \param[in]     noop      Noop tensor.
  *  \param[in,out] output    Output tensor.

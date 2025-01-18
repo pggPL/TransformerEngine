@@ -697,7 +697,6 @@ class RecipeState(abc.ABC):
 
     """
 
-
     @staticmethod
     def create(
         recipe: Recipe,
@@ -807,7 +806,6 @@ class BlockScalingRecipeState(RecipeState):
     MXFP8 quantization does not require state.
 
     """
-
 
     recipe: BlockScaling
     mode: str

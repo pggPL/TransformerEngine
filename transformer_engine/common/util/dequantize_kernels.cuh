@@ -44,17 +44,15 @@ constexpr size_t SHMEM_DIM_Y = BUFFER_DIM_Y;  // 16
 constexpr size_t SHMEM_DIM_X = BUFFER_DIM_X;  // 128
 
 constexpr size_t THREADS_PER_CHUNK_X_ROWWISE = CHUNK_DIM_X / ELEMS_PER_THREAD;  //  8 = 128 / 16
-constexpr size_t THREADS_PER_CHUNK_X_COLWISE = CHUNK_DIM_X; //  128
-constexpr size_t ITERATIONS = CHUNK_DIM_Y / BUFFER_DIM_Y;   //    8 = 128 / 16
+constexpr size_t THREADS_PER_CHUNK_X_COLWISE = CHUNK_DIM_X;                     //  128
+constexpr size_t ITERATIONS = CHUNK_DIM_Y / BUFFER_DIM_Y;                       //    8 = 128 / 16
 static_assert(ITERATIONS >= 1);
 
 template <typename IType, typename OType, size_t SCALE_DIM_Y, size_t SCALE_DIM_X>
 __global__ void __launch_bounds__(THREADS_PER_CHUNK)
     dequantize_mxfp8_kernel(const __grid_constant__ CUtensorMap tensor_map_input,
                             const __grid_constant__ CUtensorMap tensor_map_output,
-                            const e8m0_t *const scales_ptr,
-                            const size_t rows,
-                            const size_t cols,
+                            const e8m0_t *const scales_ptr, const size_t rows, const size_t cols,
                             const size_t scales_stride) {
 #if (defined __CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
   constexpr bool USE_ROWWISE_SCALING = SCALE_DIM_X > 1;
@@ -66,7 +64,8 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   constexpr size_t SCALES_COLWISE_PER_CHUNK_Y = CHUNK_DIM_Y / SCALE_DIM_Y;  //    4 = 128 / 32
   constexpr size_t SCALES_COLWISE_PER_CHUNK_X = CHUNK_DIM_X;                //  128
 
-  constexpr size_t THREADS_PER_SCALE_X_ROWWISE = DIVUP(SCALE_DIM_X, ELEMS_PER_THREAD); // 2 = 32 / 16
+  constexpr size_t THREADS_PER_SCALE_X_ROWWISE =
+      DIVUP(SCALE_DIM_X, ELEMS_PER_THREAD);                      // 2 = 32 / 16
   constexpr size_t SUBWARP_WIDTH = THREADS_PER_SCALE_X_ROWWISE;  //   2
 
   const int chunk_offset_Y = blockIdx.y * CHUNK_DIM_Y;
@@ -95,13 +94,13 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
 
   const bool is_master_thread = (threadIdx.x == 0);
 
-  // Initialize shared memory barrier with the number of threads participating in the barrier.
-  #pragma nv_diag_suppress static_var_with_dynamic_init
+// Initialize shared memory barrier with the number of threads participating in the barrier.
+#pragma nv_diag_suppress static_var_with_dynamic_init
   __shared__ alignas(8) uint64_t mbar[ITERATIONS];
 
   if (is_master_thread) {
-    // Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
-    #pragma unroll
+// Initialize barrier. All `blockDim.x * blockDim.y` threads in block participate.
+#pragma unroll
     for (int iter = 0; iter < ITERATIONS; ++iter) {
       ptx::mbarrier_init(&mbar[iter], THREADS_PER_CHUNK);
     }
@@ -130,7 +129,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
     ptx::mbarrier_arrive(&mbar[iteration_zero]);
   }
 
-  #pragma unroll
+#pragma unroll
   for (int iter = 0; iter < ITERATIONS; ++iter) {
     const int buff = iter % BUFFERS_NUM;
     const int next_iter = iter + 1;
@@ -158,13 +157,14 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
     // Wait for the data to have arrived
     ptx::mbarrier_wait_parity(&mbar[iter], parity);
 
-    const int scale_offset_Y = USE_ROWWISE_SCALING
-                               ? (scales_rowwise_chunk_offset_Y + iter * BUFFER_DIM_Y + tid_rowwise_Y)
-                               : (scales_colwise_chunk_offset_Y + (iter * BUFFER_DIM_Y) / SCALE_DIM_Y);
+    const int scale_offset_Y =
+        USE_ROWWISE_SCALING ? (scales_rowwise_chunk_offset_Y + iter * BUFFER_DIM_Y + tid_rowwise_Y)
+                            : (scales_colwise_chunk_offset_Y + (iter * BUFFER_DIM_Y) / SCALE_DIM_Y);
 
-    const int scale_offset_X = USE_ROWWISE_SCALING
-                               ? (scales_rowwise_chunk_offset_X + tid_rowwise_X / THREADS_PER_SCALE_X_ROWWISE)
-                               : (scales_colwise_chunk_offset_X + tid_colwise_X);
+    const int scale_offset_X =
+        USE_ROWWISE_SCALING
+            ? (scales_rowwise_chunk_offset_X + tid_rowwise_X / THREADS_PER_SCALE_X_ROWWISE)
+            : (scales_colwise_chunk_offset_X + tid_colwise_X);
 
     const int scale_idx = scale_offset_Y * scales_stride + scale_offset_X;
     const e8m0_t biased_exponent = scales_ptr[scale_idx];
@@ -178,13 +178,13 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
       const int shmem_offset_x = thread_offset_X_rowwise;
       in.load_from(&in_sh[buff][shmem_offset_y][shmem_offset_x]);
 
-      #pragma unroll
+#pragma unroll
       for (int j = 0; j < ELEMS_PER_THREAD; ++j) {
         out.data.elt[j] = static_cast<OType>(block_scale * static_cast<float>(in.data.elt[j]));
       }
       out.store_to(&out_sh[buff][shmem_offset_y][shmem_offset_x]);
     } else {
-      #pragma unroll
+#pragma unroll
       for (int i = 0; i < BUFFER_DIM_Y; ++i) {
         const float elt = static_cast<float>(in_sh[buff][i][tid_colwise_X]);
         out_sh[buff][i][tid_colwise_X] = static_cast<OType>(block_scale * elt);
@@ -220,7 +220,7 @@ __global__ void __launch_bounds__(THREADS_PER_CHUNK)
   // further computations were to take place in the kernel, this allows the
   // memory location of the shared memory barrier to be reused.
   if (is_master_thread) {
-    #pragma unroll
+#pragma unroll
     for (int iter = 0; iter < ITERATIONS; ++iter) {
       ptx::mbarrier_invalid(&mbar[iter]);
     }
@@ -234,8 +234,10 @@ static void fp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t str
   NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
 
   const size_t N = product(input.data.shape);
-  TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(input.data.dtype, IType,
-      TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(output->data.dtype, OType,
+  TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+      input.data.dtype, IType,
+      TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(
+          output->data.dtype, OType,
 
           constexpr int nvec = 32 / sizeof(OType);
           detail::DequantizeParam p;
@@ -243,9 +245,8 @@ static void fp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t str
           VectorizedUnaryKernelLauncher<nvec, detail::DequantizeParam, detail::dequantize_func>(
               reinterpret_cast<const IType *>(input.data.dptr), nullptr,
               reinterpret_cast<OType *>(output->data.dptr), nullptr, nullptr, nullptr, N, p,
-              stream);
-      );  // NOLINT(*)
-  );      // NOLINT(*)
+              stream););  // NOLINT(*)
+  );                      // NOLINT(*)
 }
 
 static void mxfp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
@@ -253,7 +254,7 @@ static void mxfp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t s
   bool use_colwise_scaling = input.has_columnwise_data();
   checkCuDriverContext(stream);
 
-  const auto& input_shape = input.data.shape;
+  const auto &input_shape = input.data.shape;
   NVTE_CHECK(input_shape.size() >= 2, "Input must have at least 2 dimensions.");
 
   if (use_rowwise_scaling) {
@@ -280,43 +281,42 @@ static void mxfp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t s
 
   NVTE_CHECK(cols % 32 == 0, "Tensor column dimension must be a multiple of 32.");
 
-  const e8m0_t *const scales_ptr = use_rowwise_scaling
-                                   ? reinterpret_cast<e8m0_t *>(input.scale_inv.dptr)
-                                   : reinterpret_cast<e8m0_t *>(input.columnwise_scale_inv.dptr);
+  const e8m0_t *const scales_ptr =
+      use_rowwise_scaling ? reinterpret_cast<e8m0_t *>(input.scale_inv.dptr)
+                          : reinterpret_cast<e8m0_t *>(input.columnwise_scale_inv.dptr);
 
-  const size_t scales_stride = use_rowwise_scaling
-                               ? DIVUP(cols, scale_dim_X_rowwise)
-                               : cols;
+  const size_t scales_stride = use_rowwise_scaling ? DIVUP(cols, scale_dim_X_rowwise) : cols;
 
-  const SimpleTensor& input_data = use_rowwise_scaling
-                                   ? input.data
-                                   : input.columnwise_data;
+  const SimpleTensor &input_data = use_rowwise_scaling ? input.data : input.columnwise_data;
 
   const dim3 block(THREADS_PER_CHUNK);
   const dim3 grid(chunks_X, chunks_Y);
 
-  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_Y_colwise, SCALE_DIM_Y,
-      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(scale_dim_X_rowwise, SCALE_DIM_X,
-          TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(input.dtype(), IType,
-              TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(output->dtype(), OType,
+  TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
+      scale_dim_Y_colwise, SCALE_DIM_Y,
+      TRANSFORMER_ENGINE_MX_SCALE_DIM_SWITCH(
+          scale_dim_X_rowwise, SCALE_DIM_X,
+          TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
+              input.dtype(), IType,
+              TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(
+                  output->dtype(), OType,
 
                   alignas(64) CUtensorMap tensor_map_input{};
                   alignas(64) CUtensorMap tensor_map_output{};
 
-                  create_2D_tensor_map(tensor_map_input, input_data,
-                                        rows, cols, SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(IType));
-                  create_2D_tensor_map(tensor_map_output, output->data,
-                                        rows, cols, SHMEM_DIM_Y, SHMEM_DIM_X, sizeof(OType));
+                  create_2D_tensor_map(tensor_map_input, input_data, rows, cols, SHMEM_DIM_Y,
+                                       SHMEM_DIM_X, sizeof(IType));
+                  create_2D_tensor_map(tensor_map_output, output->data, rows, cols, SHMEM_DIM_Y,
+                                       SHMEM_DIM_X, sizeof(OType));
 
                   dequantize_mxfp8_kernel<IType, OType, SCALE_DIM_Y, SCALE_DIM_X>
-                      <<<grid, block, 0, stream>>>
-                      (tensor_map_input, tensor_map_output, scales_ptr, rows, cols, scales_stride);
-              );  // NOLINT(*)
-          );      // NOLINT(*)
-      );          // NOLINT(*)
-  );              // NOLINT(*)
+                  <<<grid, block, 0, stream>>>(tensor_map_input, tensor_map_output, scales_ptr,
+                                               rows, cols, scales_stride););  // NOLINT(*)
+          );                                                                  // NOLINT(*)
+      );                                                                      // NOLINT(*)
+  );                                                                          // NOLINT(*)
 }
-}   // namespace dequantization
+}  // namespace dequantization
 
 namespace detail {
 
@@ -337,8 +337,8 @@ void dequantize_helper(const Tensor &input, Tensor *output, cudaStream_t stream)
   }
 }
 
-}   // namespace detail
+}  // namespace detail
 
-}   // namespace transformer_engine
+}  // namespace transformer_engine
 
 #endif  // TRANSFORMER_ENGINE_DEQUANTIZE_KERNELS_CUH_

@@ -17,7 +17,7 @@ CPUOffloadEnabled = False
 
 
 def set_offloading_param(tensor, param_name, value):
-    """ Set the type of the offloading needed for a tensor."""
+    """Set the type of the offloading needed for a tensor."""
     assert param_name in ["weight_offloading", "activation_offloading"]
     if tensor is None:
         return

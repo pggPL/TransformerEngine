@@ -52,6 +52,7 @@ class MXFP8TensorBase:
     be instantiated directly for performance-critical internal usage.
 
     """
+
     _rowwise_data: Optional[torch.Tensor]
     _columnwise_data: Optional[torch.Tensor]
     _quantizer: Optional[Quantizer]

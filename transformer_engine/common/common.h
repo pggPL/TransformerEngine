@@ -423,8 +423,10 @@ struct is_fp8<fp8e5m2> : std::true_type {};
 size_t typeToSize(const DType type);
 
 void CheckNoopTensor(const Tensor &t, const std::string &name);
-void CheckInputTensor(const Tensor &t, const std::string &name, bool check_scale_inv_alignment = false);
-void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empty = false, bool check_scale_inv_alignment = false);
+void CheckInputTensor(const Tensor &t, const std::string &name,
+                      bool check_scale_inv_alignment = false);
+void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empty = false,
+                       bool check_scale_inv_alignment = false);
 
 bool is_fp8_dtype(const DType t);
 

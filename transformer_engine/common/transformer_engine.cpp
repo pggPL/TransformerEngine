@@ -58,8 +58,10 @@ std::string to_string(const NVTEScalingMode &mode) {
 
 void CheckNoopTensor(const Tensor &t, const std::string &name) {
   if (t.data.dptr != nullptr) {
-    NVTE_CHECK(t.numel() == 1, "Expected 1 element for ", name, " noop, but found ", t.numel(), ".");
-    NVTE_CHECK(t.data.dtype == DType::kFloat32, "Found wrong dtype for ", name, " noop. Expected kFloat32.");
+    NVTE_CHECK(t.numel() == 1, "Expected 1 element for ", name, " noop, but found ", t.numel(),
+               ".");
+    NVTE_CHECK(t.data.dtype == DType::kFloat32, "Found wrong dtype for ", name,
+               " noop. Expected kFloat32.");
   }
 }
 
@@ -144,7 +146,8 @@ void CheckInputTensor(const Tensor &t, const std::string &name, bool check_scale
   CheckScaleTensorShape(t, check_scale_inv_alignment);
 }
 
-void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empty, bool check_scale_inv_alignment) {
+void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empty,
+                       bool check_scale_inv_alignment) {
   const DType type = t.dtype();
   if (is_fp8_dtype(type)) {
     // FP8 output needs to have scale, scale_inv and (if delayed scaling) amax

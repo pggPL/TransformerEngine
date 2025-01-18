@@ -6,18 +6,18 @@
 
 #include "pybind.h"
 
-#include <stdexcept>
-
+#include <object.h>  // CPython
 #include <pybind11/cast.h>
 #include <pybind11/detail/common.h>
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <object.h>  // CPython
 
-#include "common.h"
+#include <stdexcept>
+
 #include "../common.h"
 #include "../extensions.h"
+#include "common.h"
 
 namespace transformer_engine::pytorch {
 

@@ -15,9 +15,9 @@ from torch.utils._pytree import tree_map
 import transformer_engine_torch as tex
 
 
-def prepare_for_saving(*tensors) -> Tuple[list[Optional[Union[torch.Tensor,
-                                                              torch.nn.Parameter]]],
-                                          Optional[Any]]:
+def prepare_for_saving(
+    *tensors,
+) -> Tuple[list[Optional[Union[torch.Tensor, torch.nn.Parameter]]], Optional[Any]]:
     """Prepare tensors for saving. Needed because save_for_backward accepts only
     torch.Tensor/torch.nn.Parameter types, while we want to be able to save
     the internal TensorBase types too."""
@@ -39,7 +39,7 @@ def prepare_for_saving(*tensors) -> Tuple[list[Optional[Union[torch.Tensor,
 
 def restore_from_saved(
     tensors: list[Optional[Any]],
-    saved_tensors: list[Optional[Union[torch.Tensor, torch.nn.Parameter]]]
+    saved_tensors: list[Optional[Union[torch.Tensor, torch.nn.Parameter]]],
 ) -> list[Optional[Any]]:
     """Recombine the tensor data and metadata during backward pass."""
     tensor_objects = []
@@ -107,7 +107,8 @@ class Quantizer(abc.ABC):
 
     @abc.abstractmethod
     def update_quantized(
-        self, src: torch.Tensor,
+        self,
+        src: torch.Tensor,
         dst: QuantizedTensor,
         *,
         noop_flag: Optional[torch.Tensor] = None,
