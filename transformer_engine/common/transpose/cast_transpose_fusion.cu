@@ -8,6 +8,8 @@
 #include <transformer_engine/transpose.h>
 
 #include <cfloat>
+#include <functional>
+#include <numeric>
 #include <type_traits>
 
 #include "../util/math.h"
@@ -184,8 +186,24 @@ void populate_cast_transpose_dbias_workspace_config(const Tensor &cast_output, /
 
   const size_t num_rows_partial_dbias = DIVUP(num_rows, tile_size_y);
 
-  workspace->data.shape = {num_rows_partial_dbias, row_length};
-  workspace->data.dtype = DType::kFloat32;
+  if (workspace->data.dptr == nullptr) {
+    workspace->data.shape = {num_rows_partial_dbias, row_length};
+    workspace->data.dtype = DType::kFloat32;
+  } else {
+    // Check that workspace matches expected size
+    const size_t workspace_size = std::accumulate(workspace->data.shape.begin(),
+                                                  workspace->data.shape.end(),
+                                                  1, std::multiplies<size_t>())
+      * typeToSize(workspace->data.dtype);
+    const size_t required_size = num_rows_partial_dbias * row_length * typeToSize(DType::kFloat32);
+    NVTE_CHECK(!workspace->data.shape.empty(),
+               "Invalid workspace dims (expected (", num_rows_partial_dbias, ",", row_length,
+               "), found ())");
+    NVTE_CHECK(workspace_size >= required_size,
+               "Invalid workspace (expected dims=(", num_rows_partial_dbias, ",", row_length,
+               "), dtype=", to_string(DType::kFloat32), "; found dims=", workspace->data.shape,
+               ", dtype=", typeToSize(workspace->data.dtype), ")");
+  }
 }
 
 template <int nvec, typename ComputeType, typename OutputType>
@@ -605,8 +623,9 @@ void cast_transpose_fused(const Tensor &input, const Tensor *act_input, Tensor *
           if (!jit_compiled) {
             num_blocks = DIVUP(num_tiles * n_warps_per_tile, n_warps_per_block);
           } if constexpr (IS_DBIAS) {
+            // Check workspace size
+            populate_cast_transpose_dbias_workspace_config(*output, workspace, nvec_out);
             if (workspace->data.dptr == nullptr) {
-              populate_cast_transpose_dbias_workspace_config(*output, workspace, nvec_out);
               return;
             }
           }

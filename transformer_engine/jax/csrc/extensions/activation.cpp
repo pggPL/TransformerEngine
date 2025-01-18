@@ -333,12 +333,20 @@ pybind11::tuple GetDActDBiasCastTransposeWorkspaceSizes(size_t batch_size, size_
   auto output_trans_shape = std::vector<size_t>{hidden_size, batch_size};
   auto dbias_shape = std::vector<size_t>{hidden_size};
 
-  auto input_tensor = TensorWrapper(nullptr, input_shape, in_dtype);
-  auto dact_input_tensor = TensorWrapper(nullptr, dact_input_shape, in_dtype);
+  // Evil hack to specify TE impl
+  // Note: nvte_quantize_dbias_dgelu chooses its internal impl based
+  // on what pointers are allocated, e.g. whether to output with
+  // column-wise data. However, we don't have access to any allocated
+  // buffers in this function. We pass a dummy pointer as a
+  // workaround.
+  int temp = 0;
+
+  auto input_tensor = TensorWrapper(reinterpret_cast<void*>(&temp), input_shape, in_dtype);
+  auto dact_input_tensor = TensorWrapper(reinterpret_cast<void*>(&temp), dact_input_shape, in_dtype);
   auto output_tensor = TensorWrapper();
-  output_tensor.set_rowwise_data(nullptr, out_dtype, output_shape);
-  output_tensor.set_columnwise_data(nullptr, out_dtype, output_trans_shape);
-  auto dbias_tensor = TensorWrapper(nullptr, dbias_shape, in_dtype);
+  output_tensor.set_rowwise_data(reinterpret_cast<void*>(&temp), out_dtype, output_shape);
+  output_tensor.set_columnwise_data(reinterpret_cast<void*>(&temp), out_dtype, output_trans_shape);
+  auto dbias_tensor = TensorWrapper(reinterpret_cast<void*>(&temp), dbias_shape, in_dtype);
 
   TensorWrapper dummy_workspace;
 
