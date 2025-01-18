@@ -822,10 +822,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
             # Activation recomputation is used and this is the first forward phase.
             if self.fp8 and self.training and is_fp8_activation_recompute_enabled():
-                if self.fp8_meta["recipe"].block():
-                    raise NotImplementedError(
-                        "Activation recompute is not yet supported with MXFP8"
-                    )
                 FP8GlobalStateManager.copy_forward_fp8_meta_tensors_for_recompute(self.fp8_meta)
 
         with torch.cuda.nvtx.range(self.__class__.__name__ + " forward"):
