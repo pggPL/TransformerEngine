@@ -20,6 +20,7 @@ from transformer_engine.pytorch.ops.fused import (
     ForwardLinearBiasActivation,
     ForwardLinearBiasAdd,
 )
+from transformer_engine.pytorch.tensor import QuantizedTensor
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor, Float8Quantizer
 from transformer_engine.pytorch.utils import is_bf16_compatible
 import transformer_engine_torch as tex
@@ -361,7 +362,7 @@ class TestFuser:
             op.bfloat16()
 
         # Check weights
-        assert isinstance(op.weight, Float8Tensor) == fp8_weight
+        assert isinstance(op.weight, QuantizedTensor) == fp8_weight
         assert op.weight.dtype == final_dtype
         w_test = op.weight.to(dtype=torch.float64, device="cpu")
         torch.testing.assert_close(w_test, w_ref, rtol=0, atol=0)

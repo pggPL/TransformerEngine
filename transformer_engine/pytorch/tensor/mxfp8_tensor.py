@@ -190,7 +190,7 @@ class MXFP8Tensor(MXFP8TensorBase, QuantizedTensor):
         """
         if isinstance(tensor, QuantizedTensor):
             return self.quantize_(tensor.dequantize())
-        self._get_quantizer().update_quantized(tensor, self, noop_flag)
+        self._get_quantizer().update_quantized(tensor, self, noop_flag=noop_flag)
         return self
 
     def detach(self) -> MXFP8Tensor:
