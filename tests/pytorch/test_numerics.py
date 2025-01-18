@@ -13,7 +13,13 @@ import torch
 import torch.nn as nn
 from torch.nn import Parameter
 
-from transformer_engine.pytorch.fp8 import fp8_autocast, FP8GlobalStateManager, fp8_model_init
+from transformer_engine.common.recipe import DelayedScaling
+from transformer_engine.pytorch.fp8 import (
+    FP8GlobalStateManager,
+    fp8_autocast,
+    fp8_model_init,
+    get_default_fp8_recipe,
+)
 from transformer_engine.pytorch.utils import (
     init_method_normal,
     scaled_init_method_normal,
@@ -490,7 +496,9 @@ def _test_e2e_selective_recompute(bs, dtype, config, fp8, fp8_model_params=False
     init_method = init_method_normal(sigma)
     output_layer_init_method = scaled_init_method_normal(sigma, config.num_layers)
 
-    with fp8_model_init(enabled=fp8 and fp8_model_params):
+    recipe = DelayedScaling()
+
+    with fp8_model_init(enabled=fp8 and fp8_model_params, recipe=recipe):
         block = TransformerLayer(
             config.hidden_size,
             4 * config.hidden_size,
@@ -517,7 +525,7 @@ def _test_e2e_selective_recompute(bs, dtype, config, fp8, fp8_model_params=False
     te_inp_hidden_states.retain_grad()
     te_inp_attn_mask = get_causal_attn_mask(config.seq_len)
 
-    with fp8_autocast(enabled=fp8):
+    with fp8_autocast(enabled=fp8, fp8_recipe=recipe):
         te_out = block(
             te_inp_hidden_states,
             attention_mask=te_inp_attn_mask,
@@ -578,7 +586,9 @@ def _test_e2e_full_recompute(
     init_method = init_method_normal(sigma)
     output_layer_init_method = scaled_init_method_normal(sigma, config.num_layers)
 
-    with fp8_model_init(enabled=fp8 and fp8_model_params):
+    recipe = DelayedScaling()
+
+    with fp8_model_init(enabled=fp8 and fp8_model_params, recipe=recipe):
         block = TransformerLayer(
             config.hidden_size,
             4 * config.hidden_size,
@@ -606,7 +616,7 @@ def _test_e2e_full_recompute(
         te_inp_hidden_states.retain_grad()
     te_inp_attn_mask = get_causal_attn_mask(config.seq_len)
 
-    with fp8_autocast(enabled=fp8):
+    with fp8_autocast(enabled=fp8, fp8_recipe=recipe):
         if recompute:
             te_out = te_checkpoint(
                 block,
@@ -1379,16 +1389,23 @@ def _test_grouped_linear_accuracy(block, num_gemms, bs, dtype, config, fp8=False
     inp_hidden_states.retain_grad()
 
     if num_gemms > 1:
-        m = config.seq_len // 16
+        split_size = 1
+        if fp8:
+            recipe = get_default_fp8_recipe()
+            if recipe.delayed():
+                split_size = 16
+            if recipe.block():
+                split_size = 128
+        m = config.seq_len // split_size
         dist = torch.sort(torch.randint(0, m, (num_gemms - 2,))).values.tolist()
         dist.append(dist[-1])  # Manually add a zero
         m_splits = torch.tensor(dist + [m]) - torch.tensor([0] + dist)
-        m_splits = m_splits * 16
+        m_splits = m_splits * split_size
         assert m_splits.sum() == config.seq_len and len(m_splits) == num_gemms
     else:
         m_splits = torch.tensor([config.seq_len])
 
-    with fp8_autocast(enabled=fp8):
+    with fp8_autocast(enabled=fp8, fp8_recipe=DelayedScaling()):
         if isinstance(block, GroupedLinear):
             m_splits = m_splits * bs
             out = block(inp_hidden_states, m_splits.tolist())
@@ -1426,7 +1443,7 @@ def test_grouped_linear_accuracy(
     if config.seq_len % 16 != 0 and fp8:
         pytest.skip("FP8 requires sequence length to be divisible by 16.")
 
-    with fp8_model_init(enabled=fp8 and fp8_model_params):
+    with fp8_model_init(enabled=fp8 and fp8_model_params, recipe=DelayedScaling()):
         grouped_linear = GroupedLinear(
             num_gemms,
             config.hidden_size,
@@ -1560,7 +1577,7 @@ def _test_padding_grouped_linear_accuracy(block, num_gemms, bs, dtype, config, f
 
     m_splits = _generate_random_numbers(num_gemms, config.seq_len * bs)
 
-    with fp8_autocast(enabled=fp8):
+    with fp8_autocast(enabled=fp8, fp8_recipe=DelayedScaling()):
         if isinstance(block, TorchGroupedLinearWithPadding):
             out = block(inp_hidden_states, m_splits)
         else:
@@ -1600,7 +1617,7 @@ def test_padding_grouped_linear_accuracy(
     if config.seq_len % 16 != 0 and fp8:
         pytest.skip("FP8 requires sequence length to be divisible by 16.")
 
-    with fp8_model_init(enabled=fp8 and fp8_model_params):
+    with fp8_model_init(enabled=fp8 and fp8_model_params, recipe=DelayedScaling()):
         grouped_linear = TorchGroupedLinearWithPadding(
             num_gemms,
             config.hidden_size,
@@ -1611,7 +1628,7 @@ def test_padding_grouped_linear_accuracy(
             fp8=fp8,
         ).eval()
 
-    with fp8_model_init(enabled=fp8 and fp8_model_params):
+    with fp8_model_init(enabled=fp8 and fp8_model_params, recipe=DelayedScaling()):
         ref_grouped_linear = GroupedLinear(
             num_gemms,
             config.hidden_size,

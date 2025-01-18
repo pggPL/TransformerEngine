@@ -1522,7 +1522,7 @@ def _run_mha_fp8_vs_f16(dtype, config, fp8_mha, qkv_format, input_layernorm, RoP
         fp8_mha=fp8_mha,
     )
 
-    with fp8_model_init(enabled=fp8_mha):
+    with fp8_model_init(enabled=fp8_mha, recipe=fp8_recipe):
         rotary_pos_emb = None
         if RoPE:
             PE = RotaryPositionEmbedding(dim=config.head_dim_qk)

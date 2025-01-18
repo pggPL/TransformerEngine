@@ -244,7 +244,7 @@ class TestFuser:
         )
 
         # Construct model
-        with te.fp8_model_init():
+        with te.fp8_model_init(recipe=recipe):
             model = te_ops.basic.BasicLinear(
                 size,
                 size,

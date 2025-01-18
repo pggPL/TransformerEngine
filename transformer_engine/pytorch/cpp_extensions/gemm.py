@@ -12,6 +12,7 @@ from ..constants import TE_DType
 from ..utils import assert_dim_for_fp8_exec, get_sm_count
 
 from ..tensor.quantized_tensor import QuantizedTensor, Quantizer
+from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 
 __all__ = [
@@ -247,7 +248,7 @@ def general_grouped_gemm(
     # assert [a.is_contiguous() for a in A]
     # assert [b.is_contiguous() for b in B]
 
-    if isinstance(A[0], QuantizedTensor):
+    if isinstance(A[0], Float8TensorBase):
         for a, b in zip(A, B):
             assert_dim_for_fp8_exec(a._data)
             assert_dim_for_fp8_exec(b._data)
