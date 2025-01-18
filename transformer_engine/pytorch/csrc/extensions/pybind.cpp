@@ -6,7 +6,7 @@
 
 #include "pybind.h"
 
-#include <object.h>  // CPython
+#include <Python.h>
 #include <pybind11/cast.h>
 #include <pybind11/detail/common.h>
 #include <pybind11/functional.h>
