@@ -98,8 +98,8 @@ all_normalizations = ["LayerNorm", "RMSNorm"]
 mask_types = ["causal", "no_mask"]
 
 fp8_recipes = [
-    recipe.DelayedScaling(),
     recipe.BlockScaling(),
+    recipe.DelayedScaling(),
 ]
 
 def get_causal_attn_mask(sq: int) -> torch.Tensor:
@@ -1494,7 +1494,8 @@ def test_grouped_linear_accuracy(
 
 
 @pytest.mark.parametrize("parallel_mode", ["column", "row"])
-def test_grouped_linear_accuracy_parallel_mode(parallel_mode):
+@pytest.mark.parametrize("recipe", fp8_recipes)
+def test_grouped_linear_accuracy_parallel_mode(parallel_mode, recipe):
     """Split the tests to save CI time"""
     test_grouped_linear_accuracy(
         dtype=torch.float32,
@@ -1502,12 +1503,14 @@ def test_grouped_linear_accuracy_parallel_mode(parallel_mode):
         bs=2,
         model="126m",
         fp8=True,
+        recipe=recipe,
         fp8_model_params=True,
         parallel_mode=parallel_mode,
     )
 
 
-def test_grouped_linear_accuracy_single_gemm():
+@pytest.mark.parametrize("recipe", fp8_recipes)
+def test_grouped_linear_accuracy_single_gemm(recipe):
     """Split the tests to save CI time"""
     test_grouped_linear_accuracy(
         dtype=torch.float32,
@@ -1515,6 +1518,7 @@ def test_grouped_linear_accuracy_single_gemm():
         bs=2,
         model="126m",
         fp8=True,
+        recipe=recipe,
         fp8_model_params=True,
     )
 
@@ -1780,7 +1784,7 @@ def test_gpt_cuda_graph(dtype, bs, model):
     assert_allclose(grads, graphed_grads, 1e-3)
 
 
-def _test_gpt_fp8_parameters(bs, dtype, config, fp8_model_params):
+def _test_gpt_fp8_parameters(bs, dtype, config, fp8_model_params, recipe):
     reset_rng_states()
     FP8GlobalStateManager.reset()
 
@@ -1788,7 +1792,7 @@ def _test_gpt_fp8_parameters(bs, dtype, config, fp8_model_params):
     init_method = init_method_normal(sigma)
     output_layer_init_method = scaled_init_method_normal(sigma, config.num_layers)
 
-    with fp8_model_init(enabled=fp8_model_params):
+    with fp8_model_init(enabled=fp8_model_params, recipe=recipe):
         block = TransformerLayer(
             config.hidden_size,
             4 * config.hidden_size,
@@ -1815,7 +1819,7 @@ def _test_gpt_fp8_parameters(bs, dtype, config, fp8_model_params):
     te_inp_hidden_states.retain_grad()
     te_inp_attn_mask = get_causal_attn_mask(config.seq_len)
 
-    with fp8_autocast(enabled=True):
+    with fp8_autocast(enabled=True, fp8_recipe=recipe):
         te_out = block(te_inp_hidden_states, attention_mask=te_inp_attn_mask)
     loss = te_out.sum()
     loss.backward()
@@ -1831,14 +1835,17 @@ def _test_gpt_fp8_parameters(bs, dtype, config, fp8_model_params):
 @pytest.mark.parametrize("dtype", param_types)
 @pytest.mark.parametrize("bs", batch_sizes)
 @pytest.mark.parametrize("model", ["126m"])
-def test_gpt_fp8_parameters(dtype, bs, model):
+@pytest.mark.parametrize("recipe", fp8_recipes)
+def test_gpt_fp8_parameters(dtype, bs, model, recipe):
     if not fp8_available:
         pytest.skip(reason_for_no_fp8)
+    if recipe.block() and not mxfp8_available:
+        pytest.skip(reason_for_no_mxfp8)
 
     config = model_configs[model]
 
-    outputs = _test_gpt_fp8_parameters(bs, dtype, config, False)
-    outputs_fp8_params = _test_gpt_fp8_parameters(bs, dtype, config, True)
+    outputs = _test_gpt_fp8_parameters(bs, dtype, config, False, recipe)
+    outputs_fp8_params = _test_gpt_fp8_parameters(bs, dtype, config, True, recipe)
 
     # Check that results match
     tols = dict(rtol=0.125, atol=0.0675)

@@ -121,6 +121,8 @@ class FP8GlobalStateManager:
         cls.fp8_available = None
         cls.reason_for_no_fp8 = ""
         cls.autocast_arguments = {}
+        cls.autocast_to_fp8_params = {}
+        cls.fp8_param_to_autocast = {}
         cls.skip_fp8_weight_update_tensor = None
         cls.mxfp8_available = None
         cls.reason_for_no_mxfp8 = ""
