@@ -5,27 +5,38 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 import functools
 import itertools
 import os
 import pathlib
 import subprocess
 import sys
+from typing import Optional
 
 import pytest
 import torch
 
 import transformer_engine
+import transformer_engine.common.recipe
 import transformer_engine.pytorch as te
 from transformer_engine.pytorch.fp8 import FP8GlobalStateManager
-from transformer_engine.pytorch.tensor import Float8Quantizer
+from transformer_engine.pytorch.tensor import QuantizedTensor
+from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
 import transformer_engine.pytorch.ops as te_ops
 from transformer_engine.pytorch.ops._common import is_float8_tensor
 from transformer_engine.pytorch.utils import is_bf16_compatible
 import transformer_engine_torch as tex
 
-# Check if FP8 is supported
+
+# Check what quantization schemes are supported
 fp8_available, reason_for_no_fp8 = FP8GlobalStateManager.is_fp8_available()
+mxfp8_available, reason_for_no_mxfp8 = FP8GlobalStateManager.is_mxfp8_available()
+quantization_list: list[Optional[str]] = [None]
+if fp8_available:
+    quantization_list.append("fp8")
+if mxfp8_available:
+    quantization_list.append("mxfp8")
 
 
 @functools.cache
@@ -114,6 +125,21 @@ def dtype_tols(dtype: torch.dtype | tex.DType) -> dict[str, float]:
     if dtype == torch.float64:
         return dict(rtol=1e-7, atol=1e-7)
     raise ValueError(f"Unsupported dtype ({dtype})")
+
+
+def make_recipe(name: Optional[str] = None) -> Optional[Recipe]:
+    """Make recipe for quantization scheme"""
+    if name is None:
+        return None
+    if name == "fp8":
+        return transformer_engine.common.recipe.DelayedScaling(
+            fp8_format=transformer_engine.common.recipe.Format.E4M3,
+        )
+    if name == "mxfp8":
+        return transformer_engine.common.recipe.BlockScaling(
+            fp8_format=transformer_engine.common.recipe.Format.E4M3,
+        )
+    raise ValueError(f"Unsupported quantization scheme ({name})")
 
 
 def _test_all_reduce(
@@ -293,13 +319,12 @@ def _test_basic_linear(
     batch_size: int = 16,
     dtype: torch.dtype = torch.float32,
     device: torch.device = "cuda",
-    fp8_compute: bool = False,
-    fp8_input: bool = False,
-    fp8_weight: bool = False,
-    fp8_grad_output: bool = False,
+    quantization: Optional[str] = None,
+    quantized_weight: bool = False,
     tensor_parallel_mode: str = "column",
     sequence_parallel: bool = False,
 ) -> None:
+    quantized_compute = quantization is not None
 
     # Distributed process group
     process_group = world_group()
@@ -322,21 +347,26 @@ def _test_basic_linear(
         in_shape,
         test_dtype=dtype,
         test_device=device,
-        test_is_fp8=(fp8_compute or fp8_input),
+        test_is_fp8=quantized_compute,
     )
+    if isinstance(x_test, QuantizedTensor):
+        with torch.no_grad():
+            x_test = x_test.dequantize().requires_grad_()
     w_ref, w_test = make_reference_and_test_tensors(
         (out_features, in_features),
         test_dtype=dtype,
         test_device=device,
-        test_is_fp8=(fp8_compute or fp8_weight),
+        test_is_fp8=(quantized_compute or quantized_weight),
     )
     dy_ref, dy_test = make_reference_and_test_tensors(
         out_shape,
         test_dtype=dtype,
         test_device=device,
-        test_is_fp8=(fp8_compute or fp8_grad_output),
+        test_is_fp8=quantized_compute,
         requires_grad=False,
     )
+    if isinstance(dy_test, QuantizedTensor):
+        dy_test = dy_test.dequantize().requires_grad_()
 
     # Plain PyTorch implementation
     y_ref = torch.nn.functional.linear(x_ref, w_ref)
@@ -387,7 +417,8 @@ def _test_basic_linear(
     x_test.requires_grad_()
 
     # Implementation with fusible operation
-    with te.fp8_model_init(enabled=fp8_weight):
+    recipe = make_recipe(quantization)
+    with te.fp8_model_init(enabled=quantized_weight, recipe=recipe):
         op = te_ops.BasicLinear(
             in_features,
             out_features,
@@ -400,7 +431,7 @@ def _test_basic_linear(
     with torch.no_grad():
         op.weight.copy_(w_test)
         del w_test
-    with te.fp8_autocast(enabled=fp8_compute):
+    with te.fp8_autocast(enabled=quantized_compute, fp8_recipe=recipe):
         y_test = op(x_test)
     y_test.backward(dy_test)
 
@@ -408,10 +439,8 @@ def _test_basic_linear(
     tols = dtype_tols(dtype)
     if dtype == torch.float32:
         tols = dtype_tols(torch.float16)  # TF32 GEMM
-    if fp8_compute:
-        tols = dtype_tols(
-            op.weight._fp8_dtype if is_float8_tensor(op.weight) else tex.DType.kFloat8E4M3
-        )
+    if quantized_compute:
+        tols = dtype_tols(tex.DType.kFloat8E4M3)
 
     # Check results
     y_test = y_test.to(dtype=torch.float64, device="cpu")
@@ -429,13 +458,12 @@ def _test_linear(
     batch_size: int = 16,
     dtype: torch.dtype = torch.float32,
     device: torch.device = "cuda",
-    fp8_compute: bool = False,
-    fp8_input: bool = False,
-    fp8_weight: bool = False,
-    fp8_grad_output: bool = False,
+    quantization: Optional[str] = None,
+    quantized_weight: bool = False,
     tensor_parallel_mode: str = "column",
     sequence_parallel: bool = False,
 ) -> None:
+    quantized_compute = quantization is not None
 
     # Distributed process group
     process_group = world_group()
@@ -458,13 +486,13 @@ def _test_linear(
         in_shape,
         test_dtype=dtype,
         test_device=device,
-        test_is_fp8=(fp8_compute or fp8_input),
+        test_is_fp8=quantized_compute,
     )
     w_ref, w_test = make_reference_and_test_tensors(
         (out_features, in_features),
         test_dtype=dtype,
         test_device=device,
-        test_is_fp8=(fp8_compute or fp8_weight),
+        test_is_fp8=(quantized_compute or quantized_weight),
     )
     b_ref, b_test = None, None
     if bias:
@@ -481,7 +509,7 @@ def _test_linear(
         out_shape,
         test_dtype=dtype,
         test_device=device,
-        test_is_fp8=(fp8_compute or fp8_grad_output),
+        test_is_fp8=quantized_compute,
         requires_grad=False,
     )
 
@@ -548,7 +576,8 @@ def _test_linear(
     x_test.requires_grad_()
 
     # Implementation with fusible operation
-    with te.fp8_model_init(enabled=fp8_weight):
+    recipe = make_recipe(quantization)
+    with te.fp8_model_init(enabled=quantized_weight, recipe=recipe):
         model = te_ops.Sequential(
             te_ops.Linear(
                 in_features,
@@ -567,7 +596,7 @@ def _test_linear(
             model[0].bias.copy_(b_test)
         del w_test
         del b_test
-    with te.fp8_autocast(enabled=fp8_compute):
+    with te.fp8_autocast(enabled=quantized_compute, recipe=recipe):
         y_test = model(x_test)
     y_test.backward(dy_test)
 
@@ -575,12 +604,8 @@ def _test_linear(
     tols = dtype_tols(dtype)
     if dtype == torch.float32:
         tols = dtype_tols(torch.float16)  # TF32 GEMM
-    if fp8_compute:
-        tols = dtype_tols(
-            model[0].weight._fp8_dtype
-            if is_float8_tensor(model[0].weight)
-            else tex.DType.kFloat8E4M3
-        )
+    if quantized_compute:
+        tols = dtype_tols(tex.DType.kFloat8E4M3)
 
     # Check results
     y_test = y_test.to(dtype=torch.float64, device="cpu")
@@ -743,18 +768,15 @@ def run_parallel_tests() -> None:
 
     # Basic linear op
     for config in itertools.product(
-        (False, True) if fp8_available else (False,),
+        quantization_list,
         ("column", "row"),
         (False, True),
     ):
         if rank == 0:
             print(f"Running _test_basic_linear with {config=}")
-        fp8, tensor_parallel_mode, sequence_parallel = config
+        quantization, tensor_parallel_mode, sequence_parallel = config
         _test_basic_linear(
-            fp8_compute=fp8,
-            fp8_input=fp8,
-            fp8_weight=fp8,
-            fp8_grad_output=fp8,
+            quantization=quantization,
             tensor_parallel_mode=tensor_parallel_mode,
             sequence_parallel=sequence_parallel,
         )
