@@ -14,7 +14,7 @@
 
 import torch
 
-import nvtorch_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as nvinspect_api
 
 from utils import reset_debug_log, check_debug_log
 

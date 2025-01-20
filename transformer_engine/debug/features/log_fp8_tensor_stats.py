@@ -23,10 +23,10 @@ from transformer_engine.pytorch.tensor._internal.float8_tensor_base  import Floa
 from transformer_engine.pytorch.tensor._internal.mxfp8_tensor_base  import MXFP8TensorBase
 
 
-import nvtorch_inspect.api as nvinspect_api
-from nvtorch_inspect.debug_features.log_tensor_stats import LogTensorStats as BaseLogTensorStats
-from nvtorch_inspect.registry import Registry, api_method
-from nvtorch_inspect.utils import append_parent_docstring
+import nvdlfw_inspect.api as nvinspect_api
+from nvdlfw_inspect.debug_features.log_tensor_stats import LogTensorStats as BaseLogTensorStats
+from nvdlfw_inspect.registry import Registry, api_method
+from nvdlfw_inspect.utils import append_parent_docstring
 
 
 @Registry.register_feature(namespace="transformer_engine")
@@ -69,12 +69,12 @@ class LogFp8TensorStats(BaseLogTensorStats):
         return {"underflows", "overflows"}
 
     @api_method
-    def save_stats_for_logging_quantized(self, config, layer_name, **kwargs):
-        assert type(kwargs['tensor']) in [Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase],\
-            f"[NVTORCH INSPECT ERROR] Tensor {kwargs['tensor_name']} must be quantized tensor when using log_fp8_tensor_stats. Use log_tensor_stats for high precision tensors."
+    def save_stats_for_logging_quantized(self, config, layer_name, tensor_name, tensor, skip_reduction=False, reduction_group=None, iteration=None):
+        assert type(tensor) in [Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase],\
+            f"[NVTORCH INSPECT ERROR] Tensor {tensor_name} must be quantized tensor when using log_fp8_tensor_stats. Use log_tensor_stats for high precision tensors."
 
-        tensor = kwargs['tensor']._data
-        options = (kwargs.get('start_step', None), kwargs.get('end_step', None), kwargs.get('start_end_list', None),)
+        tensor = tensor._data
+        options = (config.get('start_step', None), config.get('end_step', None), config.get('start_end_list', None),)
 
         FP8GlobalStateManager.debug_tool = True
         
@@ -84,14 +84,12 @@ class LogFp8TensorStats(BaseLogTensorStats):
             stats_with_percent.append(stat + "%")
         stats = stats_with_percent
 
-        skip_reduction = kwargs.get("skip_reduction", False)
-        reduction_group = nvinspect_api.get_tensor_reduction_group()
         for stat in stats:
-            STATS_BUFFERS.try_add_buffer(layer_name, kwargs['tensor_name'], stat, options, reduction_group)
+            STATS_BUFFERS.try_add_buffer(layer_name, tensor_name, stat, options, reduction_group)
 
-        if not self._check_params(config, layer_name, **kwargs):
+        if not self._check_params(config, layer_name, iteration=iteration):
             return {}
 
-        iteration = super()._get_current_iteration(**kwargs)
+        iteration = super()._get_current_iteration(iteration=iteration)
 
-        STATS_BUFFERS.feed(layer_name, kwargs['tensor_name'], stats, options, tensor, iteration, skip_reduction)
+        STATS_BUFFERS.feed(layer_name, tensor_name, stats, options, tensor, iteration, skip_reduction)

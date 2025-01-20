@@ -36,6 +36,8 @@ from ..tensor import QuantizedTensor, Quantizer
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 from transformer_engine.common.recipe import Recipe
+from transformer_engine.debug.debug_state import TEDebugState
+
 
 __all__ = ["initialize_ub", "destroy_ub"]
 
@@ -450,6 +452,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fp8_meta["fp8_checkpoint"] = False
         self.fp8_meta["fp8_group"] = None
         self.fp8_meta_tensors_initialized = False
+        self.debug = False
         self.quantizers = {"scaling_fwd": {}, "scaling_bwd": {}}
         self.tp_group = None
         self.tp_size = 1
@@ -460,6 +463,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fsdp_group = None
         self._fp8_workspaces: Dict[str, QuantizedTensor] = {}
         self.activation_dtype: Optional[torch.dtype] = None
+
+        TEDebugState.initialize()
 
     # Names of attributes that can be set quickly (see __setattr__
     # method)
@@ -750,6 +755,16 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         fp8_enabled = self.fp8 or self.fp8_calibration
         self.fp8_meta["fp8_checkpoint"] = self.fp8 or self.fp8_calibration
 
+        if self.debug and self.fp8_parameters:
+            try:
+                import nvdlfw_inspect.api as nvinspect_api
+            except (ModuleNotFoundError, ImportError):
+                raise ModuleNotFoundError("ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed correctly.")
+            nvinspect_api.log_message("> Primary FP8 parameters is not supported in the debug module. "
+                                "Using this flag will not affect the debug module. ", 
+                                level=logging.WARNING)
+
+
         if self.fp8_parameters or fp8_enabled:
             if (
                 self.fp8_initialized
@@ -904,7 +919,11 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             if isinstance(grad_output, (QuantizedTensor, Float8TensorBase, MXFP8TensorBase)):
                 grad_bias = grad_output.dequantize().view(-1, grad_output.shape[-1]).sum(dim=0)
             else:
-                grad_bias, grad_output = tex.bgrad_quantize(grad_output, quantizer)
+                if ctx.debug:
+                    grad_bias = grad_output.view(-1, grad_output.shape[-1]).sum(dim=0)
+                    grad_output = quantizer(grad_output)
+                else:
+                    grad_bias, grad_output = tex.bgrad_quantize(grad_output, quantizer)
         if not isinstance(grad_output, (QuantizedTensor, Float8TensorBase, MXFP8TensorBase)):
             grad_output = quantizer(grad_output)
         return grad_output, grad_bias
@@ -1019,6 +1038,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 raise ValueError(
                     "tensor and quantizer kwargs must be provided to construct FP8 workspace"
                 )
+
             out = quantizer(tensor)
 
             # Update cache
@@ -1036,10 +1056,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 out.quantize_(tensor, noop_flag=skip_update_flag)
             else:
                 tex.quantize(tensor, quantizer, out, skip_update_flag)
-        
-        # here some debug call
-        if self.debug:
-            quantizer.get_weight_workspace(tensor, out)
 
         return out
 
@@ -1078,18 +1094,18 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         """
         assert self.debug
 
-        from ...debug.debug_state import DebugLayerState
+        from ...debug.debug_state import TEDebugState 
 
         try:
-            import nvtorch_inspect.api as nvinspect_api
+            import nvdlfw_inspect.api as nvinspect_api
         except (ModuleNotFoundError, ImportError):
-            raise ModuleNotFoundError("ERROR: Could not locate nvtorch_inspect package. Make sure it is installed correctly.")
+            raise ModuleNotFoundError("ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed correctly.")
         
         if overwrite_debug_name:
-            self.name = overwrite_debug_name
+            self.debug_name = overwrite_debug_name
 
-        if self.name == None:
+        if self.debug_name == None:
             nvinspect_api.log_message("[DEBUG-WARNING] Names are not provided to debug modules. ",
                                   "Creating and using generic names. Pass names to debug modules for better insight. ",
                                     level=logging.WARNING)
-            self.name = f"Layer_{DebugLayerState.get_layer_count()}"
+            self.debug_name = f"Layer_{TEDebugState.get_layer_count()}"

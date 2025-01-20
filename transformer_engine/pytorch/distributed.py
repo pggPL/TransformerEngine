@@ -22,7 +22,7 @@ from .constants import dist_group_type
 from .fp8 import FP8GlobalStateManager
 from .tensor.float8_tensor import Quantizer
 from .tensor.quantized_tensor import QuantizedTensor
-from .tensor.debug_quantization import DebugQuantizer
+from ..debug.debug_quantization import DebugQuantizer
 from .tensor._internal.float8_tensor_base import Float8TensorBase
 from .tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 

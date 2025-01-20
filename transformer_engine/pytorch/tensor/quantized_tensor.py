@@ -33,7 +33,7 @@ def prepare_for_saving(*tensors) -> Tuple[list[Optional[torch.Tensor]], Optional
 
 
 def restore_from_saved(
-    tensors: list[Optional[Any]], saved_tensors: list[Optional[torch.Tensor]]
+    tensors: list[Optional[Any]], saved_tensors: list[Optional[torch.Tensor]], return_saved_tensors=False
 ) -> Tuple[Optional[Any]]:
     tensor_objects = []
     tensors_to_restore = len(tensors)
@@ -45,6 +45,8 @@ def restore_from_saved(
         else:
             saved_tensors = tensor.restore_from_saved(saved_tensors)
             tensor_objects.append(tensor)
+    if return_saved_tensors:
+        return tensor_objects, saved_tensors
     return tensor_objects
 
 

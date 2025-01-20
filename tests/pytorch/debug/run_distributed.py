@@ -14,7 +14,7 @@ import torch
 import torch.distributed as dist
 import transformer_engine
 import transformer_engine_torch as tex
-import nvtorch_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as nvinspect_api
 from transformer_engine.debug import set_weight_tensor_tp_group_reduce
 
 
@@ -56,8 +56,8 @@ def _get_tensors(parallel_mode, weight_seed=SEED, data_seed=SEED, tp_size=None, 
 
 
 def _init_model(weight, parallel_mode=None, tp_group=None, name="linear"):
-    model = transformer_engine.debug.pytorch.Linear(
-        IN_SIZE , OUT_SIZE, name=name, parallel_mode=parallel_mode, tp_group=(tp_group or NCCL_WORLD if parallel_mode else None))
+    model = transformer_engine.pytorch.Linear(
+        IN_SIZE , OUT_SIZE, debug = True, debug_name=name, parallel_mode=parallel_mode, tp_group=(tp_group or NCCL_WORLD if parallel_mode else None))
     with torch.no_grad():
         model.weight.copy_(weight)
     return model
@@ -201,13 +201,7 @@ CONFIG_LOG_TEST_DISTRIBUTED = """log_distributed:
   transformer_engine:
     LogTensorStats:
       enabled: True
-      tensors: [activation, gradient, weight]
-      stats: [min, max, mean, std, l1_norm, l2_norm, cur_amax, dynamic_range]
-      start_step : 0
-      end_step: 1
-    LogTensorStats:
-      enabled: True
-      tensors: [activation, gradient, weight]
+      tensors: [activation, gradient, weight, output, wgrad, dgrad]
       stats: [min, max, mean, std, l1_norm, l2_norm, cur_amax, dynamic_range]
       start_step : 0
       end_step: 1
@@ -264,11 +258,14 @@ def test_log_distributed(parallel_mode, gather_weight, **kwargs):
     output = _run_forward_backward(x, target, model, parallel_mode=parallel_mode, group=tp_group)
 
     gathered_activation = AllGather.apply(x.contiguous(), 0)
-    gathered_gradient = AllGather.apply(output.grad.contiguous(), 0, dp_group)
     gathered_weight = AllGather.apply(weight.contiguous(), 0, tp_group)
+    gathered_output = AllGather.apply(output.contiguous(), 0, tp_group)
+    gathered_gradient = AllGather.apply(output.grad.contiguous(), 0, dp_group)
+    gathered_wgrad = AllGather.apply(weight.grad.contiguous(), 0, tp_group)
+    gathered_dgrad = AllGather.apply(x.grad.contiguous(), 0, tp_group)
     if parallel_mode == "row":
         gathered_gradient = AllGather.apply(gathered_gradient, 0, tp_group)
-    log_file = kwargs['log_dir'] + "/debug_statistics_logs/statistics_log_globalrank-0.log"
+    log_file = kwargs['log_dir'] + "/nvdlfw_inspect_statistics_logs/nvdlfw_inspect_globalrank-0.log"
 
     dist.barrier()
     if WORLD_RANK != 0:
@@ -290,6 +287,9 @@ def test_log_distributed(parallel_mode, gather_weight, **kwargs):
         "activation": gathered_activation,
         "weight": gathered_weight if gather_weight else weight,
         "gradient": gathered_gradient,
+        "output": gathered_output,
+        "wgrad": gathered_wgrad if gather_weight else weight.grad,
+        "dgrad": gathered_dgrad
     }
     stats = {
         "min": torch.min,

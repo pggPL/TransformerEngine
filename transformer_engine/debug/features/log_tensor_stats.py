@@ -15,10 +15,10 @@
 import torch
 
 from transformer_engine.debug.features.utils.stats_computation import STATS
-import nvtorch_inspect.api as nvinspect_api
-from nvtorch_inspect.debug_features.log_tensor_stats import LogTensorStats as BaseLogTensorStats
-from nvtorch_inspect.registry import Registry, api_method
-from nvtorch_inspect.utils import append_parent_docstring
+import nvdlfw_inspect.api as nvinspect_api
+from nvdlfw_inspect.debug_features.log_tensor_stats import LogTensorStats as BaseLogTensorStats
+from nvdlfw_inspect.registry import Registry, api_method
+from nvdlfw_inspect.utils import append_parent_docstring
 
 from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS
 from transformer_engine.pytorch.fp8 import FP8GlobalStateManager
@@ -65,21 +65,20 @@ class LogTensorStats(BaseLogTensorStats):
         return super()._get_supported_stats_list() | {"cur_amax", "dynamic_range"}
 
     @api_method
-    def save_stats_for_logging(self, config, layer_name, **kwargs):
-        assert kwargs['tensor'].dtype != torch.uint8, f"[NVTORCH INSPECT ERROR] Tensor {kwargs['tensor_name']} must be in high precision when using log_tensor_stats. Use log_fp8_tensor_stats for FP8 tensors."
+    def save_stats_for_logging(self, config, layer_name, tensor_name, tensor, skip_reduction=False, reduction_group=None, iteration=None):
+
+        assert tensor.dtype != torch.uint8, f"[NVTORCH INSPECT ERROR] Tensor {tensor_name} must be in high precision when using log_tensor_stats. Use log_fp8_tensor_stats for FP8 tensors."
         FP8GlobalStateManager.debug_tool = True
-        options = (kwargs.get('start_step', None), kwargs.get('end_step', None), kwargs.get('start_end_list', None),)
+        options = (config.get('start_step', None), config.get('end_step', None), config.get('start_end_list', None),)
 
-        skip_reduction = kwargs.get("skip_reduction", False)
-        reduction_group = nvinspect_api.get_tensor_reduction_group()
         for stat in config['stats']:
-            STATS_BUFFERS.try_add_buffer(layer_name, kwargs['tensor_name'], stat, options, reduction_group)
+            STATS_BUFFERS.try_add_buffer(layer_name, tensor_name, stat, options, reduction_group)
 
-        if not self._check_params(config, layer_name, **kwargs):
+        if not self._check_params(config, layer_name, iteration=iteration):
             return {}
         for stat in config['stats']:
             assert stat in STATS.keys(), f"[NVTORCH INSPECT ERROR] Statistic {stat} is not supported."
 
-        iteration = super()._get_current_iteration(**kwargs)
+        iteration = super()._get_current_iteration(iteration=iteration)
 
-        STATS_BUFFERS.feed(layer_name, kwargs['tensor_name'], config['stats'], options, kwargs['tensor'], iteration, skip_reduction)
+        STATS_BUFFERS.feed(layer_name, tensor_name, config['stats'], options, tensor, iteration, skip_reduction)

@@ -15,9 +15,9 @@
 import torch
 
 from transformer_engine.debug.features.api import TEConfigAPIMapper
-import nvtorch_inspect.api as nvinspect_api
-from nvtorch_inspect.registry import Registry, api_method
-from nvtorch_inspect.utils import append_parent_docstring
+import nvdlfw_inspect.api as nvinspect_api
+from nvdlfw_inspect.registry import Registry, api_method
+from nvdlfw_inspect.utils import append_parent_docstring
 
 
 import transformer_engine_torch as tex
@@ -34,7 +34,6 @@ def fake_quantize_fp8(tensor: torch.Tensor, fp8_format, margin=0):
     assert tensor.is_cuda, "[NVTORCH INSPECT ERROR] Must be a GPU tensor."
     assert fp8_format in {"E4M3", "E5M2", "MXE4M3", "MXE5M2"},\
           "[NVTORCH INSPECT ERROR] Only 4 FP8 types: E4M3, E5M2, MXE4M3, MXE5M2 are supported in TE."
-
     if fp8_format in ["E4M3", "E5M2"]:
         if fp8_format == "E4M3":
             fp8_max = Format.E4M3.value.max_fwd
@@ -49,7 +48,7 @@ def fake_quantize_fp8(tensor: torch.Tensor, fp8_format, margin=0):
         quantizer = Float8Quantizer(scale, amax, fp8_dtype)
     else:
         MXFP8Quantizer(fp8_dtype=fp8_format)
-    return quantizer(tensor)
+    return quantizer(tensor).dequantize()
 
 
 @Registry.register_feature(namespace="transformer_engine")
@@ -102,22 +101,26 @@ class FakeQuantFp8(TEConfigAPIMapper):
         return 0
     
     @api_method
-    def fp8_gemm(self, config, layer_name, **kwargs):
-        return False # need to 
+    def fp8_gemm(self, config, layer_name, gemm):
+        return False
 
     @api_method
-    def process_tensor(self, config, layer_name, **kwargs):
+    def use_process_tensor(self, config, layer_name, tensor_name, gemm):
+        return True
+
+    @api_method
+    def process_tensor(self, config, layer_name, gemm, tensor_name, tensor, default_quantizer=None, out=None):
         for key in config.keys():
             if key not in ["gemm", "tensor", "quant_format", "margin"]:
                 raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")
-        nvinspect_api.log_message(f"Feature={self.__class__.__name__}, API=process_tensor: {kwargs['gemm']}, {kwargs['tensor_name']}: QDQ", layer_name)
+        nvinspect_api.log_message(f"Feature={self.__class__.__name__}, API=process_tensor: {gemm}, {tensor_name}: QDQ", layer_name)
         
         if "quant_format" not in config:
-            raise ValueError(f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: quant_format missing for Tensor: {kwargs['tensor_name']} in the config yaml for FakeQuantFp8 feature which is a required field")
+            raise ValueError(f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: quant_format missing for Tensor: {tensor_name} in the config yaml for FakeQuantFp8 feature which is a required field")
         if config["quant_format"] not in self._supported_formats():
-            raise ValueError(f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: quant_format: {config['quant_format']} for Tensor: {kwargs['tensor_name']} in the config yaml for FakeQuantFp8 feature is not supported")
-        
+            raise ValueError(f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: quant_format: {config['quant_format']} for Tensor: {tensor_name} in the config yaml for FakeQuantFp8 feature is not supported")
+
         quant_format = config["quant_format"]
         margin = config.get('margin', self._get_margin_default())
-        q_tensor = fake_quantize_fp8(kwargs["tensor"], quant_format, margin=margin)
-        return {"tensor": q_tensor}
+        q_tensor = fake_quantize_fp8(tensor, quant_format, margin=margin)
+        return q_tensor

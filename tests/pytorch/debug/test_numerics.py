@@ -12,7 +12,7 @@ from string import Template
 import pytest
 import torch
 
-import nvtorch_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as nvinspect_api
 import transformer_engine.debug
 import transformer_engine.pytorch as tepytorch
 import transformer_engine_torch as tex
@@ -68,11 +68,11 @@ def _fp8_gemm_kernel(tensor1, scale1, dtype1, tensor2, scale2, dtype2, use_split
     fp8_tensor1 = _cast_to_fp8(tensor1, scale1, dtype1)
     fp8_tensor2 = _cast_to_fp8(tensor2, scale2, dtype2)
     
-    out, _ = tepytorch.cpp_extensions.general_gemm(
+    out, _, _ = tepytorch.cpp_extensions.general_gemm(
         fp8_tensor1,
         fp8_tensor2,
-        torch.float32,
         tepytorch.module.base.get_workspace(),
+        torch.float32,
         use_split_accumulator=use_split_accumulator
     )
     out.requires_grad = True
@@ -177,7 +177,7 @@ def create_config_file(func):
                 finally:
                     temp_file_name = temp_file.name
                     nvinspect_api.end_debug()
-                    transformer_engine.debug.debug_state.DebugLayerState.reset()
+                    transformer_engine.debug.debug_state.TEDebugState.reset()
             os.unlink(temp_file_name)
         return result
     return wrapper

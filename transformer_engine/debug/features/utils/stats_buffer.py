@@ -17,8 +17,8 @@ from collections import defaultdict
 import torch
 
 from transformer_engine.debug.features.utils.stats_computation import HELPER_STATS, STATS
-from nvtorch_inspect.utils import gather_along_first_dim
-from nvtorch_inspect.logging import MetricLogger
+from nvdlfw_inspect.utils import gather_along_first_dim
+from nvdlfw_inspect.logging import MetricLogger
 
 # Buffer used for LogTensorStats and LogFp8TensorStats features.
 # Buffer are fed with tensors, they compute necessary helper stats and save them.
@@ -98,9 +98,13 @@ class StatsBuffers:
     def __init__(self):
         self.buffers = {} # (layer_name, tensor_name) -> buffer
         self.reduction_group_to_buffer = defaultdict(list)
+    
+    def reset(self):
+        self.buffers = {} # (layer_name, tensor_name) -> buffer
+        self.reduction_group_to_buffer = defaultdict(list)
+
 
     def try_add_buffer(self, layer_name, tensor_name, stat, options, reduction_group):
-
         if (layer_name, tensor_name, stat, options) in self.buffers.keys():
             return
         buffer = _Buffer(layer_name, tensor_name, stat, reduction_group)
@@ -124,8 +128,8 @@ class StatsBuffers:
             for i, buffer, tensor_name in changed_buffers:
                 if (forward and tensor_name in ["activation", "weight"]) or (not forward and tensor_name == "gradient"):
                     stat = buffer.log()
-                    output[(buffer.layer_name, buffer.tensor_name, buffer.stat, buffer.iteration)] = stat # for testin purpouses
-        return output
-STATS_BUFFERS = StatsBuffers()
+                    output[(buffer.layer_name, buffer.tensor_name, buffer.stat, buffer.iteration)] = stat # for testing purpouses
+        
+        return output 
 
 STATS_BUFFERS = StatsBuffers()

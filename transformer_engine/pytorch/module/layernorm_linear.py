@@ -50,13 +50,14 @@ from ._common import _apply_normalization, _noop_cat
 from ..tensor.quantized_tensor import (
     QuantizedTensor,
     Quantizer,
-    DebugQuantizer,
     prepare_for_saving,
     restore_from_saved,
 )
+from ...debug.debug_quantization import DebugQuantizer
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
+from transformer_engine.debug.debug_state import TEDebugState
 
 from ..cpp_extensions import (
     general_gemm,
@@ -379,13 +380,13 @@ class _LayerNormLinear(torch.autograd.Function):
                 else None
             )
 
-            if ctx.grad_output_quantizer is not None:
-                ctx.grad_output_quantizer.set_usage(
+            if ctx.gradient_quantizer is not None:
+                ctx.gradient_quantizer.set_usage(
                     rowwise=True,
                     columnwise=True,
                 )
-            if ctx.grad_input_quantizer is not None:
-                ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
+            if ctx.dgrad_quantizer is not None:
+                ctx.dgrad_quantizer.set_usage(rowwise=True, columnwise=False)
 
             # Gather intermediate/activation tensors if needed
             # NOTE: weight_fp8 = weight when ctx.fp8 == False and torch.disttributed.FSDP already
@@ -436,7 +437,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 ctx,
                 grad_outputs[0],
                 ctx.parallel_mode == "row",
-                ctx.grad_output_quantizer,
+                ctx.gradient_quantizer,
             )
 
             # Prepare GEMM input
@@ -771,25 +772,10 @@ class LayerNormLinear(TransformerEngineBaseModule):
         ub_overlap_ag: bool = False,
         ub_overlap_rs_dgrad: bool = False,
         ub_name: Optional[str] = None,
-        debug: bool = False,
         debug_name: str  = None,
     ) -> None:
         super().__init__()
 
-        if debug:
-            if (ub_bulk_wgrad or ub_bulk_dgrad or ub_overlap_ag or ub_overlap_rs_dgrad):
-                try:
-                    import nvtorch_inspect.api as nvinspect_api
-                except (ModuleNotFoundError, ImportError):
-                    raise ModuleNotFoundError("ERROR: Could not locate nvtorch_inspect package. Make sure it is installed correctly.")
-
-                nvinspect_api.log_message("> UserBuffers are not supported in debug module. "
-                                        "Using UB optimization will not affect the debug module. ",
-                                        level=logging.WARNING)
-                ub_bulk_wgrad = None
-                ub_bulk_dgrad = None
-                ub_overlap_ag = None
-                ub_overlap_rs_dgrad = None
 
         params_dtype = torch.get_default_dtype() if params_dtype is None else params_dtype
         self.in_features = in_features
@@ -811,11 +797,25 @@ class LayerNormLinear(TransformerEngineBaseModule):
             assert ub_name is not None, "Userbuffer name [string] is not set."
         self.ub_name = ub_name
 
-        self.debug = debug
+        self.debug = TEDebugState.debug_enabled
         self.debug_name = debug_name
-        if debug:
-            FP8GlobalStateManager.debug_enabled = True
+        if not self.debug and debug_name is not None:
+            print(f"[Warning] Layer {self.debug_name} has a debug name, but nvidia-dlframework-inspect was not initialized.")
 
+        if self.debug:
+            if (ub_bulk_wgrad or ub_bulk_dgrad or ub_overlap_ag or ub_overlap_rs_dgrad):
+                try:
+                    import nvdlfw_inspect.api as nvinspect_api
+                except (ModuleNotFoundError, ImportError):
+                    raise ModuleNotFoundError("ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed correctly.")
+
+                nvinspect_api.log_message("> UserBuffers are not supported in debug module. "
+                                        "Using UB optimization will not affect the debug module. ",
+                                        level=logging.WARNING)
+                ub_bulk_wgrad = None
+                ub_bulk_dgrad = None
+                ub_overlap_ag = None
+                ub_overlap_rs_dgrad = None
         if tp_group is None:
             self.tp_size = tp_size
             if tp_size == 1:
@@ -1057,6 +1057,8 @@ class LayerNormLinear(TransformerEngineBaseModule):
         """
         if self.debug:
             self._validate_debug_name(overwrite_debug_name)
+            if TEDebugState.num_of_features_for_layer(self.debug_name) == 0:
+                self.debug = False
 
         if FP8GlobalStateManager.fp8_graph_capturing():
             skip_fp8_weight_update = FP8GlobalStateManager.get_skip_fp8_weight_update_tensor()
@@ -1142,6 +1144,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
                 self.fsdp_group,
                 self,
                 skip_fp8_weight_update,
+                self.debug
             )
             out = fwd_fn(*args)
 
@@ -1198,17 +1201,17 @@ class LayerNormLinear(TransformerEngineBaseModule):
         assert self.debug
 
         input_quantizer = DebugQuantizer(
-            self.debug_name, "activation", -1, input_quantizer, self.tp_group)
+            self.debug_name, "activation", input_quantizer, self.tp_group)
         weight_quantizer = DebugQuantizer(
-            self.debug_name, "activation", -1, weight_quantizer, self.tp_group)
+            self.debug_name, "weight", weight_quantizer, self.tp_group)
         output_quantizer = DebugQuantizer(
-            self.debug_name, "activation", -1, output_quantizer, self.tp_group)
+            self.debug_name, "output", output_quantizer, self.tp_group)
         gradient_quantizer = DebugQuantizer(
-            self.debug_name, "activation", -1, gradient_quantizer, self.tp_group)
+            self.debug_name, "gradient", gradient_quantizer, self.tp_group)
         dgrad_quantizer = DebugQuantizer(
-            self.debug_name, "activation", -1, dgrad_quantizer, self.tp_group)
+            self.debug_name, "dgrad", dgrad_quantizer, self.tp_group)
         wgrad_quantizer = DebugQuantizer(
-            self.debug_name, "activation", -1, wgrad_quantizer, self.tp_group)
+            self.debug_name, "wgrad", wgrad_quantizer, self.tp_group)
         
         return (
             input_quantizer,

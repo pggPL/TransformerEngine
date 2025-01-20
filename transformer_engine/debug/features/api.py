@@ -12,10 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import torch
 import copy
 from typing import Any
-from nvtorch_inspect.base import BaseNamespaceAPI, BaseConfigAPIMapper
-from nvtorch_inspect.registry import Registry
+from nvdlfw_inspect.base import BaseNamespaceAPI, BaseConfigAPIMapper
+from nvdlfw_inspect.registry import Registry
+
+
+from transformer_engine.pytorch.tensor import Float8Quantizer
+from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Tensor, MXFP8TensorBase
+from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor, Float8TensorBase
 
 class TEConfigAPIMapper(BaseConfigAPIMapper):
     gemm_config_docstring = '''
@@ -68,6 +74,7 @@ class TEConfigAPIMapper(BaseConfigAPIMapper):
         gemm_parsing = kwargs.get('gemm_parsing', False)
         tensor_parsing = kwargs.get('tensor_parsing', False)
 
+        
         if gemm_parsing:
             # parse with GEMM and/or tensor
             processed_config = self._process_transformer_engine_config(config_copy, **kwargs)
@@ -118,29 +125,23 @@ class TEConfigAPIMapper(BaseConfigAPIMapper):
 
 
 class TEDefaultFeatures:
-    def is_fp8_enabled_for_layer(self, config, layer_name, **kwargs):
+    def fp8_gemm(self, config, layer_name, **kwargs):
         """
         Check whether a given layer runs in FP8. 
         """
-        return {"ret": True} if kwargs["fp8_enabled"] else {"ret": False}
-    
-    def is_fp8_gemm_enabled(self, config, layer_name, **kwargs):
-        """
-        Check whether a given GEMM runs in FP8. 
-        """
-        return {"ret": True} if kwargs["fp8_enabled"] else {"ret": False}
-
-    def is_fp8_delayed_scaling_enabled(self, config, layer_name, **kwargs):
-        """
-        Check whether a given GEMM runs in delayed scaling. 
-        """
-        return {"ret": True} if kwargs["fp8_enabled"] else {"ret": False}
+        return True
 
     def process_tensor(self, config, layer_name, **kwargs):
         """
         API to process a tensor. This must return a tensor.
         """
-        return {"tensor": kwargs["tensor"]}
+        return kwargs["tensor"]
+    
+    def process_quantized_tensor(self, config, layer_name, **kwargs):
+        """
+        API to process a tensor. This must return a tensor.
+        """
+        return kwargs["tensor"]
 
 
 @Registry.register_namespace_api(namespace="transformer_engine")
@@ -157,16 +158,16 @@ class TransformerEngineAPI (BaseNamespaceAPI):
         self._cacheable_api_kwargs_map = {
             "save_stats_for_logging": ["tensor_name"],
             "save_fp8_stats_for_logging": ["tensor_name"],
-            "is_fp8_gemm_enabled": ["gemm"],
+            "fp8_gemm": ["gemm"],
             "process_tensor": ["tensor_name", "gemm"],
-            "is_fp8_delayed_scaling_enabled": ["tensor_name", "gemm"],
+            "process_quantized_tensor": ["tensor_name", "tensor"],
         }
 
     def is_multiple_feature_invocation_allowed(self, api_name):
         """
         Check if API allowes executing multiple features for a single call
         """
-        if api_name in {"is_fp8_gemm_enabled", "is_fp8_delayed_scaling_enabled"}:
+        if api_name in {"fp8_gemm"}:
             return True
         return False
 
@@ -177,11 +178,10 @@ class TransformerEngineAPI (BaseNamespaceAPI):
         required_kwargs = {
             "save_stats_for_logging": ["tensor_name", "tensor"],
             "save_fp8_stats_for_logging": ["tensor_name", "tensor"],
-            "is_fp8_gemm_enabled": ["gemm", "fp8_enabled"],
-            "is_fp8_enabled_for_layer": ["fp8_enabled"],
-            "is_fp8_delayed_scaling_enabled": ["fp8_enabled", "gemm", "tensor_name"],
-            "process_tensor": ["tensor", "fp8_enabled", "gemm", "tensor_name"],
-            "default": ["fp8_enabled", "tensor_name", "gemm"]
+            "fp8_gemm": ["gemm"],
+            "process_tensor": ["tensor", "gemm", "tensor_name"],
+            "process_quantized_tensor": ["tensor_name", "tensor"],
+            "default": ["tensor_name", "gemm"]
         }
 
         if api_name in required_kwargs:
@@ -196,17 +196,14 @@ class TransformerEngineAPI (BaseNamespaceAPI):
         """
         Overridden APIs are selected based on the GEMM name in the config and kwargs.
         """
-        if api_name in {"is_fp8_enabled_for_layer"}:
-            return True, None
-
-        tensor_parsing = False if api_name in {"is_fp8_gemm_enabled"} else True
-        gemm_parsing = False if api_name in {"log_tensor_stats", "log_fp8_tensor_stats"} else True
+        tensor_parsing = False if api_name in {"fp8_gemm"} else True
+        gemm_parsing = False if api_name in {"save_stats_for_logging", "save_stats_for_logging_quantized",  "process_quantized_tensor"} else True
         status, modified_config = feature_obj.parse_config_and_api(config, gemm_parsing=gemm_parsing, tensor_parsing=tensor_parsing, **kwargs)
         return status, modified_config
 
     def output_assertions_hook(self, api_name, ret, **kwargs):
         if api_name in {"process_tensor"}:
-            assert "tensor" in ret, f"This API {api_name} must return a tensor."
+            assert type(ret) in [torch.Tensor, Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase], f"This API {api_name} must return a tensor."
         
 
         

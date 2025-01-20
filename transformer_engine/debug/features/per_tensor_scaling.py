@@ -15,9 +15,9 @@
 import torch
 
 from transformer_engine.debug.features.api import TEConfigAPIMapper
-import nvtorch_inspect.api as nvinspect_api
-from nvtorch_inspect.registry import Registry, api_method
-from nvtorch_inspect.utils import append_parent_docstring
+import nvdlfw_inspect.api as nvinspect_api
+from nvdlfw_inspect.registry import Registry, api_method
+from nvdlfw_inspect.utils import append_parent_docstring
 
 import transformer_engine_torch as tex
 from transformer_engine.common.recipe import Format
@@ -34,19 +34,15 @@ def per_tensor_cast(tensor: torch.Tensor,
     assert tensor.is_cuda, "[NVTORCH INSPECT ERROR] Must be a GPU tensor."
     assert fp8_dtype in {tex.DType.kFloat8E4M3, tex.DType.kFloat8E5M2}, "[NVTORCH INSPECT ERROR] Only 2 FP8 types: E4M3 and E5M2 are supported in TE."
 
-    if fp8_dtype == "E4M3":
+    if fp8_dtype == tex.DType.kFloat8E4M3:
         fp8_max = Format.E4M3.value.max_fwd
-        fp8_dtype = tex.DType.kFloat8E4M3
     else:
         fp8_max = Format.E5M2.value.max_fwd
-        fp8_dtype = tex.DType.kFloat8E5M2
     amax = torch.max(torch.abs(tensor)).float()
     one = torch.ones(1, device=tensor.device)
     scale = _default_sf_compute(amax, one, fp8_max, margin)
 
     quantizer = Float8Quantizer(scale, amax, fp8_dtype)
-
-    quantizer
 
     if out is not None:
         quantizer.update_quantized(tensor, out)
@@ -98,21 +94,24 @@ class PerTensorScaling(TEConfigAPIMapper):
         return 0
 
     @api_method
-    def fp8_gemm(self, config, layer_name, **kwargs):
-        return False
+    def fp8_gemm(self, config, layer_name, gemm):
+        assert config['gemm'] == gemm
+        return True
+
+    @api_method 
+    def use_process_tensor(self, config, layer_name, tensor_name, gemm):
+        return True
 
     @api_method
-    def process_tensor(self, config, layer_name, **kwargs):
+    def process_tensor(self, config, layer_name, gemm, tensor_name, tensor, default_quantizer=None, out=None):
         for key in config.keys():
             if key not in ["gemm", "tensor", "margin"]:
                 raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")
        
-        # todo[pgadzinski] - change this first assert into sth meaningful
-        assert kwargs["fp8_enabled"], f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: Per tensor scaling feature should only be used during FP8 training."        
-        assert "fp8_dtype" in kwargs, f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: Provide FP8 dtype when using process_tensor for per_tensor_scaling. {layer_name}"
+        assert default_quantizer is not None, f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: Provide FP8 dtype when using process_tensor for per_tensor_scaling. {layer_name}"
         
-        nvinspect_api.log_message(f"Feature={self.__class__.__name__}, API=process_tensor: {kwargs['gemm']}, {kwargs['tensor_name']}: Per Tensor Scaling", layer_name)
+        nvinspect_api.log_message(f"Feature={self.__class__.__name__}, API=process_tensor: {gemm}, {tensor_name}: Per Tensor Scaling", layer_name)
         
         margin = config.get('margin', self._get_margin_default())
-        fp8_tensor = per_tensor_cast(kwargs["tensor"], kwargs["fp8_dtype"], margin=margin, out=kwargs.get("out", None))
+        fp8_tensor = per_tensor_cast(tensor, default_quantizer.dtype, margin=margin, out=out)
         return fp8_tensor

@@ -11,6 +11,12 @@ from ..tensor.quantized_tensor import Quantizer
 import transformer_engine_torch as tex
 from ..constants import TE_DType
 from ..utils import assert_dim_for_fp8_exec, get_sm_count
+from ...debug.debug_quantization import DebugQuantizer
+from ..tensor.quantized_tensor import QuantizedTensor
+from ..tensor.float8_tensor import Float8Tensor, Float8TensorBase
+from ..tensor.mxfp8_tensor import MXFP8Tensor, MXFP8TensorBase
+
+
 
 
 from ..tensor.quantized_tensor import (
@@ -70,11 +76,24 @@ def general_gemm(
         if not out.is_contiguous():
             raise ValueError("Output tensor is not contiguous.")
 
+    
+    if isinstance(quantization_params, DebugQuantizer):
+        if type(A) in [Float8TensorBase, Float8Tensor, MXFP8Tensor, MXFP8TensorBase] and out_dtype == torch.float32:
+            if bias is not None:
+                bias = bias.to(torch.bfloat16)
+        else:
+            if bias is not None:
+                bias = bias.to(out_dtype)
+
     # Use bfloat16 as default bias_dtype
     bias_dtype = torch.bfloat16 if bias is None else bias.dtype
     bias_dtype = TE_DType[bias_dtype]
     if bias is None and not grad:
         bias = _empty_tensor()
+    
+    quantization_params_final = quantization_params
+    if isinstance(quantization_params, DebugQuantizer):
+        quantization_params_final = quantization_params._parent_quantizer
 
     args = (
         A,
@@ -82,7 +101,7 @@ def general_gemm(
         B,
         transb,  # transb
         out,
-        quantization_params,
+        quantization_params_final,
         TE_DType[out_dtype] if out_dtype is not None else None,
         bias,
         bias_dtype,

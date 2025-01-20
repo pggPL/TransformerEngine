@@ -14,9 +14,9 @@
 
 from transformer_engine.debug.features.api import TEConfigAPIMapper
 
-import nvtorch_inspect.api  as nvinspect_api
-from nvtorch_inspect.registry import Registry, api_method
-from nvtorch_inspect.utils import append_parent_docstring
+import nvdlfw_inspect.api  as nvinspect_api
+from nvdlfw_inspect.registry import Registry, api_method
+from nvdlfw_inspect.utils import append_parent_docstring
 
 
 @Registry.register_feature(namespace="transformer_engine")
@@ -44,13 +44,13 @@ class DisableFp8Gemm(TEConfigAPIMapper):
     """
 
     @api_method
-    def fp8_gemm(self, config, layer_name, **kwargs):
+    def fp8_gemm(self, config, layer_name, gemm):
         for key in config:
             if key != 'gemm':
                 raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")
                 
-        if kwargs["fp8_enabled"] and config["gemm"] == kwargs["gemm"]:
+        if config["gemm"] == gemm:
             nvinspect_api.log_message(
-                f"Feature={self.__class__.__name__}, API=is_fp8_gemm_enabled: {kwargs['gemm']}: FP8 GEMM: False", layer_name)
+                f"Feature={self.__class__.__name__}, API=is_fp8_gemm_enabled: {gemm}: FP8 GEMM: False", layer_name)
             return False
         return True

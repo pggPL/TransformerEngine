@@ -11,6 +11,7 @@ from typing import Callable, List, Optional, Tuple, Union
 import torch
 
 from transformer_engine.pytorch.module import LayerNormMLP, LayerNorm, RMSNorm
+from transformer_engine.debug.debug_state import TEDebugState
 from transformer_engine.pytorch.attention import (
     InferenceParams,
     MultiheadAttention,
@@ -278,7 +279,6 @@ class TransformerLayer(torch.nn.Module):
         normalization: str = "LayerNorm",
         device: Union[torch.device, str] = "cuda",
         attn_input_format: str = "sbhd",
-        debug: bool = False,
         debug_name: str = None,
     ) -> None:
         super().__init__()
@@ -339,8 +339,8 @@ class TransformerLayer(torch.nn.Module):
 
         self.attn_input_format = attn_input_format
 
-        self.debug = debug 
         self.debug_name = debug_name
+        self.debug = TEDebugState.feature_enabled_for_layer()
 
         attention_args = (
             hidden_size,
@@ -688,7 +688,7 @@ class TransformerLayer(torch.nn.Module):
                 enc_dec_attn_mask[i].dtype == torch.bool for i in range(len(enc_dec_attn_mask))
             ), "Encoder-decoder attention mask must be boolean tensor(s)"
         
-        TransformerEngineBaseModule._validate_name(self, overwrite_debug_name)
+        TransformerEngineBaseModule._validate_debug_name(self, overwrite_debug_name)
 
         # For AMP
         if torch.is_autocast_enabled():

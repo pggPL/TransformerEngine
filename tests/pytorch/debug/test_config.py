@@ -1,8 +1,8 @@
 import pathlib, os
 
-from nvtorch_inspect.config_manager import ConfigManager
+from nvdlfw_inspect.config_manager import ConfigManager
 
-import nvtorch_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as nvinspect_api
 
 try:
     import transformer_engine
