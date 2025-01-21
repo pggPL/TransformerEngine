@@ -206,7 +206,9 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
   }
 
   // Do nothing if tensor is empty
-  if (input->data.numel() == 0) { return; }
+  if (input->data.numel() == 0) {
+    return;
+  }
 
   CheckInputTensor(*input, "scaling_factor_input", true);
   CheckInputTensor(*output, "scaling_factor_output", true);

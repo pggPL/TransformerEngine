@@ -113,7 +113,9 @@ at::Tensor columnwise_swizzle(at::Tensor input, at::Tensor _scale_inv) {
   auto swizzled_scale_inv = at::empty_like(scale_inv, options);
 
   // Return immediately if tensor is empty
-  if (scale_inv.numel() == 0) { return swizzled_scale_inv; }
+  if (scale_inv.numel() == 0) {
+    return swizzled_scale_inv;
+  }
 
   void* scale_inv_dptr = getDataPtr(scale_inv, 0);
   void* swizzled_scale_inv_dptr = getDataPtr(swizzled_scale_inv, 0);

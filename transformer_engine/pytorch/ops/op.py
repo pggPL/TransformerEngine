@@ -259,9 +259,8 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
                 continue
             recipe_state = self._fp8_metas[mode][fp8_meta_key]
             need_to_reset_recipe_state = (
-                (recipe.delayed() and not isinstance(recipe_state, DelayedScalingRecipeState))
-                or (recipe.block() and not isinstance(recipe_state, BlockScalingRecipeState))
-            )
+                recipe.delayed() and not isinstance(recipe_state, DelayedScalingRecipeState)
+            ) or (recipe.block() and not isinstance(recipe_state, BlockScalingRecipeState))
             if need_to_reset_recipe_state:
                 self._reset_quantization_recipe_state(recipe=recipe)
                 return

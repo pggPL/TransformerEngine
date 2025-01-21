@@ -382,17 +382,16 @@ void populate_transpose_dbias_workspace_config(const Tensor &input, /*cast*/
     workspace->data.dtype = DType::kFloat32;
   } else {
     // Check that workspace matches expected size
-    const size_t workspace_size = std::accumulate(workspace->data.shape.begin(),
-                                                  workspace->data.shape.end(),
-                                                  1, std::multiplies<size_t>())
-      * typeToSize(workspace->data.dtype);
+    const size_t workspace_size =
+        std::accumulate(workspace->data.shape.begin(), workspace->data.shape.end(), 1,
+                        std::multiplies<size_t>()) *
+        typeToSize(workspace->data.dtype);
     const size_t required_size = num_rows_partial_dbias * row_length * typeToSize(DType::kFloat32);
-    NVTE_CHECK(!workspace->data.shape.empty(),
-               "Invalid workspace dims (expected (", num_rows_partial_dbias, ",", row_length,
-               "), found ())");
-    NVTE_CHECK(workspace_size >= required_size,
-               "Invalid workspace (expected dims=(", num_rows_partial_dbias, ",", row_length,
-               "), dtype=", to_string(DType::kFloat32), "; found dims=", workspace->data.shape,
+    NVTE_CHECK(!workspace->data.shape.empty(), "Invalid workspace dims (expected (",
+               num_rows_partial_dbias, ",", row_length, "), found ())");
+    NVTE_CHECK(workspace_size >= required_size, "Invalid workspace (expected dims=(",
+               num_rows_partial_dbias, ",", row_length, "), dtype=", to_string(DType::kFloat32),
+               "; found dims=", workspace->data.shape,
                ", dtype=", typeToSize(workspace->data.dtype), ")");
   }
 }
@@ -445,9 +444,7 @@ void fp8_transpose_dbias(const Tensor &input, Tensor *transposed_output, Tensor 
 
           // Check workspace size
           populate_transpose_dbias_workspace_config(input, workspace, nvec_out);
-          if (workspace->data.dptr == nullptr) {
-            return;
-          }
+          if (workspace->data.dptr == nullptr) { return; }
 
           NVTE_CHECK(row_length % nvec_in == 0, "Unsupported shape.");
           NVTE_CHECK(num_rows % nvec_out == 0, "Unsupported shape.");
