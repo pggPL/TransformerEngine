@@ -6,15 +6,12 @@ set -e
 
 : ${TE_PATH:=/opt/transformerengine}
 
-# TODO(ksivamani): For the cases where MXFP8 and FP8 tests are run together,
-# we are temporarily disabling caching of heuristics due to a cublas bug.
-
 pip install pytest==8.2.1
 pytest -v -s $TE_PATH/tests/pytorch/test_sanity.py
 pytest -v -s $TE_PATH/tests/pytorch/test_recipe.py
 pytest -v -s $TE_PATH/tests/pytorch/test_deferred_init.py
-CUBLASLT_HEURISTICS_CACHE_CAPACITY=0 PYTORCH_JIT=0 NVTE_TORCH_COMPILE=0 NVTE_ALLOW_NONDETERMINISTIC_ALGO=0 pytest -v -s $TE_PATH/tests/pytorch/test_numerics.py
-CUBLASLT_HEURISTICS_CACHE_CAPACITY=0 PYTORCH_JIT=0 NVTE_TORCH_COMPILE=0 NVTE_ALLOW_NONDETERMINISTIC_ALGO=0 pytest -v -s $TE_PATH/tests/pytorch/test_cuda_graphs.py
+PYTORCH_JIT=0 NVTE_TORCH_COMPILE=0 NVTE_ALLOW_NONDETERMINISTIC_ALGO=0 pytest -v -s $TE_PATH/tests/pytorch/test_numerics.py
+PYTORCH_JIT=0 NVTE_TORCH_COMPILE=0 NVTE_ALLOW_NONDETERMINISTIC_ALGO=0 pytest -v -s $TE_PATH/tests/pytorch/test_cuda_graphs.py
 pytest -v -s $TE_PATH/tests/pytorch/test_jit.py
 pytest -v -s $TE_PATH/tests/pytorch/test_fused_rope.py
 pytest -v -s $TE_PATH/tests/pytorch/test_float8tensor.py
