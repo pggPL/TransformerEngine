@@ -323,7 +323,7 @@ class AttentionParams:
             if fname != "fp8_meta":
                 if sf != of:
                     return False
-            elif sf["recipe"] != of["recipe"]:
+            elif sf.get("recipe", None) != of.get("recipe", None):
                 return False
         return True
 
