@@ -266,10 +266,12 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
       scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0;
       // Workaround for heuristic cache bug in cublasLt. This separates the MXFP8 cache key from non-block scaling.
       // CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE is unused for block scaling so it's safe to set.
-      const int64_t dummy_a_vec_stride = 1;
-      NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(
-          operationDesc, CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE, &dummy_a_vec_stride,
-          sizeof(dummy_a_vec_stride)));
+      if (cublasLtGetVersion() <= 120803) {
+        const int64_t dummy_a_vec_stride = 1;
+        NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(
+            operationDesc, CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE, &dummy_a_vec_stride,
+            sizeof(dummy_a_vec_stride)));
+      }
 #endif
     } else {
       NVTE_ERROR("Not implemented scaling modes: " + to_string(inputA->scaling_mode) + " and  " +
