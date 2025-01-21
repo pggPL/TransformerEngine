@@ -51,9 +51,9 @@ class ModelConfig:
 
 model_configs = {"small": ModelConfig(2, 32, 64, 2, 32)}
 
-fp8_recipes = [  # TODO(ksivamani): Figure out why order matters here.
-    recipe.BlockScaling(),
+fp8_recipes = [
     recipe.DelayedScaling(),
+    recipe.BlockScaling(),
 ]
 
 # Supported data types
