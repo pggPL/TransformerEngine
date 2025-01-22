@@ -358,6 +358,8 @@ def _test_basic_linear(
         test_device=device,
         test_is_fp8=(quantized_compute or quantized_weight),
     )
+    if isinstance(w_test, QuantizedTensor):
+        w_test = w_test.dequantize()
     dy_ref, dy_test = make_reference_and_test_tensors(
         out_shape,
         test_dtype=dtype,
@@ -366,7 +368,7 @@ def _test_basic_linear(
         requires_grad=False,
     )
     if isinstance(dy_test, QuantizedTensor):
-        dy_test = dy_test.dequantize().requires_grad_()
+        dy_test = dy_test.dequantize()
 
     # Plain PyTorch implementation
     y_ref = torch.nn.functional.linear(x_ref, w_ref)
@@ -488,12 +490,17 @@ def _test_linear(
         test_device=device,
         test_is_fp8=quantized_compute,
     )
+    if isinstance(x_test, QuantizedTensor):
+        with torch.no_grad():
+            x_test = x_test.dequantize().requires_grad_()
     w_ref, w_test = make_reference_and_test_tensors(
         (out_features, in_features),
         test_dtype=dtype,
         test_device=device,
         test_is_fp8=(quantized_compute or quantized_weight),
     )
+    if isinstance(w_test, QuantizedTensor):
+        w_test = w_test.dequantize()
     b_ref, b_test = None, None
     if bias:
         if tensor_parallel_mode == "row":
@@ -512,6 +519,8 @@ def _test_linear(
         test_is_fp8=quantized_compute,
         requires_grad=False,
     )
+    if isinstance(dy_test, QuantizedTensor):
+        dy_test = dy_test.dequantize()
 
     # Plain PyTorch implementation
     y_ref = torch.nn.functional.linear(x_ref, w_ref)
@@ -596,7 +605,7 @@ def _test_linear(
             model[0].bias.copy_(b_test)
         del w_test
         del b_test
-    with te.fp8_autocast(enabled=quantized_compute, recipe=recipe):
+    with te.fp8_autocast(enabled=quantized_compute, fp8_recipe=recipe):
         y_test = model(x_test)
     y_test.backward(dy_test)
 
@@ -783,20 +792,17 @@ def run_parallel_tests() -> None:
 
     # Linear op
     for config in itertools.product(
-        (False, True) if fp8_available else (False,),
+        quantization_list,
         ("column", "row"),
     ):
         if rank == 0:
             print(f"Running _test_linear with {config=}")
-        fp8, tensor_parallel_mode = config
+        quantization, tensor_parallel_mode = config
         dtype = torch.bfloat16 if is_bf16_compatible() else torch.float32
         _test_linear(
             bias=True,  # bias=False is tested in _test_basic_linear
             dtype=dtype,
-            fp8_compute=fp8,
-            fp8_input=fp8,
-            fp8_weight=fp8,
-            fp8_grad_output=fp8,
+            quantization=quantization,
             tensor_parallel_mode=tensor_parallel_mode,
         )
 
