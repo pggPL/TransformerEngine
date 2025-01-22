@@ -74,7 +74,10 @@ class Float8TensorBase:
         quantizer: Optional[Quantizer] = None,
         **kwargs,
     ):
-        instance = super().__new__(cls, *args, **kwargs)
+        if cls is Float8TensorBase:
+            instance = object.__new__(cls)
+        else:
+            instance = super().__new__(cls, *args, **kwargs)
         instance._data = data
         instance._quantizer = quantizer
         instance._fp8_dtype = fp8_dtype

@@ -2055,6 +2055,7 @@ class _custom_mha_fp8(torch.autograd.Function):
         mask_type: str,
         quantizers: list[Quantizer],
     ) -> torch.Tensor:
+        qkv_dtype = inp.dtype
 
         assert inp.dim() == 2
         in_features = qkv_weight.shape[-1]
@@ -2107,6 +2108,7 @@ class _custom_mha_fp8(torch.autograd.Function):
             q,
             k,
             v,
+            qkv_dtype,
             FusedAttnBackend["FP8"],
             attn_scale=None,
             dropout=p_dropout,
@@ -2126,6 +2128,7 @@ class _custom_mha_fp8(torch.autograd.Function):
         ctx.save_for_backward(*tensors_to_save)
         ctx.tensor_objects = tensor_objects
         ctx.aux_ctx_tensors = aux_ctx_tensors
+        ctx.qkv_dtype = qkv_dtype
         ctx.fp8_meta = fp8_meta
         ctx.cu_seqlens = cu_seqlens
         ctx.p_dropout = p_dropout
@@ -2167,6 +2170,7 @@ class _custom_mha_fp8(torch.autograd.Function):
                 v,
                 out,
                 proj_dgrad.view_as(out),
+                ctx.qkv_dtype,
                 fp8_dtype_backward,
                 ctx.aux_ctx_tensors,
                 FusedAttnBackend["FP8"],

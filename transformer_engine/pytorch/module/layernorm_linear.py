@@ -102,7 +102,6 @@ class _LayerNormLinear(torch.autograd.Function):
         ub_overlap_rs_dgrad: bool,
         ub_overlap_ag: bool,
         ub_name: str,
-        fp8_output: bool,
         fsdp_group: Union[dist_group_type, None],
         module: torch.nn.Module,
         skip_fp8_weight_update: bool,
@@ -593,18 +592,16 @@ class _LayerNormLinear(torch.autograd.Function):
             wgrad,
             grad_bias,
             None,  # use_bias
-            None,  # use_bias
-            None,  # use_bias
-            None,  # use_bias
-            None,  # use_bias
-            None,  # use_bias
-            None,  # use_bias
             None,  # eps
             None,  # is_first_microbatch
             None,  # fp8
             None,  # fp8_calibration
-            None,  # fp8_meta
             None,  # fuse_wgrad_accumulation
+            None,  # input_quantizer
+            None,  # weight_quantizer
+            None,  # output_quantizer
+            None,  # grad_output_quantizer
+            None,  # grad_input_quantizer
             None,  # cpu_offloading
             None,  # tp_group
             None,  # tp_size
@@ -624,8 +621,9 @@ class _LayerNormLinear(torch.autograd.Function):
             None,  # ub_overlap_rs_dgrad
             None,  # ub_overlap_ag
             None,  # ub_name
-            None,  # fp8_output
             None,  # fsdp_group
+            None,  # module
+            None,  # skip_fp8_weight_update
         )
 
 
@@ -1081,7 +1079,6 @@ class LayerNormLinear(TransformerEngineBaseModule):
                 self.ub_overlap_rs_dgrad,
                 self.ub_overlap_ag,
                 self.ub_name,
-                fp8_output,
                 self.fsdp_group,
                 self,
                 skip_fp8_weight_update,
