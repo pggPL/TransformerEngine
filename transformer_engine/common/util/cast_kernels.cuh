@@ -1243,31 +1243,6 @@ void fp8_quantize(const Tensor &input, const Tensor *act_input, const Tensor *no
   }
 }
 
-static void fp8_dequantize(const Tensor &input, Tensor *output, cudaStream_t stream) {
-  CheckInputTensor(input, "cast_input");
-  CheckOutputTensor(*output, "cast_output");
-  NVTE_CHECK(is_fp8_dtype(input.data.dtype), "Input must have FP8 type.");
-  NVTE_CHECK(!is_fp8_dtype(output->data.dtype), "Output must be in higher precision.");
-  NVTE_CHECK(output->data.shape == input.data.shape, "Input and output shapes need to match.");
-
-  if (is_tensor_scaling(input.scaling_mode)) {
-    const size_t N = product(input.data.shape);
-    TRANSFORMER_ENGINE_TYPE_SWITCH_FP8ONLY(
-        input.data.dtype, IType,
-        TRANSFORMER_ENGINE_TYPE_SWITCH_INPUT(
-            output->data.dtype, OType, constexpr int nvec = 32 / sizeof(OType);
-            detail::DequantizeParam p;
-            p.scale_inv = reinterpret_cast<const fp32 *>(input.scale_inv.dptr);
-            VectorizedUnaryKernelLauncher<nvec, detail::DequantizeParam, detail::dequantize_func>(
-                reinterpret_cast<const IType *>(input.data.dptr), nullptr,
-                reinterpret_cast<OType *>(output->data.dptr), nullptr, nullptr, nullptr, N, p,
-                stream););  // NOLINT(*)
-    );                      // NOLINT(*)
-  } else {
-    NVTE_ERROR("Not implemented scaling mode: " + to_string(input.scaling_mode) + ".");
-  }
-}
-
 namespace detail {
 
 template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ParamOP,
