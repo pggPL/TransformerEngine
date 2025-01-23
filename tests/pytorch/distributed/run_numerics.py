@@ -32,6 +32,11 @@ LOSS_FN = nn.MSELoss()
 QUANTIZATION = None
 
 
+# Disable TF32
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+
+
 # Quantization recipe setup
 def quantization_recipe() -> Recipe:
     if QUANTIZATION == "fp8":
