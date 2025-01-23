@@ -199,10 +199,6 @@ class MXFP8Tensor(MXFP8TensorBase, QuantizedTensor):
         # TODO(ksivamani): Fix the detach bug
         return MXFP8Tensor.make_like(self)
 
-    def _create_columnwise(self):
-        # TODO
-        pass
-
     def update_usage(self, rowwise_usage=True, columnwise_usage=True):
         """
         For MXFP8, columnwise scaled output is only produced by x2

@@ -96,19 +96,6 @@ std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(
  * Transpose
  **************************************************************************************************/
 
-std::vector<at::Tensor> fused_cast_transpose_bgrad(at::Tensor grad_output, at::Tensor scale,
-                                                   at::Tensor amax, at::Tensor scale_inv,
-                                                   transformer_engine::DType otype,
-                                                   int scale_offset = 0, int amax_offset = 0,
-                                                   int scale_inv_offset = 0);
-
-std::vector<at::Tensor> fused_fp8_transpose_bgrad(at::Tensor grad_output, at::Tensor scale,
-                                                  at::Tensor amax, at::Tensor scale_inv,
-                                                  transformer_engine::DType otype,
-                                                  transformer_engine::DType grad_bias_type,
-                                                  int scale_offset = 0, int amax_offset = 0,
-                                                  int scale_inv_offset = 0);
-
 std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
                                              std::optional<std::vector<py::handle>> output_list,
                                              std::vector<py::handle> quantizer_list,
@@ -116,9 +103,6 @@ std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
 
 at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype,
                          std::optional<at::Tensor> output = std::nullopt);
-
-void fp8_transpose_noalloc_noop(at::Tensor input, at::Tensor output, at::Tensor noop,
-                                transformer_engine::DType otype);
 
 namespace transformer_engine::pytorch {
 
