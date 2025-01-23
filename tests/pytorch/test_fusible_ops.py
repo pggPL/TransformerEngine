@@ -862,7 +862,7 @@ class TestBasicOps:
     @pytest.mark.parametrize("weight_shape", ((128, 128), (3, 5)))
     @pytest.mark.parametrize("in_shape", ((-1,), (5, 1, -1), (4, 4, 8, -1)))
     @pytest.mark.parametrize("dtype", _dtypes)
-    @pytest.mark.parametrize("quantization", (None, "fp8"))
+    @pytest.mark.parametrize("quantization", (None, "fp8", "mxfp8"))
     @pytest.mark.parametrize("accumulate_into_main_grad", (False, True))
     def test_basic_linear(
         self,
@@ -884,14 +884,14 @@ class TestBasicOps:
         )
 
     @pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
-    @pytest.mark.parametrize("quantization", ("fp8",))
+    @pytest.mark.parametrize("quantization", ("fp8", "mxfp8"))
     @pytest.mark.parametrize("quantized_compute", (False, True))
     @pytest.mark.parametrize("quantized_input", (False, True))
     @pytest.mark.parametrize("quantized_weight", (False, True))
     @pytest.mark.parametrize("quantized_output", (False, True))
     @pytest.mark.parametrize("quantized_grad_output", (False, True))
     @pytest.mark.parametrize("quantized_grad_input", (False, True))
-    def test_basic_linear_fp8(
+    def test_basic_linear_quantized(
         self,
         *,
         quantization: str,
@@ -915,7 +915,7 @@ class TestBasicOps:
         )
 
     @pytest.mark.parametrize("bias", (False, True))
-    @pytest.mark.parametrize("quantization", (None, "fp8"))
+    @pytest.mark.parametrize("quantization", (None, "fp8", "mxfp8"))
     @pytest.mark.parametrize("quantized_weight", (False, True))
     def test_linear(
         self,
@@ -1016,7 +1016,7 @@ class TestBasicOps:
     @pytest.mark.parametrize("in_shape", ((-1,), (6, 64, -1)))
     @pytest.mark.parametrize("dtype", _dtypes)
     @pytest.mark.parametrize("zero_centered_gamma", (False, True))
-    @pytest.mark.parametrize("quantization", (None, "fp8"))
+    @pytest.mark.parametrize("quantization", (None, "fp8", "mxfp8"))
     def test_layer_norm(
         self,
         *,
@@ -1186,7 +1186,7 @@ class TestBasicOps:
     @pytest.mark.parametrize("in_shape", ((-1,), (6, 64, -1)))
     @pytest.mark.parametrize("dtype", _dtypes)
     @pytest.mark.parametrize("zero_centered_gamma", (False, True))
-    @pytest.mark.parametrize("quantization", (None, "fp8"))
+    @pytest.mark.parametrize("quantization", (None, "fp8", "mxfp8"))
     def test_rmsnorm(
         self,
         *,
@@ -1397,7 +1397,7 @@ class TestBasicOps:
     @pytest.mark.parametrize("activation", ("relu", "gelu", "geglu", "reglu", "swiglu"))
     @pytest.mark.parametrize("out_shape", ((37,), (2, 13), (128, 1, 128)))
     @pytest.mark.parametrize("dtype", _dtypes)
-    @pytest.mark.parametrize("quantization", (None, "fp8"))
+    @pytest.mark.parametrize("quantization", (None, "fp8", "mxfp8"))
     def test_activation(
         self,
         *,
@@ -1563,7 +1563,7 @@ class TestFusedOps:
     @pytest.mark.parametrize("weight_shape", ((128, 128), (3, 5)))
     @pytest.mark.parametrize("in_shape", ((-1,), (1, 7, -1), (128, -1)))
     @pytest.mark.parametrize("dtype", _dtypes)
-    @pytest.mark.parametrize("quantization", (None, "fp8"))
+    @pytest.mark.parametrize("quantization", (None, "fp8", "mxfp8"))
     @pytest.mark.parametrize("quantized_weight", (False, True))
     def test_forward_linear_bias_activation(
         self,
@@ -1599,6 +1599,9 @@ class TestFusedOps:
             test_device=device,
             test_is_fp8=quantized_compute,
         )
+        if quantized_compute:
+            with torch.no_grad():
+                x_test = x_test.dequantize().requires_grad_()
         w_ref, w_test = make_reference_and_test_tensors(
             (out_features, in_features),
             test_dtype=dtype,
@@ -1670,7 +1673,7 @@ class TestFusedOps:
 
     @pytest.mark.parametrize("bias", (False, True))
     @pytest.mark.parametrize("dtype", _dtypes)
-    @pytest.mark.parametrize("quantization", (None, "fp8"))
+    @pytest.mark.parametrize("quantization", (None, "fp8", "mxfp8"))
     def test_forward_linear_bias_add(
         self,
         *,
@@ -1784,7 +1787,7 @@ class TestFusedOps:
             torch.testing.assert_close(db_test, b_ref.grad, **tols)
 
     @pytest.mark.parametrize("dtype", _dtypes)
-    @pytest.mark.parametrize("quantization", (None, "fp8"))
+    @pytest.mark.parametrize("quantization", (None, "fp8", "mxfp8"))
     def test_backward_linear_add(
         self,
         *,

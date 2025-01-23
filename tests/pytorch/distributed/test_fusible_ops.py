@@ -315,8 +315,8 @@ def _test_reduce_scatter(
 
 def _test_basic_linear(
     *,
-    local_weight_shape: tuple[int, int] = (16, 16),
-    batch_size: int = 16,
+    local_weight_shape: tuple[int, int] = (128, 128),
+    local_batch_size: int = 128,
     dtype: torch.dtype = torch.float32,
     device: torch.device = "cuda",
     quantization: Optional[str] = None,
@@ -334,10 +334,13 @@ def _test_basic_linear(
     # Tensor dimensions
     local_out_features, local_in_features = local_weight_shape
     out_features, in_features = local_out_features, local_in_features
+    batch_size = local_batch_size
     if tensor_parallel_mode == "column":
         out_features *= world_size
     elif tensor_parallel_mode == "row":
         in_features *= world_size
+    if sequence_parallel:
+        batch_size *= world_size
     in_shape = [batch_size, in_features]
     out_shape = [batch_size, out_features]
 
@@ -456,8 +459,8 @@ def _test_basic_linear(
 def _test_linear(
     *,
     bias: bool = True,
-    local_weight_shape: tuple[int, int] = (16, 16),
-    batch_size: int = 16,
+    local_weight_shape: tuple[int, int] = (128, 128),
+    local_batch_size: int = 128,
     dtype: torch.dtype = torch.float32,
     device: torch.device = "cuda",
     quantization: Optional[str] = None,
@@ -475,10 +478,13 @@ def _test_linear(
     # Tensor dimensions
     local_out_features, local_in_features = local_weight_shape
     out_features, in_features = local_out_features, local_in_features
+    batch_size = local_batch_size
     if tensor_parallel_mode == "column":
         out_features *= world_size
     elif tensor_parallel_mode == "row":
         in_features *= world_size
+    if sequence_parallel:
+        batch_size *= world_size
     in_shape = [batch_size, in_features]
     out_shape = [batch_size, out_features]
 
