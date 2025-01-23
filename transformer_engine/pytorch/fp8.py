@@ -372,9 +372,6 @@ class FP8GlobalStateManager:
                     _amax_and_scale_update(
                         amax_history, scale, get_fp8_max(recipe, forward), recipe
                     )
-        if cls.debug_enabled:
-            from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS
-            STATS_BUFFERS.log_stats(forward=forward)
 
     @classmethod
     def get_unique_autocast_key(

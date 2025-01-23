@@ -40,6 +40,7 @@ def per_tensor_cast(tensor: torch.Tensor,
         fp8_max = Format.E5M2.value.max_fwd
     amax = torch.max(torch.abs(tensor)).float()
     one = torch.ones(1, device=tensor.device)
+
     scale = _default_sf_compute(amax, one, fp8_max, margin)
 
     quantizer = Float8Quantizer(scale, amax, fp8_dtype)
@@ -99,7 +100,7 @@ class PerTensorScaling(TEConfigAPIMapper):
         return True
 
     @api_method 
-    def use_process_tensor(self, config, layer_name, tensor_name, gemm):
+    def use_process_tensor(self, config, layer_name, gemm, tensor_name):
         return True
 
     @api_method
@@ -108,10 +109,10 @@ class PerTensorScaling(TEConfigAPIMapper):
             if key not in ["gemm", "tensor", "margin"]:
                 raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")
        
-        assert default_quantizer is not None, f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: Provide FP8 dtype when using process_tensor for per_tensor_scaling. {layer_name}"
-        
-        nvinspect_api.log_message(f"Feature={self.__class__.__name__}, API=process_tensor: {gemm}, {tensor_name}: Per Tensor Scaling", layer_name)
+        assert default_quantizer is not None, \
+            f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: Provide FP8 dtype when using process_tensor for per_tensor_scaling. {layer_name}"
         
         margin = config.get('margin', self._get_margin_default())
         fp8_tensor = per_tensor_cast(tensor, default_quantizer.dtype, margin=margin, out=out)
         return fp8_tensor
+    

@@ -53,7 +53,6 @@ from ..tensor.quantized_tensor import (
     prepare_for_saving,
     restore_from_saved,
 )
-from ...debug.debug_quantization import DebugQuantizer
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
@@ -202,14 +201,16 @@ class _LayerNormLinear(torch.autograd.Function):
                     columnwise=(is_grad_enabled and weight_requires_grad),
                 )
                 ln_out = input_quantizer(ln_out)
+            if not fp8 and debug:
+                ln_out = input_quantizer(ln_out)
             ln_out_total = ln_out
 
         # Cast weight to expected dtype
         weightmat = weight
         quantized_weight = False
-        if not fp8:
+        if not fp8 and not debug:
             weightmat = cast_if_needed(weightmat, activation_dtype)
-        else:
+        else: # debug sometimes want to cache weightmat
             if not isinstance(weight, QuantizedTensor):
                 quantized_weight = True
 
@@ -246,14 +247,9 @@ class _LayerNormLinear(torch.autograd.Function):
             if weight_quantizer is not None:
                 weight_quantizer.calibrate(weight)
 
-        fprop_weight = weightmat
-        fprop_input = ln_out_total
-        if debug:
-            fprop_weight = fprop_weight.get(gemm="fprop")
-            fprop_input = fprop_input.get(gemm="fprop")
         out, _, _ = general_gemm(
-            fprop_weight,
-            fprop_input,
+            weightmat,
+            ln_out_total,
             get_workspace(),
             quantization_params=output_quantizer,
             out_dtype=activation_dtype,
@@ -261,6 +257,7 @@ class _LayerNormLinear(torch.autograd.Function):
             use_split_accumulator=_2X_ACC_FPROP,
             ub_algo=tex.CommOverlapAlgo.SPLIT_PIPELINED_AG_P2P if ub_overlap_ag else None,
             ub=ub_obj_lnout if ub_overlap_ag else None,
+            debug=debug
         )
         if not weight.requires_grad:
             if not return_layernorm_output:
@@ -470,24 +467,20 @@ class _LayerNormLinear(torch.autograd.Function):
             if ctx.dgrad_quantizer is not None:
                 ctx.dgrad_quantizer.set_usage(rowwise=True, columnwise=False)
 
-            if isinstance(grad_output, QuantizedTensor):
+            if hasattr(grad_output, "_transpose"):
                 if grad_output._transpose is None:
                     grad_output._create_transpose()
 
-            dgrad_weight = weight
-            dgrad_gradient = grad_output
-            if ctx.debug:
-                dgrad_weight = dgrad_weight.get(gemm="dgrad")
-                dgrad_gradient = dgrad_gradient.get(gemm="dgrad")
             dgrad, _, _ = general_gemm(
-                dgrad_weight,
-                dgrad_gradient,
+                weight,
+                grad_output,
                 get_workspace(),
                 layout="NN",
                 grad=True,
                 quantization_params=ctx.dgrad_quantizer,
                 out_dtype=ctx.activation_dtype,
                 use_split_accumulator=_2X_ACC_DGRAD,
+                debug=ctx.debug
             )
 
             # Launch tensor-parallel communication
@@ -518,14 +511,9 @@ class _LayerNormLinear(torch.autograd.Function):
                 # wgrad GEMM
                 # Note: Fuse with bgrad computation if needed
 
-                wgrad_input = ln_out_total
-                wgrad_gradient = grad_output
-                if ctx.debug:
-                    wgrad_input = wgrad_input.get(gemm="wgrad")
-                    wgrad_gradient = wgrad_gradient.get(gemm="wgrad")
                 wgrad, grad_bias_, _ = general_gemm(
-                    wgrad_input,
-                    wgrad_gradient,
+                    ln_out_total,
+                    grad_output,
                     get_workspace(),
                     layout="NT",
                     grad=True,
@@ -536,6 +524,8 @@ class _LayerNormLinear(torch.autograd.Function):
                     out=main_grad if ctx.fuse_wgrad_accumulation else None,
                     use_split_accumulator=_2X_ACC_WGRAD,
                     accumulate=accumulate_wgrad_into_param_main_grad,
+                    debug=ctx.debug,
+                    quantization_params=ctx.wgrad_quantizer
                 )
                 if grad_bias is None:
                     grad_bias = grad_bias_
@@ -800,7 +790,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
         self.debug = TEDebugState.debug_enabled
         self.debug_name = debug_name
         if not self.debug and debug_name is not None:
-            print(f"[Warning] Layer {self.debug_name} has a debug name, but nvidia-dlframework-inspect was not initialized.")
+            raise RuntimeError(f"[Error] Layer {self.debug_name} has a debug name, but nvidia-dlframework-inspect was not initialized.")
 
         if self.debug:
             if (ub_bulk_wgrad or ub_bulk_dgrad or ub_overlap_ag or ub_overlap_rs_dgrad):
@@ -1057,8 +1047,6 @@ class LayerNormLinear(TransformerEngineBaseModule):
         """
         if self.debug:
             self._validate_debug_name(overwrite_debug_name)
-            if TEDebugState.num_of_features_for_layer(self.debug_name) == 0:
-                self.debug = False
 
         if FP8GlobalStateManager.fp8_graph_capturing():
             skip_fp8_weight_update = FP8GlobalStateManager.get_skip_fp8_weight_update_tensor()
@@ -1088,15 +1076,16 @@ class LayerNormLinear(TransformerEngineBaseModule):
             else:
                 bias_tensor = getattr(self, self.bias_names[0])  # Unused
 
-            (
-                input_quantizer,
-                weight_quantizer,
-                output_quantizer,
-                gradient_quantizer,
-                dgrad_quantizer,
-                wgrad_quantizer,
-            ) = self._get_quantizers(fp8_output) if not self.debug else self._get_debug_quantizers(fp8_output)
-
+            
+            quantizers = self._get_quantizers(fp8_output) if not self.debug \
+                else self._get_debug_quantizers(fp8_output)
+            if self.debug:
+                from ...debug.debug_quantization import use_any_feature
+                if not use_any_feature(quantizers):
+                    quantizers = self._get_quantizers(fp8_output)
+                    self.debug = False
+                    self.debug_name = None
+            
             if torch.is_grad_enabled():
                 fwd_fn = _LayerNormLinear.apply
                 args = []
@@ -1200,6 +1189,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
 
         assert self.debug
 
+        from ...debug.debug_quantization import DebugQuantizer
         input_quantizer = DebugQuantizer(
             self.debug_name, "activation", input_quantizer, self.tp_group)
         weight_quantizer = DebugQuantizer(

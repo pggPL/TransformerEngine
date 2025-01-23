@@ -840,12 +840,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 inp = inp.contiguous()
             yield inp
 
-        # If not in fp8 autocast and debug, should log tensor stats.
-        if self.debug:
-            if FP8GlobalStateManager.FP8_AUTOCAST_DEPTH == 0:
-                from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS
-                STATS_BUFFERS.log_stats(forward=True)
-
 
         if self.fp8 and in_fp8_activation_recompute_phase():
             FP8GlobalStateManager.restore_fp8_meta_tensors(self.fp8_meta)
@@ -886,6 +880,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         # Non-FP8 case: bgrad is fused with wgrad for this case.
         if not ctx.fp8:
+            if ctx.debug:
+                grad_output = quantizer(grad_output)
             if gather_grad_output:
                 if not ctx.ub_overlap_ag:
                     grad_output, _ = gather_along_first_dim(grad_output, ctx.tp_group)

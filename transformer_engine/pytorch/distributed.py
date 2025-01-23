@@ -22,7 +22,6 @@ from .constants import dist_group_type
 from .fp8 import FP8GlobalStateManager
 from .tensor.float8_tensor import Quantizer
 from .tensor.quantized_tensor import QuantizedTensor
-from ..debug.debug_quantization import DebugQuantizer
 from .tensor._internal.float8_tensor_base import Float8TensorBase
 from .tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 
@@ -866,10 +865,7 @@ def gather_along_first_dim(
     input_is_quantized = isinstance(input_, QuantizedTensor)
     input_is_fp8 = isinstance(input_, _FP8TensorBase)
     quantizer_is_fp8 = isinstance(quantizer, Quantizer)
-    if isinstance(quantizer, DebugQuantizer):
-        quantizer_is_fp8 = quantizer.is_fp8()
     if input_is_fp8 or quantizer_is_fp8:
-
         # Quantize input tensor if needed
         if not input_is_fp8:
             if input_is_quantized:

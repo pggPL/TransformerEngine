@@ -7,8 +7,6 @@ import sys
 
 
 
-from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS, StatsBuffers
-
 class TEDebugState:
     """
     A class to manage the state of debug layers.
@@ -21,13 +19,16 @@ class TEDebugState:
 
     @classmethod
     def initialize(cls):
-        if cls.debug_enabled is False and "nv_dlfw_inspect" in sys.modules:
-            raise RuntimeError("[nv_dlfw_inspect] nv_dlfw_inspect module should be initialized before initialization of the first TE module")
-        cls.debug_enabled = "nv_dlfw_inspect" in sys.modules
-        initialized = True
+        if "nvdlfw_inspect" in sys.modules:
+            import nvdlfw_inspect.api as nvinspect_api
+            if cls.debug_enabled is False and nvinspect_api.DEBUG_MANAGER is not None:
+                raise RuntimeError("[nv_dlfw_inspect] nv_dlfw_inspect module should be initialized before initialization of the first TE module")
+            cls.debug_enabled = nvinspect_api.DEBUG_MANAGER is not None
+        
 
     @classmethod
     def reset(cls):
+        from .features.utils.stats_buffer import STATS_BUFFERS, StatsBuffers
         STATS_BUFFERS.reset()
         cls.layers_initialized.clear()
     
@@ -39,9 +40,6 @@ class TEDebugState:
         lc = cls.layer_count
         cls.layer_count += 1
         return lc
-
-    def num_of_features_for_layer(self, layer_name):
-        pass
 
     @classmethod
     def set_weight_tensor_tp_group_reduce(cls, enabled):

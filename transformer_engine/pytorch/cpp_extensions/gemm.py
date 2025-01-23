@@ -11,7 +11,6 @@ from ..tensor.quantized_tensor import Quantizer
 import transformer_engine_torch as tex
 from ..constants import TE_DType
 from ..utils import assert_dim_for_fp8_exec, get_sm_count
-from ...debug.debug_quantization import DebugQuantizer
 from ..tensor.quantized_tensor import QuantizedTensor
 from ..tensor.float8_tensor import Float8Tensor, Float8TensorBase
 from ..tensor.mxfp8_tensor import MXFP8Tensor, MXFP8TensorBase
@@ -65,6 +64,7 @@ def general_gemm(
     ub_algo: tex.CommOverlapAlgo = None,
     ub: Union[tex.CommOverlap, tex.CommOverlapP2P] = None,
     ub_buffer: Optional[torch.Tensor] = None,
+    debug: bool = False
 ) -> Iterable[Optional[torch.Tensor]]:
     """GEMM supporting fp8 inputs."""
 
@@ -77,7 +77,18 @@ def general_gemm(
             raise ValueError("Output tensor is not contiguous.")
 
     
-    if isinstance(quantization_params, DebugQuantizer):
+    quantization_params_final = quantization_params
+    if debug:
+        quantization_params_final = quantization_params.parent_quantizer
+
+        #import pdb; pdb.set_trace()
+        # Get tensor object from transposes
+        A = A.get_tensor(not transa)
+        B = B.get_tensor(transb)
+        assert (type(A) in [torch.Tensor, torch.nn.parameter.Parameter]) == (type(B) in [torch.Tensor, torch.nn.parameter.Parameter]),\
+              f"[Debug tools] Processed tensors should have the same type, but type(A) = {type(A)}, type(B) = {type(B)}"
+
+        # Bias processing that is not done inside Linear()
         if type(A) in [Float8TensorBase, Float8Tensor, MXFP8Tensor, MXFP8TensorBase] and out_dtype == torch.float32:
             if bias is not None:
                 bias = bias.to(torch.bfloat16)
@@ -91,9 +102,6 @@ def general_gemm(
     if bias is None and not grad:
         bias = _empty_tensor()
     
-    quantization_params_final = quantization_params
-    if isinstance(quantization_params, DebugQuantizer):
-        quantization_params_final = quantization_params._parent_quantizer
 
     args = (
         A,
@@ -234,9 +242,8 @@ def general_gemm(
                 B._columnwise_scale_inv,
             ) = tmp_scale_inverses
     
-    if quantization_params is not None:
-        # used by debug quantizers for the hooks
-        out = quantization_params.process_after_quantization(out)
+    if debug:
+        out = quantization_params.process_gemm_output(out)
 
 
     return out, bias_grad, gelu_input

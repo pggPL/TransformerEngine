@@ -113,7 +113,6 @@ class FakeQuantFp8(TEConfigAPIMapper):
         for key in config.keys():
             if key not in ["gemm", "tensor", "quant_format", "margin"]:
                 raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")
-        nvinspect_api.log_message(f"Feature={self.__class__.__name__}, API=process_tensor: {gemm}, {tensor_name}: QDQ", layer_name)
         
         if "quant_format" not in config:
             raise ValueError(f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: quant_format missing for Tensor: {tensor_name} in the config yaml for FakeQuantFp8 feature which is a required field")

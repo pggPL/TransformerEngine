@@ -91,6 +91,10 @@ all_normalizations = ["LayerNorm", "RMSNorm"]
 
 mask_types = ["causal", "no_mask"]
 
+if os.environ.get("DEBUG", False):
+    import nvdlfw_inspect.api as nvinspect_api
+    nvinspect_api.initialize(feature_dirs=os.environ["FEATURE_DIRS"])
+
 
 def get_causal_attn_mask(sq: int) -> torch.Tensor:
     return torch.triu(torch.ones(sq, sq, device="cuda"), diagonal=1).bool()

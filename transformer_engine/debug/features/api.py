@@ -124,25 +124,39 @@ class TEConfigAPIMapper(BaseConfigAPIMapper):
             raise ValueError(f"[NVTORCH INSPECT ERROR] Provide 'gemms_struct: List[Dict]' or 'gemms: List[str]' in the config yaml")
 
 
-class TEDefaultFeatures:
-    def fp8_gemm(self, config, layer_name, **kwargs):
-        """
-        Check whether a given layer runs in FP8. 
-        """
-        return True
 
-    def process_tensor(self, config, layer_name, **kwargs):
-        """
-        API to process a tensor. This must return a tensor.
-        """
+required_kwargs = {
+    "fp8_gemm": ["gemm"],
+    "use_process_tensor": ["tensor_name", "gemm"],
+    "process_tensor": ["tensor_name", "gemm"],
+    "use_look_at_tensor_before_process": ["tensor_name"],
+    "use_look_at_tensor_after_process": ["tensor_name"],
+    "look_at_tensor_before_process": ["tensor_name"],
+    "look_at_tensor_after_process": ["tensor_name"],
+    "default": ["tensor_name", "gemm"]
+}
+
+class TEDefaultFeatures:
+    def fp8_gemm(self, *args, **kwargs):
+        return True # if it is false, fp8_gemm will be turned off. Otherwise nothing happens.
+
+    def use_process_tensor(self, *args, **kwargs):
+        return False
+    
+    def process_tensor(self, *args, **kwargs):
         return kwargs["tensor"]
     
-    def process_quantized_tensor(self, config, layer_name, **kwargs):
-        """
-        API to process a tensor. This must return a tensor.
-        """
-        return kwargs["tensor"]
-
+    def look_at_tensor_before_process(self, *args, **kwargs):
+        pass
+    
+    def look_at_tensor_after_process(self, *args, **kwargs):
+        pass
+    
+    def use_look_at_tensor_before_process(self, *args, **kwargs):
+        return False
+    
+    def use_look_at_tensor_after_process(self, *args, **kwargs):
+        return False
 
 @Registry.register_namespace_api(namespace="transformer_engine")
 class TransformerEngineAPI (BaseNamespaceAPI):
@@ -156,11 +170,11 @@ class TransformerEngineAPI (BaseNamespaceAPI):
         BaseNamespaceAPI.__init__(self)
         self._default_api_impl = TEDefaultFeatures()
         self._cacheable_api_kwargs_map = {
-            "save_stats_for_logging": ["tensor_name"],
-            "save_fp8_stats_for_logging": ["tensor_name"],
             "fp8_gemm": ["gemm"],
+            "use_process_tensor": ["tensor_name", "tensor"],
             "process_tensor": ["tensor_name", "gemm"],
-            "process_quantized_tensor": ["tensor_name", "tensor"],
+            "look_at_tensor_before_process": ["tensor_name"],
+            "look_at_tensor_after_process": ["tensor_name"],
         }
 
     def is_multiple_feature_invocation_allowed(self, api_name):
@@ -175,14 +189,6 @@ class TransformerEngineAPI (BaseNamespaceAPI):
         """
         These args must be passed as kwargs in the API call for all TransformerEngine specific APIs.
         """
-        required_kwargs = {
-            "save_stats_for_logging": ["tensor_name", "tensor"],
-            "save_fp8_stats_for_logging": ["tensor_name", "tensor"],
-            "fp8_gemm": ["gemm"],
-            "process_tensor": ["tensor", "gemm", "tensor_name"],
-            "process_quantized_tensor": ["tensor_name", "tensor"],
-            "default": ["tensor_name", "gemm"]
-        }
 
         if api_name in required_kwargs:
             for kwarg in required_kwargs[api_name]:
@@ -196,8 +202,8 @@ class TransformerEngineAPI (BaseNamespaceAPI):
         """
         Overridden APIs are selected based on the GEMM name in the config and kwargs.
         """
-        tensor_parsing = False if api_name in {"fp8_gemm"} else True
-        gemm_parsing = False if api_name in {"save_stats_for_logging", "save_stats_for_logging_quantized",  "process_quantized_tensor"} else True
+        tensor_parsing = "tensor_name" in required_kwargs[api_name]
+        gemm_parsing =  "gemm" in required_kwargs[api_name]
         status, modified_config = feature_obj.parse_config_and_api(config, gemm_parsing=gemm_parsing, tensor_parsing=tensor_parsing, **kwargs)
         return status, modified_config
 

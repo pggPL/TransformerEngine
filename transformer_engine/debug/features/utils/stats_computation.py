@@ -68,6 +68,6 @@ STATS = {
     "l2_norm": (["l2_norm_square"], lambda x: torch.sqrt(torch.sum(x))),
     "cur_amax": (["amax"], torch.max),
     "dynamic_range": (["dynamic_range_top", "dynamic_range_bottom"], lambda x, y: torch.max(x) - torch.min(y)),
-    "underflows%": (["underflows_num", "numel"], lambda x, n: 100 * torch.sum(x) / torch.sum(n)),
-    "overflows%":(["overflows_num", "numel"], lambda x, n: 100 * torch.sum(x) / torch.sum(n)),
+    "underflows": (["underflows_num", "numel"], lambda x, n: 100 * torch.sum(x) / torch.sum(n)),
+    "overflows":(["overflows_num", "numel"], lambda x, n: 100 * torch.sum(x) / torch.sum(n)),
 }

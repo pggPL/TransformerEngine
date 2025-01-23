@@ -14,7 +14,7 @@
 
 import os
 
-LOG_FILE = os.path.join("debug_logs", "debug_log_globalrank-0.log")
+LOG_FILE = os.path.join("nvdlfw_inspect_logs", "nvdlfw_inspect_globalrank-0.log")
 
 def reset_debug_log():
     if os.path.isfile(LOG_FILE):

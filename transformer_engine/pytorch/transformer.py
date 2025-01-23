@@ -339,8 +339,8 @@ class TransformerLayer(torch.nn.Module):
 
         self.attn_input_format = attn_input_format
 
+        self.debug = TEDebugState.debug_enabled
         self.debug_name = debug_name
-        self.debug = TEDebugState.feature_enabled_for_layer()
 
         attention_args = (
             hidden_size,
@@ -382,7 +382,6 @@ class TransformerLayer(torch.nn.Module):
             return_bias=not self.parallel_attention_mlp,
             normalization=normalization,
             device=device,
-            debug=debug,
             debug_name=debug_name + ".self_attention" if debug_name is not None else None,
         )
 
@@ -397,7 +396,6 @@ class TransformerLayer(torch.nn.Module):
                 return_bias=True,
                 normalization=normalization,
                 device=device,
-                debug=debug,
                 debug_name=debug_name + ".inter_attention" if debug_name is not None else None,
             )
 
@@ -433,7 +431,6 @@ class TransformerLayer(torch.nn.Module):
             activation=activation,
             normalization=normalization,
             device=device,
-            debug=debug,
             debug_name=debug_name + ".layernorm_mlp" if debug_name is not None else None,
         )
 
@@ -688,7 +685,8 @@ class TransformerLayer(torch.nn.Module):
                 enc_dec_attn_mask[i].dtype == torch.bool for i in range(len(enc_dec_attn_mask))
             ), "Encoder-decoder attention mask must be boolean tensor(s)"
         
-        TransformerEngineBaseModule._validate_debug_name(self, overwrite_debug_name)
+        if self.debug:
+            TransformerEngineBaseModule._validate_debug_name(self, overwrite_debug_name)
 
         # For AMP
         if torch.is_autocast_enabled():

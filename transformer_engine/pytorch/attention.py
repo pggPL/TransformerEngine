@@ -17,6 +17,7 @@ import functools
 from dataclasses import dataclass, fields
 import numpy as np
 from packaging.version import Version as PkgVersion
+from transformer_engine.debug.debug_state import TEDebugState
 
 import torch
 import torch.nn.functional as F
@@ -7388,8 +7389,7 @@ class MultiheadAttention(torch.nn.Module):
         normalization: str = "LayerNorm",
         device: Union[torch.device, str] = "cuda",
         qkv_format: str = "sbhd",
-        debug: bool = False,
-        debug_name: str = ""
+        debug_name: str = None
     ) -> None:
         super().__init__()
 
@@ -7441,7 +7441,7 @@ class MultiheadAttention(torch.nn.Module):
         self.hidden_size_q = self.hidden_size_per_attention_head * num_attention_heads
         self.hidden_size_kv = self.hidden_size_per_attention_head * self.num_gqa_groups
 
-        self.debug = debug 
+        self.debug = TEDebugState.debug_enabled 
         self.debug_name = debug_name
 
 
@@ -7485,8 +7485,7 @@ class MultiheadAttention(torch.nn.Module):
                     ub_overlap_ag=ub_overlap_ag,
                     normalization=normalization,
                     ub_name="qkv",
-                    debug=debug,
-                    debug_name=debug_name + ".layernorm_qkv" if debug_name is not None else None
+                    debug_name=debug_name + ".layernorm_qkv" if debug_name is not None else None,
                     **common_gemm_kwargs,
                 )
             else:
@@ -7498,8 +7497,7 @@ class MultiheadAttention(torch.nn.Module):
                     return_bias=False,
                     parallel_mode=qkv_parallel_mode,
                     parameters_split=parameters_split,
-                    debug=debug,
-                    debug_name=debug_name + ".qkv" if debug_name is not None else None
+                    debug_name=debug_name + ".qkv" if debug_name is not None else None,
                     **common_gemm_kwargs,
                 )
         elif self.attention_type == "cross":
@@ -7521,8 +7519,7 @@ class MultiheadAttention(torch.nn.Module):
                     ub_overlap_ag=ub_overlap_ag,
                     normalization=normalization,
                     ub_name="qkv",
-                    debug=debug,
-                    debug_name=debug_name + ".layernorm_query" if debug_name is not None else None
+                    debug_name=debug_name + ".layernorm_query" if debug_name is not None else None,
                     **common_gemm_kwargs,
                 )
             else:
@@ -7533,8 +7530,7 @@ class MultiheadAttention(torch.nn.Module):
                     bias=bias,
                     return_bias=False,
                     parallel_mode=qkv_parallel_mode,
-                    debug=debug,
-                    debug_name=debug_name + ".query_layer" if debug_name is not None else None
+                    debug_name=debug_name + ".query_layer" if debug_name is not None else None,
                     **common_gemm_kwargs,
                 )
             self.key_value = Linear(
@@ -7545,8 +7541,7 @@ class MultiheadAttention(torch.nn.Module):
                 return_bias=False,
                 parallel_mode=qkv_parallel_mode,
                 parameters_split=("key", "value") if not fuse_qkv_params else None,
-                debug=debug,
-                debug_name=debug_name + ".key_value" if debug_name is not None else None
+                debug_name=debug_name + ".key_value" if debug_name is not None else None,
                 **common_gemm_kwargs,
             )
 
@@ -7576,8 +7571,7 @@ class MultiheadAttention(torch.nn.Module):
             ub_overlap_rs=ub_overlap_rs,
             ub_overlap_ag=ub_overlap_ag,
             ub_name="proj",
-            debug=debug,
-            debug_name=debug_name + ".proj" if debug_name is not None else None
+            debug_name=debug_name + ".proj" if debug_name is not None else None,
             **common_gemm_kwargs,
         )
 
@@ -7778,7 +7772,8 @@ class MultiheadAttention(torch.nn.Module):
             core_attention_bias_type in AttnBiasTypes
         ), f"core_attention_bias_type {core_attention_bias_type} is not supported!"
 
-        TransformerEngineBaseModule._validate_name(self, overwrite_debug_name)
+        if self.debug:
+            TransformerEngineBaseModule._validate_debug_name(self, overwrite_debug_name)
 
         # =================================================
         # Pre-allocate memory for key-values for inference

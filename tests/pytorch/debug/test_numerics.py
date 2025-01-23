@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
 
@@ -81,7 +81,6 @@ def _fp8_gemm_kernel(tensor1, scale1, dtype1, tensor2, scale2, dtype2, use_split
 def _emulate_linear(
     input: torch.Tensor,
     weight: torch.Tensor,
-    target: torch.Tensor,
     fprop_fp8: bool = False,
     fprop_input_fake_quant: tex.DType = None,
     fprop_input_scale: torch.Tensor = None,
@@ -120,7 +119,7 @@ def _emulate_linear(
     
     activation.retain_grad()
     
-    (loss_multiplier * LOSS_FN(activation, target)).backward(retain_graph=True)
+    (loss_multiplier * activation.sum()).backward(retain_graph=True)
     gradient = activation.grad.clone()
 
     if gradient_sync:
@@ -185,21 +184,22 @@ def create_config_file(func):
 
 def _cmp(ground_truth, output):
     torch.testing.assert_close(ground_truth["activation"], output["activation"])
-    torch.testing.assert_close(ground_truth["dgrad"], output["dgrad"])
     torch.testing.assert_close(ground_truth["wgrad"], output["wgrad"])
+    torch.testing.assert_close(ground_truth["dgrad"], output["dgrad"])
 
 
 def _init_model(weight):
-    model = transformer_engine.pytorch.Linear(IN_SIZE , OUT_SIZE, debug=True, debug_name="linear")
+    model = transformer_engine.pytorch.Linear(IN_SIZE , OUT_SIZE, debug_name="linear")
     with torch.no_grad():
         model.weight.copy_(weight.contiguous())
     return model
 
 
-def _run_forward_backward(x, target, model, loss_scale=1., is_first_microbatch=None):
+def _run_forward_backward(x,  model, loss_scale=1., is_first_microbatch=None):
     with tepytorch.fp8_autocast(enabled=True, fp8_recipe=FP8_RECIPE):
         y = model(x, is_first_microbatch=is_first_microbatch)
-    (LOSS_FN(y, target) * loss_scale).backward()
+    (y.sum() * loss_scale).backward()
+    nvinspect_api.step()
     return y
 
 
@@ -208,9 +208,7 @@ def _get_tensors():
     x = torch.randn((SEQ_LEN * BATCH_SIZE, IN_SIZE), requires_grad=True).cuda()
     x.retain_grad()
     weight = torch.randn((OUT_SIZE, IN_SIZE)).cuda()
-    num_classes = OUT_SIZE
-    target = torch.randint(0, num_classes, (SEQ_LEN * BATCH_SIZE,), device='cuda')
-    return x, weight, target
+    return x, weight
 
 DISABLE_FP8_CONFIG = Template("""disable_fp8_config:
   enabled: True
@@ -254,9 +252,9 @@ def run_disable_fp8_gemms(feature_dirs, fprop_fp8, dgrad_fp8, wgrad_fp8, **kwarg
     }
 
     _init_debug(kwargs['config_file'].name, kwargs['log_dir'], feature_dirs)
-    x, weight, target = _get_tensors()
+    x, weight= _get_tensors()
     model = _init_model(weight)
-    y = _run_forward_backward(x, target, model)
+    y = _run_forward_backward(x,  model)
 
     output = {
         "activation": y.clone(),
@@ -265,7 +263,7 @@ def run_disable_fp8_gemms(feature_dirs, fprop_fp8, dgrad_fp8, wgrad_fp8, **kwarg
     }
 
     x.grad.zero_()
-    ground_truth = _emulate_linear(x, weight, target, **fp8_kwargs)
+    ground_truth = _emulate_linear(x, weight, **fp8_kwargs)
     _cmp(ground_truth, output)
 
 
@@ -285,15 +283,15 @@ def run_disable_fp8_layer(feature_dirs, **kwargs):
     kwargs['config_file'].write(DISABLE_FP8_LAYER_CONFIG)
     kwargs['config_file'].flush()
 
-    x, weight, target = _get_tensors()
+    x, weight = _get_tensors()
     
-    ground_truth = _emulate_linear(x, weight, target)
+    ground_truth = _emulate_linear(x, weight)
     x.grad.zero_()
 
     _init_debug(kwargs['config_file'].name, kwargs['log_dir'], feature_dirs)
 
     model = _init_model(weight)
-    y = _run_forward_backward(x, target, model)
+    y = _run_forward_backward(x, model)
     
     output = {
         "activation": y.clone(),
@@ -404,12 +402,12 @@ def run_per_tensor_scaling(feature_dirs, fprop_inp, fprop_weight, dgrad_weight, 
     _prepare_per_tensor_scaling_config(fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, wgrad_input, wgrad_grad, kwargs['config_file'])
     _init_debug(kwargs['config_file'].name, kwargs['log_dir'], feature_dirs)
 
-    warmup_input, warmup_weight, target = _get_tensors()
+    warmup_input, warmup_weight = _get_tensors()
     model = _init_model(warmup_weight)
 
     # Warmup run to setup amax and scaling factors.
     for _ in range(AMAX_HISTORY_LEN):
-        _run_forward_backward(warmup_input, target, model)
+        _run_forward_backward(warmup_input, model)
     
     x = torch.randn_like(warmup_input, requires_grad=True).cuda()
     weight = torch.randn_like(warmup_weight, requires_grad=True).cuda()
@@ -427,7 +425,8 @@ def run_per_tensor_scaling(feature_dirs, fprop_inp, fprop_weight, dgrad_weight, 
         y = model(x, is_first_microbatch=True)
         model.zero_grad()
         y.retain_grad()
-        (LOSS_MULTIPLIER * LOSS_FN(y, target)).backward() # Loss multiplication to change gradient's order of magintude
+        (LOSS_MULTIPLIER * y.sum()).backward() # Loss multiplication to change gradient's order of magintude
+    
 
     output =  {
         "activation": y.clone(),
@@ -441,7 +440,7 @@ def run_per_tensor_scaling(feature_dirs, fprop_inp, fprop_weight, dgrad_weight, 
     # but it needs to be collected.
     set_current_scaling_factors(x, weight, y, input_kwargs, fp8_kwargs)
 
-    ground_truth = _emulate_linear(x, weight, target, loss_multiplier = LOSS_MULTIPLIER, **fp8_kwargs)
+    ground_truth = _emulate_linear(x, weight, loss_multiplier = LOSS_MULTIPLIER, **fp8_kwargs)
     _cmp(ground_truth, output)
 
 @pytest.mark.parametrize("fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, wgrad_input, wgrad_grad", subset_combinations)
@@ -460,23 +459,22 @@ def test_microbatching_per_tensor_scaling(feature_dirs, fprop_inp, fprop_weight,
         _init_debug(kwargs['config_file'].name, kwargs['log_dir'], feature_dirs)
 
         # Get data
-        x_full, weight, target_full = _get_tensors()
+        x_full, weight= _get_tensors()
         microbatch_size = x_full.size(0) // 2
-        target_mb1, target_mb2 = target_full[:microbatch_size], target_full[microbatch_size:]
         x_mb1 = x_full[:microbatch_size, ...].clone().detach().requires_grad_(True)
         x_mb2 = x_full[microbatch_size:, ...].clone().detach().requires_grad_(True)
 
         def init_and_warmup():
             model = _init_model(weight)
-            _run_forward_backward(x_mb1, target_mb1, model, loss_scale=0.5)
-            _run_forward_backward(x_mb2, target_mb2, model, loss_scale=0.5)
+            _run_forward_backward(x_mb1, model, loss_scale=0.5)
+            _run_forward_backward(x_mb2, model, loss_scale=0.5)
             return model
         
         # Run without is_first_microbatch
         
         model = init_and_warmup() # running next 2 iters does not change amaxes and scaling factors
-        y_mb1 = _run_forward_backward(x_mb1, target_mb1, model, loss_scale=0.5)
-        y_mb2 = _run_forward_backward(x_mb2, target_mb2, model, loss_scale=0.5)
+        y_mb1 = _run_forward_backward(x_mb1, model, loss_scale=0.5)
+        y_mb2 = _run_forward_backward(x_mb2, model, loss_scale=0.5)
 
         # Collect outputs
         output1 = {
@@ -487,8 +485,8 @@ def test_microbatching_per_tensor_scaling(feature_dirs, fprop_inp, fprop_weight,
 
         # Run with is_first_microbatch
         model = init_and_warmup() # running next 2 iters does not change amaxes and scaling factors
-        y_mb1 = _run_forward_backward(x_mb1, target_mb1, model, loss_scale=0.5, is_first_microbatch=True)
-        y_mb2 = _run_forward_backward(x_mb2, target_mb2, model, loss_scale=0.5, is_first_microbatch=False)
+        y_mb1 = _run_forward_backward(x_mb1, model, loss_scale=0.5, is_first_microbatch=True)
+        y_mb2 = _run_forward_backward(x_mb2, model, loss_scale=0.5, is_first_microbatch=False)
 
         # Collect outputs
         output2 = {
@@ -574,14 +572,14 @@ def run_fake_quant_fp8(feature_dirs, fprop_inp, fprop_weight, dgrad_weight, dgra
     fake_quant_fp8_create_config(fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, wgrad_input, wgrad_grad, kwargs['config_file'])
     _init_debug(kwargs['config_file'].name, kwargs['log_dir'], feature_dirs)
     
-    x, weight, target = _get_tensors()
+    x, weight = _get_tensors()
     model = _init_model(weight)
-    y = _run_forward_backward(x, target, model)
+    y = _run_forward_backward(x, model)
 
     output = {
         "activation": y.clone(),
         "wgrad": model.weight.grad.clone(),
         "dgrad": x.grad.clone()
     }
-    ground_truth = _emulate_linear(x, weight, target, **fp8_kwargs)
+    ground_truth = _emulate_linear(x, weight, **fp8_kwargs)
     _cmp(ground_truth, output)

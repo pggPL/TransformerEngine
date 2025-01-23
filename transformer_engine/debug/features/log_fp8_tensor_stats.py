@@ -65,11 +65,16 @@ class LogFp8TensorStats(BaseLogTensorStats):
     - end_step: int, train step to end logging. Default = -1 (don't stop logging once started).
     Tensor structure is described below:
     """
-    def _get_supported_stats_list(self):
+    def _get_supported_stats_list():
         return {"underflows", "overflows"}
 
+
     @api_method
-    def save_stats_for_logging_quantized(self, config, layer_name, tensor_name, tensor, skip_reduction=False, reduction_group=None, iteration=None):
+    def use_look_at_tensor_after_process(self, config, layer_name, tensor_name):
+        return True
+
+    @api_method
+    def look_at_tensor_after_process(self, config, layer_name, tensor_name, tensor, skip_reduction=False, reduction_group=None, iteration=None):
         assert type(tensor) in [Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase],\
             f"[NVTORCH INSPECT ERROR] Tensor {tensor_name} must be quantized tensor when using log_fp8_tensor_stats. Use log_tensor_stats for high precision tensors."
 
@@ -78,13 +83,10 @@ class LogFp8TensorStats(BaseLogTensorStats):
 
         FP8GlobalStateManager.debug_tool = True
         
-        stats_with_percent = []
         for stat in config['stats']:
             assert stat in ["underflows", "overflows"], f"[NVTORCH INSPECT ERROR] Statistic {stat} is not supported."
-            stats_with_percent.append(stat + "%")
-        stats = stats_with_percent
 
-        for stat in stats:
+        for stat in config['stats']:
             STATS_BUFFERS.try_add_buffer(layer_name, tensor_name, stat, options, reduction_group)
 
         if not self._check_params(config, layer_name, iteration=iteration):
@@ -92,4 +94,8 @@ class LogFp8TensorStats(BaseLogTensorStats):
 
         iteration = super()._get_current_iteration(iteration=iteration)
 
-        STATS_BUFFERS.feed(layer_name, tensor_name, stats, options, tensor, iteration, skip_reduction)
+        STATS_BUFFERS.feed(layer_name, tensor_name, config['stats'], options, tensor, iteration, skip_reduction)
+    
+    @api_method
+    def step(self):
+        STATS_BUFFERS.log_stats(LogFp8TensorStats._get_supported_stats_list())

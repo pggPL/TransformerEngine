@@ -15,7 +15,6 @@
 import torch
 
 from transformer_engine.debug.features.utils.stats_computation import STATS
-import nvdlfw_inspect.api as nvinspect_api
 from nvdlfw_inspect.debug_features.log_tensor_stats import LogTensorStats as BaseLogTensorStats
 from nvdlfw_inspect.registry import Registry, api_method
 from nvdlfw_inspect.utils import append_parent_docstring
@@ -61,13 +60,17 @@ class LogTensorStats(BaseLogTensorStats):
     Tensor structure is described below:
     """
 
-    def _get_supported_stats_list(self):
-        return super()._get_supported_stats_list() | {"cur_amax", "dynamic_range"}
+    def _get_supported_stats_list():
+        return BaseLogTensorStats._get_supported_stats_list(None) | {"cur_amax", "dynamic_range"}
 
     @api_method
-    def save_stats_for_logging(self, config, layer_name, tensor_name, tensor, skip_reduction=False, reduction_group=None, iteration=None):
+    def use_look_at_tensor_before_process(self, config, layer_name, tensor_name):
+        return True
 
-        assert tensor.dtype != torch.uint8, f"[NVTORCH INSPECT ERROR] Tensor {tensor_name} must be in high precision when using log_tensor_stats. Use log_fp8_tensor_stats for FP8 tensors."
+    @api_method
+    def look_at_tensor_before_process(self, config, layer_name, tensor_name, tensor, skip_reduction=False, reduction_group=None, iteration=None):
+        assert tensor.dtype != torch.uint8,\
+            f"[NVTORCH INSPECT ERROR] Tensor {tensor_name} must be in high precision when using log_tensor_stats. Use log_fp8_tensor_stats for FP8 tensors."
         FP8GlobalStateManager.debug_tool = True
         options = (config.get('start_step', None), config.get('end_step', None), config.get('start_end_list', None),)
 
@@ -80,5 +83,8 @@ class LogTensorStats(BaseLogTensorStats):
             assert stat in STATS.keys(), f"[NVTORCH INSPECT ERROR] Statistic {stat} is not supported."
 
         iteration = super()._get_current_iteration(iteration=iteration)
-
         STATS_BUFFERS.feed(layer_name, tensor_name, config['stats'], options, tensor, iteration, skip_reduction)
+    
+    @api_method
+    def step(self):
+        STATS_BUFFERS.log_stats(LogTensorStats._get_supported_stats_list())

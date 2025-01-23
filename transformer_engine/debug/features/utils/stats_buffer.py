@@ -109,7 +109,7 @@ class StatsBuffers:
             return
         buffer = _Buffer(layer_name, tensor_name, stat, reduction_group)
         self.buffers[(layer_name, tensor_name, stat, options)] = buffer
-        self.reduction_group_to_buffer[reduction_group].append((buffer, tensor_name))
+        self.reduction_group_to_buffer[reduction_group].append((buffer, stat))
 
     def feed(self, layer_name, tensor_name, stats, options, tensor, iteration, skip_reduciton):
         for stat in stats:
@@ -117,18 +117,19 @@ class StatsBuffers:
             buffer.feed(tensor, iteration)
             buffer.skip_reduction = skip_reduciton
 
-    def log_stats(self, forward):
+    def log_stats(self, stats_to_log):
         output = {}
         for reduction_group, buffers in self.reduction_group_to_buffer.items():
             changed_buffers = [
-                (i, buffer, tensor_name) 
-                for i, (buffer, tensor_name) in enumerate(buffers) 
+                (i, buffer, stat_name) 
+                for i, (buffer, stat_name) in enumerate(buffers) 
                 if gather_along_first_dim(buffer.modified.unsqueeze(0), process_group=reduction_group)[0].any()
             ]
-            for i, buffer, tensor_name in changed_buffers:
-                if (forward and tensor_name in ["activation", "weight"]) or (not forward and tensor_name == "gradient"):
-                    stat = buffer.log()
-                    output[(buffer.layer_name, buffer.tensor_name, buffer.stat, buffer.iteration)] = stat # for testing purpouses
+            for _, buffer, stat_name in changed_buffers:
+                if stat_name not in stats_to_log:
+                    continue
+                stat = buffer.log()
+                output[(buffer.layer_name, buffer.tensor_name, buffer.stat, buffer.iteration)] = stat # for testing purpouses
         
         return output 
 
