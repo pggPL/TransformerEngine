@@ -23,13 +23,16 @@ def get_torch_version():
 
 
 if torch.cuda.device_count() < 4:
-    pytest.skip("FSDP2 test requires at least 4 GPUs.")
+    pytest.skip("FSDP2 test requires at least 4 GPUs.", allow_module_level=True)
 
 if torch.cuda.device_count() % 2 != 0:
-    pytest.skip("Number of device should be divided by 2.")
+    pytest.skip("Number of device should be divided by 2.", allow_module_level=True)
 
 if not get_torch_version() >= PkgVersion("2.4"):
-    pytest.skip("FSDP2 requires PyTorch >= 2.4.0 with FSDP 2 support.")
+    pytest.skip(
+        "FSDP2 requires PyTorch >= 2.4.0 with FSDP 2 support.",
+        allow_module_level=True,
+    )
 
 fp8_available, reason_for_no_fp8 = FP8GlobalStateManager.is_fp8_available()
 
