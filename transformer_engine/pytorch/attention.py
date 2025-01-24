@@ -3836,7 +3836,9 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
                                 max_seqlen_q,
                                 max_seqlen_kv_,
                             ]
-                        if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
+                        if _use_flash_attn_3 or (
+                            _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
+                        ):
                             fa_forward_kwargs["window_size"] = window_size_per_step[i]
                         elif _flash_attn_2_7_0_plus:
                             fa_forward_kwargs["window_size_left"] = window_size_per_step[i][0]
@@ -4959,7 +4961,9 @@ class _SplitAlongDim(torch.autograd.Function):
         # pylint: disable=missing-function-docstring
         ctx.split_dim = split_dim
         ctx.split_size_or_sections = split_size_or_sections
-        if isinstance(mixed_x_layer, Float8TensorBase) and not isinstance(mixed_x_layer, Float8Tensor):
+        if isinstance(mixed_x_layer, Float8TensorBase) and not isinstance(
+            mixed_x_layer, Float8Tensor
+        ):
             return tuple(
                 Float8TensorBase(
                     fp8_scale_inv=mixed_x_layer._scale_inv,
@@ -5036,7 +5040,11 @@ class _SplitAlongDim(torch.autograd.Function):
                     new_shape,
                     strides,
                 )
-                return Float8Tensor.make_like(grad_outputs[0], data=ret, shape=ret.shape), None, None
+                return (
+                    Float8Tensor.make_like(grad_outputs[0], data=ret, shape=ret.shape),
+                    None,
+                    None,
+                )
 
             grad_outputs_data = [x._data for x in grad_outputs]
             data = torch.cat(grad_outputs_data, dim=split_dim)
@@ -5789,9 +5797,15 @@ class FlashAttention(torch.nn.Module):
                             query_layer, key_layer, value_layer = (
                                 QKV_quantizer(x) for x in [query_layer, key_layer, value_layer]
                             )
-                        fa_3_optional_forward_kwargs["descale_q"] = query_layer._scale_inv.unsqueeze(0)
-                        fa_3_optional_forward_kwargs["descale_k"] = key_layer._scale_inv.unsqueeze(0)
-                        fa_3_optional_forward_kwargs["descale_v"] = value_layer._scale_inv.unsqueeze(0)
+                        fa_3_optional_forward_kwargs["descale_q"] = (
+                            query_layer._scale_inv.unsqueeze(0)
+                        )
+                        fa_3_optional_forward_kwargs["descale_k"] = key_layer._scale_inv.unsqueeze(
+                            0
+                        )
+                        fa_3_optional_forward_kwargs["descale_v"] = (
+                            value_layer._scale_inv.unsqueeze(0)
+                        )
                         query_layer, key_layer, value_layer = (
                             convert_to_torch_float8(x, torch_dtype)
                             for x in [query_layer, key_layer, value_layer]
@@ -5839,7 +5853,11 @@ class FlashAttention(torch.nn.Module):
         if qkv_format == "sbhd":
             # (bs)hd -> bs(hd) -> sb(hd)
             if fp8 and fp8_meta["recipe"].fp8_mha:
-                output_data = output._data.reshape(batch_size, max_seqlen_q // cp_size, -1).transpose(0, 1).contiguous()
+                output_data = (
+                    output._data.reshape(batch_size, max_seqlen_q // cp_size, -1)
+                    .transpose(0, 1)
+                    .contiguous()
+                )
                 output = Float8Tensor.make_like(
                     output,
                     data=output_data,
