@@ -274,6 +274,10 @@ def test_dot_product_attention(
             config.max_seqlen_q != config.max_seqlen_kv
             and config.attn_mask_type in ["causal", "padding_causal"]
         )
+        and (
+            config.window_size[0] == -1
+            or _flash_attn_2_3_plus
+        )
     ):
         flash_attn_supported = True
 
