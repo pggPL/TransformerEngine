@@ -4957,7 +4957,7 @@ class _SplitAlongDim(torch.autograd.Function):
         # pylint: disable=missing-function-docstring
         ctx.split_dim = split_dim
         ctx.split_size_or_sections = split_size_or_sections
-        if isinstance(mixed_x_layer, Float8TensorBase):
+        if isinstance(mixed_x_layer, Float8TensorBase) and not isinstance(mixed_x_layer, Float8Tensor):
             return tuple(
                 Float8TensorBase(
                     fp8_scale_inv=mixed_x_layer._scale_inv,
@@ -4972,7 +4972,7 @@ class _SplitAlongDim(torch.autograd.Function):
                     dim=split_dim,
                 )
             )
-        if isinstance(mixed_x_layer, Float8TensorBase):
+        if isinstance(mixed_x_layer, Float8Tensor):
             return tuple(
                 Float8Tensor.make_like(
                     mixed_x_layer,
