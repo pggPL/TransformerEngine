@@ -292,8 +292,10 @@ class _Linear(torch.autograd.Function):
 
         with torch.cuda.nvtx.range("_Linear_backward"):
             saved_tensors = ctx.saved_tensors
-            inputmat, weight_fp8, weight, bias = restore_from_saved(
-                ctx.tensor_objects, saved_tensors
+            inputmat, weight_fp8, weight, bias = (
+                restore_from_saved(  # pylint: disable=unbalanced-tuple-unpacking
+                    ctx.tensor_objects, saved_tensors
+                )
             )
 
             # Since main_grad can be modified inplace, it should not be a part of saved_tensors

@@ -606,9 +606,7 @@ class GroupedLinear(TransformerEngineBaseModule):
                 [None] * self.num_gemms,
                 [None] * self.num_gemms,
             )
-            grad_output_quantizers, grad_input_quantizer = [None] * self.num_gemms, [
-                None
-            ] * self.num_gemms
+            grad_output_quantizers, _ = [None] * self.num_gemms, [None] * self.num_gemms
             if self.fp8:
                 input_quantizers = [
                     self.quantizers["scaling_fwd"][self._offsets["input"] + i]

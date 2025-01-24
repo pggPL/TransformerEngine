@@ -65,7 +65,6 @@ from ..tensor.quantized_tensor import (
     prepare_for_saving,
     restore_from_saved,
 )
-from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ..cpp_extensions import (
     general_gemm,
 )
@@ -242,6 +241,7 @@ class _LayerNormMLP(torch.autograd.Function):
             ln_out_return = ln_out_total if return_layernorm_output_gathered else ln_out
             if fp8:
                 if ub_overlap_ag:
+                    raise NotImplementedError
                     ln_out = pytex.cast_to_fp8(
                         ln_out,
                         fp8_meta["scaling_fwd"],
@@ -538,7 +538,7 @@ class _LayerNormMLP(torch.autograd.Function):
         # pylint: disable=missing-function-docstring
         with torch.cuda.nvtx.range("_LayerNormMLP_backward"):
             saved_tensors = ctx.saved_tensors
-            (
+            (  # pylint: disable=unbalanced-tuple-unpacking
                 inputmat,
                 ln_weight,
                 ln_out,

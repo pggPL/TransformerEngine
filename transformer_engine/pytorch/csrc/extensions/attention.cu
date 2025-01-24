@@ -92,7 +92,8 @@ std::vector<py::object> fused_attn_fwd(
     bool set_zero, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
     NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
     const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const py::handle Q,
-    const py::handle K, const py::handle V, const at::ScalarType fake_dtype, const c10::optional<at::Tensor> cu_seqlens_q_padded,
+    const py::handle K, const py::handle V, const at::ScalarType fake_dtype,
+    const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
     py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread) {
@@ -110,8 +111,7 @@ std::vector<py::object> fused_attn_fwd(
 
   // If qkv has FP8 dtype, fake_dtype_te is equal to the fake dtype of q, k, v - needed since torch do not have fp8 types.
   const transformer_engine::DType qkv_type = te_Q.dtype();
-  const transformer_engine::DType fake_dtype_te =
-      GetTransformerEngineDType(fake_dtype);
+  const transformer_engine::DType fake_dtype_te = GetTransformerEngineDType(fake_dtype);
 
   std::vector<size_t> q_shape = convertShape(te_Q.shape());
   std::vector<size_t> k_shape = convertShape(te_K.shape());
@@ -254,9 +254,8 @@ std::vector<py::object> fused_attn_bwd(
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
     const std::vector<int64_t> window_size, bool deterministic, const at::Tensor cu_seqlens_q,
     const at::Tensor cu_seqlens_kv, const py::handle Q, const py::handle K, const py::handle V,
-    const py::handle O, const py::handle dO, const at::ScalarType fake_dtype, 
-    const transformer_engine::DType dqkv_type,
-    const std::vector<at::Tensor> Aux_CTX_Tensors,
+    const py::handle O, const py::handle dO, const at::ScalarType fake_dtype,
+    const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
     py::handle dp_quantizer, py::handle dqkv_quantizer) {
@@ -272,8 +271,7 @@ std::vector<py::object> fused_attn_bwd(
   // qkv type from the te_Q
   std::unique_ptr<Quantizer> dQKV_quantizer = convert_quantizer(dqkv_quantizer);
   const transformer_engine::DType qkv_type = te_Q.dtype();
-  const transformer_engine::DType fake_dtype_te =
-      GetTransformerEngineDType(fake_dtype);
+  const transformer_engine::DType fake_dtype_te = GetTransformerEngineDType(fake_dtype);
 
   py::object s_python, dp_python;
   std::unique_ptr<Quantizer> S_quantizer = convert_quantizer(s_quantizer);

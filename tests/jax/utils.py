@@ -1405,7 +1405,7 @@ def dtype_tols(
 
     # Return immediately if tolerances are fully specified
     if rtol is not None and atol is not None:
-        return { "rtol": rtol, "atol": atol }
+        return {"rtol": rtol, "atol": atol}
 
     # Convert to JAX dtype if needed
     if isinstance(dtype, TEDType):
@@ -1428,7 +1428,7 @@ def dtype_tols(
             rtol = 0.0
         if atol is None:
             atol = 0.0
-        return { "rtol": rtol, "atol": atol }
+        return {"rtol": rtol, "atol": atol}
 
     # Estimate floating-point error
     finfo = jnp.finfo(dtype)
@@ -1445,7 +1445,7 @@ def dtype_tols(
         rtol = eps_relaxed
     if atol is None:
         atol = max(ulp, eps_relaxed)
-    return { "rtol": rtol, "atol": atol }
+    return {"rtol": rtol, "atol": atol}
 
 
 def sync_params_values(dst, src, transformations, sep="/"):

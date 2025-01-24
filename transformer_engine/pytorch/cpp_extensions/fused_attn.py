@@ -137,7 +137,7 @@ def fused_attn_fwd(
     v: torch.Tensor
                 input tensor V; shape sbhd, bshd or thd (see `qkv_layout` for details)
     fake_dtype: tex.DType
-                data type of Q, K and V - in case of high precision, fake dtype in case of FP8; 
+                data type of Q, K and V - in case of high precision, fake dtype in case of FP8;
                 in torch.dtype
     fused_attention_backend: tex.NVTE_Fused_Attn_Backend
                 please see FusedAttention module for details on supported backends.
@@ -335,7 +335,7 @@ def fused_attn_bwd(
                 input tensor dO (gradient of O); same data type as Q, K and V;
                 same shape as Q
     fake_dtype: tex.DType
-                data type of Q, K and V - in case of high precision, fake dtype in case of FP8; 
+                data type of Q, K and V - in case of high precision, fake dtype in case of FP8;
                 in torch.dtype
     dqkv_dtype: tex.DType
                 data type of dQ, dK and dV; in tex.DType, not torch.dtype

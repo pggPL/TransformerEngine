@@ -2285,7 +2285,9 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                         max_seqlen_q,
                                         max_seqlen_kv // 2,
                                     ]
-                                if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
+                                if _use_flash_attn_3 or (
+                                    _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
+                                ):
                                     fa_forward_kwargs["window_size"] = (-1, -1)
                                 if _flash_attn_2_7_0_plus:
                                     fa_forward_kwargs["window_size_left"] = -1
@@ -2425,7 +2427,9 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                         max_seqlen_q // 2,
                                         max_seqlen_kv,
                                     ]
-                                if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
+                                if _use_flash_attn_3 or (
+                                    _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
+                                ):
                                     fa_forward_kwargs["window_size"] = (-1, -1)
                                 if _flash_attn_2_7_0_plus:
                                     fa_forward_kwargs["window_size_left"] = -1
@@ -2716,7 +2720,6 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
         )
         ctx.save_for_backward(*tensors_to_save)
         ctx.tensor_objects = tensor_objects
-
 
         ctx.qkv_dtype = qkv_dtype
         ctx.QKV_quantizer = QKV_quantizer
@@ -3049,7 +3052,9 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                 ctx.max_seqlen_q,
                                 ctx.max_seqlen_kv,
                             ]
-                        if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
+                        if _use_flash_attn_3 or (
+                            _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
+                        ):
                             fa_backward_kwargs["window_size"] = (-1, 0)
                         if _flash_attn_2_7_0_plus:
                             fa_backward_kwargs["window_size_left"] = -1
@@ -3162,7 +3167,9 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                 ctx.max_seqlen_q,
                                 ctx.max_seqlen_kv // 2,
                             ]
-                        if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
+                        if _use_flash_attn_3 or (
+                            _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
+                        ):
                             fa_backward_kwargs["window_size"] = (-1, -1)
                         if _flash_attn_2_7_0_plus:
                             fa_backward_kwargs["window_size_left"] = -1
@@ -3278,7 +3285,9 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                 ctx.max_seqlen_q // 2,
                                 ctx.max_seqlen_kv,
                             ]
-                        if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
+                        if _use_flash_attn_3 or (
+                            _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
+                        ):
                             fa_backward_kwargs["window_size"] = (-1, -1)
                         if _flash_attn_2_7_0_plus:
                             fa_backward_kwargs["window_size_left"] = -1
@@ -4943,19 +4952,19 @@ class _SplitAlongDim(torch.autograd.Function):
         mixed_x_layer: torch.Tensor,
         split_dim: int,
         split_size_or_sections: Union[int, List[int], Tuple[int]],
-        squeeze=False
+        squeeze=False,
     ) -> Tuple[torch.Tensor, ...]:
         # pylint: disable=missing-function-docstring
         ctx.split_dim = split_dim
         ctx.split_size_or_sections = split_size_or_sections
-        if type(mixed_x_layer) == Float8TensorBase:
+        if isinstance(mixed_x_layer, Float8TensorBase):
             return tuple(
                 Float8TensorBase(
                     fp8_scale_inv=mixed_x_layer._scale_inv,
                     fp8_dtype=mixed_x_layer._fp8_dtype,
                     data=x.squeeze(split_dim) if squeeze else x,
                     shape=x.squeeze(split_dim).shape if squeeze else x.shape,
-                    quantizer=mixed_x_layer._quantizer
+                    quantizer=mixed_x_layer._quantizer,
                 )
                 for x in torch.split(
                     mixed_x_layer._data,
@@ -4963,7 +4972,7 @@ class _SplitAlongDim(torch.autograd.Function):
                     dim=split_dim,
                 )
             )
-        if type(mixed_x_layer) == Float8Tensor:
+        if isinstance(mixed_x_layer, Float8TensorBase):
             return tuple(
                 Float8Tensor.make_like(
                     mixed_x_layer,

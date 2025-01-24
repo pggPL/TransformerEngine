@@ -9,7 +9,6 @@
 #include "ATen/core/TensorBody.h"
 #include "extensions.h"
 
-
 std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
                                              std::optional<std::vector<py::handle>> output_list,
                                              std::vector<py::handle> quantizer_list,

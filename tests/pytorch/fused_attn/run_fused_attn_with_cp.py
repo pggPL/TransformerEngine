@@ -176,7 +176,11 @@ def run_dpa_with_cp(
     k = torch.randn(kv_input_shape, dtype=dtypes[dtype]).cuda()
     v = torch.randn(kv_input_shape, dtype=dtypes[dtype]).cuda()
     dout = torch.randn(attn_output_shape, dtype=dtypes[dtype]).cuda()
-    dout_quantizer = Float8Quantizer(fp8_dtype=tex.DType.kFloat8E5M2, scale=torch.tensor([1], dtype=torch.float32).cuda(), amax=torch.tensor([0], dtype=torch.float32).cuda())
+    dout_quantizer = Float8Quantizer(
+        fp8_dtype=tex.DType.kFloat8E5M2,
+        scale=torch.tensor([1], dtype=torch.float32).cuda(),
+        amax=torch.tensor([0], dtype=torch.float32).cuda(),
+    )
 
     # create flash attention bias
     if config.attn_bias_type not in ["no_bias", "alibi"]:

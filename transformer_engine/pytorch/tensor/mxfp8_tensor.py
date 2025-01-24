@@ -492,7 +492,7 @@ class _ReshapeFunc(torch.autograd.Function):
             shape = shape[0]
         if -1 in shape:
             shape = list(shape)
-            d_inferred = - math.prod(ctx.shape) // math.prod(shape)
+            d_inferred = -math.prod(ctx.shape) // math.prod(shape)
             for i, d in enumerate(shape):
                 if d == -1:
                     shape[i] = d_inferred
