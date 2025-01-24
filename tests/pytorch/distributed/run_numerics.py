@@ -149,7 +149,6 @@ def dist_print(msg, src=None, end="\n", error=False):
     stream = sys.stderr if error else sys.stdout
     if WORLD_RANK == (0 if src is None else src):
         stream.write(f"[rank{WORLD_RANK}] {msg}{end}\n")
-    dist.barrier()
 
 
 def _get_tolerances(dtype):
@@ -237,8 +236,8 @@ def _check_gradients(model_distributed, model_single, main_grad_check=False):
             )
 
         if grad_failed:
-            dist_print(i)
-            dist_print(name)
+            dist_print(i, src=WORLD_RANK)
+            dist_print(name, src=WORLD_RANK)
             dist_print(grad_info, src=WORLD_RANK, error=grad_failed)
         numerics_failed[0] = int(grad_failed)
         dist.all_reduce(numerics_failed, dist.ReduceOp.MAX, NCCL_WORLD)

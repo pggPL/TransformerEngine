@@ -54,7 +54,8 @@ from .. import cpp_extensions as pytex
 from ..constants import dist_group_type
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
-from ..tensor.float8_tensor import Float8Tensor, Float8Quantizer
+from ..tensor.float8_tensor import Float8Tensor
+from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ._common import apply_normalization
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
 
@@ -192,9 +193,8 @@ class _LayerNormMLP(torch.autograd.Function):
             raise ValueError("Missing quantizer for input tensor")
         if with_quantized_norm:
             if with_input_all_gather:
-                if isinstance(fc1_input_quantizer, Float8Quantizer):
-                    fc1_input_quantizer.set_usage(rowwise=True, columnwise=False)
-                else:
+                fc1_input_quantizer.set_usage(rowwise=True, columnwise=False)
+                if isinstance(fc1_input_quantizer, MXFP8Quantizer):
                     with_quantized_norm = False
             else:
                 fc1_input_quantizer.set_usage(
