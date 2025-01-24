@@ -1392,8 +1392,9 @@ def pack_tensor(
     indices = indices.repeat(1, tensor.shape[1], tensor.shape[2])
     if isinstance(tensor, Float8Tensor):
         tensor_data = torch.cat((tensor._data, padding_indice), dim=0)
+        gathered_data = torch.gather(tensor_data, 0, indices)
 
-        packed = Float8Tensor.make_like(tensor, data=torch.gather(tensor_data, 0, indices))
+        packed = Float8Tensor.make_like(tensor, data=gathered_data, shape=gathered_data.shape)
     else:
         tensor = torch.cat((tensor, padding_indice), dim=0)
 
@@ -1446,7 +1447,8 @@ def unpack_tensor(
     )
     if isinstance(tensor, Float8Tensor):
         unpacked.scatter_(0, indices, tensor._data)
-        unpacked = Float8Tensor.make_like(tensor, data=unpacked[0:-1, :, :])
+        unpacked_data = unpacked[0:-1, :, :]
+        unpacked = Float8Tensor.make_like(tensor, data=unpacked_data, shape=unpacked_data.shape)
     else:
         unpacked.scatter_(0, indices, tensor)
         unpacked = unpacked[0:-1, :, :]
@@ -2001,9 +2003,9 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                     flash_attn_fwd = _flash_attn_fwd
                 fa_forward_kwargs["dropout_p"] = dropout_p
                 fa_forward_kwargs["return_softmax"] = False
-                if _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus:
+                if (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus) or _use_flash_attn_3:
                     fa_forward_kwargs["window_size"] = (-1, 0) if causal else (-1, -1)
-                if _flash_attn_2_7_0_plus:
+                elif _flash_attn_2_7_0_plus:
                     fa_forward_kwargs["window_size_left"] = -1
                     fa_forward_kwargs["window_size_right"] = 0 if causal else -1
                 if _flash_attn_2_4_plus:
@@ -2289,7 +2291,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                     _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
                                 ):
                                     fa_forward_kwargs["window_size"] = (-1, -1)
-                                if _flash_attn_2_7_0_plus:
+                                elif _flash_attn_2_7_0_plus:
                                     fa_forward_kwargs["window_size_left"] = -1
                                     fa_forward_kwargs["window_size_right"] = -1
                                 fa_outputs = flash_attn_fwd(
@@ -2431,7 +2433,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                                     _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
                                 ):
                                     fa_forward_kwargs["window_size"] = (-1, -1)
-                                if _flash_attn_2_7_0_plus:
+                                elif _flash_attn_2_7_0_plus:
                                     fa_forward_kwargs["window_size_left"] = -1
                                     fa_forward_kwargs["window_size_right"] = -1
                                 fa_outputs = flash_attn_fwd(
@@ -3056,7 +3058,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                             _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
                         ):
                             fa_backward_kwargs["window_size"] = (-1, 0)
-                        if _flash_attn_2_7_0_plus:
+                        elif _flash_attn_2_7_0_plus:
                             fa_backward_kwargs["window_size_left"] = -1
                             fa_backward_kwargs["window_size_right"] = 0
                         if not _use_flash_attn_3:
@@ -3289,7 +3291,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                             _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus
                         ):
                             fa_backward_kwargs["window_size"] = (-1, -1)
-                        if _flash_attn_2_7_0_plus:
+                        elif _flash_attn_2_7_0_plus:
                             fa_backward_kwargs["window_size_left"] = -1
                             fa_backward_kwargs["window_size_right"] = -1
                         if not _use_flash_attn_3:
@@ -3381,7 +3383,7 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                         ]
                     if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
                         fa_backward_kwargs["window_size"] = (-1, -1)
-                    if _flash_attn_2_7_0_plus:
+                    elif _flash_attn_2_7_0_plus:
                         fa_backward_kwargs["window_size_left"] = -1
                         fa_backward_kwargs["window_size_right"] = -1
                     if not _use_flash_attn_3:
@@ -3834,9 +3836,9 @@ class AttnFuncWithCPAndKVAllGather(torch.autograd.Function):
                                 max_seqlen_q,
                                 max_seqlen_kv_,
                             ]
-                        if _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus:
+                        if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
                             fa_forward_kwargs["window_size"] = window_size_per_step[i]
-                        if _flash_attn_2_7_0_plus:
+                        elif _flash_attn_2_7_0_plus:
                             fa_forward_kwargs["window_size_left"] = window_size_per_step[i][0]
                             fa_forward_kwargs["window_size_right"] = window_size_per_step[i][1]
                         fa_outputs = flash_attn_fwd(
@@ -4181,9 +4183,9 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
                     flash_attn_fwd = _flash_attn_fwd
                 fa_forward_kwargs["dropout_p"] = dropout_p
                 fa_forward_kwargs["return_softmax"] = False
-                if _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus:
+                if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
                     fa_forward_kwargs["window_size"] = window_size
-                if _flash_attn_2_7_0_plus:
+                elif _flash_attn_2_7_0_plus:
                     fa_forward_kwargs["window_size_left"] = window_size[0]
                     fa_forward_kwargs["window_size_right"] = window_size[1]
                 if _flash_attn_2_4_plus:
@@ -4479,9 +4481,9 @@ class AttnFuncWithCPAndQKVOA2A(torch.autograd.Function):
                 else:
                     flash_attn_bwd = _flash_attn_bwd
                 fa_backward_kwargs["dropout_p"] = ctx.dropout_p
-                if _flash_attn_2_3_plus and not _flash_attn_2_7_0_plus:
+                if _use_flash_attn_3 or (_flash_attn_2_3_plus and not _flash_attn_2_7_0_plus):
                     fa_backward_kwargs["window_size"] = ctx.window_size
-                if _flash_attn_2_7_0_plus:
+                elif _flash_attn_2_7_0_plus:
                     fa_backward_kwargs["window_size_left"] = ctx.window_size[0]
                     fa_backward_kwargs["window_size_right"] = ctx.window_size[1]
                 if _flash_attn_2_4_plus:
@@ -5034,7 +5036,7 @@ class _SplitAlongDim(torch.autograd.Function):
                     new_shape,
                     strides,
                 )
-                return Float8Tensor.make_like(grad_outputs[0], data=ret), None, None
+                return Float8Tensor.make_like(grad_outputs[0], data=ret, shape=ret.shape), None, None
 
             grad_outputs_data = [x._data for x in grad_outputs]
             data = torch.cat(grad_outputs_data, dim=split_dim)
@@ -5621,7 +5623,7 @@ class FlashAttention(torch.nn.Module):
                     for x in (query_layer._data, key_layer._data, value_layer._data)
                 ]
                 query_layer, key_layer, value_layer = [
-                    Float8Tensor.make_like(x, data=x._data)
+                    Float8Tensor.make_like(x, data=x._data, shape=x._data.shape)
                     for x in (query_layer, key_layer, value_layer)
                 ]
             if context_parallel:
@@ -5766,6 +5768,7 @@ class FlashAttention(torch.nn.Module):
                     if fp8:
                         QKV_quantizer = quantizers["scaling_fwd"][META_QKV]
                         torch_dtype = get_fp8_torch_dtype(fp8_meta["recipe"], fprop_tensor=True)
+                        torch_orig_dtype = query_layer.dtype
 
                         def convert_to_torch_float8(tensor, dtype):
                             out = torch.Tensor().to(device=tensor.device, dtype=dtype)
@@ -5786,9 +5789,9 @@ class FlashAttention(torch.nn.Module):
                             query_layer, key_layer, value_layer = (
                                 QKV_quantizer(x) for x in [query_layer, key_layer, value_layer]
                             )
-                        fa_3_optional_forward_kwargs["descale_q"] = query_layer._scale_inv
-                        fa_3_optional_forward_kwargs["descale_k"] = key_layer._scale_inv
-                        fa_3_optional_forward_kwargs["descale_v"] = value_layer._scale_inv
+                        fa_3_optional_forward_kwargs["descale_q"] = query_layer._scale_inv.unsqueeze(0)
+                        fa_3_optional_forward_kwargs["descale_k"] = key_layer._scale_inv.unsqueeze(0)
+                        fa_3_optional_forward_kwargs["descale_v"] = value_layer._scale_inv.unsqueeze(0)
                         query_layer, key_layer, value_layer = (
                             convert_to_torch_float8(x, torch_dtype)
                             for x in [query_layer, key_layer, value_layer]
@@ -5813,6 +5816,8 @@ class FlashAttention(torch.nn.Module):
                             ) + e.args[1:]
                         raise
 
+                    if fp8:
+                        output = output.to(dtype=torch_orig_dtype)
                     if fp8 and fp8_meta["recipe"].fp8_mha:
                         O_quantizer = quantizers["scaling_fwd"][META_O]
                         output = O_quantizer(output)
@@ -5834,11 +5839,11 @@ class FlashAttention(torch.nn.Module):
         if qkv_format == "sbhd":
             # (bs)hd -> bs(hd) -> sb(hd)
             if fp8 and fp8_meta["recipe"].fp8_mha:
+                output_data = output._data.reshape(batch_size, max_seqlen_q // cp_size, -1).transpose(0, 1).contiguous()
                 output = Float8Tensor.make_like(
                     output,
-                    data=output._data.reshape(batch_size, max_seqlen_q // cp_size, -1)
-                    .transpose(0, 1)
-                    .contiguous(),
+                    data=output_data,
+                    shape=output_data.shape,
                 )
             else:
                 output = output.view(batch_size, max_seqlen_q // cp_size, -1).transpose(0, 1)
