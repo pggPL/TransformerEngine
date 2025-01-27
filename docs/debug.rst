@@ -1,11 +1,11 @@
 Precision debug tools
-============
+==============================================
 
 .. toctree::
    :caption: Debug
 
-   debug/get_started.ipynb
-   debug/config_file_structure.ipynb
+   debug/1_getting_started.ipynb
+   debug/2_config_file_structure.ipynb
    debug/api
-   debug/distributed.ipynb
-   debug/new_precisions.ipynb
+   debug/4_distributed.ipynb
+   debug/5_testing_new_precisions.ipynb
