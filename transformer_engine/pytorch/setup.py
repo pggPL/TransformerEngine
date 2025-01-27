@@ -12,14 +12,13 @@ import shutil
 from pathlib import Path
 
 import setuptools
-from torch.utils.cpp_extension import BuildExtension
 
 from importlib.metadata import version as get_pkg_version
 from importlib.metadata import PackageNotFoundError
 from packaging.version import Version as PkgVersion
 
 try:
-    import torch  # pylint: disable=unused-import
+    from torch.utils.cpp_extension import BuildExtension
 except ImportError as e:
     raise RuntimeError("This package needs Torch to build.") from e
 

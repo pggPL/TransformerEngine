@@ -19,18 +19,16 @@ from ...distributed import (
     gather_along_first_dim,
     reduce_scatter_along_first_dim,
 )
-from ...fp8 import FP8GlobalStateManager, get_fp8_te_dtype
+from ...fp8 import FP8GlobalStateManager
 from ...module.base import _2X_ACC_FPROP, _2X_ACC_DGRAD, _2X_ACC_WGRAD
-from ...tensor import Float8Quantizer, QuantizedTensor
+from ...tensor import Quantizer, QuantizedTensor
+from ...tensor.float8_tensor import Float8Quantizer
 from ...tensor._internal.float8_tensor_base import Float8TensorBase
 from ..op import BasicOperation, OperationContext
 from .._common import (
     canonicalize_device,
     canonicalize_dtype,
-    convert_tensor,
     devices_match,
-    is_float8_tensor,
-    reshape,
 )
 from ...utils import clear_tensor_data
 

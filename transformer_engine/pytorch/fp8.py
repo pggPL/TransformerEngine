@@ -45,8 +45,8 @@ def check_mxfp8_support() -> Tuple[bool, str]:
 
 def get_default_fp8_recipe() -> Recipe:
     """FP8 recipe with default args."""
-    # if get_device_compute_capability() >= (10, 0):  # blackwell and above
-    #    return BlockScaling()
+    if get_device_compute_capability() >= (10, 0):  # blackwell and above
+        return BlockScaling()
     return DelayedScaling()
 
 
@@ -122,6 +122,8 @@ class FP8GlobalStateManager:
         cls.fp8_available = None
         cls.reason_for_no_fp8 = ""
         cls.autocast_arguments = {}
+        cls.autocast_to_fp8_params = {}
+        cls.fp8_param_to_autocast = {}
         cls.skip_fp8_weight_update_tensor = None
         cls.mxfp8_available = None
         cls.reason_for_no_mxfp8 = ""
@@ -432,6 +434,10 @@ class FP8GlobalStateManager:
         """Copy the scaling factors and amaxes for recompute forward phase
         to ensure both forward steps are numerically same.
         """
+
+        if fp8_meta["recipe"].block():
+            return
+
         buffer_position_key = "global_fp8_buffer_pos_fwd_recompute"
 
         to_copy = [
@@ -455,6 +461,9 @@ class FP8GlobalStateManager:
         1 forward for indentical numerical outputs.
         """
 
+        if fp8_meta["recipe"].block():
+            return
+
         # Store updated amaxes and scales from phase 1 post forward.
         fp8_meta["updated_amax_history_fwd"] = fp8_meta["scaling_fwd"].amax_history
         fp8_meta["updated_scale_fwd"] = fp8_meta["scaling_fwd"].scale
@@ -470,6 +479,10 @@ class FP8GlobalStateManager:
     @staticmethod
     def restore_fp8_meta_tensors(fp8_meta: Dict[str, Any]) -> None:
         """Restore latest scaling factors and amaxes after recompute forward run."""
+
+        if fp8_meta["recipe"].block():
+            return
+
         fp8_meta["scaling_fwd"].amax_history.copy_(fp8_meta["updated_amax_history_fwd"])
         fp8_meta["scaling_fwd"].scale.copy_(fp8_meta["updated_scale_fwd"])
 
@@ -698,7 +711,10 @@ class RecipeState(abc.ABC):
 
     """
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/release_v2.0
     @staticmethod
     def create(
         recipe: Recipe,
@@ -809,7 +825,10 @@ class BlockScalingRecipeState(RecipeState):
 
     """
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/release_v2.0
     recipe: BlockScaling
     mode: str
     dtype: tex.DType

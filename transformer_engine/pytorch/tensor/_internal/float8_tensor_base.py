@@ -51,7 +51,7 @@ class Float8TensorBase:
     Float8Tensor inherits from the PyTorch tensor class and this mixin
     class. If this class is instantiated directly, it has the same
     data, lower CPU overhead, and less functionality. It should only
-    be instantiated directly for performance-critical internal usages.
+    be instantiated directly for performance-critical internal usage.
 
     """
 
@@ -74,7 +74,10 @@ class Float8TensorBase:
         quantizer: Optional[Quantizer] = None,
         **kwargs,
     ):
-        instance = super().__new__(cls, *args, **kwargs)
+        if cls is Float8TensorBase:
+            instance = object.__new__(cls)
+        else:
+            instance = super().__new__(cls, *args, **kwargs)
         instance._data = data
         instance._quantizer = quantizer
         instance._fp8_dtype = fp8_dtype
@@ -85,7 +88,7 @@ class Float8TensorBase:
         return instance
 
     def get_metadata(self) -> Dict[str, Any]:
-        # pylint: disable=missing-function-docstring
+        """Get this tensor's metadata."""
         return {
             "data": self._data,
             "fp8_scale_inv": self._scale_inv,
@@ -103,7 +106,7 @@ class Float8TensorBase:
         """
         tensors = [self._data, self._transpose]
         # self._data = None
-        # self._transpose = None # TODO - why
+        # self._transpose = None
         return tensors, self
 
     def restore_from_saved(
@@ -115,10 +118,11 @@ class Float8TensorBase:
         return tensors[2:]
 
     def get_data_tensors(self):
+        """Get this Tensor's data."""
         return self._data, self._transpose
 
     def dequantize(self, *, dtype: torch.dtype = torch.float32) -> torch.Tensor:
-        # pylint: disable=missing-function-docstring
+        """Dequantize to a higher precision."""
         return _FromFloat8Func.forward(None, self, dtype)
 
     def size(self, *args, **kwargs):

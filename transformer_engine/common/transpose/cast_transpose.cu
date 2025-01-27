@@ -220,15 +220,9 @@ __global__ void __launch_bounds__(block_size) cast_transpose_general_kernel(
 void cast_transpose(const Tensor &input, const Tensor &noop, Tensor *output_, cudaStream_t stream) {
   Tensor &output = *output_;
 
-  // Check no-op flag
-  if (noop.data.dptr != nullptr) {
-    NVTE_CHECK(noop.numel() == 1, "Expected 1 element, but found ", noop.numel(), ".");
-    NVTE_CHECK(noop.data.dtype == DType::kFloat32);
-    NVTE_CHECK(noop.data.dptr != nullptr);
-  }
-
+  CheckNoopTensor(noop, "cast_transpose_noop");
   CheckInputTensor(input, "cast_transpose_input");
-  CheckOutputTensor(output, "cast_output");
+  CheckOutputTensor(output, "cast_transpose_output");
 
   // Check that inputs and outputs are available
   NVTE_CHECK(input.has_data(), "Input is not allocated");

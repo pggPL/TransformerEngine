@@ -4,17 +4,14 @@
 
 """Internal function used by multiple modules."""
 
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+from typing import Any, List, Optional, Tuple, Union, Callable
 from dataclasses import dataclass
 
 import torch
 
 from .. import cpp_extensions as tex
-from ..fp8 import get_fp8_te_dtype
 from ..constants import TE_DType
 from ..utils import get_default_init_method
-
-from ..tensor.quantized_tensor import QuantizedTensor
 
 
 def _get_normalization_func(normalization: str, forward: bool):
@@ -32,7 +29,7 @@ def _get_normalization_func(normalization: str, forward: bool):
     return bwd_normalization_funcs[normalization]
 
 
-def _apply_normalization(
+def apply_normalization(
     inputmat: torch.Tensor,
     ln_out: torch.Tensor,
     ln_weight: torch.Tensor,
@@ -43,8 +40,8 @@ def _apply_normalization(
     normalization: str,
     fwd_ln_sm_margin: int,
     zero_centered_gamma: bool,
-    is_grad_enabled: bool,
 ):
+    """Apply normalization to input."""
     normalization_func = _get_normalization_func(normalization, True)
 
     inputs = (inputmat, ln_weight) if ln_bias is None else (inputmat, ln_weight, ln_bias)
@@ -54,7 +51,7 @@ def _apply_normalization(
         eps,
         ln_out,
         output_quantizer,
-        TE_DType[output_dtype] if output_dtype in TE_DType.keys() else output_dtype,
+        TE_DType[output_dtype] if output_dtype in TE_DType else output_dtype,
         fwd_ln_sm_margin,
         zero_centered_gamma,
     )
@@ -153,7 +150,7 @@ class _NoopCatFunc(torch.autograd.Function):
         return None, *grad_inputs
 
 
-def _noop_cat(
+def noop_cat(
     tensors: List[torch.Tensor],
     dim: int = 0,
 ) -> torch.Tensor:

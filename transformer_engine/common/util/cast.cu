@@ -18,6 +18,7 @@
 #include "../util/vectorized_pointwise.h"
 #include "../utils.cuh"
 #include "cast_kernels.cuh"
+#include "dequantize_kernels.cuh"
 #include "math.h"
 #include "ptx.cuh"
 #include "transformer_engine/activation.h"
@@ -141,6 +142,6 @@ void nvte_quantize_dbias_dsrelu(const NVTETensor input, const NVTETensor activat
 void nvte_dequantize(const NVTETensor input, NVTETensor output, cudaStream_t stream) {
   NVTE_API_CALL(nvte_dequantize);
   using namespace transformer_engine;
-  fp8_dequantize(*reinterpret_cast<const Tensor *>(input), reinterpret_cast<Tensor *>(output),
-                 stream);
+  detail::dequantize_helper(*reinterpret_cast<const Tensor *>(input),
+                            reinterpret_cast<Tensor *>(output), stream);
 }

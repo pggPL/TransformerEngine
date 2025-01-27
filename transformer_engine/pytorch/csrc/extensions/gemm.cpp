@@ -4,16 +4,18 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#include <Python.h>
+#include <pybind11/pybind11.h>
+
 #include <optional>
 #include <string>
 
+#include "../common.h"
 #include "common.h"
 #include "common/util/cuda_runtime.h"
 #include "common/util/system.h"
 #include "extensions.h"
-#include "object.h"
 #include "pybind.h"
-#include "pytorch/csrc/common.h"
 #include "transformer_engine/transformer_engine.h"
 
 namespace {

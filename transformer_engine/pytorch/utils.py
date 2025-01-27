@@ -11,6 +11,8 @@ from typing import Any, Callable, List, Optional, Tuple
 import torch
 import transformer_engine.pytorch.cpp_extensions as ext
 
+from .tensor.quantized_tensor import QuantizedTensor
+
 
 def requires_grad(*tensors: Tuple[Optional[torch.Tensor], ...]) -> None:
     """Check if any of the given tensors require gradient."""
@@ -27,9 +29,12 @@ def clear_tensor_data(*tensors: Tuple[Optional[torch.Tensor], ...]) -> None:
 
     Must be used carefully.
     """
+<<<<<<< HEAD
     # TODO: Figure out how to move that import to top level (additional overhead)
     from .tensor.quantized_tensor import QuantizedTensor
 
+=======
+>>>>>>> origin/release_v2.0
     for t in tensors:
         if t is not None:
             if isinstance(t, QuantizedTensor):

@@ -6,6 +6,8 @@
 
 #include "pybind.h"
 
+#include <Python.h>
+#include <pybind11/cast.h>
 #include <pybind11/detail/common.h>
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
@@ -13,11 +15,9 @@
 
 #include <stdexcept>
 
+#include "../common.h"
 #include "../extensions.h"
 #include "common.h"
-#include "object.h"
-#include "pybind11/cast.h"
-#include "pytorch/csrc/common.h"
 
 namespace transformer_engine::pytorch {
 
@@ -166,25 +166,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("ln_out"), py::arg("quantizer"), py::arg("otype"), py::arg("sm_margin"),
         py::arg("zero_centered_gamma"));
   m.def("rmsnorm_bwd", &rmsnorm_bwd, "Backward of RMSNorm");
-  m.def("fused_cast_transpose_noop", &fused_cast_transpose_noop,
-        "Cast + Transpose with noop option", py::call_guard<py::gil_scoped_release>(),
-        py::arg("input"), py::arg("noop"), py::arg("scale"), py::arg("amax"), py::arg("scale_inv"),
-        py::arg("input_cast"), py::arg("input_transpose"), py::arg("otype"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("fused_cast_transpose_bgrad", &fused_cast_transpose_bgrad, "Fused Cast + Transpose + BGRAD",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("fused_fp8_transpose_bgrad", &fused_fp8_transpose_bgrad, "Fused FP8 Transpose + BGRAD",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("scale"),
-        py::arg("amax"), py::arg("scale_inv"), py::arg("otype"), py::arg("grad_bias_type"),
-        py::arg("scale_offset") = 0, py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
-  m.def("fused_dswiglu_cast_transpose", &fused_dswiglu_cast_transpose,
-        "Fused SwiGLU backward + FP8 cast + FP8 transpose",
-        py::call_guard<py::gil_scoped_release>(), py::arg("grad_output"), py::arg("input"),
-        py::arg("grad_input"), py::arg("grad_input_transpose"), py::arg("scale"), py::arg("amax"),
-        py::arg("scale_inv"), py::arg("otype"), py::arg("scale_offset") = 0,
-        py::arg("amax_offset") = 0, py::arg("scale_inv_offset") = 0);
   m.def("fused_multi_quantize", &fused_multi_quantize, "Fused Multi-tensor Cast + Transpose",
         py::arg("input_list"), py::arg("output_list"), py::arg("quantizer_list"), py::arg("otype"));
   m.def("te_general_grouped_gemm", &te_general_grouped_gemm, "Grouped GEMM");
@@ -194,8 +175,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "Fused Attention FP8/BF16/FP16 BWD with separate Q, K and V");
   m.def("fp8_transpose", &fp8_transpose, "Transpose with FP8 I/O", py::arg("input"),
         py::arg("dtype"), py::kw_only(), py::arg("out"), py::call_guard<py::gil_scoped_release>());
-  m.def("fp8_transpose_noalloc_noop", &fp8_transpose_noalloc_noop,
-        "Transpose with FP8 I/O with noop option.", py::call_guard<py::gil_scoped_release>());
   m.def("fa_prepare_fwd", &fa_prepare_fwd, "Prepare QKV for Flash Attention",
         py::call_guard<py::gil_scoped_release>());
   m.def("fa_prepare_bwd", &fa_prepare_bwd, "Backward of QKV preparation for Flash Attention",
@@ -278,12 +257,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       .def_readwrite("scale", &transformer_engine::pytorch::FP8TensorMeta::scale)
       .def_readwrite("scale_inv", &transformer_engine::pytorch::FP8TensorMeta::scale_inv)
       .def_readwrite("amax_history", &transformer_engine::pytorch::FP8TensorMeta::amax_history);
-
-  py::class_<transformer_engine::pytorch::MXFP8TensorMeta>(m, "MXFP8TensorMeta")
-      .def(py::init<>())
-      .def_readwrite("scale", &transformer_engine::pytorch::MXFP8TensorMeta::scale)
-      .def_readwrite("scale_inv", &transformer_engine::pytorch::MXFP8TensorMeta::scale_inv)
-      .def_readwrite("amax_history", &transformer_engine::pytorch::MXFP8TensorMeta::amax_history);
 
   py::enum_<transformer_engine::pytorch::FP8FwdTensors>(m, "FP8FwdTensors")
       .value("GEMM1_INPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM1_INPUT)

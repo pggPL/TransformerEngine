@@ -41,8 +41,7 @@ py::object quantize(const at::Tensor& tensor, py::handle quantizer, const py::ob
   if (noop.has_value()) {
     te_noop = makeTransformerEngineTensor(*noop);
   } else {
-    auto opts = torch::TensorOptions().dtype(at::kFloat).device(torch::kCUDA);
-    te_noop = makeTransformerEngineTensor(at::empty({0}, opts));
+    te_noop = TensorWrapper();
   }
 
   if (te_output.numel() == 0) return out;

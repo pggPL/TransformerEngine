@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 
 import torch
 
-from .float8_tensor import Float8Tensor
+from .tensor.float8_tensor import Float8Tensor
 
 __all__ = ["get_cpu_offload_context"]
 
@@ -17,6 +17,7 @@ CPUOffloadEnabled = False
 
 
 def set_offloading_param(tensor, param_name, value):
+    """Set the type of the offloading needed for a tensor."""
     assert param_name in ["weight_offloading", "activation_offloading"]
     if tensor is None:
         return

@@ -15,6 +15,9 @@ from ..tensor.quantized_tensor import QuantizedTensor
 from ..tensor.float8_tensor import Float8Tensor, Float8TensorBase
 from ..tensor.mxfp8_tensor import MXFP8Tensor, MXFP8TensorBase
 
+from ..tensor.quantized_tensor import Quantizer
+from ..tensor._internal.float8_tensor_base import Float8TensorBase
+from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 
 
 
@@ -39,12 +42,44 @@ def _empty_tensor() -> torch.Tensor:
     return torch.Tensor().cuda()
 
 
-def swizzle(tensor, scale_inv, rowwise):
-    if scale_inv is None:
+def swizzle_inputs(A: torch.Tensor, B: torch.Tensor, layout: str):
+    """Swizzle gemm inputs and return original scaling factor inverses."""
+    if not isinstance(A, MXFP8TensorBase) or not isinstance(B, MXFP8TensorBase):
         return None
 
-    swizzle_func = tex.rowwise_swizzle if rowwise else tex.columnwise_swizzle
-    return swizzle_func(tensor, scale_inv)
+    original_scale_inverses = (
+        A._rowwise_scale_inv,
+        A._columnwise_scale_inv,
+        B._rowwise_scale_inv,
+        B._columnwise_scale_inv,
+    )
+
+    if layout[0] == "T":
+        A._rowwise_scale_inv = tex.rowwise_swizzle(A._rowwise_data, A._rowwise_scale_inv)
+    else:
+        A._columnwise_scale_inv = tex.columnwise_swizzle(
+            A._columnwise_data, A._columnwise_scale_inv
+        )
+
+    if layout[1] == "N":
+        B._rowwise_scale_inv = tex.rowwise_swizzle(B._rowwise_data, B._rowwise_scale_inv)
+    else:
+        B._columnwise_scale_inv = tex.columnwise_swizzle(
+            B._columnwise_data, B._columnwise_scale_inv
+        )
+
+    return original_scale_inverses
+
+
+def reset_swizzled_inputs(A, B, scale_inverses):
+    """Reset the swizzled scale inverses after GEMM."""
+    if scale_inverses is not None:
+        (
+            A._rowwise_scale_inv,
+            A._columnwise_scale_inv,
+            B._rowwise_scale_inv,
+            B._columnwise_scale_inv,
+        ) = scale_inverses
 
 
 def general_gemm(
@@ -215,36 +250,11 @@ def general_gemm(
         gelu_input = None
         bias_grad = None
     else:
-        if isinstance(A, MXFP8TensorBase) or isinstance(B, MXFP8TensorBase):
-            tmp_scale_inverses = (
-                A._rowwise_scale_inv,
-                A._columnwise_scale_inv,
-                B._rowwise_scale_inv,
-                B._columnwise_scale_inv,
-            )
-            (
-                A._rowwise_scale_inv,
-                A._columnwise_scale_inv,
-                B._rowwise_scale_inv,
-                B._columnwise_scale_inv,
-            ) = (
-                swizzle(A._rowwise_data, A._rowwise_scale_inv, True),
-                swizzle(A._columnwise_data, A._columnwise_scale_inv, False),
-                swizzle(B._rowwise_data, B._rowwise_scale_inv, True),
-                swizzle(B._columnwise_data, B._columnwise_scale_inv, False),
-            )
+        original_scale_inverses = swizzle_inputs(A, B, layout)
         out, bias_grad, gelu_input = fn(*args)
-        if isinstance(A, MXFP8TensorBase) or isinstance(B, MXFP8TensorBase):
-            (
-                A._rowwise_scale_inv,
-                A._columnwise_scale_inv,
-                B._rowwise_scale_inv,
-                B._columnwise_scale_inv,
-            ) = tmp_scale_inverses
-    
+        reset_swizzled_inputs(A, B, original_scale_inverses)
     if debug:
         out = quantization_params.process_gemm_output(out)
-
 
     return out, bias_grad, gelu_input
 
@@ -277,7 +287,7 @@ def general_grouped_gemm(
     # assert [a.is_contiguous() for a in A]
     # assert [b.is_contiguous() for b in B]
 
-    if isinstance(A[0], QuantizedTensor):
+    if isinstance(A[0], Float8TensorBase):
         for a, b in zip(A, B):
             assert_dim_for_fp8_exec(a._data)
             assert_dim_for_fp8_exec(b._data)

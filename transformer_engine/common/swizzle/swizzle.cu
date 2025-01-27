@@ -205,8 +205,13 @@ void swizzle_scaling_factors(const Tensor* input, Tensor* output, cudaStream_t s
     NVTE_ERROR("Not implemented caling mode " + to_string(input->scaling_mode) + ".");
   }
 
-  CheckInputTensor(*input, "scaling_factor_input");
-  CheckInputTensor(*output, "scaling_factor_output");
+  // Do nothing if tensor is empty
+  if (input->data.numel() == 0) {
+    return;
+  }
+
+  CheckInputTensor(*input, "scaling_factor_input", true);
+  CheckInputTensor(*output, "scaling_factor_output", true);
 
   auto& scaling_mode = input->scaling_mode;
 

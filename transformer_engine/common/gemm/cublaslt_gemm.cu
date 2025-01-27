@@ -264,6 +264,14 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
                                                        CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
                                                        &B_scale_inverse, sizeof(B_scale_inverse)));
       scaling_mode = CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0;
+      // Workaround for heuristic cache bug in cublasLt. This separates the MXFP8 cache key from non-block scaling.
+      // CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE is unused for block scaling so it's safe to set.
+      if (cublasLtGetVersion() <= 120803) {
+        const int64_t dummy_a_vec_stride = 1;
+        NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(
+            operationDesc, CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE, &dummy_a_vec_stride,
+            sizeof(dummy_a_vec_stride)));
+      }
 #endif
     } else {
       NVTE_ERROR("Not implemented scaling modes: " + to_string(inputA->scaling_mode) + " and  " +
@@ -283,8 +291,10 @@ void cublas_gemm(const Tensor *inputA, const Tensor *inputB, Tensor *outputD,
           operationDesc, CUBLASLT_MATMUL_DESC_D_SCALE_POINTER, &D_scale, sizeof(D_scale)));
       NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(
           operationDesc, CUBLASLT_MATMUL_DESC_AMAX_D_POINTER, &D_amax, sizeof(D_amax)));
+#if CUDA_VERSION >= 12080
       NVTE_CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(
           operationDesc, CUBLASLT_MATMUL_DESC_D_SCALE_MODE, &scaling_mode, sizeof(scaling_mode)));
+#endif
       // For FP8 output, cuBLAS requires C_type to match bias_type and
       // be FP16/BF16
       const cudaDataType_t C_type = bias ? bias_type : CUDA_R_16BF;

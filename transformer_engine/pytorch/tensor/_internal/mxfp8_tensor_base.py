@@ -5,7 +5,7 @@
 """Mixin class holding data specific for MXFP8Tensor"""
 
 from __future__ import annotations
-from typing import Optional, Dict, Any, Union, Tuple
+from typing import Optional, Dict, Any, Tuple
 import torch
 
 import transformer_engine_torch as tex
@@ -13,7 +13,7 @@ from transformer_engine_torch import DType as TE_DType
 
 from ...constants import TE_DType as torch_to_transformer_engine_dtype
 
-from ..quantized_tensor import _QuantizeFunc, Quantizer
+from ..quantized_tensor import Quantizer
 
 
 class _FromMXFP8Func(torch.autograd.Function):
@@ -29,10 +29,9 @@ class _FromMXFP8Func(torch.autograd.Function):
         dtype = torch_to_transformer_engine_dtype[dtype]
 
         # Make sure FP8 data is in expected format
-        if tensor._data is not None:
-            raise NotImplementedError("MXFP8 dequantize is WIP!")  # TODO
-        else:
-            raise NotImplementedError("Casting back from the transpose not implemented yet!")
+        if tensor._rowwise_data is not None:
+            return tex.dequantize(tensor, dtype)
+        raise NotImplementedError("Casting back from the transpose not implemented yet!")
 
     @staticmethod
     def backward(
@@ -45,6 +44,15 @@ class _FromMXFP8Func(torch.autograd.Function):
 
 
 class MXFP8TensorBase:
+    """Mixin class that holds data attributes of MXFP8Tensor.
+
+    MXFP8Tensor inherits from the PyTorch tensor class and this mixin
+    class. If this class is instantiated directly, it has the same
+    data, lower CPU overhead, and less functionality. It should only
+    be instantiated directly for performance-critical internal usage.
+
+    """
+
     _rowwise_data: Optional[torch.Tensor]
     _columnwise_data: Optional[torch.Tensor]
     _quantizer: Optional[Quantizer]
@@ -74,6 +82,7 @@ class MXFP8TensorBase:
         return instance
 
     def get_metadata(self) -> Dict[str, Any]:
+        """Get this tensor's metadata."""
         return {
             "rowwise_data": self._rowwise_data,
             "rowwise_scale_inv": self._rowwise_scale_inv,
@@ -84,8 +93,12 @@ class MXFP8TensorBase:
         }
 
     def prepare_for_saving(self) -> Tuple[list[Optional[torch.Tensor]], MXFP8TensorBase]:
-        """Prepare the tensor base for saving for backward.
-        After calling this, this tensor base does not hold any data."""
+        """Prepare the tensor base for saving for backward
+
+        After calling this, the tensor instance does not hold any
+        data.
+
+        """
         tensors = [self._rowwise_data, self._columnwise_data]
         # self._rowwise_data = None
         # self._columnwise_data = None
@@ -100,23 +113,24 @@ class MXFP8TensorBase:
         return tensors[2:]
 
     def get_data_tensors(self):
-        return self._data, self._transpose
+        """Get this Tensor's data."""
+        return self._rowwise_data, self._columnwise_data
 
     def dequantize(self, *, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+        """Dequantize to a higher precision."""
         return _FromMXFP8Func.forward(None, self, dtype)
 
-    def __repr__(self):
-        # TODO Do we need to print both?
-        # TODO Figure out dequantize
+    def size(self, *args, **kwargs):
+        # pylint: disable=missing-function-docstring
+        return self._rowwise_data.size(*args, **kwargs)
 
-        data_rowwise, data_colwise = self.dequantize()
+    def __repr__(self):
+        data_rowwise = self.dequantize()
 
         return (
             "MXFP8TensorBase("
             f"fp8_dtype={self._fp8_dtype}, "
-            f"rowwise_scale_inv={self._rowwise_scale_inv.item()}, "
             f"rowwise_scaled_data={data_rowwise}"
-            f"columnwise_scale_inv={self._columnwise_scale_inv.item()}, "
-            f"columnwise_scaled_data={data_colwise}"
+            f"rowwise_scale_inv={self._rowwise_scale_inv}, "
             ")"
         )

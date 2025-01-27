@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * See LICENSE for license information.
  ************************************************************************/
@@ -65,11 +65,23 @@ void swizzle_scaling_factors(transformer_engine::TensorWrapper& input, bool roww
   }
 }
 
-// TODO(ksivamani): Remove these later; only for debugging.
-at::Tensor rowwise_swizzle(at::Tensor input, at::Tensor scale_inv) {
+at::Tensor pad_scale_inv(at::Tensor scale_inv, bool rowwise) {
+  size_t dim_1_mod = (rowwise) ? 128 : 4;
+  size_t dim_2_mod = (rowwise) ? 4 : 128;
+  size_t dim_1_pad = (dim_1_mod - scale_inv.sizes()[0] % dim_1_mod) % dim_1_mod;
+  size_t dim_2_pad = (dim_2_mod - scale_inv.sizes()[1] % dim_2_mod) % dim_2_mod;
+  if (dim_1_pad == 0 && dim_2_pad == 0) {
+    return scale_inv;
+  }
+  return at::constant_pad_nd(scale_inv, {0, dim_2_pad, 0, dim_1_pad}, 0.0);
+}
+
+at::Tensor rowwise_swizzle(at::Tensor input, at::Tensor _scale_inv) {
   using namespace transformer_engine::pytorch;
 
   NVTE_CHECK(input.element_size() == 1, "8-bit input required for swizzling scaling factors.");
+
+  auto scale_inv = pad_scale_inv(_scale_inv, true);
 
   auto options = at::TensorOptions().dtype(scale_inv.dtype()).device(torch::kCUDA);
   auto swizzled_scale_inv = at::empty_like(scale_inv, options);
@@ -90,13 +102,20 @@ at::Tensor rowwise_swizzle(at::Tensor input, at::Tensor scale_inv) {
   return swizzled_scale_inv;
 }
 
-at::Tensor columnwise_swizzle(at::Tensor input, at::Tensor scale_inv) {
+at::Tensor columnwise_swizzle(at::Tensor input, at::Tensor _scale_inv) {
   using namespace transformer_engine::pytorch;
 
   NVTE_CHECK(input.element_size() == 1, "8-bit input required for swizzling scaling factors.");
 
+  auto scale_inv = pad_scale_inv(_scale_inv, false);
+
   auto options = at::TensorOptions().dtype(scale_inv.dtype()).device(torch::kCUDA);
   auto swizzled_scale_inv = at::empty_like(scale_inv, options);
+
+  // Return immediately if tensor is empty
+  if (scale_inv.numel() == 0) {
+    return swizzled_scale_inv;
+  }
 
   void* scale_inv_dptr = getDataPtr(scale_inv, 0);
   void* swizzled_scale_inv_dptr = getDataPtr(swizzled_scale_inv, 0);

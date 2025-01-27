@@ -224,7 +224,7 @@ class FusedScaleMaskSoftmax(nn.Module):
         scale = 1.0 if scale is None else scale
 
         # Disable for now until unalignment bug is fixed.
-        #if self.attn_mask_type in ["causal", "causal_bottom_right"]:
+        # if self.attn_mask_type in ["causal", "causal_bottom_right"]:
         #    return ScaledAlignedCausalMaskedSoftmax.apply(inp, scale)
 
         # input is 4D tensor (1, 1, sq, sk) or (b, 1, sq, sk)

@@ -3,7 +3,7 @@
 # See LICENSE for license information.
 
 """Linear API"""
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Callable, Dict, Optional, Tuple, Union
 
 import torch
 
@@ -18,7 +18,7 @@ from .base import (
     _2X_ACC_DGRAD,
     _2X_ACC_WGRAD,
 )
-from ._common import _noop_cat
+from ._common import noop_cat
 from ..fp8 import FP8GlobalStateManager
 from ..utils import (
     divide,
@@ -150,7 +150,6 @@ class _Linear(torch.autograd.Function):
         # Cast weight to expected dtype
         weightmat = weight
 
-        update_workspace = is_first_microbatch is None or is_first_microbatch
         if not fp8 and not debug:
             weightmat = cast_if_needed(weightmat, activation_dtype)
         else:
@@ -166,6 +165,7 @@ class _Linear(torch.autograd.Function):
                     weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
 
                 # FP8 cast to workspace buffer
+                update_workspace = is_first_microbatch is None or is_first_microbatch
                 weightmat = module.get_weight_workspace(
                     tensor=weight,
                     quantizer=weight_quantizer,
@@ -173,7 +173,6 @@ class _Linear(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
-                    is_grad_enabled=is_grad_enabled,
                 )
 
         # Cast bias to expected dtype
@@ -210,7 +209,6 @@ class _Linear(torch.autograd.Function):
             if fp8 and ub_obj_projout.is_fp8_ubuf():
                 assert fp8_output
                 ub_obj_projout.set_ubuf_scale_inv(torch.reciprocal(output_quantizer.scale))
-        
         out, _, _ = general_gemm(
             weightmat,
             inputmat_total,
@@ -222,7 +220,6 @@ class _Linear(torch.autograd.Function):
             ub_algo=ub_algo if ub_overlap_rs else None,
             ub=ub_obj_projout if ub_overlap_rs else None,
             ub_buffer=ub_buffer if ub_overlap_rs else None,
-            debug=debug
         )
 
         if is_grad_enabled:
@@ -307,8 +304,10 @@ class _Linear(torch.autograd.Function):
 
         with torch.cuda.nvtx.range("_Linear_backward"):
             saved_tensors = ctx.saved_tensors
-            inputmat, weight_fp8, weight, bias = restore_from_saved(
-                ctx.tensor_objects, saved_tensors
+            inputmat, weight_fp8, weight, bias = (
+                restore_from_saved(  # pylint: disable=unbalanced-tuple-unpacking
+                    ctx.tensor_objects, saved_tensors
+                )
             )
 
             # Since main_grad can be modified inplace, it should not be a part of saved_tensors
@@ -367,7 +366,7 @@ class _Linear(torch.autograd.Function):
             inputmat_total_work = None
             if ctx.requires_wgrad and ctx.parallel_mode == "column" and ctx.sequence_parallel:
                 quantizer = None
-                if ctx.fp8_wgrad:
+                if ctx.fp8:
                     quantizer = ctx.input_quantizer
                     quantizer.set_usage(rowwise=True, columnwise=True)
                 inputmat_total, inputmat_total_work = gather_along_first_dim(
@@ -894,9 +893,9 @@ class Linear(TransformerEngineBaseModule):
                         )
                 else:
                     unfused_weights = [w.dequantize() for w in unfused_weights]
-            weight_tensor = _noop_cat(unfused_weights)
+            weight_tensor = noop_cat(unfused_weights)
             if self.use_bias:
-                bias_tensor = _noop_cat([getattr(self, name) for name in self.bias_names])
+                bias_tensor = noop_cat([getattr(self, name) for name in self.bias_names])
             else:
                 bias_tensor = None
             

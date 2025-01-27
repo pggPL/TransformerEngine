@@ -220,15 +220,19 @@ void multi_cast_transpose(const std::vector<Tensor*> input_list, std::vector<Ten
     NVTE_CHECK(output.data.dtype == otype, "C output tensor types do not match.");
     NVTE_CHECK(output.data.dtype == otype, "T output tensor types do not match.");
 
-    NVTE_CHECK(input.data.shape.size() == 2, "Input tensor must have 2 dimensions.");
-    NVTE_CHECK(output.data.shape == input.data.shape,
-               "C output tensor shape does not match input tensor.");
-    NVTE_CHECK(output.columnwise_data.shape.size() == 2,
-               "T output tensor shape does not match input tensor.");
-    NVTE_CHECK(output.columnwise_data.shape[0] == input.data.shape[1],
-               "T output tensor shape does not match input tensor.");
-    NVTE_CHECK(output.columnwise_data.shape[1] == input.data.shape[0],
-               "T output tensor shape does not match input tensor.");
+    NVTE_CHECK(input.data.shape.size() == 2, "Input tensor must have 2 dimensions, but shape is ",
+               input.data.shape);
+    NVTE_CHECK(output.data.shape == input.data.shape, "C output tensor shape ", output.data.shape,
+               "does not match input tensor shape ", input.data.shape);
+    NVTE_CHECK(output.columnwise_data.shape.size() == 2, "T output tensor shape ",
+               output.columnwise_data.shape, "does not match input tensor shape ",
+               input.data.shape);
+    NVTE_CHECK(output.columnwise_data.shape[0] == input.data.shape[1], "T output tensor shape ",
+               output.columnwise_data.shape, "does not match input tensor shape ",
+               input.data.shape);
+    NVTE_CHECK(output.columnwise_data.shape[1] == input.data.shape[0], "T output tensor shape ",
+               output.columnwise_data.shape, "does not match input tensor shape ",
+               input.data.shape);
   }
 
   // Input matrices are divided into tiles

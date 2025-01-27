@@ -49,7 +49,8 @@ std::vector<py::object> fused_attn_fwd(
     bool set_zero, NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type,
     NVTE_Mask_Type attn_mask_type, const std::vector<int64_t> window_size,
     const at::Tensor cu_seqlens_q, const at::Tensor cu_seqlens_kv, const py::handle Q,
-    const py::handle K, const py::handle V, const c10::optional<at::Tensor> cu_seqlens_q_padded,
+    const py::handle K, const py::handle V, const at::ScalarType fake_dtype,
+    const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
     py::handle o_quantizer, const c10::optional<at::Tensor> Bias,
     const c10::optional<at::Generator> rng_gen, size_t rng_elts_per_thread);
@@ -59,8 +60,8 @@ std::vector<py::object> fused_attn_bwd(
     NVTE_QKV_Layout qkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
     const std::vector<int64_t> window_size, bool deterministic, const at::Tensor cu_seqlens_q,
     const at::Tensor cu_seqlens_kv, const py::handle Q, const py::handle K, const py::handle V,
-    const py::handle O, const py::handle dO, const transformer_engine::DType dqkv_type,
-    const std::vector<at::Tensor> Aux_CTX_Tensors,
+    const py::handle O, const py::handle dO, const at::ScalarType fake_dtype,
+    const transformer_engine::DType dqkv_type, const std::vector<at::Tensor> Aux_CTX_Tensors,
     const c10::optional<at::Tensor> cu_seqlens_q_padded,
     const c10::optional<at::Tensor> cu_seqlens_kv_padded, py::handle s_quantizer,
     py::handle dp_quantizer, py::handle dqkv_quantizer);
@@ -96,38 +97,6 @@ std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(
  * Transpose
  **************************************************************************************************/
 
-//void fused_cast_transpose(at::Tensor input, at::Tensor scale, at::Tensor amax, at::Tensor scale_inv,
-//                          at::Tensor input_cast, at::Tensor input_transpose,
-//                          transformer_engine::DType otype);
-
-void fused_cast_transpose_noop(at::Tensor input, at::Tensor noop, at::Tensor scale, at::Tensor amax,
-                               at::Tensor scale_inv, at::Tensor input_cast,
-                               at::Tensor input_transpose, transformer_engine::DType otype,
-                               int scale_offset = 0, int amax_offset = 0, int scale_inv_offset = 0);
-
-std::vector<at::Tensor> fused_cast_transpose_bgrad(at::Tensor grad_output, at::Tensor scale,
-                                                   at::Tensor amax, at::Tensor scale_inv,
-                                                   transformer_engine::DType otype,
-                                                   int scale_offset = 0, int amax_offset = 0,
-                                                   int scale_inv_offset = 0);
-
-std::vector<at::Tensor> fused_fp8_transpose_bgrad(at::Tensor grad_output, at::Tensor scale,
-                                                  at::Tensor amax, at::Tensor scale_inv,
-                                                  transformer_engine::DType otype,
-                                                  transformer_engine::DType grad_bias_type,
-                                                  int scale_offset = 0, int amax_offset = 0,
-                                                  int scale_inv_offset = 0);
-
-std::vector<py::object> fused_bgrad_dgelu_quanitze(py::handle grad_output, py::handle gelu_input,
-                                                   py::handle dinput_quantizer,
-                                                   transformer_engine::DType otype);
-
-void fused_dswiglu_cast_transpose(at::Tensor grad_output, at::Tensor input, at::Tensor grad_input,
-                                  at::Tensor grad_input_transpose, at::Tensor scale,
-                                  at::Tensor amax, at::Tensor scale_inv,
-                                  transformer_engine::DType otype, int scale_offset = 0,
-                                  int amax_offset = 0, int scale_inv_offset = 0);
-
 std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
                                              std::optional<std::vector<py::handle>> output_list,
                                              std::vector<py::handle> quantizer_list,
@@ -135,9 +104,6 @@ std::vector<py::object> fused_multi_quantize(std::vector<py::handle> input_list,
 
 at::Tensor fp8_transpose(at::Tensor input, transformer_engine::DType otype,
                          std::optional<at::Tensor> output = std::nullopt);
-
-void fp8_transpose_noalloc_noop(at::Tensor input, at::Tensor output, at::Tensor noop,
-                                transformer_engine::DType otype);
 
 namespace transformer_engine::pytorch {
 
@@ -317,7 +283,7 @@ void thd_second_half_lse_correction(at::Tensor lse, const at::Tensor &lse_per_st
                                     const at::Tensor &cu_seqlens, bool lse_packed);
 
 at::Tensor thd_read_second_half_lse(const at::Tensor &lse, const at::Tensor &cu_seqlens,
-                                    bool lse_packed);
+                                    bool lse_packed, int second_half_lse_seqlen);
 
 void thd_out_correction(at::Tensor out, const at::Tensor &out_per_step, const at::Tensor &lse,
                         const at::Tensor &lse_per_step, const at::Tensor &cu_seqlens,
@@ -394,6 +360,8 @@ void swizzle_scaling_factors(transformer_engine::TensorWrapper &input, bool tran
 at::Tensor rowwise_swizzle(at::Tensor input, at::Tensor scale_inv);
 
 at::Tensor columnwise_swizzle(at::Tensor input, at::Tensor scale_inv);
+
+at::Tensor pad_scale_inv(at::Tensor scale_inv, bool rowwise);
 
 /***************************************************************************************************
  * Comm+GEMM Overlap Wrappers

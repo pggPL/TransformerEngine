@@ -8,6 +8,8 @@
 #include <transformer_engine/transpose.h>
 
 #include <cfloat>
+#include <functional>
+#include <numeric>
 #include <type_traits>
 
 #include "../util/math.h"
@@ -184,8 +186,23 @@ void populate_cast_transpose_dbias_workspace_config(const Tensor &cast_output, /
 
   const size_t num_rows_partial_dbias = DIVUP(num_rows, tile_size_y);
 
-  workspace->data.shape = {num_rows_partial_dbias, row_length};
-  workspace->data.dtype = DType::kFloat32;
+  if (workspace->data.dptr == nullptr) {
+    workspace->data.shape = {num_rows_partial_dbias, row_length};
+    workspace->data.dtype = DType::kFloat32;
+  } else {
+    // Check that workspace matches expected size
+    const size_t workspace_size =
+        std::accumulate(workspace->data.shape.begin(), workspace->data.shape.end(), 1,
+                        std::multiplies<size_t>()) *
+        typeToSize(workspace->data.dtype);
+    const size_t required_size = num_rows_partial_dbias * row_length * typeToSize(DType::kFloat32);
+    NVTE_CHECK(!workspace->data.shape.empty(), "Invalid workspace dims (expected (",
+               num_rows_partial_dbias, ",", row_length, "), found ())");
+    NVTE_CHECK(workspace_size >= required_size, "Invalid workspace (expected dims=(",
+               num_rows_partial_dbias, ",", row_length, "), dtype=", to_string(DType::kFloat32),
+               "; found dims=", workspace->data.shape,
+               ", dtype=", typeToSize(workspace->data.dtype), ")");
+  }
 }
 
 template <int nvec, typename ComputeType, typename OutputType>
@@ -452,40 +469,40 @@ __global__ void __launch_bounds__(cast_transpose_num_threads)
 }
 
 static const char *ActTypeToString[] = {
-    "none",     // 0
-    "sigmoid",  // 1
-    "dsigmoid", // 2
-    "gelu",     // 3
-    "dgelu",    // 4
-    "qgelu",    // 5
-    "dqgelu",   // 6
-    "silu",     // 7
-    "dsilu",    // 8
-    "relu",     // 9
-    "drelu",    // 10
-    "srelu",    // 11
-    "dsrelu"    // 12
+    "none",      // 0
+    "sigmoid",   // 1
+    "dsigmoid",  // 2
+    "gelu",      // 3
+    "dgelu",     // 4
+    "qgelu",     // 5
+    "dqgelu",    // 6
+    "silu",      // 7
+    "dsilu",     // 8
+    "relu",      // 9
+    "drelu",     // 10
+    "srelu",     // 11
+    "dsrelu"     // 12
 };
 
 template <typename ComputeType, typename ParamOP, ComputeType (*OP)(ComputeType, const ParamOP &)>
 constexpr int get_activation_type() {
   constexpr decltype(OP) ActivationList[] = {
-    nullptr,                              // 0
-    &sigmoid<ComputeType, ComputeType>,   // 1
-    &dsigmoid<ComputeType, ComputeType>,  // 2
-    &gelu<ComputeType, ComputeType>,      // 3
-    &dgelu<ComputeType, ComputeType>,     // 4
-    &qgelu<ComputeType, ComputeType>,     // 5
-    &dqgelu<ComputeType, ComputeType>,    // 6
-    &silu<ComputeType, ComputeType>,      // 7
-    &dsilu<ComputeType, ComputeType>,     // 8
-    &relu<ComputeType, ComputeType>,      // 9
-    &drelu<ComputeType, ComputeType>,     // 10
-    &srelu<ComputeType, ComputeType>,     // 11
-    &dsrelu<ComputeType, ComputeType>     // 12
+      nullptr,                              // 0
+      &sigmoid<ComputeType, ComputeType>,   // 1
+      &dsigmoid<ComputeType, ComputeType>,  // 2
+      &gelu<ComputeType, ComputeType>,      // 3
+      &dgelu<ComputeType, ComputeType>,     // 4
+      &qgelu<ComputeType, ComputeType>,     // 5
+      &dqgelu<ComputeType, ComputeType>,    // 6
+      &silu<ComputeType, ComputeType>,      // 7
+      &dsilu<ComputeType, ComputeType>,     // 8
+      &relu<ComputeType, ComputeType>,      // 9
+      &drelu<ComputeType, ComputeType>,     // 10
+      &srelu<ComputeType, ComputeType>,     // 11
+      &dsrelu<ComputeType, ComputeType>     // 12
   };
-  #pragma unroll
-  for (int i=0; i<sizeof(ActivationList) / sizeof(ActivationList[0]); ++i) {
+#pragma unroll
+  for (int i = 0; i < sizeof(ActivationList) / sizeof(ActivationList[0]); ++i) {
     if (OP == ActivationList[i]) {
       return i;
     }
@@ -497,7 +514,6 @@ template <bool IS_DBIAS, bool IS_DACT, bool IS_ACT, typename ComputeType, typena
           ComputeType (*OP)(ComputeType, const ParamOP &)>
 void cast_transpose_fused(const Tensor &input, const Tensor *act_input, Tensor *output,
                           Tensor *dbias, Tensor *workspace, cudaStream_t stream) {
-
   // Check tensors, unless querying dbias workspace
   if (!IS_DBIAS || workspace->data.dptr != nullptr) {
     CheckInputTensor(input, "cast_transpose_fused_input");
@@ -606,8 +622,9 @@ void cast_transpose_fused(const Tensor &input, const Tensor *act_input, Tensor *
           if (!jit_compiled) {
             num_blocks = DIVUP(num_tiles * n_warps_per_tile, n_warps_per_block);
           } if constexpr (IS_DBIAS) {
+            // Check workspace size
+            populate_cast_transpose_dbias_workspace_config(*output, workspace, nvec_out);
             if (workspace->data.dptr == nullptr) {
-              populate_cast_transpose_dbias_workspace_config(*output, workspace, nvec_out);
               return;
             }
           }
@@ -1217,13 +1234,13 @@ void dgated_act_cast_transpose(const Tensor &input, const Tensor &gated_act_inpu
 // Explicit template instantiation
 template void cast_transpose_fused<true, false, false, float, transformer_engine::Empty, nullptr>(
     const Tensor &, const Tensor *, Tensor *, Tensor *, Tensor *, cudaStream_t);
-#define NVTE_INSTANTIATE_ACTIVATION(op) \
+#define NVTE_INSTANTIATE_ACTIVATION(op)                                                    \
   template void cast_transpose_fused<false, false, true, float, transformer_engine::Empty, \
-                                     transformer_engine:: op <float, float>>( \
-    const Tensor &, const Tensor *, Tensor *, Tensor *, Tensor *, cudaStream_t);    \
+                                     transformer_engine::op<float, float>>(                \
+      const Tensor &, const Tensor *, Tensor *, Tensor *, Tensor *, cudaStream_t);         \
   template void cast_transpose_fused<false, true, false, float, transformer_engine::Empty, \
-                                     transformer_engine:: d ## op <float, float>>( \
-    const Tensor &, const Tensor *, Tensor *, Tensor *, Tensor *, cudaStream_t);
+                                     transformer_engine::d##op<float, float>>(             \
+      const Tensor &, const Tensor *, Tensor *, Tensor *, Tensor *, cudaStream_t);
 NVTE_INSTANTIATE_ACTIVATION(relu);
 NVTE_INSTANTIATE_ACTIVATION(srelu);
 NVTE_INSTANTIATE_ACTIVATION(gelu);

@@ -3,8 +3,7 @@
 # See LICENSE for license information.
 
 """GroupedLinear API"""
-from typing import Union, Optional, Callable, Tuple, List, Dict, Any
-import itertools
+from typing import Union, Optional, Callable, Tuple, List
 
 import torch
 
@@ -17,7 +16,7 @@ from .base import (
     _2X_ACC_DGRAD,
     _2X_ACC_WGRAD,
 )
-from ..fp8 import get_fp8_te_dtype, FP8GlobalStateManager
+from ..fp8 import FP8GlobalStateManager
 from ..utils import (
     divide,
     cast_if_needed,
@@ -33,15 +32,12 @@ from ..distributed import (
     in_fp8_activation_recompute_phase,
 )
 from ..cpp_extensions import (
-    cast_to_fp8,
-    fp8_cast_transpose_bgrad_fused,
-    fp8_multi_cast_transpose_fused,
     general_grouped_gemm,
 )
 from ..constants import GemmParallelModes, dist_group_type, TE_DType
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
-from ..tensor import Float8Tensor, QuantizedTensor
+from ..tensor.float8_tensor import Float8Tensor
 from ..cpu_offload import is_cpu_offload_enabled
 
 from ..tensor.quantized_tensor import (
@@ -88,6 +84,10 @@ class _GroupedLinear(torch.autograd.Function):
         weights = weights_and_biases[:num_gemms]
         biases = weights_and_biases[num_gemms:]
         device = inp.device
+
+        # TODO Support MXFP8  # pylint: disable=fixme
+        if fp8 and FP8GlobalStateManager.get_fp8_recipe().block():
+            raise NotImplementedError("GroupedLinear does not yet support MXFP8")
 
         # Make sure input dimensions are compatible
         in_features = weights[0].shape[-1]
@@ -140,7 +140,6 @@ class _GroupedLinear(torch.autograd.Function):
                         cache_name=(None if is_first_microbatch is None else f"weight{i}"),
                         update_workspace=update_workspace,
                         skip_update_flag=skip_fp8_weight_update,
-                        is_grad_enabled=is_grad_enabled,
                     )
                     weights_fp8.append(weight_fp8)
             else:
@@ -279,6 +278,7 @@ class _GroupedLinear(torch.autograd.Function):
                     layout="NN",
                     m_splits=ctx.m_splits,
                     grad=True,
+                    use_split_accumulator=_2X_ACC_DGRAD,
                 )
 
             if ctx.weights_requires_grad:
@@ -606,9 +606,7 @@ class GroupedLinear(TransformerEngineBaseModule):
                 [None] * self.num_gemms,
                 [None] * self.num_gemms,
             )
-            grad_output_quantizers, grad_input_quantizesr = [None] * self.num_gemms, [
-                None
-            ] * self.num_gemms
+            grad_output_quantizers, _ = [None] * self.num_gemms, [None] * self.num_gemms
             if self.fp8:
                 input_quantizers = [
                     self.quantizers["scaling_fwd"][self._offsets["input"] + i]

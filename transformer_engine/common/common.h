@@ -198,7 +198,9 @@ TRANSFORMER_ENGINE_TYPE_NAME(half)
 TRANSFORMER_ENGINE_TYPE_NAME(nv_bfloat16)
 TRANSFORMER_ENGINE_TYPE_NAME(__nv_fp8_e4m3)
 TRANSFORMER_ENGINE_TYPE_NAME(__nv_fp8_e5m2)
+#if CUDA_VERSION >= 12080
 TRANSFORMER_ENGINE_TYPE_NAME(__nv_fp8_e8m0)
+#endif
 #undef TRANSFORMER_ENGINE_TYPE_NAME
 
 }  // namespace detail
@@ -420,8 +422,11 @@ struct is_fp8<fp8e5m2> : std::true_type {};
 
 size_t typeToSize(const DType type);
 
-void CheckInputTensor(const Tensor &t, const std::string &name);
-void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empty = false);
+void CheckNoopTensor(const Tensor &t, const std::string &name);
+void CheckInputTensor(const Tensor &t, const std::string &name,
+                      bool check_scale_inv_alignment = false);
+void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empty = false,
+                       bool check_scale_inv_alignment = false);
 
 bool is_fp8_dtype(const DType t);
 

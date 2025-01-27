@@ -11,11 +11,11 @@ import torch
 
 from transformer_engine_torch import FP8TensorMeta
 from ..fp8 import FP8GlobalStateManager
-from ..tensor import Float8Tensor
+from ..tensor.float8_tensor import Float8Tensor
 from ..utils import (
-    canonicalize_device,  # pylint: disable=unused-import
-    canonicalize_dtype,  # pylint: disable=unused-import
-    devices_match,  # pylint: disable=unused-import
+    canonicalize_device,
+    canonicalize_dtype,
+    devices_match,
 )
 
 

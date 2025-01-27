@@ -130,6 +130,35 @@ class Float8Quantizer(Quantizer):
         amin, amax = tensor.aminmax()
         self.amax.copy_(torch.max(-amin, amax))
 
+    def create_tensor_from_data(
+        self,
+        data: torch.Tensor,
+        fake_dtype=torch.float32,
+        requires_grad: bool = False,
+        internal: bool = False,
+    ):
+        """Create Float8Tensor from raw uint8 data"""
+        assert data.dtype == torch.uint8
+        if internal:
+            return Float8TensorBase(
+                data=data,
+                fp8_scale_inv=1 / self.scale,
+                fp8_dtype=self.dtype,
+                requires_grad=requires_grad,
+                data_transpose=None,
+                quantizer=self,
+            )
+        return Float8Tensor(
+            shape=data.shape,
+            dtype=fake_dtype,
+            data=data,
+            fp8_scale_inv=1 / self.scale,
+            fp8_dtype=self.dtype,
+            requires_grad=requires_grad,
+            data_transpose=None,
+            quantizer=self,
+        )
+
 
 class Float8Tensor(Float8TensorBase, QuantizedTensor):
     """Experimental tensor class with FP8 data
@@ -288,7 +317,9 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
             memory_format=memory_format
         ):
             return self
-        raise ValueError("Float8Tensor does not support different memory formats!")
+        return Float8Tensor.make_like(tensor=self, data=self._data.contiguous())
+
+        # raise ValueError("Float8Tensor does not support different memory formats!")
 
     def _reset_caches(self) -> None:
         """
@@ -335,6 +366,17 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
                 data_transpose=out_transpose,
                 quantizer=tensor._quantizer,
             )
+
+        if func in [aten.slice.Tensor, aten.select.int]:
+            tensor = args[0]
+            data = tensor._data
+            data_slice = data.__torch_dispatch__(
+                func,
+                types,
+                [data] + list(args[1:]),
+                kwargs,
+            )
+            return Float8Tensor.make_like(tensor, data=data_slice, shape=data_slice.shape)
 
         # Related to FSDP2
         if func == aten.split.Tensor:

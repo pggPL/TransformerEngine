@@ -177,6 +177,8 @@ class BlockScaling(Recipe):
 
     margin: int = 0
     fp8_format: Format = Format.E4M3
+    fp8_dpa: bool = False
+    fp8_mha: bool = False
 
     def __post_init__(self) -> None:
         assert self.fp8_format != Format.E5M2, "Pure E5M2 training is not supported."

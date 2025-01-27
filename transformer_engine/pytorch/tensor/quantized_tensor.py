@@ -5,7 +5,7 @@
 """Tensor with quantized data"""
 
 from __future__ import annotations
-from typing import Optional, Tuple, Iterable, Any, Dict
+from typing import Optional, Tuple, Iterable, Any, Dict, Union
 import abc
 import copy
 
@@ -15,15 +15,20 @@ from torch.utils._pytree import tree_map
 import transformer_engine_torch as tex
 
 
-def prepare_for_saving(*tensors) -> Tuple[list[Optional[torch.Tensor]], Optional[Any]]:
+def prepare_for_saving(
+    *tensors,
+) -> Tuple[list[Optional[Union[torch.Tensor, torch.nn.Parameter]]], Optional[Any]]:
+    """Prepare tensors for saving. Needed because save_for_backward accepts only
+    torch.Tensor/torch.nn.Parameter types, while we want to be able to save
+    the internal TensorBase types too."""
     # pylint: disable=unidiomatic-typecheck  # Using type instead of isinstance to check exact type
     tensor_list, tensor_objects_list = [], []
     for tensor in tensors:
         if tensor is None:
             tensor_list.append(None)
             tensor_objects_list.append(None)
-        elif type(tensor) in (torch.Tensor, torch.nn.Parameter):  # TODO (pgadzinski) - check it
-            tensor_list.append(tensor if type(tensor) == torch.Tensor else tensor.data)
+        elif type(tensor) in (torch.Tensor, torch.nn.Parameter):
+            tensor_list.append(tensor.data)
             tensor_objects_list.append(None)
         else:
             t, t_obj = tensor.prepare_for_saving()
@@ -33,20 +38,18 @@ def prepare_for_saving(*tensors) -> Tuple[list[Optional[torch.Tensor]], Optional
 
 
 def restore_from_saved(
-    tensors: list[Optional[Any]], saved_tensors: list[Optional[torch.Tensor]], return_saved_tensors=False
-) -> Tuple[Optional[Any]]:
+    tensors: list[Optional[Any]],
+    saved_tensors: list[Optional[Union[torch.Tensor, torch.nn.Parameter]]],
+) -> list[Optional[Any]]:
+    """Recombine the tensor data and metadata during backward pass."""
     tensor_objects = []
-    tensors_to_restore = len(tensors)
-    for i in range(tensors_to_restore):
-        tensor = tensors[i]
+    for tensor in tensors:
         if tensor is None:
             tensor_objects.append(saved_tensors[0])
             saved_tensors = saved_tensors[1:]
         else:
             saved_tensors = tensor.restore_from_saved(saved_tensors)
             tensor_objects.append(tensor)
-    if return_saved_tensors:
-        return tensor_objects, saved_tensors
     return tensor_objects
 
 
@@ -95,7 +98,7 @@ class Quantizer(abc.ABC):
 
     def __repr__(self):
         return (
-            "Quantizer("
+            f"{self.__class__.__name__}("
             f"rowwise_usage={self.rowwise_usage}, "
             f"columnwise_usage={self.columnwise_usage}, "
             f"internal={self.internal}, "
@@ -104,7 +107,8 @@ class Quantizer(abc.ABC):
 
     @abc.abstractmethod
     def update_quantized(
-        self, src: torch.Tensor,
+        self,
+        src: torch.Tensor,
         dst: QuantizedTensor,
         *,
         noop_flag: Optional[torch.Tensor] = None,
@@ -453,7 +457,3 @@ class QuantizedTensor(torch.Tensor):
 
         """
         return self.__class__.make_like(self, dtype=dtype)
-
-    # to overwrite, used in debug quantizers
-    def get_tensor(self, gemm_name):
-        return self

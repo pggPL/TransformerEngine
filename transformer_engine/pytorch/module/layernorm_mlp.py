@@ -24,7 +24,7 @@ from .base import (
     _2X_ACC_DGRAD,
     _2X_ACC_WGRAD,
 )
-from ..fp8 import get_fp8_te_dtype, FP8GlobalStateManager
+from ..fp8 import FP8GlobalStateManager
 from ..jit import (
     bias_gelu_fused,
     bgrad_dgelu_fused,
@@ -49,16 +49,17 @@ from ..distributed import (
     use_reentrant_activation_recompute,
     in_fp8_activation_recompute_phase,
     _fsdp_scatter_tensors,
-    _fsdp_gather_tensors,
 )
 
 from .. import cpp_extensions as pytex
 
-from ..constants import dist_group_type, TE_DType
+from ..constants import dist_group_type
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
 from ..tensor import Float8Tensor, Float8Quantizer
-from ._common import _apply_normalization
+from ..tensor.float8_tensor import Float8Tensor
+from ..tensor.mxfp8_tensor import MXFP8Quantizer
+from ._common import apply_normalization
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
 
 from ..tensor.quantized_tensor import (
@@ -202,9 +203,8 @@ class _LayerNormMLP(torch.autograd.Function):
             raise ValueError("Missing quantizer for input tensor")
         if with_quantized_norm:
             if with_input_all_gather:
-                if isinstance(fc1_input_quantizer, Float8Quantizer):
-                    fc1_input_quantizer.set_usage(rowwise=True, columnwise=False)
-                else:
+                fc1_input_quantizer.set_usage(rowwise=True, columnwise=False)
+                if isinstance(fc1_input_quantizer, MXFP8Quantizer):
                     with_quantized_norm = False
             else:
                 fc1_input_quantizer.set_usage(
@@ -213,7 +213,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 )
 
         # Apply normalization
-        ln_out, mu, rsigma = _apply_normalization(
+        ln_out, mu, rsigma = apply_normalization(
             inputmat,
             None,
             ln_weight,
@@ -224,7 +224,6 @@ class _LayerNormMLP(torch.autograd.Function):
             normalization,
             fwd_ln_sm_margin,
             zero_centered_gamma,
-            is_grad_enabled,
         )
         ln_out_return = ln_out if return_layernorm_output else None
 
@@ -253,6 +252,7 @@ class _LayerNormMLP(torch.autograd.Function):
             ln_out_return = ln_out_total if return_layernorm_output_gathered else ln_out
             if fp8:
                 if ub_overlap_ag:
+                    raise NotImplementedError
                     ln_out = pytex.cast_to_fp8(
                         ln_out,
                         fp8_meta["scaling_fwd"],
@@ -467,13 +467,11 @@ class _LayerNormMLP(torch.autograd.Function):
                 inputmat,
                 ln_weight,
                 ln_out,
-                fc1_weight,
                 fc1_weight_final,
                 fc1_bias,
                 fc1_out,
                 fc1_out_without_bias,
                 act_out,
-                fc2_weight,
                 fc2_weight_final,
                 fc2_bias,
                 mu,
@@ -581,7 +579,6 @@ class _LayerNormMLP(torch.autograd.Function):
                 fc1_out,
                 fc1_out_without_bias,
                 act_out,
-                _,
                 fc2_weight,
                 fc2_bias,
                 mu,
@@ -685,7 +682,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 if ctx.fp8:
                     quantizer = ctx.fc1_input_quantizer
                     quantizer.set_usage(rowwise=True, columnwise=True)
-                ln_out_total, ln_out_total_async = gather_along_first_dim(
+                ln_out_total, ln_out_total_work = gather_along_first_dim(
                     ln_out,
                     ctx.tp_group,
                     async_op=True,
@@ -736,7 +733,7 @@ class _LayerNormMLP(torch.autograd.Function):
 
             # FC2 WGRAD
             if ctx.fc2_weight_requires_grad:
-                if hasattr(act_out, "_create_transpose"):
+                if ctx.fc2_input_quantizer is not None and hasattr(act_out, "_create_transpose"):
                     act_out._create_transpose()
                 fc2_wgrad, fc2_bias_grad_, _ = general_gemm(
                     act_out,
@@ -904,9 +901,7 @@ class _LayerNormMLP(torch.autograd.Function):
 
             # Residual gradient
             dgrad = fc1_dgrad.view(inputmat.shape)
-            if (
-                ctx.return_layernorm_output and not ctx.return_layernorm_output_gathered
-            ):  # TODO (pgadzinski): understand
+            if ctx.return_layernorm_output and not ctx.return_layernorm_output_gathered:
                 dgrad = dgrad + grad_outputs[1].view_as(dgrad)
 
             # Norm gradient
@@ -1523,20 +1518,22 @@ class LayerNormMLP(TransformerEngineBaseModule):
             fc1_weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM1_WEIGHT]
             fc1_weight_quantizer.internal = True
             fc2_input_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM2_INPUT]
-            fc2_input_quantizer.set_usage(rowwise=True, columnwise=False)
+            fc2_input_quantizer.set_usage(
+                rowwise=True, columnwise=isinstance(fc2_input_quantizer, MXFP8Quantizer)
+            )
             fc2_weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM2_WEIGHT]
             fc2_weight_quantizer.internal = True
             if torch.is_grad_enabled():
-                fc2_gradient_quantizer = self.quantizers["scaling_bwd"][
+                grad_fc2_output_quantizer = self.quantizers["scaling_bwd"][
                     tex.FP8BwdTensors.GRAD_OUTPUT1
                 ]
-                fc2_gradient_quantizer.internal = True
-                fc1_gradient_quantizer = self.quantizers["scaling_bwd"][
+                grad_fc2_output_quantizer.internal = True
+                grad_fc1_output_quantizer = self.quantizers["scaling_bwd"][
                     tex.FP8BwdTensors.GRAD_INPUT1
                 ]
-                fc1_gradient_quantizer.internal = True
-                fc2_gradient_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT2]
-                fc2_gradient_quantizer.internal = True
+                grad_fc1_output_quantizer.internal = True
+                grad_input_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT2]
+                grad_input_quantizer.internal = True
 
         return (
             fc1_input_quantizer,

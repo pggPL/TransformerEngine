@@ -8,7 +8,6 @@ from contextlib import nullcontext
 
 import torch
 import pytest
-import io
 import os
 
 from transformer_engine.pytorch.fp8 import (
@@ -34,9 +33,9 @@ from transformer_engine.pytorch import (
 )
 from transformer_engine.common import recipe
 import transformer_engine_torch as tex
-from transformer_engine.pytorch.cpp_extensions import general_gemm, gelu
+from transformer_engine.pytorch.cpp_extensions import general_gemm
 from transformer_engine.pytorch.module.base import get_workspace
-from transformer_engine.pytorch.tensor import Float8Quantizer
+from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
 from test_numerics import reset_rng_states, dtype_tols
 
 # Only run FP8 tests on H100.
@@ -233,6 +232,7 @@ def _test_sanity_e2e_amp(block, dtype, config, fp8_recipe, skip_wgrad):
     torch.cuda.synchronize()
 
     assert te_out.dtype == dtype, "AMP wrong output type."
+    assert te_inp_hidden_states.grad is not None, "Gradient should not be empty"
     assert te_inp_hidden_states.grad.dtype == torch.float32, "AMP wrong dgrad type."
     for name, p in block.named_parameters():
         if p.requires_grad:
@@ -408,6 +408,7 @@ def _test_sanity_normalization_amp(block, dtype, config, skip_wgrad, skip_dgrad)
     torch.cuda.synchronize()
 
     assert te_out.dtype == dtype, "AMP wrong output type."
+    assert te_inp.grad is not None, "Gradient should not be empty"
     assert te_inp.grad.dtype == torch.float32, "AMP wrong dgrad type."
     for name, p in block.named_parameters():
         if p.requires_grad:
@@ -505,7 +506,7 @@ def test_sanity_linear_with_zero_tokens(dtype, bs, model, fp8_recipe, fp8_model_
             pytest.skip("Model config does not support FP8")
 
     use_fp8 = fp8_recipe is not None
-    with fp8_model_init(enabled=use_fp8 and fp8_model_params):
+    with fp8_model_init(enabled=use_fp8 and fp8_model_params, recipe=fp8_recipe):
         te_linear = Linear(
             config.hidden_size, ffn_hidden_size, bias=use_bias, params_dtype=dtype
         ).cuda()
@@ -1048,7 +1049,7 @@ def _run_attention_extra_state(dtype, config, checkpoint=False, mimic_v1_6=False
         init_method = init_method_normal(sigma)
         output_layer_init_method = scaled_init_method_normal(sigma, config.num_layers)
 
-        with fp8_model_init(enabled=fp8_enabled):
+        with fp8_model_init(enabled=fp8_enabled, recipe=fp8_recipe):
             block = TransformerLayer(
                 config.hidden_size,
                 4 * config.hidden_size,

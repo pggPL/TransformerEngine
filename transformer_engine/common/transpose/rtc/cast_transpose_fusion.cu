@@ -186,7 +186,7 @@ __global__ void __launch_bounds__(BLOCK_SIZE)
               ActivationList[ACT_TYPE](act_in[current_in ^ 1][j].data.elt[k], {});
         } else if constexpr (IS_ACT) {
           in_cast_fp32[j].data.elt[k] =
-            ActivationList[ACT_TYPE](in[current_in ^ 1][j].data.elt[k], {});
+              ActivationList[ACT_TYPE](in[current_in ^ 1][j].data.elt[k], {});
         } else {
           in_cast_fp32[j].data.elt[k] = static_cast<CType>(in[current_in ^ 1][j].data.elt[k]);
         }

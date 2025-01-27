@@ -169,12 +169,23 @@ class TestFP8Recipe:
         # Construct linear op
         op = te_ops.BasicLinear(in_shape[-1], in_shape[-1])
 
-        # Get FP8 meta tensors
+        # FP8 recipe
         forward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=True)
         backward_key = FP8GlobalStateManager.get_meta_tensor_key(forward=False)
-        x_fp8_meta = op.get_quantizer("forward", 0)
-        w_fp8_meta = op.get_quantizer("forward", 1)
-        dy_fp8_meta = op.get_quantizer("backward", 0)
+        fp8_format = transformer_engine.common.recipe.Format.HYBRID
+        recipe = transformer_engine.common.recipe.DelayedScaling(
+            margin=margin,
+            interval=1,
+            fp8_format=fp8_format,
+            amax_history_len=amax_history_len,
+            amax_compute_algo=amax_compute_algo,
+        )
+
+        # Get FP8 meta tensors
+        with te.fp8_autocast(fp8_recipe=recipe):
+            x_fp8_meta = op.get_quantizer("forward", 0)
+            w_fp8_meta = op.get_quantizer("forward", 1)
+            dy_fp8_meta = op.get_quantizer("backward", 0)
 
         # Perform training steps
         x_history = []
@@ -203,14 +214,6 @@ class TestFP8Recipe:
                 op.weight.fill_(w_history[-1])
 
             # Forward and backward pass
-            fp8_format = transformer_engine.common.recipe.Format.HYBRID
-            recipe = transformer_engine.common.recipe.DelayedScaling(
-                margin=margin,
-                interval=1,
-                fp8_format=fp8_format,
-                amax_history_len=amax_history_len,
-                amax_compute_algo=amax_compute_algo,
-            )
             with te.fp8_autocast(fp8_recipe=recipe):
                 y = op(x)
             y.backward(dy)
@@ -236,7 +239,7 @@ class TestFP8Recipe:
                 )
 
             def check_scale(
-                quanitzer: Float8Quantizer,
+                quantizer: Float8Quantizer,
                 ref_amax_history: Iterable[float],
                 stage: str,
             ):
@@ -261,7 +264,7 @@ class TestFP8Recipe:
 
                 # Check values in FP8 meta tensors
                 torch.testing.assert_close(
-                    quanitzer.scale.item(),
+                    quantizer.scale.item(),
                     ref_scale,
                 )
 

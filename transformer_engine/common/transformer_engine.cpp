@@ -56,11 +56,16 @@ std::string to_string(const NVTEScalingMode &mode) {
   return "Invalid Scaling";
 }
 
-void CheckScaleTensorShape(const Tensor &t) {
-  // Need (4, 128) alignment even for e8 scaling factor
-  auto block_alignment = std::vector<size_t>{128ul / typeToSize(t.scale_inv.dtype),
-                                             4ul / typeToSize(t.scale_inv.dtype)};
-  size_t expected_x, expected_y, alignment;
+void CheckNoopTensor(const Tensor &t, const std::string &name) {
+  if (t.data.dptr != nullptr) {
+    NVTE_CHECK(t.numel() == 1, "Expected 1 element for ", name, " noop, but found ", t.numel(),
+               ".");
+    NVTE_CHECK(t.data.dtype == DType::kFloat32, "Found wrong dtype for ", name,
+               " noop. Expected kFloat32.");
+  }
+}
+
+void CheckScaleTensorShape(const Tensor &t, bool check_scale_inv_alignment) {
   NVTE_CHECK(t.scaling_mode != NVTE_INVALID_SCALING, "Invalid scaling mode!");
   if (is_tensor_scaling(t.scaling_mode)) {
     // per-tensor scaling
@@ -75,6 +80,11 @@ void CheckScaleTensorShape(const Tensor &t) {
     }
   } else {
     if (t.scaling_mode == NVTE_MXFP8_1D_SCALING) {
+      if (!check_scale_inv_alignment) return;
+      // Need (4, 128) alignment even for e8 scaling factor
+      auto block_alignment = std::vector<size_t>{128ul / typeToSize(t.scale_inv.dtype),
+                                                 4ul / typeToSize(t.scale_inv.dtype)};
+      size_t expected_x, expected_y, alignment;
       if (t.has_data()) {
         alignment = block_alignment[0];
         expected_x =
@@ -101,7 +111,7 @@ void CheckScaleTensorShape(const Tensor &t) {
   }
 }
 
-void CheckInputTensor(const Tensor &t, const std::string &name) {
+void CheckInputTensor(const Tensor &t, const std::string &name, bool check_scale_inv_alignment) {
   const DType type = t.dtype();
   if (is_fp8_dtype(type)) {
     // FP8 input needs to have scale_inv
@@ -133,10 +143,11 @@ void CheckInputTensor(const Tensor &t, const std::string &name) {
   }
   NVTE_CHECK(t.has_data() || t.has_columnwise_data(), "Input ", name, " is not allocated!");
 
-  CheckScaleTensorShape(t);
+  CheckScaleTensorShape(t, check_scale_inv_alignment);
 }
 
-void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empty) {
+void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empty,
+                       bool check_scale_inv_alignment) {
   const DType type = t.dtype();
   if (is_fp8_dtype(type)) {
     // FP8 output needs to have scale, scale_inv and (if delayed scaling) amax
@@ -178,7 +189,7 @@ void CheckOutputTensor(const Tensor &t, const std::string &name, bool allow_empt
     NVTE_CHECK(t.has_data() || t.has_columnwise_data(), "Output ", name, " is not allocated!");
   }
 
-  CheckScaleTensorShape(t);
+  CheckScaleTensorShape(t, check_scale_inv_alignment);
 }
 
 }  // namespace transformer_engine

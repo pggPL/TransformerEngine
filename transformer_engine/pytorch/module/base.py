@@ -19,9 +19,12 @@ import torch
 import torch.nn.functional as F
 
 import transformer_engine_torch as tex
+from transformer_engine.common.recipe import Recipe
 
 from ._common import _ParameterInitMeta
 from ..fp8 import (
+    BlockScalingRecipeState,
+    DelayedScalingRecipeState,
     FP8GlobalStateManager,
     RecipeState,
 )
@@ -538,10 +541,13 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         """Init scales and amaxes for fwd | bwd."""
         fp8_meta_tensor_key = "scaling_fwd" if fwd else "scaling_bwd"
 
-        if recipe.delayed():
-            if self.fp8_meta_tensors_initialized:
-                # Handle changed amax history size.
+        # Return early if recipe state matches recipe
+        if self.fp8_meta_tensors_initialized:
+            recipe_state = self.fp8_meta[fp8_meta_tensor_key]
+            if recipe.delayed() and isinstance(recipe_state, DelayedScalingRecipeState):
                 self.adjust_amax_history_length(recipe.amax_history_len, fwd=fwd)
+                return
+            if recipe.block() and isinstance(recipe_state, BlockScalingRecipeState):
                 return
 
         # Max. number of fp8 tensors per GEMM = 3 (input, weight, output) for fwd and
@@ -822,7 +828,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             self.set_activation_dtype(inp)
             self.init_fp8_metadata(num_gemms=num_gemms)
 
-            if self.fp8 and self.sequence_parallel:
+            if self.fp8 and self.sequence_parallel and self.fp8_meta["recipe"].delayed():
                 assert self.fp8_meta["recipe"].reduce_amax, (
                     "Amax reduction across tensor parallel group is "
                     "necessary when using sequence parallelism with FP8."
@@ -987,7 +993,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         update_workspace: bool = True,
         skip_update_flag: Optional[torch.Tensor] = None,
         fsdp_group: Optional[dist_group_type] = None,
-        is_grad_enabled: bool = False,
     ) -> QuantizedTensor:
         """Get FP8 workspace buffer and maybe update its values
 
@@ -1034,7 +1039,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 raise ValueError(
                     "tensor and quantizer kwargs must be provided to construct FP8 workspace"
                 )
-
             out = quantizer(tensor)
 
             # Update cache
