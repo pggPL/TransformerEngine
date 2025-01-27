@@ -902,12 +902,12 @@ class Linear(TransformerEngineBaseModule):
             
             quantizers = self._get_quantizers(fp8_output, fp8_grad) if not self.debug \
                 else self._get_debug_quantizers(fp8_output, fp8_grad)
+            debug = self.debug
             if self.debug:
                 from ...debug.debug_quantization import use_any_feature
                 if not use_any_feature(quantizers):
                     quantizers = self._get_quantizers(fp8_output, fp8_grad)
-                    self.debug = False
-                    self.debug_name = None
+                    debug = False
             
             (
                 input_quantizer,
@@ -959,7 +959,7 @@ class Linear(TransformerEngineBaseModule):
                 self.fsdp_group,
                 self,
                 skip_fp8_weight_update,
-                self.debug
+                debug
             )
             out = linear_fn(*args)
         if self.gemm_bias_unfused_add:

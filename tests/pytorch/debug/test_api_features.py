@@ -1,5 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-#
+# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -244,10 +243,8 @@ def test_statistics_collection(configs_dir, feature_dirs):
                               fp8_dtype=tex.DType.kFloat8E4M3, shape=tensor.shape, dtype=torch.float32)
 
     def log():
-        from transformer_engine.debug.features.log_tensor_stats import LogTensorStats
-        from transformer_engine.debug.features.log_fp8_tensor_stats import LogFp8TensorStats
         from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS
-        return STATS_BUFFERS.log_stats(LogTensorStats._get_supported_stats_list() | LogFp8TensorStats._get_supported_stats_list())  
+        return STATS_BUFFERS.log_stats()  
 
     def assert_empty():
         stats = log()
@@ -271,8 +268,8 @@ def test_statistics_collection(configs_dir, feature_dirs):
     # TE FP8 tensor stats -- 
     nvinspect_api.transformer_engine.look_at_tensor_after_process("decoder.1.mlp.fc1", tensor=tensor_fp8, tensor_name="gradient", iteration=200)
     stats = log()
-    assert stats[("decoder.1.mlp.fc1", "gradient", "underflows", 200)] == expected_underflows
-    assert stats[("decoder.1.mlp.fc1", "gradient", "overflows", 200)] == expected_overflows
+    assert stats[("decoder.1.mlp.fc1", "gradient", "underflows%", 200)] == expected_underflows
+    assert stats[("decoder.1.mlp.fc1", "gradient", "overflows%", 200)] == expected_overflows
 
     nvinspect_api.transformer_engine.look_at_tensor_after_process("decoder.1.mlp.fc1", tensor=tensor_fp8, tensor_name="activation", iteration=201)
     assert_empty()
@@ -312,15 +309,13 @@ def test_statistics_multi_run(configs_dir, feature_dirs):
         nvinspect_api.transformer_engine.look_at_tensor_after_process("decoder.5.mlp.fc1", tensor=tensor_fp8, tensor_name="activation", iteration=1)
 
     def log_stats():
-        from transformer_engine.debug.features.log_tensor_stats import LogTensorStats
-        from transformer_engine.debug.features.log_fp8_tensor_stats import LogFp8TensorStats
         from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS
-        return STATS_BUFFERS.log_stats(LogTensorStats._get_supported_stats_list() | LogFp8TensorStats._get_supported_stats_list())  
+        return STATS_BUFFERS.log_stats()  
     
     def fp8_tensor(t):
         return Float8Tensor(data=t.to(torch.uint8).cuda(), fp8_scale_inv=torch.ones([1]).cuda(), 
                               fp8_dtype=tex.DType.kFloat8E4M3, shape=t.shape, dtype=torch.float32)
-    shape = [32, 2048]
+    shape = [1024, 1024]
     tensors = [torch.randn(shape) for _ in range(2)]
     tensors_fp8 = [fp8_tensor(tensors[i]) for i in range(2)]
 
@@ -335,6 +330,7 @@ def test_statistics_multi_run(configs_dir, feature_dirs):
 
     assert len(stats1.keys()) > 0
     for k in stats1.keys():
+        print(k, stats1[k], stats2[k])
         torch.testing.assert_close(stats1[k], stats2[k])
 
 if __name__ == "__main__":

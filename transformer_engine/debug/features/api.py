@@ -1,5 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-#
+# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -19,54 +18,10 @@ from nvdlfw_inspect.base import BaseNamespaceAPI, BaseConfigAPIMapper
 from nvdlfw_inspect.registry import Registry
 
 
-from transformer_engine.pytorch.tensor import Float8Quantizer
 from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Tensor, MXFP8TensorBase
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor, Float8TensorBase
 
 class TEConfigAPIMapper(BaseConfigAPIMapper):
-    gemm_config_docstring = '''
-    Supported yaml config structure:
-    1. gemms: [gemm1, gemm2]
-       feature_param1: value
-       feature_param2: value
-
-    2. gemms_struct:
-         - gemm: gemm1
-           feature_param1: value
-           feature_param2: value
-         - gemm: gemm2
-           feature_param1: value
-           feature_param2: value
-    '''
-
-    gemm_and_tensor_config_docstring = '''
-    Supported yaml config structure:
-    1. gemms: [gemm1, gemm2]
-       tensors: [tensor1, tensor2]
-       tensor_feature_param1: value
-       gemm_feature_param1: value
-
-    2. gemms: [gemm1, gemm2]
-       tensors_struct:
-        - tensor: tensor1
-          tensor_feature_param1: value
-        - tensor: tensor2
-          tensor_feature_param2: value
-        gemm_feature_param1: value
-
-    3. gemms_struct:
-        - gemm: gemm1
-          tensors: [tensor1, tensor2]
-          tensor_feature_param1: value
-          gemm_feature_param1: value
-        - gemm: gemm2
-          tensors_struct:
-          - tensor: tensor1
-            tensor_feature_param1: value
-          - tensor: tensor2
-            tensor_feature_param2: value
-          gemm_feature_param1: value
-    '''
     def parse_config_and_api(self, config, **kwargs):
         # Process the config and returns True if the config and api args match, along with processed config.
         processed_config = None
@@ -90,7 +45,8 @@ class TEConfigAPIMapper(BaseConfigAPIMapper):
         return True, processed_config
     
     def _validate_gemm(self, gemm):
-        assert gemm in ['fprop', 'wgrad', 'dgrad'], f"[NVTORCH INSPECT ERROR] Invalid gemm: {gemm}. It must be one of the ['fprop', 'wgrad', 'dgrad']."
+        assert gemm in ['fprop', 'wgrad', 'dgrad'], \
+            f"[NVTORCH INSPECT ERROR] Invalid gemm: {gemm}. It must be one of the ['fprop', 'wgrad', 'dgrad']."
 
     def _process_transformer_engine_config(self, config, **kwargs):
         '''
@@ -171,19 +127,21 @@ class TransformerEngineAPI (BaseNamespaceAPI):
         self._default_api_impl = TEDefaultFeatures()
         self._cacheable_api_kwargs_map = {
             "fp8_gemm": ["gemm"],
-            "use_process_tensor": ["tensor_name", "tensor"],
             "process_tensor": ["tensor_name", "gemm"],
             "look_at_tensor_before_process": ["tensor_name"],
             "look_at_tensor_after_process": ["tensor_name"],
+            "use_look_at_tensor_before_process": ["tensor_name"],
+            "use_look_at_tensor_after_process": ["tensor_name"],
+            "use_process_tensor": ["tensor_name", "tensor"],
         }
 
     def is_multiple_feature_invocation_allowed(self, api_name):
         """
         Check if API allowes executing multiple features for a single call
         """
-        if api_name in {"fp8_gemm"}:
-            return True
-        return False
+        return api_name in {
+            "fp8_gemm", "look_at_tensor_before_process", "look_at_tensor_after_process",
+            "use_look_at_tensor_before_process", "use_look_at_tensor_after_process"}
 
     def input_assertions_hook(self, api_name, **kwargs):
         """
@@ -204,12 +162,14 @@ class TransformerEngineAPI (BaseNamespaceAPI):
         """
         tensor_parsing = "tensor_name" in required_kwargs[api_name]
         gemm_parsing =  "gemm" in required_kwargs[api_name]
-        status, modified_config = feature_obj.parse_config_and_api(config, gemm_parsing=gemm_parsing, tensor_parsing=tensor_parsing, **kwargs)
+        status, modified_config = feature_obj.parse_config_and_api(
+            config, gemm_parsing=gemm_parsing, tensor_parsing=tensor_parsing, **kwargs)
         return status, modified_config
 
     def output_assertions_hook(self, api_name, ret, **kwargs):
         if api_name in {"process_tensor"}:
-            assert type(ret) in [torch.Tensor, Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase], f"This API {api_name} must return a tensor."
+            assert type(ret) in [torch.Tensor, Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase], \
+                f"This API {api_name} must return a tensor."
         
 
         

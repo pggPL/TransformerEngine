@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,18 +20,9 @@ from nvdlfw_inspect.utils import append_parent_docstring
 
 
 @Registry.register_feature(namespace="transformer_engine")
-@append_parent_docstring(parent=TEConfigAPIMapper)
 class DisableFp8Gemm(TEConfigAPIMapper):
     """
     Feature to disable FP8 GEMM in transformer engine.
-
-    APIs:
-
-    1. transformer_engine.is_fp8_gemm_disabled
-    - When using this api, you would need to pass args:
-    -- layer_name: this is matched with the layer description in the config file
-    -- gemm: this is matched with one of the gemms in the config field, and passed as a kwarg. For example, gemm='gemm1'
-    -- fp8_enabled: bool. this notifies if the original gemm execution is in FP8 or not, and passed as a kwarg. For example, fp8_enabled=True
 
     Config: 
 
@@ -39,18 +30,13 @@ class DisableFp8Gemm(TEConfigAPIMapper):
     transformer_engine:
       disable_fp8_gemm:
         enabled: True
-        feature_properties:
-        ...
+        gemms: gemms list - please look into the Transformer Engine Precision Debug Tools documentation for more information.
     """
 
     @api_method
-    def fp8_gemm(self, config, layer_name, gemm):
+    def fp8_gemm(self, config, layer_name, gemm, iteration):
         for key in config:
             if key != 'gemm':
                 raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")
                 
-        if config["gemm"] == gemm:
-            nvinspect_api.log_message(
-                f"Feature={self.__class__.__name__}, API=is_fp8_gemm_enabled: {gemm}: FP8 GEMM: False", layer_name)
-            return False
-        return True
+        return False

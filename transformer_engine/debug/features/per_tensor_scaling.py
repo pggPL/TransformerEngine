@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,44 +53,27 @@ def per_tensor_cast(tensor: torch.Tensor,
 
 
 @Registry.register_feature(namespace="transformer_engine")
-@append_parent_docstring(parent=TEConfigAPIMapper)
 class PerTensorScaling(TEConfigAPIMapper):
     """
     Per Tensor Current Scaling feature for FP8 tensor in Transformer engine.
 
     If this feature is enabled, delayed scaling is disabled for the specified FP8 Tensor and GEMM.
 
-    APIs:
-    1. transformer_engine.is_fp8_delayed_scaling_enabled:
-    - When using this api, you would need to pass args:
-    -- layer_name: this is matched with the layer description in the config file
-    -- gemm: this is matched with one of the gemms in the config field, and passed as a kwarg. For example, gemm='gemm1'
-    -- tensor_name: this is matched with one of the tensors in the config field for a given gemm, and passed as a kwarg. For example, tensor_name='tensor1'
-    -- fp8_enabled: bool. this notifies if the original gemm execution is in FP8 or not, and passed as a kwarg. For example, fp8_enabled=True
-    NOTE: The above api is needed in transformer engine to disable the delayed scaling for a given tensor
-
-    2. transformer_engine.process_tensor
-    - When using this api, you would need to pass args:
-    -- layer_name: this is matched with the layer description in the config file
-    -- gemm: this is matched with one of the gemms in the config field, and passed as a kwarg. For example, gemm='gemm1'
-    -- tensor_name: this is matched with one of the tensors in the config field for a given gemm, and passed as a kwarg. For example, tensor_name='tensor1'
-    -- tensor: the tensor to process, and passed as a kwarg. For example, tensor={torch tensor}
-    -- fp8_enabled: bool. this notifies if the original gemm execution is in FP8 or not, and passed as a kwarg. For example, fp8_enabled=True
-
     Config:
     To enable the feature in yaml config:
     transformer_engine:
-      per_tensor_scaling:
+        per_tensor_scaling:
         enabled: True
-        feature_properties:
         ...
 
     Config fields:
     This feature works at a tensor level, you can set the following properties for each tensor:
     - margin: int, default is 0, amax = amax * (2^margin)
+    - tensors/tensors_struct: tensors list or tensors_struct - please look into the Transformer Engine Precision Debug Tools documentation for more information.
 
     Gemm and Tensor structure is described below:
     """
+
     def _get_margin_default(self):
         return 0
 
@@ -112,7 +95,10 @@ class PerTensorScaling(TEConfigAPIMapper):
         assert default_quantizer is not None, \
             f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: Provide FP8 dtype when using process_tensor for per_tensor_scaling. {layer_name}"
         
+        nvinspect_api.log_message(
+            f"Feature={self.__class__.__name__}, API=process_tensor: {gemm}, {tensor_name}", 
+            layer_name, extra_cachable_args=(gemm, tensor_name))
+
         margin = config.get('margin', self._get_margin_default())
         fp8_tensor = per_tensor_cast(tensor, default_quantizer.dtype, margin=margin, out=out)
         return fp8_tensor
-    

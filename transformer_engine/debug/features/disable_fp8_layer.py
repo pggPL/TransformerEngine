@@ -1,5 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-#
+# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -23,12 +22,6 @@ from nvdlfw_inspect.registry import Registry, api_method
 class DisableFp8Layer:
     """
     Feature to disable FP8 for entire layer or set of layers in Transformer Engine.
-
-    APIs:
-
-    1. transformer_engine.is_fp8_enabled_for_layer
-    - When using this api, you would need to pass args:
-    -- layer_name: this is matched with the layer description in the config file
 
     Config:
 

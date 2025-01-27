@@ -1389,12 +1389,12 @@ class LayerNormMLP(TransformerEngineBaseModule):
 
             quantizers = self._get_quantizers() if not self.debug \
                 else self._get_debug_quantizers()
+            debug = self.debug
             if self.debug:
                 from ...debug.debug_quantization import use_any_feature
                 if not use_any_feature(quantizers):
                     quantizers = self._get_quantizers()
-                    self.debug = False
-                    self.debug_name = None
+                    debug = False
             # Get quantizers
             (
                 fc1_input_quantizer,
@@ -1467,7 +1467,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
                 self.activation_dtype,
                 self.return_layernorm_output,
                 self.return_layernorm_output_gathered,
-                self.bias_gelu_nvfusion and not self.fp8 and not self.debug,
+                self.bias_gelu_nvfusion and not self.fp8 and not debug,
                 self.set_parallel_mode,
                 torch.is_grad_enabled(),
                 self.fwd_ln_sm_margin if torch.is_grad_enabled() else self.inf_ln_sm_margin,
@@ -1480,11 +1480,11 @@ class LayerNormMLP(TransformerEngineBaseModule):
                 self.ub_overlap_rs_dgrad,
                 self.ub_overlap_rs,
                 self.ub_overlap_ag,
-                self.gemm_gelu_fusion and not self.debug,
+                self.gemm_gelu_fusion and not debug,
                 self.fsdp_group,
                 self,
                 skip_fp8_weight_update,
-                self.debug
+                debug
             )
             out = fwd_fn(*args)
 
@@ -1552,8 +1552,10 @@ class LayerNormMLP(TransformerEngineBaseModule):
             fc2_dgrad_quantizer,
             fc2_wgrad_quantizer,
         )
+
     
-    def _get_debug_quantizer(self):
+    
+    def _get_debug_quantizers(self):
         from ...debug.debug_quantization import DebugQuantizer
         (
             fc1_input_quantizer,

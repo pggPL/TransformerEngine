@@ -1076,15 +1076,22 @@ class LayerNormLinear(TransformerEngineBaseModule):
             else:
                 bias_tensor = getattr(self, self.bias_names[0])  # Unused
 
-            
+            debug = self.debug
             quantizers = self._get_quantizers(fp8_output) if not self.debug \
                 else self._get_debug_quantizers(fp8_output)
             if self.debug:
                 from ...debug.debug_quantization import use_any_feature
                 if not use_any_feature(quantizers):
                     quantizers = self._get_quantizers(fp8_output)
-                    self.debug = False
-                    self.debug_name = None
+                    debug = False
+            (
+                input_quantizer,
+                weight_quantizer,
+                output_quantizer,
+                gradient_quantizer,
+                dgrad_quantizer,
+                wgrad_quantizer,
+            ) = quantizers
             
             if torch.is_grad_enabled():
                 fwd_fn = _LayerNormLinear.apply
@@ -1133,7 +1140,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
                 self.fsdp_group,
                 self,
                 skip_fp8_weight_update,
-                self.debug
+                debug
             )
             out = fwd_fn(*args)
 

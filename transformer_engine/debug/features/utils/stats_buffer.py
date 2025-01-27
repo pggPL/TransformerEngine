@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,26 +16,29 @@ from collections import defaultdict
 
 import torch
 
-from transformer_engine.debug.features.utils.stats_computation import HELPER_STATS, STATS
+from transformer_engine.debug.features.utils.stats_computation import STATS, DEPENDENCIES, stats_to_num
 from nvdlfw_inspect.utils import gather_along_first_dim
 from nvdlfw_inspect.logging import MetricLogger
 
 # Buffer used for LogTensorStats and LogFp8TensorStats features.
-# Buffer are fed with tensors, they compute necessary helper stats and save them.
-# When log() is called, they gather helper stats, compute final stats and log them.
-
-# for example sum of elements and number of elements on each of the nodes are helper stats
-# and the mean of all the elements on all nodes is final stat we will log.
+# Buffer are fed with tensors, they compute necessary stats and save them.
+# When log() is called, they gather stats from all nodes, compute combined final stats and log them.
 
 
 class _Buffer:
-    def __init__(self, layer_name, tensor_name, stat, reduction_group):
+    def __init__(self, layer_name, tensor_name, stats, reduction_group):
         self.layer_name = layer_name
         self.tensor_name = tensor_name
         self.reduction_group = reduction_group
-        self.stat = stat
-        self.helper_stats_to_compute = STATS[self.stat][0]
-        self.helper_stats_buffer = torch.zeros(len(self.helper_stats_to_compute), dtype=torch.float32).cuda()
+        self.stats_to_log = stats
+        
+        self.stats_to_compute = set()
+        for stat in stats:
+            self.stats_to_compute = self.stats_to_compute | DEPENDENCIES[stat]
+        
+        self._buffer = torch.zeros(len(STATS), dtype=torch.float32).cuda()
+        self._new_buffer = self._buffer.clone()
+        self._tmp_buffer = self._buffer.clone()
 
         # in case of data parallelism it is possible that layer will not be run on one node
         # modified is set to True if node is run
@@ -43,55 +46,66 @@ class _Buffer:
         self.modified = torch.tensor([False], dtype=torch.bool).cuda()
         self.iteration = None
         self.skip_reduction = False
-       
-    def _get_helper_stat_idx(self, stat_name):
-        return self.helper_stats_to_compute.index(stat_name)
-
-    def _update_helper_stat(self, helper_stat_name, value):
-        idx = self._get_helper_stat_idx(helper_stat_name)
-        self.helper_stats_buffer[idx] = value
-        self.modified[0] = True
 
     def _reset_before_next_step(self):
         self.modified[0] = False
     
     def _gather_helper_stats(self):
         if self.skip_reduction:
-            return self.helper_stats_buffer.unsqueeze(0)
+            return self._buffer.unsqueeze(0)
         mask = gather_along_first_dim(
                 self.modified,
                 process_group=self.reduction_group)[0]
-        gathered_helper_stats_buffer, _ = gather_along_first_dim(
-            self.helper_stats_buffer.unsqueeze(0), 
+        gathered__buffer, _ = gather_along_first_dim(
+            self._buffer.unsqueeze(0), 
             process_group=self.reduction_group)
-        return gathered_helper_stats_buffer[mask.to(bool)]
-
-    def _get_helper_stats(self, gathered_helper_stats):
-        output = []
-        for name in self.helper_stats_to_compute:
-            idx = self._get_helper_stat_idx(name)
-            output.append(gathered_helper_stats[:, idx])
-        return output
+        return gathered__buffer[mask.to(bool)]
     
     def feed(self, tensor, iteration):
+        # feed() is used to add tensor for computing the statistics.
+        # Because of the microbatching, feed() can be used multiple
+        # times for one log().
+        #
+        # Ability to combine result for already processed tensors with 
+        # results new tensor are the main reason for such a design of this class.
+
         self.iteration = iteration
+
+        # save stats for tensor to tmp buffer
+        for stat_name in self.stats_to_compute:
+            fn, _ = STATS[stat_name]
+            self._tmp_buffer[stats_to_num[stat_name]] = fn(tensor)
         
-        for helper_stat_name in self.helper_stats_to_compute:
-            fn = HELPER_STATS[helper_stat_name]
-            self._update_helper_stat(helper_stat_name, fn(tensor))
+        # [num_buffers, num_stats]
+        buffers = torch.cat((self._buffer.unsqueeze(0), self._tmp_buffer.unsqueeze(0)), dim=0)
+        
+        for stat_name in self.stats_to_compute:
+            fn, combinator = STATS[stat_name]
+            if self.modified:
+                self._new_buffer[stats_to_num[stat_name]] = combinator(buffers)
+            else:
+                fn = STATS[stat_name][0]
+                self._new_buffer[stats_to_num[stat_name]] = fn(tensor)
+        
+        self._buffer.copy_(self._new_buffer)
+
+        self.modified[0] = True
     
     def log(self):
+        # [num_active_nodes, num_stats]
         gathered_helper_stats = self._gather_helper_stats()
+
         if not self.modified[0]:
             return
-        # combine stats and log
-        # args is a tuple of helper starts, gathered only for nodes, which were run.
-        args = self._get_helper_stats(gathered_helper_stats)
-        combiner = STATS[self.stat][1]
-        stat = combiner(*args)
-        MetricLogger.log_scalar(f"{self.layer_name}_{self.tensor_name}_{self.stat}", stat.float(), self.iteration)
+        output = {}
+        for stat_name in self.stats_to_log:
+            combiner = STATS[stat_name][1]
+            stat_value = combiner(gathered_helper_stats)
+
+            MetricLogger.log_scalar(f"{self.layer_name}_{self.tensor_name}_{stat_name}", stat_value.float(), self.iteration)
+            output[(self.layer_name, self.tensor_name, stat_name, self.iteration)] = stat_value # for debuggin purpouses
         self._reset_before_next_step()
-        return stat
+        return output
 
 
 class StatsBuffers:
@@ -103,33 +117,29 @@ class StatsBuffers:
         self.buffers = {} # (layer_name, tensor_name) -> buffer
         self.reduction_group_to_buffer = defaultdict(list)
 
-
-    def try_add_buffer(self, layer_name, tensor_name, stat, options, reduction_group):
-        if (layer_name, tensor_name, stat, options) in self.buffers.keys():
+    def try_add_buffer(self, layer_name, tensor_name, stats, options, reduction_group):
+        if (layer_name, tensor_name, options) in self.buffers.keys():
             return
-        buffer = _Buffer(layer_name, tensor_name, stat, reduction_group)
-        self.buffers[(layer_name, tensor_name, stat, options)] = buffer
-        self.reduction_group_to_buffer[reduction_group].append((buffer, stat))
+        buffer = _Buffer(layer_name, tensor_name, stats, reduction_group)
+        self.buffers[(layer_name, tensor_name, options)] = buffer
+        self.reduction_group_to_buffer[reduction_group].append((buffer))
 
-    def feed(self, layer_name, tensor_name, stats, options, tensor, iteration, skip_reduciton):
-        for stat in stats:
-            buffer = self.buffers[(layer_name, tensor_name, stat, options)]
-            buffer.feed(tensor, iteration)
-            buffer.skip_reduction = skip_reduciton
+    def feed(self, layer_name, tensor_name, options, tensor, iteration, skip_reduciton):
+        buffer = self.buffers[(layer_name, tensor_name, options)]
+        buffer.feed(tensor, iteration)
+        buffer.skip_reduction = skip_reduciton
 
-    def log_stats(self, stats_to_log):
+    def log_stats(self):
         output = {}
         for reduction_group, buffers in self.reduction_group_to_buffer.items():
             changed_buffers = [
-                (i, buffer, stat_name) 
-                for i, (buffer, stat_name) in enumerate(buffers) 
+                (i, buffer) 
+                for i, buffer in enumerate(buffers) 
                 if gather_along_first_dim(buffer.modified.unsqueeze(0), process_group=reduction_group)[0].any()
             ]
-            for _, buffer, stat_name in changed_buffers:
-                if stat_name not in stats_to_log:
-                    continue
-                stat = buffer.log()
-                output[(buffer.layer_name, buffer.tensor_name, buffer.stat, buffer.iteration)] = stat # for testing purpouses
+            for _, buffer in changed_buffers:
+                stats = buffer.log()
+                output = output | stats
         
         return output 
 
