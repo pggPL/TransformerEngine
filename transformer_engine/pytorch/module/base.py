@@ -13,6 +13,7 @@ import struct
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 from contextlib import contextmanager
+import logging
 
 import torch
 import torch.nn.functional as F
@@ -37,6 +38,9 @@ from ..constants import dist_group_type
 from ..tensor import QuantizedTensor, Quantizer
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
+from transformer_engine.common.recipe import Recipe
+from transformer_engine.debug.debug_state import TEDebugState
+
 
 __all__ = ["initialize_ub", "destroy_ub"]
 
@@ -451,6 +455,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fp8_meta["fp8_checkpoint"] = False
         self.fp8_meta["fp8_group"] = None
         self.fp8_meta_tensors_initialized = False
+        self.debug = False
         self.quantizers = {"scaling_fwd": {}, "scaling_bwd": {}}
         self.tp_group = None
         self.tp_size = 1
@@ -461,6 +466,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fsdp_group = None
         self._fp8_workspaces: Dict[str, QuantizedTensor] = {}
         self.activation_dtype: Optional[torch.dtype] = None
+
+        TEDebugState.initialize()
 
     # Names of attributes that can be set quickly (see __setattr__
     # method)
@@ -754,6 +761,16 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         fp8_enabled = self.fp8 or self.fp8_calibration
         self.fp8_meta["fp8_checkpoint"] = self.fp8 or self.fp8_calibration
 
+        if self.debug and self.fp8_parameters:
+            try:
+                import nvdlfw_inspect.api as nvinspect_api
+            except (ModuleNotFoundError, ImportError):
+                raise ModuleNotFoundError("ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed correctly.")
+            nvinspect_api.log_message("> Primary FP8 parameters is not supported in the debug module. "
+                                "Using this flag will not affect the debug module. ", 
+                                level=logging.WARNING)
+
+
         if self.fp8_parameters or fp8_enabled:
             if (
                 self.fp8_initialized
@@ -829,6 +846,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 inp = inp.contiguous()
             yield inp
 
+
         if self.fp8 and in_fp8_activation_recompute_phase():
             FP8GlobalStateManager.restore_fp8_meta_tensors(self.fp8_meta)
 
@@ -868,6 +886,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         # Non-FP8 case: bgrad is fused with wgrad for this case.
         if not ctx.fp8:
+            if ctx.debug:
+                grad_output = quantizer(grad_output)
             if gather_grad_output:
                 if not ctx.ub_overlap_ag:
                     grad_output, _ = gather_along_first_dim(grad_output, ctx.tp_group)
@@ -899,7 +919,11 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             if isinstance(grad_output, (QuantizedTensor, Float8TensorBase, MXFP8TensorBase)):
                 grad_bias = grad_output.dequantize().view(-1, grad_output.shape[-1]).sum(dim=0)
             else:
-                grad_bias, grad_output = tex.bgrad_quantize(grad_output, quantizer)
+                if ctx.debug:
+                    grad_bias = grad_output.view(-1, grad_output.shape[-1]).sum(dim=0)
+                    grad_output = quantizer(grad_output)
+                else:
+                    grad_bias, grad_output = tex.bgrad_quantize(grad_output, quantizer)
         if not isinstance(grad_output, (QuantizedTensor, Float8TensorBase, MXFP8TensorBase)):
             grad_output = quantizer(grad_output)
         return grad_output, grad_bias
@@ -1019,7 +1043,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             if cache_name is not None:
                 self._fp8_workspaces[cache_name] = out
             return out
-
         # Update workspace if needed
         if skip_update_flag is not None:
             update_workspace = True
@@ -1030,7 +1053,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 out.quantize_(tensor, noop_flag=skip_update_flag)
             else:
                 tex.quantize(tensor, quantizer, out, skip_update_flag)
-
         return out
 
     def _load_from_state_dict(
@@ -1053,3 +1075,33 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         super()._load_from_state_dict(
             state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
         )
+    
+    def _validate_debug_name(self, overwrite_debug_name):
+        """
+        Validate name passed to the module.
+        This is invoked in the forward() method as module names are assigned after Model is initialized in Megatron-LM.
+        If no name is assigned, it creates a default name with layer count as the variable.
+
+        Args
+        overwrite_name: str, default = None
+            This will overwrite the name of the module with the specified name. This is needed for debug layers re-using this Linear
+            module such as LayerNormLinear. The idea is to re-name the Linear module which is a part of another layer with that layers name.
+            Only needed if layer names are assigned after model initialization like in Megatron-LM.
+        """
+        assert self.debug
+
+        from ...debug.debug_state import TEDebugState 
+
+        try:
+            import nvdlfw_inspect.api as nvinspect_api
+        except (ModuleNotFoundError, ImportError):
+            raise ModuleNotFoundError("ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed correctly.")
+        
+        if overwrite_debug_name:
+            self.debug_name = overwrite_debug_name
+
+        if self.debug_name == None:
+            nvinspect_api.log_message("[DEBUG-WARNING] Names are not provided to debug modules. ",
+                                  "Creating and using generic names. Pass names to debug modules for better insight. ",
+                                    level=logging.WARNING)
+            self.debug_name = f"Layer_{TEDebugState.get_layer_count()}"

@@ -97,6 +97,9 @@ all_normalizations = ["LayerNorm", "RMSNorm"]
 
 mask_types = ["causal", "no_mask"]
 
+if os.environ.get("DEBUG", False):
+    import nvdlfw_inspect.api as nvinspect_api
+    nvinspect_api.initialize(feature_dirs=os.environ["FEATURE_DIRS"])
 fp8_recipes = [
     recipe.BlockScaling(),
     recipe.DelayedScaling(),
@@ -1508,6 +1511,7 @@ def test_grouped_linear_accuracy(
     outputs = _test_grouped_linear_accuracy(
         grouped_linear, num_gemms, bs, dtype, config, recipe, fp8
     )
+    outputs = _test_grouped_linear_accuracy(grouped_linear, num_gemms, bs, dtype, config, fp8)
 
     # Shoule be bit-wise match
     for i, (o, o_ref) in enumerate(zip(outputs, outputs_ref)):

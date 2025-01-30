@@ -1,0 +1,22 @@
+transformer_engine_feature_medley:
+  enabled: True
+  layers:
+    layer_name_regex_pattern: .*(fc1|qkv)
+  transformer_engine:
+    DisableFp8Gemm:
+      enabled: True
+      gemms: [fprop]
+    PerTensorScaling:
+      enabled: True
+      gemms: [dgrad]
+      tensors: [gradient]
+    FakeQuantFp8:
+      enabled: True
+      gemms: [wgrad]
+      tensors_struct: 
+        - tensor: activation
+          quant_format: E4M3
+          margin: 1
+        - tensor: gradient
+          quant_format: E5M2
+          margin: 1

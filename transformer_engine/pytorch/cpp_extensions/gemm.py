@@ -7,11 +7,14 @@ import functools
 from typing import Iterable, Optional, Tuple, Union, List
 import os
 import torch
+from ..tensor.quantized_tensor import Quantizer
 import transformer_engine_torch as tex
 from ..constants import TE_DType
 from ..utils import assert_dim_for_fp8_exec, get_sm_count
 
 from ..tensor.quantized_tensor import Quantizer
+from ..tensor.float8_tensor import Float8Tensor
+from ..tensor.mxfp8_tensor import MXFP8Tensor
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 
@@ -84,6 +87,7 @@ def general_gemm(
     ub_algo: tex.CommOverlapAlgo = None,
     ub: Union[tex.CommOverlap, tex.CommOverlapP2P] = None,
     ub_buffer: Optional[torch.Tensor] = None,
+    debug: bool = False
 ) -> Iterable[Optional[torch.Tensor]]:
     """GEMM supporting fp8 inputs."""
 
@@ -95,19 +99,37 @@ def general_gemm(
         if not out.is_contiguous():
             raise ValueError("Output tensor is not contiguous.")
 
+    
+    quantization_params_final = quantization_params
+    if debug:
+        quantization_params_final = quantization_params.parent_quantizer
+        # Get tensor object from transposes
+        A = A.get_tensor(not transa)
+        B = B.get_tensor(transb)
+        assert (type(A) in [torch.Tensor, torch.nn.parameter.Parameter]) == (type(B) in [torch.Tensor, torch.nn.parameter.Parameter]),\
+              f"[Debug tools] Processed tensors should have the same type, but type(A) = {type(A)}, type(B) = {type(B)}"
+
+        # Bias processing that is not done inside Linear()
+        if type(A) in [Float8TensorBase, Float8Tensor, MXFP8Tensor, MXFP8TensorBase] and out_dtype == torch.float32:
+            if bias is not None:
+                bias = bias.to(torch.bfloat16)
+        else:
+            if bias is not None:
+                bias = bias.to(out_dtype)
+
     # Use bfloat16 as default bias_dtype
     bias_dtype = torch.bfloat16 if bias is None else bias.dtype
     bias_dtype = TE_DType[bias_dtype]
     if bias is None and not grad:
         bias = _empty_tensor()
-
+    
     args = (
         A,
         transa,  # transa
         B,
         transb,  # transb
         out,
-        quantization_params,
+        quantization_params_final,
         TE_DType[out_dtype] if out_dtype is not None else None,
         bias,
         bias_dtype,
@@ -216,6 +238,8 @@ def general_gemm(
         original_scale_inverses = swizzle_inputs(A, B, layout)
         out, bias_grad, gelu_input = fn(*args)
         reset_swizzled_inputs(A, B, original_scale_inverses)
+    if debug:
+        out = quantization_params.process_gemm_output(out)
 
     return out, bias_grad, gelu_input
 
