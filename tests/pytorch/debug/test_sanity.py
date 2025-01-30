@@ -25,17 +25,11 @@ from test_numerics import create_config_file
 
 B, S, H, D = 64, 64, 64, 64
 
-model_keys = [
-    "linear",
-    "layernorm_linear",
-    "layernorm_mlp",
-    "mha_attention",
-    "transformer_layer"
-]
+model_keys = ["linear", "layernorm_linear", "layernorm_mlp", "mha_attention", "transformer_layer"]
 
 configs = {
-"": "",
-"log": """log:
+    "": "",
+    "log": """log:
   layers:
     layer_types: [linear]
   enabled:
@@ -54,7 +48,7 @@ configs = {
       start_step : 0
       end_step: 1
 """,
-"fake_quant": """
+    "fake_quant": """
 fake_quant_config:
   enabled: True
   layers:
@@ -66,6 +60,7 @@ fake_quant_config:
       quant_format: 5E2M
 """,
 }
+
 
 def _get_model(model_key):
     if model_key == "linear":
@@ -79,6 +74,7 @@ def _get_model(model_key):
     if model_key == "transformer_layer":
         return te.TransformerLayer(D, D, H)
 
+
 def _run_forward_backward(model, fp8):
     for _ in range(3):
         inp = torch.randn((S, B, H)).cuda()
@@ -86,6 +82,7 @@ def _run_forward_backward(model, fp8):
             out = model(inp)
         out.sum().backward()
         nvinspect_api.step()
+
 
 @create_config_file
 def _run_test(model_key, fp8, config, feature_dirs, config_file, log_dir):
@@ -102,6 +99,7 @@ def _run_test(model_key, fp8, config, feature_dirs, config_file, log_dir):
     finally:
         nvinspect_api.end_debug()
         transformer_engine.debug.debug_state.TEDebugState.reset()
+
 
 @pytest.mark.parametrize("model_key", model_keys)
 @pytest.mark.parametrize("fp8", [False, True])

@@ -1098,7 +1098,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
                 dgrad_quantizer,
                 wgrad_quantizer,
             ) = quantizers
-            
+
             if torch.is_grad_enabled():
                 fwd_fn = _LayerNormLinear.apply
                 args = []
@@ -1188,7 +1188,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
             dgrad_quantizer,
             wgrad_quantizer
         )
-    
+
     def _get_debug_quantizers(self, fp8_output):
         (
             input_quantizer,
@@ -1214,7 +1214,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
             self.debug_name, "dgrad", dgrad_quantizer, self.tp_group)
         wgrad_quantizer = DebugQuantizer(
             self.debug_name, "wgrad", wgrad_quantizer, self.tp_group)
-        
+
         return (
             input_quantizer,
             weight_quantizer,

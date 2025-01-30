@@ -14,7 +14,7 @@
 
 from transformer_engine.debug.features.api import TEConfigAPIMapper
 
-import nvdlfw_inspect.api  as nvinspect_api
+import nvdlfw_inspect.api as nvinspect_api
 from nvdlfw_inspect.registry import Registry, api_method
 
 
@@ -36,7 +36,7 @@ class DisableFp8Layer:
     def fp8_gemm(self, config, layer_name, *args, **kwargs):
         for key in config:
             if key not in ["enabled", "gemm"]:
-              raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")
+                raise ValueError(f'[NVTORCH INSPECT ERROR] Unexpected key in config: "{key}".')
         # If FP8 training, disable FP8 for the selected layers if this feature is enabled in config.
         nvinspect_api.log_message(f"FP8 Disabled", layer_name)
         return False

@@ -16,7 +16,11 @@ from collections import defaultdict
 
 import torch
 
-from transformer_engine.debug.features.utils.stats_computation import STATS, DEPENDENCIES, stats_to_num
+from transformer_engine.debug.features.utils.stats_computation import (
+    STATS,
+    DEPENDENCIES,
+    stats_to_num,
+)
 from nvdlfw_inspect.utils import gather_along_first_dim
 from nvdlfw_inspect.logging import MetricLogger
 
@@ -31,11 +35,11 @@ class _Buffer:
         self.tensor_name = tensor_name
         self.reduction_group = reduction_group
         self.stats_to_log = stats
-        
+
         self.stats_to_compute = set()
         for stat in stats:
             self.stats_to_compute = self.stats_to_compute | DEPENDENCIES[stat]
-        
+
         self._buffer = torch.zeros(len(STATS), dtype=torch.float32).cuda()
         self._new_buffer = self._buffer.clone()
         self._tmp_buffer = self._buffer.clone()
@@ -49,24 +53,22 @@ class _Buffer:
 
     def _reset_before_next_step(self):
         self.modified[0] = False
-    
+
     def _gather_helper_stats(self):
         if self.skip_reduction:
             return self._buffer.unsqueeze(0)
-        mask = gather_along_first_dim(
-                self.modified,
-                process_group=self.reduction_group)[0]
+        mask = gather_along_first_dim(self.modified, process_group=self.reduction_group)[0]
         gathered__buffer, _ = gather_along_first_dim(
-            self._buffer.unsqueeze(0), 
-            process_group=self.reduction_group)
+            self._buffer.unsqueeze(0), process_group=self.reduction_group
+        )
         return gathered__buffer[mask.to(bool)]
-    
+
     def feed(self, tensor, iteration):
         # feed() is used to add tensor for computing the statistics.
         # Because of the microbatching, feed() can be used multiple
         # times for one log().
         #
-        # Ability to combine result for already processed tensors with 
+        # Ability to combine result for already processed tensors with
         # results new tensor are the main reason for such a design of this class.
 
         self.iteration = iteration
@@ -75,10 +77,10 @@ class _Buffer:
         for stat_name in self.stats_to_compute:
             fn, _ = STATS[stat_name]
             self._tmp_buffer[stats_to_num[stat_name]] = fn(tensor)
-        
+
         # [num_buffers, num_stats]
         buffers = torch.cat((self._buffer.unsqueeze(0), self._tmp_buffer.unsqueeze(0)), dim=0)
-        
+
         for stat_name in self.stats_to_compute:
             fn, combinator = STATS[stat_name]
             if self.modified:
@@ -86,11 +88,11 @@ class _Buffer:
             else:
                 fn = STATS[stat_name][0]
                 self._new_buffer[stats_to_num[stat_name]] = fn(tensor)
-        
+
         self._buffer.copy_(self._new_buffer)
 
         self.modified[0] = True
-    
+
     def log(self):
         # [num_active_nodes, num_stats]
         gathered_helper_stats = self._gather_helper_stats()
@@ -102,19 +104,23 @@ class _Buffer:
             combiner = STATS[stat_name][1]
             stat_value = combiner(gathered_helper_stats)
 
-            MetricLogger.log_scalar(f"{self.layer_name}_{self.tensor_name}_{stat_name}", stat_value, self.iteration)
-            output[(self.layer_name, self.tensor_name, stat_name, self.iteration)] = stat_value # for debuggin purpouses
+            MetricLogger.log_scalar(
+                f"{self.layer_name}_{self.tensor_name}_{stat_name}", stat_value, self.iteration
+            )
+            output[(self.layer_name, self.tensor_name, stat_name, self.iteration)] = (
+                stat_value  # for debuggin purpouses
+            )
         self._reset_before_next_step()
         return output
 
 
 class StatsBuffers:
     def __init__(self):
-        self.buffers = {} # (layer_name, tensor_name) -> buffer
+        self.buffers = {}  # (layer_name, tensor_name) -> buffer
         self.reduction_group_to_buffer = defaultdict(list)
-    
+
     def reset(self):
-        self.buffers = {} # (layer_name, tensor_name) -> buffer
+        self.buffers = {}  # (layer_name, tensor_name) -> buffer
         self.reduction_group_to_buffer = defaultdict(list)
 
     def try_add_buffer(self, layer_name, tensor_name, stats, options, reduction_group):
@@ -133,14 +139,17 @@ class StatsBuffers:
         output = {}
         for reduction_group, buffers in self.reduction_group_to_buffer.items():
             changed_buffers = [
-                (i, buffer) 
-                for i, buffer in enumerate(buffers) 
-                if gather_along_first_dim(buffer.modified.unsqueeze(0), process_group=reduction_group)[0].any()
+                (i, buffer)
+                for i, buffer in enumerate(buffers)
+                if gather_along_first_dim(
+                    buffer.modified.unsqueeze(0), process_group=reduction_group
+                )[0].any()
             ]
             for _, buffer in changed_buffers:
                 stats = buffer.log()
                 output = output | stats
-        
-        return output 
+
+        return output
+
 
 STATS_BUFFERS = StatsBuffers()

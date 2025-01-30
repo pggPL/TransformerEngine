@@ -1,5 +1,5 @@
 # Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# 
+#
 # See LICENSE for license information.
 
 import tempfile
@@ -18,11 +18,27 @@ import nvdlfw_inspect.api as nvinspect_api
 from transformer_engine.debug import set_weight_tensor_tp_group_reduce
 
 
-from test_numerics import _emulate_linear, \
-    _init_debug, disable_fp8_gemms_create_config, DISABLE_FP8_LAYER_CONFIG, \
-    _cmp, IN_SIZE, OUT_SIZE, _init_model, SEED, SEQ_LEN, BATCH_SIZE, \
-    FP8_RECIPE, fake_quant_fp8_create_config, _get_current_scale, \
-    _prepare_per_tensor_scaling_config, AMAX_HISTORY_LEN, set_scaling_factors, set_current_scaling_factors
+from test_numerics import (
+    _emulate_linear,
+    _init_debug,
+    disable_fp8_gemms_create_config,
+    DISABLE_FP8_LAYER_CONFIG,
+    _cmp,
+    IN_SIZE,
+    OUT_SIZE,
+    _init_model,
+    SEED,
+    SEQ_LEN,
+    BATCH_SIZE,
+    FP8_RECIPE,
+    fake_quant_fp8_create_config,
+    _get_current_scale,
+    _prepare_per_tensor_scaling_config,
+    AMAX_HISTORY_LEN,
+    set_scaling_factors,
+    set_current_scaling_factors,
+)
+
 WORLD_RANK, WORLD_SIZE = None, None
 NCCL_WORLD = None
 FEATURE_DIRS = None
@@ -43,7 +59,7 @@ def _get_tensors(parallel_mode, weight_seed=SEED, data_seed=SEED, tp_size=None, 
     if parallel_mode == "row":
         x = x[:, tp_rank * in_split_size : (tp_rank + 1) * in_split_size]
     x.retain_grad()
-    
+
     with torch.no_grad():
         if parallel_mode == "column":
             weight = weight[tp_rank * out_split_size : (tp_rank + 1) * out_split_size, :]
@@ -55,10 +71,16 @@ def _get_tensors(parallel_mode, weight_seed=SEED, data_seed=SEED, tp_size=None, 
 
 def _init_model(weight, parallel_mode=None, tp_group=None, name="linear"):
     model = transformer_engine.pytorch.Linear(
-        IN_SIZE , OUT_SIZE, debug_name=name, parallel_mode=parallel_mode, tp_group=(tp_group or NCCL_WORLD if parallel_mode else None))
+        IN_SIZE,
+        OUT_SIZE,
+        debug_name=name,
+        parallel_mode=parallel_mode,
+        tp_group=(tp_group or NCCL_WORLD if parallel_mode else None),
+    )
     with torch.no_grad():
         model.weight.copy_(weight)
     return model
+
 
 class AllGather(torch.autograd.Function):
     @staticmethod
@@ -70,7 +92,6 @@ class AllGather(torch.autograd.Function):
             world_size = torch.distributed.get_world_size(group=group)
             rank = torch.distributed.get_rank(group=group)
             dist.barrier()
-            
 
         # Create a list to gather tensors from all processes
         y_list = [torch.zeros_like(tensor) for _ in range(world_size)]
@@ -92,10 +113,11 @@ class AllGather(torch.autograd.Function):
         grad_input = torch.chunk(grad_output, ctx.world_size, dim=ctx.dim)[ctx.rank]
         return grad_input, None, None
 
-def _run_forward_backward(x,  model, parallel_mode=None, group=None):
+
+def _run_forward_backward(x, model, parallel_mode=None, group=None):
     with transformer_engine.pytorch.fp8_autocast(enabled=True, fp8_recipe=FP8_RECIPE):
         y = model(x)
-    
+
     y.requires_grad_(True)
     y.retain_grad()
     if parallel_mode == "column":
@@ -109,6 +131,7 @@ def _run_forward_backward(x,  model, parallel_mode=None, group=None):
         l.backward()
     nvinspect_api.step()
     return y
+
 
 def _emulate_linear_distributed(*args, parallel_mode=None, **kwargs):
     assert parallel_mode in ["column", "row"]
@@ -124,14 +147,19 @@ def _emulate_linear_distributed(*args, parallel_mode=None, **kwargs):
         activation_sync = lambda x: AllGather.apply(x, -1)
         gradient_sync = split
     else:
-        activation_sync = lambda activation: dist.all_reduce(activation, op=dist.ReduceOp.SUM) or activation
+        activation_sync = (
+            lambda activation: dist.all_reduce(activation, op=dist.ReduceOp.SUM) or activation
+        )
 
-    output = _emulate_linear(*args, activation_sync=activation_sync, gradient_sync=gradient_sync, **kwargs)
+    output = _emulate_linear(
+        *args, activation_sync=activation_sync, gradient_sync=gradient_sync, **kwargs
+    )
 
     if parallel_mode == "column":
         dist.all_reduce(output["dgrad"], op=dist.ReduceOp.SUM)
 
     return output
+
 
 def check_debug_log(msg):
     with open(f"log/debug_logs/debug_log_globalrank-{WORLD_RANK}.log", "r") as f:
@@ -139,6 +167,7 @@ def check_debug_log(msg):
             if msg in line:
                 return True
     return False
+
 
 def run_debug_test(func):
     @functools.wraps(func)
@@ -148,7 +177,7 @@ def run_debug_test(func):
         temp_logdir_name = None
 
         if rank == 0:
-            with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_file:
+            with tempfile.NamedTemporaryFile(mode="w+", delete=False) as temp_file:
                 temp_file_name = temp_file.name
             temp_dir_obj = tempfile.TemporaryDirectory()
             temp_logdir_name = temp_dir_obj.name
@@ -168,11 +197,11 @@ def run_debug_test(func):
 
         dist.barrier()
 
-        config_file = open(temp_file_name, mode='r+', buffering=1)
+        config_file = open(temp_file_name, mode="r+", buffering=1)
 
         try:
-            kwargs['config_file'] = config_file
-            kwargs['log_dir'] = temp_logdir_name  
+            kwargs["config_file"] = config_file
+            kwargs["log_dir"] = temp_logdir_name
 
             if rank == 0:
                 global TEST_NR
@@ -187,8 +216,9 @@ def run_debug_test(func):
             nvinspect_api.end_debug()
             transformer_engine.debug.debug_state.TEDebugState.reset()
 
-            if rank == 0 and hasattr(wrapper, 'temp_dir_obj'):
+            if rank == 0 and hasattr(wrapper, "temp_dir_obj"):
                 wrapper.temp_dir_obj.cleanup()
+
     return wrapper
 
 
@@ -212,11 +242,13 @@ CONFIG_LOG_TEST_DISTRIBUTED = """log_distributed:
       end_step: 1
 """
 
+
 def _prepare_config_test_log_distributed(config_file):
     if WORLD_RANK != 0:
         return
     config_file.write(CONFIG_LOG_TEST_DISTRIBUTED)
     config_file.flush()
+
 
 def _compute_dynamic_range(tensor):
     tensor_abs = tensor.abs()
@@ -231,13 +263,14 @@ def _compute_dynamic_range(tensor):
     dynamic_range = torch.log2(amax) - torch.log2(amin)
     return dynamic_range
 
+
 @run_debug_test
 def test_log_distributed(parallel_mode, gather_weight, **kwargs):
-    _prepare_config_test_log_distributed(kwargs['config_file'])
-    _init_debug(kwargs['config_file'].name, kwargs['log_dir'], FEATURE_DIRS)
+    _prepare_config_test_log_distributed(kwargs["config_file"])
+    _init_debug(kwargs["config_file"].name, kwargs["log_dir"], FEATURE_DIRS)
     set_weight_tensor_tp_group_reduce(gather_weight)
     if WORLD_SIZE % 2 != 0:
-        return # skip
+        return  # skip
     TP_SIZE = WORLD_SIZE // 2
     DP_SIZE = 2
     TP_RANK = WORLD_RANK % TP_SIZE
@@ -245,8 +278,14 @@ def test_log_distributed(parallel_mode, gather_weight, **kwargs):
 
     nvinspect_api.set_tensor_reduction_group(NCCL_WORLD)
 
-    x, weight = _get_tensors(parallel_mode, weight_seed=TP_RANK*1234, data_seed=DP_RANK*1234, tp_size=TP_SIZE, tp_rank=TP_RANK)
-    
+    x, weight = _get_tensors(
+        parallel_mode,
+        weight_seed=TP_RANK * 1234,
+        data_seed=DP_RANK * 1234,
+        tp_size=TP_SIZE,
+        tp_rank=TP_RANK,
+    )
+
     tp_group_ranks = [i for i in range(DP_RANK * TP_SIZE, (DP_RANK + 1) * TP_SIZE)]
     tp_group = dist.new_group(ranks=tp_group_ranks)
 
@@ -262,28 +301,30 @@ def test_log_distributed(parallel_mode, gather_weight, **kwargs):
     if parallel_mode == "row":
         gathered_gradient = AllGather.apply(gathered_gradient, 0, tp_group)
 
-    log_file = kwargs['log_dir'] + "/nvdlfw_inspect_statistics_logs/nvdlfw_inspect_globalrank-0.log"
+    log_file = kwargs["log_dir"] + "/nvdlfw_inspect_statistics_logs/nvdlfw_inspect_globalrank-0.log"
 
     dist.barrier()
     if WORLD_RANK != 0:
-        return # stats are gathered on node 0
+        return  # stats are gathered on node 0
     with open(log_file) as f:
         content = f.read()
 
     def get_stat(tensor, stat):
-        regex = r'.*_{tensor}_{stat}\s+.*iteration=(\d+)\s+.*value=([-+]?\d*\.?\d+)'.format(tensor=tensor, stat=stat)
+        regex = r".*_{tensor}_{stat}\s+.*iteration=(\d+)\s+.*value=([-+]?\d*\.?\d+)".format(
+            tensor=tensor, stat=stat
+        )
         for line in content.splitlines():
             match = re.search(regex, line)
             if match:
                 value = float(match.group(2))
-                return value 
+                return value
 
     rf = lambda x: round(float(x), 4)
     stats = []
     tensors = {
         "activation": gathered_activation,
         "weight": gathered_weight if gather_weight else weight,
-        "gradient": gathered_gradient
+        "gradient": gathered_gradient,
     }
     stats = {
         "min": torch.min,
@@ -298,24 +339,27 @@ def test_log_distributed(parallel_mode, gather_weight, **kwargs):
     for stat_key in stats.keys():
         for tensor_key in tensors.keys():
             torch.testing.assert_close(
-                get_stat(tensor_key, stat_key), 
-                rf(stats[stat_key](tensors[tensor_key])), 
-                atol=0.0001, 
-                rtol=0.0001)
-    set_weight_tensor_tp_group_reduce(True) # reset
-            
+                get_stat(tensor_key, stat_key),
+                rf(stats[stat_key](tensors[tensor_key])),
+                atol=0.0001,
+                rtol=0.0001,
+            )
+    set_weight_tensor_tp_group_reduce(True)  # reset
+
 
 @run_debug_test
 def test_log_expert_parallel(**kwargs):
     """
-        This test tests the scenario, when one of the node of data parallel does not invoke the debug layer.
-        It naturally occurs in the expert parallelism, when one expert doesn't get input on one node,
-        but gets it on other nodes. If there were all_gather inside forward(), this would result in deadlock.
+    This test tests the scenario, when one of the node of data parallel does not invoke the debug layer.
+    It naturally occurs in the expert parallelism, when one expert doesn't get input on one node,
+    but gets it on other nodes. If there were all_gather inside forward(), this would result in deadlock.
     """
-    _prepare_config_test_log_distributed(kwargs['config_file'])
-    _init_debug(kwargs['config_file'].name, kwargs['log_dir'], FEATURE_DIRS)
+    _prepare_config_test_log_distributed(kwargs["config_file"])
+    _init_debug(kwargs["config_file"].name, kwargs["log_dir"], FEATURE_DIRS)
     nvinspect_api.set_tensor_reduction_group(NCCL_WORLD)
-    x, weight = _get_tensors("row", weight_seed=WORLD_RANK*1234, data_seed=WORLD_RANK*1234, tp_size=1, tp_rank=0) # data parallel
+    x, weight = _get_tensors(
+        "row", weight_seed=WORLD_RANK * 1234, data_seed=WORLD_RANK * 1234, tp_size=1, tp_rank=0
+    )  # data parallel
     model = _init_model(weight, parallel_mode=None, name="linear1")
     model1 = _init_model(weight, parallel_mode=None, name="linear2")
     with transformer_engine.pytorch.fp8_autocast(enabled=True, fp8_recipe=FP8_RECIPE):
@@ -327,60 +371,64 @@ def test_log_expert_parallel(**kwargs):
     with transformer_engine.pytorch.fp8_autocast(enabled=True, fp8_recipe=FP8_RECIPE):
         y = model(x)
         if WORLD_RANK != 0:
-           y = y + model1(x)
-    
+            y = y + model1(x)
+
     y.sum().backward()
+
 
 @run_debug_test
 def test_disable_fp8_gemms(fprop_fp8, dgrad_fp8, wgrad_fp8, parallel_mode, **kwargs):
-    disable_fp8_gemms_create_config(fprop_fp8, dgrad_fp8, wgrad_fp8, kwargs['config_file'])
+    disable_fp8_gemms_create_config(fprop_fp8, dgrad_fp8, wgrad_fp8, kwargs["config_file"])
     fp8_kwargs = {
         "fprop_fp8": fprop_fp8,
         "dgrad_fp8": dgrad_fp8,
         "wgrad_fp8": wgrad_fp8,
     }
 
-    _init_debug(kwargs['config_file'].name, kwargs['log_dir'], FEATURE_DIRS)
+    _init_debug(kwargs["config_file"].name, kwargs["log_dir"], FEATURE_DIRS)
     x, weight = _get_tensors(parallel_mode)
     model = _init_model(weight, parallel_mode=parallel_mode)
     y = _run_forward_backward(x, model, parallel_mode=parallel_mode)
-    
-    output = {
-        "activation":  y.clone(),
-        "wgrad": model.weight.grad.clone(),
-        "dgrad": x.grad.clone()
-    }
+
+    output = {"activation": y.clone(), "wgrad": model.weight.grad.clone(), "dgrad": x.grad.clone()}
 
     x.grad.zero_()
-    ground_truth = _emulate_linear_distributed(x, weight,  parallel_mode=parallel_mode, **fp8_kwargs)
+    ground_truth = _emulate_linear_distributed(x, weight, parallel_mode=parallel_mode, **fp8_kwargs)
     _cmp(ground_truth, output)
+
 
 @run_debug_test
 def test_disable_fp8_layer(parallel_mode, **kwargs):
     if WORLD_RANK == 0:
-        kwargs['config_file'].write(DISABLE_FP8_LAYER_CONFIG)
-        kwargs['config_file'].flush()
+        kwargs["config_file"].write(DISABLE_FP8_LAYER_CONFIG)
+        kwargs["config_file"].flush()
     dist.barrier()
 
     x, weight = _get_tensors(parallel_mode)
-    
+
     ground_truth = _emulate_linear_distributed(x, weight, parallel_mode=parallel_mode)
     x.grad.zero_()
 
-    _init_debug(kwargs['config_file'].name, kwargs['log_dir'], FEATURE_DIRS)
+    _init_debug(kwargs["config_file"].name, kwargs["log_dir"], FEATURE_DIRS)
 
     model = _init_model(weight, parallel_mode)
     y = _run_forward_backward(x, model, parallel_mode)
 
-    output = {
-        "activation": y.clone(),
-        "wgrad": model.weight.grad.clone(),
-        "dgrad": x.grad.clone()
-    }
+    output = {"activation": y.clone(), "wgrad": model.weight.grad.clone(), "dgrad": x.grad.clone()}
     _cmp(ground_truth, output)
 
+
 @run_debug_test
-def test_per_tensor_scaling(fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, wgrad_input, wgrad_grad, parallel_mode, **kwargs):
+def test_per_tensor_scaling(
+    fprop_inp,
+    fprop_weight,
+    dgrad_weight,
+    dgrad_grad,
+    wgrad_input,
+    wgrad_grad,
+    parallel_mode,
+    **kwargs,
+):
     input_kwargs = {
         "fprop_inp": fprop_inp,
         "fprop_weight": fprop_weight,
@@ -395,24 +443,34 @@ def test_per_tensor_scaling(fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, w
         "wgrad_fp8": True,
     }
     """
-        Runs a test to validate per-tensor (current) scaling in FP8 computations. 
-        The function performs warm-up iterations to populate the amax buffer of the model and compute scaling factors based on delayed scaling. 
-        Subsequently, weights and inputs are switched to ensure their current scaling factors differ from those based on delayed scaling; 
-        similarly, the loss is multiplied by a large factor to alter the gradient's magnitude, 
-        creating a discrepancy between the original (delayed) and per-tensor (current) scaling factors. 
+        Runs a test to validate per-tensor (current) scaling in FP8 computations.
+        The function performs warm-up iterations to populate the amax buffer of the model and compute scaling factors based on delayed scaling.
+        Subsequently, weights and inputs are switched to ensure their current scaling factors differ from those based on delayed scaling;
+        similarly, the loss is multiplied by a large factor to alter the gradient's magnitude,
+        creating a discrepancy between the original (delayed) and per-tensor (current) scaling factors.
         Finally, a linear pass is emulated, and the results are compared.”
     """
-    _prepare_per_tensor_scaling_config(fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, wgrad_input, wgrad_grad, kwargs['config_file'])
-    _init_debug(kwargs['config_file'].name, kwargs['log_dir'], FEATURE_DIRS)
+    _prepare_per_tensor_scaling_config(
+        fprop_inp,
+        fprop_weight,
+        dgrad_weight,
+        dgrad_grad,
+        wgrad_input,
+        wgrad_grad,
+        kwargs["config_file"],
+    )
+    _init_debug(kwargs["config_file"].name, kwargs["log_dir"], FEATURE_DIRS)
 
-    warmup_input, warmup_weight  = _get_tensors(parallel_mode=parallel_mode)
+    warmup_input, warmup_weight = _get_tensors(parallel_mode=parallel_mode)
     model = _init_model(warmup_weight, parallel_mode=parallel_mode)
 
     # Warmup run to setup amax and scaling factors.
     for _ in range(AMAX_HISTORY_LEN):
         _run_forward_backward(warmup_input, model, parallel_mode=parallel_mode)
-    
-    x, weight = _get_tensors(parallel_mode=parallel_mode, weight_seed=WORLD_RANK*2137, data_seed=WORLD_RANK*2137)
+
+    x, weight = _get_tensors(
+        parallel_mode=parallel_mode, weight_seed=WORLD_RANK * 2137, data_seed=WORLD_RANK * 2137
+    )
     model.weight.data = weight.data
     x.retain_grad()
 
@@ -429,26 +487,35 @@ def test_per_tensor_scaling(fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, w
         if parallel_mode == "column":
             y = AllGather.apply(y, -1)
         y.retain_grad()
-        
-        (LOSS_MULTIPLIER * y.sum()).backward() # Loss multiplication to change gradient's order of magintude
 
-    output =  {
-        "activation": y.clone(),
-        "wgrad": model.weight.grad.clone(),
-        "dgrad": x.grad.clone()
-    }
+        (
+            LOSS_MULTIPLIER * y.sum()
+        ).backward()  # Loss multiplication to change gradient's order of magintude
+
+    output = {"activation": y.clone(), "wgrad": model.weight.grad.clone(), "dgrad": x.grad.clone()}
     # per tensor - current - scaling factors
     # need to be collected after forward pass with test data,
     # because gradient(y.grad) cannot be accessed before forward,
     # but it needs to be collected.
     set_current_scaling_factors(x, weight, y, input_kwargs, fp8_kwargs)
-    ground_truth = _emulate_linear_distributed(x, weight, parallel_mode=parallel_mode, loss_multiplier = LOSS_MULTIPLIER, **fp8_kwargs)
+    ground_truth = _emulate_linear_distributed(
+        x, weight, parallel_mode=parallel_mode, loss_multiplier=LOSS_MULTIPLIER, **fp8_kwargs
+    )
 
     _cmp(ground_truth, output)
 
 
 @run_debug_test
-def test_fake_quant_fp8(fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, wgrad_input, wgrad_grad, parallel_mode, **kwargs):
+def test_fake_quant_fp8(
+    fprop_inp,
+    fprop_weight,
+    dgrad_weight,
+    dgrad_grad,
+    wgrad_input,
+    wgrad_grad,
+    parallel_mode,
+    **kwargs,
+):
 
     fp8_kwargs = {
         "fprop_input_fake_quant": fprop_inp,
@@ -462,27 +529,44 @@ def test_fake_quant_fp8(fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, wgrad
         "wgrad_fp8": not (wgrad_grad or wgrad_input),
     }
     if WORLD_RANK == 0:
-        fake_quant_fp8_create_config(fprop_inp, fprop_weight, dgrad_weight, dgrad_grad, wgrad_input, wgrad_grad, kwargs['config_file'])
+        fake_quant_fp8_create_config(
+            fprop_inp,
+            fprop_weight,
+            dgrad_weight,
+            dgrad_grad,
+            wgrad_input,
+            wgrad_grad,
+            kwargs["config_file"],
+        )
     dist.barrier()
-    _init_debug(kwargs['config_file'].name, kwargs['log_dir'], FEATURE_DIRS)
-    
+    _init_debug(kwargs["config_file"].name, kwargs["log_dir"], FEATURE_DIRS)
+
     x, weight = _get_tensors(parallel_mode)
     model = _init_model(weight, parallel_mode)
     y = _run_forward_backward(x, model, parallel_mode)
 
-    output = {
-        "activation": y.clone(),
-        "wgrad": model.weight.grad.clone(),
-        "dgrad": x.grad.clone()
-    }
-    fp8_kwargs["fprop_input_scale"] = _get_current_scale(x, fprop_inp) if not fp8_kwargs["fprop_fp8"] else None
-    fp8_kwargs["fprop_weight_scale"] = _get_current_scale(weight, fprop_weight) if not fp8_kwargs["fprop_fp8"] else None
-    fp8_kwargs["dgrad_gradient_scale"] = _get_current_scale(y.grad, dgrad_grad) if not fp8_kwargs["dgrad_fp8"] else None
-    fp8_kwargs["dgrad_weight_scale"] = _get_current_scale(weight, dgrad_weight) if not fp8_kwargs["dgrad_fp8"] else None
-    fp8_kwargs["wgrad_gradient_scale"] = _get_current_scale(y.grad, wgrad_grad) if not fp8_kwargs["wgrad_fp8"] else None
-    fp8_kwargs["wgrad_input_scale"] = _get_current_scale(x, wgrad_input) if not fp8_kwargs["wgrad_fp8"] else None
+    output = {"activation": y.clone(), "wgrad": model.weight.grad.clone(), "dgrad": x.grad.clone()}
+    fp8_kwargs["fprop_input_scale"] = (
+        _get_current_scale(x, fprop_inp) if not fp8_kwargs["fprop_fp8"] else None
+    )
+    fp8_kwargs["fprop_weight_scale"] = (
+        _get_current_scale(weight, fprop_weight) if not fp8_kwargs["fprop_fp8"] else None
+    )
+    fp8_kwargs["dgrad_gradient_scale"] = (
+        _get_current_scale(y.grad, dgrad_grad) if not fp8_kwargs["dgrad_fp8"] else None
+    )
+    fp8_kwargs["dgrad_weight_scale"] = (
+        _get_current_scale(weight, dgrad_weight) if not fp8_kwargs["dgrad_fp8"] else None
+    )
+    fp8_kwargs["wgrad_gradient_scale"] = (
+        _get_current_scale(y.grad, wgrad_grad) if not fp8_kwargs["wgrad_fp8"] else None
+    )
+    fp8_kwargs["wgrad_input_scale"] = (
+        _get_current_scale(x, wgrad_input) if not fp8_kwargs["wgrad_fp8"] else None
+    )
     ground_truth = _emulate_linear_distributed(x, weight, parallel_mode=parallel_mode, **fp8_kwargs)
     _cmp(ground_truth, output)
+
 
 def _init_distributed():
     global WORLD_RANK, WORLD_SIZE, NCCL_WORLD, FP8
@@ -509,15 +593,19 @@ def _init_distributed():
 
     WORLD_SIZE = dist.get_world_size()
 
-def _run_test_with_combinations(test_function, values_list, num_repeat, extra_args, sample_size=None):
+
+def _run_test_with_combinations(
+    test_function, values_list, num_repeat, extra_args, sample_size=None
+):
     combinations = itertools.product(values_list, repeat=num_repeat)
     total_combinations = itertools.product(combinations, extra_args)
-    
+
     if sample_size is not None:
         total_combinations = random.sample(list(total_combinations), sample_size)
-    
+
     for comb, arg in total_combinations:
         test_function(*comb, arg)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -537,10 +625,7 @@ if __name__ == "__main__":
 
     # test_disable_fp8_gemms
     _run_test_with_combinations(
-        test_disable_fp8_gemms,
-        all_boolean,
-        num_repeat=3,
-        extra_args=["column", "row"]
+        test_disable_fp8_gemms, all_boolean, num_repeat=3, extra_args=["column", "row"]
     )
 
     # test_per_tensor_scaling
@@ -549,7 +634,7 @@ if __name__ == "__main__":
         all_boolean,
         num_repeat=6,
         extra_args=["column", "row"],
-        sample_size=20
+        sample_size=20,
     )
 
     # test_fake_quant_fp8
@@ -559,5 +644,5 @@ if __name__ == "__main__":
         dtype_options,
         num_repeat=6,
         extra_args=["column", "row"],
-        sample_size=20
+        sample_size=20,
     )

@@ -7,7 +7,13 @@ from typing import Optional, Tuple, Iterable, Any, Dict, List
 from dataclasses import dataclass
 import torch
 
-from ..pytorch.tensor.quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc, prepare_for_saving, restore_from_saved
+from ..pytorch.tensor.quantized_tensor import (
+    QuantizedTensor,
+    Quantizer,
+    _IdentityFunc,
+    prepare_for_saving,
+    restore_from_saved,
+)
 from transformer_engine.debug.debug_state import TEDebugState
 import transformer_engine_torch as tex
 
@@ -34,18 +40,25 @@ class DebugQuantizer(Quantizer):
         self.layer_name = layer_name
         self.tensor_name = tensor_name
         self.parent_quantizer = parent_quantizer
-        self.tp_group = tp_group # used in look_at_tensor calls
+        self.tp_group = tp_group  # used in look_at_tensor calls
         iteration = nvinspect_api.DEBUG_MANAGER._trainer_iteration_count
 
         self.first_gemm_name, self.second_gemm_name = _gemm_map[tensor_name]
 
         self.output_tensor = tensor_name in ["output", "wgrad", "dgrad"]
         if self.output_tensor:
-            self.use_look_at_tensor_before_process = nvinspect_api.transformer_engine.use_look_at_tensor_before_process(
-                layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration)
+            self.use_look_at_tensor_before_process = (
+                nvinspect_api.transformer_engine.use_look_at_tensor_before_process(
+                    layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration
+                )
+            )
             self.output_process_tensor = nvinspect_api.transformer_engine.use_process_tensor(
-                layer_name=self.layer_name, gemm=self.first_gemm_name, tensor_name=self.tensor_name, iteration=iteration)
-            return # logic for tensors which are output of the gemms is much simpler
+                layer_name=self.layer_name,
+                gemm=self.first_gemm_name,
+                tensor_name=self.tensor_name,
+                iteration=iteration,
+            )
+            return  # logic for tensors which are output of the gemms is much simpler
 
         # If gemm in conducted in the high precision,
         # then it is checked whether
@@ -54,70 +67,100 @@ class DebugQuantizer(Quantizer):
         #
         # Then it is checked whether
         # gemms, that use the tensor, will be conducted in
-        # fp8 or in high precision. If in fp8, then 
+        # fp8 or in high precision. If in fp8, then
         # standard quantizer is used.
         #
-        # If none of the above is True, 
+        # If none of the above is True,
         # then high-precision tensor without any modifications will be used.
         self.process_tensor_first_gemm = False
         self.process_tensor_second_gemm = False
         self.fp8_quantize_second_gemm = False
         self.fp8_quantize_first_gemm = False
-        self.use_look_at_tensor_before_process = nvinspect_api.transformer_engine.use_look_at_tensor_before_process(
-            layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration)
-        self.use_look_at_tensor_after_process = nvinspect_api.transformer_engine.use_look_at_tensor_after_process(
-            layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration)
-        
-
-        
+        self.use_look_at_tensor_before_process = (
+            nvinspect_api.transformer_engine.use_look_at_tensor_before_process(
+                layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration
+            )
+        )
+        self.use_look_at_tensor_after_process = (
+            nvinspect_api.transformer_engine.use_look_at_tensor_after_process(
+                layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration
+            )
+        )
 
         self.process_tensor_first_gemm = nvinspect_api.transformer_engine.use_process_tensor(
-            layer_name=self.layer_name, gemm=self.first_gemm_name, tensor_name=self.tensor_name, iteration=iteration)
+            layer_name=self.layer_name,
+            gemm=self.first_gemm_name,
+            tensor_name=self.tensor_name,
+            iteration=iteration,
+        )
         if not self.process_tensor_first_gemm:
             if self.parent_quantizer is not None:
                 self.fp8_quantize_first_gemm = nvinspect_api.transformer_engine.fp8_gemm(
-                    layer_name=self.layer_name, gemm=self.first_gemm_name, iteration=iteration)
+                    layer_name=self.layer_name, gemm=self.first_gemm_name, iteration=iteration
+                )
 
         if self.second_gemm_name is not None:
             self.process_tensor_second_gemm = nvinspect_api.transformer_engine.use_process_tensor(
-                layer_name=self.layer_name, gemm=self.second_gemm_name, tensor_name=self.tensor_name, iteration=iteration)
+                layer_name=self.layer_name,
+                gemm=self.second_gemm_name,
+                tensor_name=self.tensor_name,
+                iteration=iteration,
+            )
             if not self.process_tensor_second_gemm:
                 if self.parent_quantizer is not None:
                     self.fp8_quantize_second_gemm = nvinspect_api.transformer_engine.fp8_gemm(
-                        layer_name=self.layer_name, gemm=self.second_gemm_name, iteration=iteration)
-        
+                        layer_name=self.layer_name, gemm=self.second_gemm_name, iteration=iteration
+                    )
+
         # Information of the invoked API will be posted here
         if self.process_tensor_first_gemm:
-            nvinspect_api.log_message(f"Tensor: {self.tensor_name}, gemm {self.first_gemm_name} - process_tensor", layer_name=self.layer_name,
-                                      extra_cachable_args=(self.first_gemm_name, self.tensor_name))
+            nvinspect_api.log_message(
+                f"Tensor: {self.tensor_name}, gemm {self.first_gemm_name} - process_tensor",
+                layer_name=self.layer_name,
+                extra_cachable_args=(self.first_gemm_name, self.tensor_name),
+            )
         elif self.fp8_quantize_first_gemm:
-            nvinspect_api.log_message(f"Tensor: {self.tensor_name}, gemm {self.first_gemm_name} - FP8 quanitation", layer_name=self.layer_name, 
-                                      extra_cachable_args=(self.first_gemm_name, self.tensor_name))
+            nvinspect_api.log_message(
+                f"Tensor: {self.tensor_name}, gemm {self.first_gemm_name} - FP8 quanitation",
+                layer_name=self.layer_name,
+                extra_cachable_args=(self.first_gemm_name, self.tensor_name),
+            )
         else:
-            nvinspect_api.log_message(f"Tensor: {self.tensor_name}, gemm {self.first_gemm_name} - High precision", layer_name=self.layer_name, 
-                                      extra_cachable_args=(self.first_gemm_name, self.tensor_name))
-            
-        if self.process_tensor_second_gemm:
-            nvinspect_api.log_message(f"Tensor: {self.tensor_name}, gemm {self.second_gemm_name} - process_tensor", layer_name=self.layer_name, 
-                                      extra_cachable_args=(self.second_gemm_name, self.tensor_name))
-        elif self.fp8_quantize_second_gemm:
-            nvinspect_api.log_message(f"Tensor: {self.tensor_name}, gemm {self.second_gemm_name} - FP8 quanitation", layer_name=self.layer_name, 
-                                      extra_cachable_args=(self.first_gemm_name, self.tensor_name))
-        else:
-            nvinspect_api.log_message(f"Tensor: {self.tensor_name}, gemm {self.second_gemm_name} - High precision", layer_name=self.layer_name, 
-                                      extra_cachable_args=(self.second_gemm_name, self.tensor_name))
+            nvinspect_api.log_message(
+                f"Tensor: {self.tensor_name}, gemm {self.first_gemm_name} - High precision",
+                layer_name=self.layer_name,
+                extra_cachable_args=(self.first_gemm_name, self.tensor_name),
+            )
 
-    
+        if self.process_tensor_second_gemm:
+            nvinspect_api.log_message(
+                f"Tensor: {self.tensor_name}, gemm {self.second_gemm_name} - process_tensor",
+                layer_name=self.layer_name,
+                extra_cachable_args=(self.second_gemm_name, self.tensor_name),
+            )
+        elif self.fp8_quantize_second_gemm:
+            nvinspect_api.log_message(
+                f"Tensor: {self.tensor_name}, gemm {self.second_gemm_name} - FP8 quanitation",
+                layer_name=self.layer_name,
+                extra_cachable_args=(self.first_gemm_name, self.tensor_name),
+            )
+        else:
+            nvinspect_api.log_message(
+                f"Tensor: {self.tensor_name}, gemm {self.second_gemm_name} - High precision",
+                layer_name=self.layer_name,
+                extra_cachable_args=(self.second_gemm_name, self.tensor_name),
+            )
+
     def _call_look_at_tensor_api(self, tensor, first_gemm_tensor=None, second_gemm_tensor=None):
         args = {
-            "layer_name": self.layer_name, 
-            "tensor": tensor, 
+            "layer_name": self.layer_name,
+            "tensor": tensor,
             "tensor_name": self.tensor_name,
-            "iteration": nvinspect_api.DEBUG_MANAGER._trainer_iteration_count
+            "iteration": nvinspect_api.DEBUG_MANAGER._trainer_iteration_count,
         }
         if tensor is not None:
             nvinspect_api.transformer_engine.look_at_tensor_before_process(**args)
-        
+
         if self.output_tensor:
             return
 
@@ -129,24 +172,22 @@ class DebugQuantizer(Quantizer):
             args["rowwise"] = False
             nvinspect_api.transformer_engine.look_at_tensor_after_process(**args)
 
-    
-    def quantize(self, tensor, *, out = None):
+    def quantize(self, tensor, *, out=None):
         assert not self.output_tensor
         if out is not None:
             return self.update_quantized(tensor, self)
 
         iteration = nvinspect_api.DEBUG_MANAGER._trainer_iteration_count
 
-
         # 1. If there is fp8 quantization in at least one of the gemms,
         #    the quantization using the self.parent_quantizer is performed.
 
         # first gemm corresponds to the rowwise_usage in fp8, similarly with columnwise
         first_gemm_quantize = self.rowwise_usage and self.fp8_quantize_first_gemm
-        second_gemm_quantize =  self.columnwise_usage and self.fp8_quantize_second_gemm
+        second_gemm_quantize = self.columnwise_usage and self.fp8_quantize_second_gemm
         if second_gemm_quantize and not first_gemm_quantize:
-            first_gemm_quantize = True # only second_gemm not implemented
-        
+            first_gemm_quantize = True  # only second_gemm not implemented
+
         first_gemm_tensor = None
         second_gemm_tensor = None
 
@@ -159,19 +200,29 @@ class DebugQuantizer(Quantizer):
             # one tensor with columnwise=True and rowwise=True is computed
             # and both first_gemm_tensor and second_gemm_tensor point to it.
             if self.rowwise_usage and self.fp8_quantize_first_gemm:
-                first_gemm_tensor = quantized_tensor 
+                first_gemm_tensor = quantized_tensor
             if self.columnwise_usage and self.fp8_quantize_second_gemm:
                 second_gemm_tensor = quantized_tensor
-            
+
         # 2. Process_tensor() is called, if it is used.
         if self.process_tensor_second_gemm:
             second_gemm_tensor = nvinspect_api.transformer_engine.process_tensor(
-                layer_name=self.layer_name, tensor_name=self.tensor_name, gemm=self.second_gemm_name, 
-                tensor=tensor, default_quantizer=self.parent_quantizer, iteration=iteration)
+                layer_name=self.layer_name,
+                tensor_name=self.tensor_name,
+                gemm=self.second_gemm_name,
+                tensor=tensor,
+                default_quantizer=self.parent_quantizer,
+                iteration=iteration,
+            )
         if self.process_tensor_first_gemm:
             first_gemm_tensor = nvinspect_api.transformer_engine.process_tensor(
-                layer_name=self.layer_name, tensor_name=self.tensor_name, gemm=self.first_gemm_name, 
-                tensor=tensor, default_quantizer=self.parent_quantizer, iteration=iteration)
+                layer_name=self.layer_name,
+                tensor_name=self.tensor_name,
+                gemm=self.first_gemm_name,
+                tensor=tensor,
+                default_quantizer=self.parent_quantizer,
+                iteration=iteration,
+            )
 
         # 3. If some tensors still are not defined we use input tensor.
         if first_gemm_tensor is None:
@@ -191,29 +242,25 @@ class DebugQuantizer(Quantizer):
             second_gemm_tensor=second_gemm_tensor,
             quantizer=self,
             layer_name=self.layer_name,
-            tensor_name=self.tensor_name
+            tensor_name=self.tensor_name,
         )
 
     def process_gemm_output(self, tensor):
         # This call is invoked after the gemm to process output tensor and save the stats.
         assert self.parent_quantizer is None, "FP8 output is not supported for debug=True."
-        assert  self.output_tensor
-        tensor_to_gemm = {
-            "output": "fprop",
-            "wgrad": "wgrad",
-            "dgrad": "dgrad"
-        }
+        assert self.output_tensor
+        tensor_to_gemm = {"output": "fprop", "wgrad": "wgrad", "dgrad": "dgrad"}
         if self.output_process_tensor:
             tensor = nvinspect_api.transformer_engine.process_tensor(
-                layer_name=self.layer_name, 
-                gemm=tensor_to_gemm[self.tensor_name], 
+                layer_name=self.layer_name,
+                gemm=tensor_to_gemm[self.tensor_name],
                 tensor_name=self.tensor_name,
-                tensor=tensor, 
-                iteration=nvinspect_api.DEBUG_MANAGER._trainer_iteration_count
+                tensor=tensor,
+                iteration=nvinspect_api.DEBUG_MANAGER._trainer_iteration_count,
             )
         self._call_look_at_tensor_api(tensor)
         return tensor
-    
+
     def make_empty(
         self,
         shape: Iterable[int],
@@ -225,12 +272,13 @@ class DebugQuantizer(Quantizer):
             return self.parent_quantizer(shape, dtype=dtype, device=device)
         else:
             return torch.empty(shape, dtype=dtype, device=device)
-    
+
     def calibrate(self, tensor: torch.Tensor):
         raise RuntimeError("Calibration with debug=True is not supported")
-    
+
     def update_quantized(
-        self, src: torch.Tensor,
+        self,
+        src: torch.Tensor,
         dst: QuantizedTensor,
         *,
         noop_flag: Optional[torch.Tensor] = None,
@@ -252,19 +300,32 @@ class DebugQuantizer(Quantizer):
                 else:
                     tex.quantize(src, self.parent_quantizer, dst.second_gemm_tensor, None)
                 updated_second_gemm = True
-        
+
         if self.process_tensor_second_gemm:
             out = nvinspect_api.transformer_engine.process_tensor(
-                layer_name=self.layer_name, tensor_name=self.tensor_name, 
-                gemm=self.second_gemm_name, tensor=src, 
-                default_quantizer=self.parent_quantizer, out=dst.second_gemm_tensor, iteration=iteration)
-            assert out is None, "API call nvinspect_api.transformer_engine.process_tensor with out != None should return None"
+                layer_name=self.layer_name,
+                tensor_name=self.tensor_name,
+                gemm=self.second_gemm_name,
+                tensor=src,
+                default_quantizer=self.parent_quantizer,
+                out=dst.second_gemm_tensor,
+                iteration=iteration,
+            )
+            assert out is None, (
+                "API call nvinspect_api.transformer_engine.process_tensor with out != None should"
+                " return None"
+            )
             updated_second_gemm = True
         if self.process_tensor_first_gemm:
             nvinspect_api.transformer_engine.process_tensor(
-                layer_name=self.layer_name, tensor_name=self.tensor_name, 
-                gemm=self.first_gemm_name, tensor=src,
-                default_quantizer=self.parent_quantizer, out=dst.first_gemm_tensor, iteration=iteration)
+                layer_name=self.layer_name,
+                tensor_name=self.tensor_name,
+                gemm=self.first_gemm_name,
+                tensor=src,
+                default_quantizer=self.parent_quantizer,
+                out=dst.first_gemm_tensor,
+                iteration=iteration,
+            )
             updated_first_gemm = True
         if not updated_second_gemm:
             dst.second_gemm_tensor.copy_(src)
@@ -273,20 +334,22 @@ class DebugQuantizer(Quantizer):
             # if updated_first_gemm and updated_second_gemm, then
             # dst.second_gemm and dst.first_gemm. is the same tensor,
             # and it is already updated.
-    
+
     def is_fp8(self):
         return self.parent_quantizer is not None
 
     def use_any_feature(self):
         if self.output_tensor:
             return self.use_look_at_tensor_before_process or self.output_process_tensor
-        return self.use_look_at_tensor_before_process or \
-            self.use_look_at_tensor_after_process or \
-            self.process_tensor_first_gemm or \
-            self.process_tensor_second_gemm or \
-            not self.fp8_quantize_first_gemm or \
-            not self.fp8_quantize_second_gemm \
-        
+        return (
+            self.use_look_at_tensor_before_process
+            or self.use_look_at_tensor_after_process
+            or self.process_tensor_first_gemm
+            or self.process_tensor_second_gemm
+            or not self.fp8_quantize_first_gemm
+            or not self.fp8_quantize_second_gemm
+        )
+
 
 class DebugQuantizedTensor(QuantizedTensor):
     def __new__(
@@ -298,37 +361,39 @@ class DebugQuantizedTensor(QuantizedTensor):
         quantizer,
         requires_grad=False,
         layer_name=None,
-        tensor_name=None
+        tensor_name=None,
     ):
         instance = super().__new__(cls, shape, dtype, requires_grad=requires_grad)
-        
+
         instance.first_gemm_tensor = first_gemm_tensor
         instance.second_gemm_tensor = second_gemm_tensor
         instance.quantizer = quantizer
         instance._layer_name = layer_name
         instance._tensor_name = tensor_name
-        
+
         return instance
 
-
     def prepare_for_saving(self):
-        tensor_list, tensor_objects_list = prepare_for_saving(self.first_gemm_tensor, self.second_gemm_tensor)
+        tensor_list, tensor_objects_list = prepare_for_saving(
+            self.first_gemm_tensor, self.second_gemm_tensor
+        )
         self.first_gemm_tensor, self.second_gemm_tensor = tensor_objects_list
         return tensor_list, self
-    
+
     def restore_from_saved(self, tensors):
-        (self.first_gemm_tensor, self.second_gemm_tensor), saved_tensors = \
-            restore_from_saved([self.first_gemm_tensor, self.second_gemm_tensor], tensors, return_saved_tensors=True)
+        (self.first_gemm_tensor, self.second_gemm_tensor), saved_tensors = restore_from_saved(
+            [self.first_gemm_tensor, self.second_gemm_tensor], tensors, return_saved_tensors=True
+        )
         return saved_tensors
 
-    def quantize_(self, tensor, *, noop_flag = None):
+    def quantize_(self, tensor, *, noop_flag=None):
         assert noop_flag is None, "CUDA Graphs are not supported with debug=True!"
         self.quantizer.update_quantized(tensor, self)
-    
-    def dequantize(self, *, dtype = torch.float32):
+
+    def dequantize(self, *, dtype=torch.float32):
         return self.first_gemm_tensor.dequantize().to(dtype)
 
-    def get_tensor(self, transpose:bool):
+    def get_tensor(self, transpose: bool):
         # Is used in the python gemm() to get tensor or transpose of the tensor.
         return self.first_gemm_tensor if not transpose else self.second_gemm_tensor
 

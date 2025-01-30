@@ -16,8 +16,9 @@ import torch
 import math
 
 # This file combines all mathematical functions used to compute
-# the statistics or combine computed statistics for subtensors 
+# the statistics or combine computed statistics for subtensors
 # for statistics for full tensor.
+
 
 def _compute_dynamic_range_top(tensor):
     tensor_abs = tensor.abs()
@@ -26,6 +27,7 @@ def _compute_dynamic_range_top(tensor):
     if not amax.all():
         amax = torch.tensor(1, device=tensor.device).to(torch.float)
     return torch.log2(amax)
+
 
 def _compute_dynamic_range_bottom(tensor):
     tensor_abs = tensor.abs()
@@ -36,6 +38,7 @@ def _compute_dynamic_range_bottom(tensor):
         amin = torch.tensor(1, device=tensor.device).to(torch.float)
     return torch.log2(amin)
 
+
 def compute_variance(variances, numels, sums):
     # We use Welford algorithm for numerically stable distributed variance computation.
     mean = torch.sum(sums) / torch.sum(numels)
@@ -43,13 +46,16 @@ def compute_variance(variances, numels, sums):
     var = torch.sum(numels * (variances - torch.pow((means - mean), 2))) / torch.sum(numels)
     return var
 
+
 def compute_std(variances, numels, sums):
     return torch.sqrt(compute_variance(variances, numels, sums))
+
 
 # buffers is tensor of shape [nr_buffers, nr_stats]
 def _get(buffers, stat_name):
     stat_nr = stats_to_num[stat_name]
     return buffers[:, stat_nr]
+
 
 stats_to_num = {
     "min": 0,
@@ -94,76 +100,60 @@ DEPENDENCIES = {
 }
 
 STATS = {
-    "min": (
-        torch.min, 
-        lambda buffers: min(_get(buffers, "min"))
-    ),
-    "max": (
-        torch.max, 
-        lambda buffers: max(_get(buffers, "max"))
-    ),
-    "sum": (
-        torch.sum, 
-        lambda buffers: sum(_get(buffers, "sum"))
-    ),
-    "mean": (
-        torch.mean, 
-        lambda buffers: sum(_get(buffers, "sum")) / sum(_get(buffers, "numel"))
-    ),
-    "numel": (
-        lambda x: x.numel(), 
-        lambda buffers: sum(_get(buffers, "numel"))
-    ),
-    "l1_norm": (
-        lambda x: torch.norm(x, p=1), 
-        lambda buffers: sum(_get(buffers, "l1_norm"))
-    ),
+    "min": (torch.min, lambda buffers: min(_get(buffers, "min"))),
+    "max": (torch.max, lambda buffers: max(_get(buffers, "max"))),
+    "sum": (torch.sum, lambda buffers: sum(_get(buffers, "sum"))),
+    "mean": (torch.mean, lambda buffers: sum(_get(buffers, "sum")) / sum(_get(buffers, "numel"))),
+    "numel": (lambda x: x.numel(), lambda buffers: sum(_get(buffers, "numel"))),
+    "l1_norm": (lambda x: torch.norm(x, p=1), lambda buffers: sum(_get(buffers, "l1_norm"))),
     "l2_norm_square": (
-        lambda x: torch.sum(x ** 2), 
-        lambda buffers: sum(_get(buffers, "l2_norm_square"))
+        lambda x: torch.sum(x**2),
+        lambda buffers: sum(_get(buffers, "l2_norm_square")),
     ),
     "l2_norm": (
-        lambda x: torch.norm(x, p=2), 
-        lambda buffers: math.sqrt(sum(_get(buffers, "l2_norm_square")))
+        lambda x: torch.norm(x, p=2),
+        lambda buffers: math.sqrt(sum(_get(buffers, "l2_norm_square"))),
     ),
     "variance": (
         torch.var,
-        lambda buffers: compute_variance(_get(buffers, "variance"), _get(buffers, "numel"), _get(buffers, "sum"))
+        lambda buffers: compute_variance(
+            _get(buffers, "variance"), _get(buffers, "numel"), _get(buffers, "sum")
+        ),
     ),
-    "cur_amax": (
-        lambda x: x.abs().max(), 
-        lambda buffers: max(_get(buffers, "cur_amax"))
-    ),
+    "cur_amax": (lambda x: x.abs().max(), lambda buffers: max(_get(buffers, "cur_amax"))),
     "dynamic_range_top": (
-        _compute_dynamic_range_top, 
-        lambda buffers: max(_get(buffers, "dynamic_range_top"))
+        _compute_dynamic_range_top,
+        lambda buffers: max(_get(buffers, "dynamic_range_top")),
     ),
     "dynamic_range_bottom": (
-        _compute_dynamic_range_bottom, 
-        lambda buffers: min(_get(buffers, "dynamic_range_bottom"))
+        _compute_dynamic_range_bottom,
+        lambda buffers: min(_get(buffers, "dynamic_range_bottom")),
     ),
     "underflows_num": (
-        lambda x: (x == 0).sum(), 
-        lambda buffers: sum(_get(buffers, "underflows_num"))
+        lambda x: (x == 0).sum(),
+        lambda buffers: sum(_get(buffers, "underflows_num")),
     ),
     "overflows_num": (
-        lambda x: (x == 255).sum(), 
-        lambda buffers: sum(_get(buffers, "overflows_num"))
+        lambda x: (x == 255).sum(),
+        lambda buffers: sum(_get(buffers, "overflows_num")),
     ),
     "std": (
-        torch.std, 
-        lambda buffers: compute_std(_get(buffers, "variance"), _get(buffers, "numel"), _get(buffers, "sum"))
+        torch.std,
+        lambda buffers: compute_std(
+            _get(buffers, "variance"), _get(buffers, "numel"), _get(buffers, "sum")
+        ),
     ),
     "dynamic_range": (
-        lambda x: _compute_dynamic_range_top(x) - _compute_dynamic_range_bottom(x), 
-        lambda buffers: max(_get(buffers, "dynamic_range_top")) - min(_get(buffers, "dynamic_range_bottom"))
+        lambda x: _compute_dynamic_range_top(x) - _compute_dynamic_range_bottom(x),
+        lambda buffers: max(_get(buffers, "dynamic_range_top"))
+        - min(_get(buffers, "dynamic_range_bottom")),
     ),
     "underflows%": (
-        lambda x: (x == 0).sum() / x.numel() * 100, 
-        lambda buffers: 100 * sum(_get(buffers, "underflows_num")) / sum(_get(buffers, "numel"))
+        lambda x: (x == 0).sum() / x.numel() * 100,
+        lambda buffers: 100 * sum(_get(buffers, "underflows_num")) / sum(_get(buffers, "numel")),
     ),
     "overflows%": (
-        lambda x: (x == 255).sum() / x.numel() * 100, 
-        lambda buffers: 100 * sum(_get(buffers, "overflows_num")) / sum(_get(buffers, "numel"))
+        lambda x: (x == 255).sum() / x.numel() * 100,
+        lambda buffers: 100 * sum(_get(buffers, "overflows_num")) / sum(_get(buffers, "numel")),
     ),
 }

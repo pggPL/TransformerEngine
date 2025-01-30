@@ -99,6 +99,7 @@ mask_types = ["causal", "no_mask"]
 
 if os.environ.get("DEBUG", False):
     import nvdlfw_inspect.api as nvinspect_api
+
     nvinspect_api.initialize(feature_dirs=os.environ["FEATURE_DIRS"])
 fp8_recipes = [
     recipe.BlockScaling(),

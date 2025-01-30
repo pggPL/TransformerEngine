@@ -765,11 +765,15 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             try:
                 import nvdlfw_inspect.api as nvinspect_api
             except (ModuleNotFoundError, ImportError):
-                raise ModuleNotFoundError("ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed correctly.")
-            nvinspect_api.log_message("> Primary FP8 parameters is not supported in the debug module. "
-                                "Using this flag will not affect the debug module. ", 
-                                level=logging.WARNING)
-
+                raise ModuleNotFoundError(
+                    "ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed"
+                    " correctly."
+                )
+            nvinspect_api.log_message(
+                "> Primary FP8 parameters is not supported in the debug module. "
+                "Using this flag will not affect the debug module. ",
+                level=logging.WARNING,
+            )
 
         if self.fp8_parameters or fp8_enabled:
             if (
@@ -845,7 +849,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             if not allow_non_contiguous and not inp.is_contiguous():
                 inp = inp.contiguous()
             yield inp
-
 
         if self.fp8 and in_fp8_activation_recompute_phase():
             FP8GlobalStateManager.restore_fp8_meta_tensors(self.fp8_meta)
@@ -1075,7 +1078,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         super()._load_from_state_dict(
             state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
         )
-    
+
     def _validate_debug_name(self, overwrite_debug_name):
         """
         Validate name passed to the module.
@@ -1090,18 +1093,24 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         """
         assert self.debug
 
-        from ...debug.debug_state import TEDebugState 
+        from ...debug.debug_state import TEDebugState
 
         try:
             import nvdlfw_inspect.api as nvinspect_api
         except (ModuleNotFoundError, ImportError):
-            raise ModuleNotFoundError("ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed correctly.")
-        
+            raise ModuleNotFoundError(
+                "ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed"
+                " correctly."
+            )
+
         if overwrite_debug_name:
             self.debug_name = overwrite_debug_name
 
         if self.debug_name == None:
-            nvinspect_api.log_message("[DEBUG-WARNING] Names are not provided to debug modules. ",
-                                  "Creating and using generic names. Pass names to debug modules for better insight. ",
-                                    level=logging.WARNING)
+            nvinspect_api.log_message(
+                "[DEBUG-WARNING] Names are not provided to debug modules. ",
+                "Creating and using generic names. Pass names to debug modules for better"
+                " insight. ",
+                level=logging.WARNING,
+            )
             self.debug_name = f"Layer_{TEDebugState.get_layer_count()}"

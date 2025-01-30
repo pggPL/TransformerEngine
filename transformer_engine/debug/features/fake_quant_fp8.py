@@ -27,12 +27,19 @@ from transformer_engine.pytorch.fp8 import _default_sf_compute
 from transformer_engine.pytorch.constants import TE_DType
 
 
-
 def fake_quantize_fp8(tensor: torch.Tensor, fp8_format, margin=0, out=None):
-    assert tensor.dtype in (torch.float, torch.float16, torch.bfloat16), "[NVTORCH INSPECT ERROR] Unsupported tensor type."
+    assert tensor.dtype in (
+        torch.float,
+        torch.float16,
+        torch.bfloat16,
+    ), "[NVTORCH INSPECT ERROR] Unsupported tensor type."
     assert tensor.is_cuda, "[NVTORCH INSPECT ERROR] Must be a GPU tensor."
-    assert fp8_format in {"E4M3", "E5M2", "MXE4M3", "MXE5M2"},\
-          "[NVTORCH INSPECT ERROR] Only 4 FP8 types: E4M3, E5M2, MXE4M3, MXE5M2 are supported in TE."
+    assert fp8_format in {
+        "E4M3",
+        "E5M2",
+        "MXE4M3",
+        "MXE5M2",
+    }, "[NVTORCH INSPECT ERROR] Only 4 FP8 types: E4M3, E5M2, MXE4M3, MXE5M2 are supported in TE."
     if fp8_format in ["E4M3", "E5M2"]:
         if fp8_format == "E4M3":
             fp8_max = Format.E4M3.value.max_fwd
@@ -57,8 +64,8 @@ def fake_quantize_fp8(tensor: torch.Tensor, fp8_format, margin=0, out=None):
 @append_parent_docstring(parent=TEConfigAPIMapper)
 class FakeQuantFp8(TEConfigAPIMapper):
     """
-    Fake Quantization feature in Transformer engine. 
-    
+    Fake Quantization feature in Transformer engine.
+
     Fake quantization in this case refers to casting a tensor to FP8 and back to original dtype.
 
     Config:
@@ -67,7 +74,7 @@ class FakeQuantFp8(TEConfigAPIMapper):
       fake_quant_fp8:
         enabled: True
         ...
-    
+
     Config fields:
     This feature works at a tensor level, you can set the following properties for each tensor:
     - quant_format: Dictionary containing tensor names to FP8 formats. Options: {'E4M3', 'E5M2', 'MXE4M3', 'MXE5M2'}
@@ -75,12 +82,13 @@ class FakeQuantFp8(TEConfigAPIMapper):
     - tensors/tensors_struct: tensors list or tensors_struct - please look into the Transformer Engine Precision Debug Tools documentation for more information.
 
     """
+
     def _supported_formats(self):
         return ["E4M3", "E5M2", "MXE4M3", "MXE5M2"]
 
     def _get_margin_default(self):
         return 0
-    
+
     @api_method
     def fp8_gemm(self, config, layer_name, gemm):
         return False
@@ -90,21 +98,32 @@ class FakeQuantFp8(TEConfigAPIMapper):
         return True
 
     @api_method
-    def process_tensor(self, config, layer_name, gemm, 
-                       tensor_name, tensor, default_quantizer=None, out=None):
+    def process_tensor(
+        self, config, layer_name, gemm, tensor_name, tensor, default_quantizer=None, out=None
+    ):
         for key in config.keys():
             if key not in ["gemm", "tensor", "quant_format", "margin"]:
-                raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")
-        
+                raise ValueError(f'[NVTORCH INSPECT ERROR] Unexpected key in config: "{key}".')
+
         if "quant_format" not in config:
-            raise ValueError(f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: quant_format missing for Tensor: {tensor_name} in the config yaml for FakeQuantFp8 feature which is a required field")
+            raise ValueError(
+                f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor:"
+                f" quant_format missing for Tensor: {tensor_name} in the config yaml for"
+                " FakeQuantFp8 feature which is a required field"
+            )
         if config["quant_format"] not in self._supported_formats():
-            raise ValueError(f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor: quant_format: {config['quant_format']} for Tensor: {tensor_name} in the config yaml for FakeQuantFp8 feature is not supported")
+            raise ValueError(
+                f"[NVTORCH INSPECT ERROR] Feature={self.__class__.__name__}, API=process_tensor:"
+                f" quant_format: {config['quant_format']} for Tensor: {tensor_name} in the config"
+                " yaml for FakeQuantFp8 feature is not supported"
+            )
         nvinspect_api.log_message(
-            f"Feature={self.__class__.__name__}, API=process_tensor: {gemm}, {tensor_name}", 
-            layer_name, extra_cachable_args=(gemm, tensor_name))
+            f"Feature={self.__class__.__name__}, API=process_tensor: {gemm}, {tensor_name}",
+            layer_name,
+            extra_cachable_args=(gemm, tensor_name),
+        )
 
         quant_format = config["quant_format"]
-        margin = config.get('margin', self._get_margin_default())
+        margin = config.get("margin", self._get_margin_default())
         q_tensor = fake_quantize_fp8(tensor, quant_format, margin=margin, out=out)
         return q_tensor

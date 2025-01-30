@@ -14,7 +14,7 @@
 
 from transformer_engine.debug.features.api import TEConfigAPIMapper
 
-import nvdlfw_inspect.api  as nvinspect_api
+import nvdlfw_inspect.api as nvinspect_api
 from nvdlfw_inspect.registry import Registry, api_method
 from nvdlfw_inspect.utils import append_parent_docstring
 
@@ -24,7 +24,7 @@ class DisableFp8Gemm(TEConfigAPIMapper):
     """
     Feature to disable FP8 GEMM in transformer engine.
 
-    Config: 
+    Config:
 
     To enable the feature in yaml config:
     transformer_engine:
@@ -36,7 +36,7 @@ class DisableFp8Gemm(TEConfigAPIMapper):
     @api_method
     def fp8_gemm(self, config, layer_name, gemm, iteration):
         for key in config:
-            if key != 'gemm':
-                raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")
-                
+            if key != "gemm":
+                raise ValueError(f'[NVTORCH INSPECT ERROR] Unexpected key in config: "{key}".')
+
         return False
