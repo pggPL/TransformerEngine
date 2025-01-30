@@ -66,9 +66,10 @@ class LogTensorStats(BaseLogTensorStats):
         options = (config.get('start_step', None), config.get('end_step', None), config.get('start_end_list', None),)
         skip_reduction = False
         reduction_group = nvinspect_api.get_tensor_reduction_group()
-        if self.tensor_name == "weight":
+        if tensor_name == "weight":
             if TEDebugState.weight_tensor_tp_group_reduce:
-                reduction_group = self.tp_group
+                pass
+                #reduction_group = self.tp_group
             else:
                 skip_reduction = True
 

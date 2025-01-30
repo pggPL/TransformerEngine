@@ -19,7 +19,7 @@ import transformer_engine_torch as tex
 from transformer_engine.common.recipe import DelayedScaling, Format
 from transformer_engine.pytorch.constants import TE_DType
 from transformer_engine.pytorch.fp8 import _default_sf_compute
-from transformer_engine.pytorch.tensor import Float8Quantizer
+from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
 from transformer_engine.pytorch.module.base import (
     _2X_ACC_DGRAD,
     _2X_ACC_FPROP,

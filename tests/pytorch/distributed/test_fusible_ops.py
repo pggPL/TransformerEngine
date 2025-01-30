@@ -21,12 +21,8 @@ import transformer_engine
 import transformer_engine.common.recipe
 import transformer_engine.pytorch as te
 from transformer_engine.pytorch.fp8 import FP8GlobalStateManager
-<<<<<<< HEAD
-from transformer_engine.pytorch.tensor import Float8Quantizer
-=======
 from transformer_engine.pytorch.tensor import QuantizedTensor
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
->>>>>>> origin/release_v2.0
 import transformer_engine.pytorch.ops as te_ops
 from transformer_engine.pytorch.ops._common import is_float8_tensor
 from transformer_engine.pytorch.utils import is_bf16_compatible

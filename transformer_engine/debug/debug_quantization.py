@@ -9,6 +9,7 @@ import torch
 
 from ..pytorch.tensor.quantized_tensor import QuantizedTensor, Quantizer, _IdentityFunc, prepare_for_saving, restore_from_saved
 from transformer_engine.debug.debug_state import TEDebugState
+import transformer_engine_torch as tex
 
 """
     This file contains DebugQuantizer and DebugQuantizedTensor objects, which are wrapper along Quantizer and QuantizedTensor
@@ -235,33 +236,40 @@ class DebugQuantizer(Quantizer):
         noop_flag: Optional[torch.Tensor] = None,
     ) -> QuantizedTensor:
         assert noop_flag is None, "CUDA Graphs are not supported with debug=True!"
+        iteration = nvinspect_api.DEBUG_MANAGER._trainer_iteration_count
         updated_second_gemm = False
         updated_first_gemm = False
         if self.parent_quantizer is not None:
-            if self.first_gemm_usage and self.fp8_quantize_first_gemm:
-                dst.first_gemm.quantize_(src) 
+            if dst.first_gemm_tensor is not None and self.fp8_quantize_first_gemm:
+                if hasattr(dst.first_gemm_tensor, "quantize_"):
+                    dst.first_gemm_tensor.quantize_(src, noop_flag=None)
+                else:
+                    tex.quantize(src, self.parent_quantizer, dst.first_gemm_tensor, None)
                 updated_first_gemm = True
-            elif self.second_gemm_usage and self.fp8_quantize_first_gemm:
-                dst.second_gemm.quantize_(src) 
+            if dst.second_gemm_tensor is not None and self.fp8_quantize_second_gemm:
+                if hasattr(dst.second_gemm_tensor, "quantize_"):
+                    dst.second_gemm_tensor.quantize_(src, noop_flag=None)
+                else:
+                    tex.quantize(src, self.parent_quantizer, dst.second_gemm_tensor, None)
                 updated_second_gemm = True
         
         if self.process_tensor_second_gemm:
             out = nvinspect_api.transformer_engine.process_tensor(
                 layer_name=self.layer_name, tensor_name=self.tensor_name, 
-                gemm=self.second_gemm_gemm_name, tensor=src, 
-                default_quantizer=self.parent_quantizer, out=dst.second_gemm)
+                gemm=self.second_gemm_name, tensor=src, 
+                default_quantizer=self.parent_quantizer, out=dst.second_gemm_tensor, iteration=iteration)
             assert out is None, "API call nvinspect_api.transformer_engine.process_tensor with out != None should return None"
             updated_second_gemm = True
         if self.process_tensor_first_gemm:
             nvinspect_api.transformer_engine.process_tensor(
                 layer_name=self.layer_name, tensor_name=self.tensor_name, 
-                gemm=self.process_tensor_first_gemm, default_quantizer=self.parent_quantizer, 
-                tensor=src, out=dst.first_gemm)
+                gemm=self.first_gemm_name, tensor=src,
+                default_quantizer=self.parent_quantizer, out=dst.first_gemm_tensor, iteration=iteration)
             updated_first_gemm = True
         if not updated_second_gemm:
-            dst.second_gemm.copy_(src)
+            dst.second_gemm_tensor.copy_(src)
         if updated_second_gemm and not updated_first_gemm:
-            dst.first_gemm.copy_(src)
+            dst.first_gemm_tensor.copy_(src)
             # if updated_first_gemm and updated_second_gemm, then
             # dst.second_gemm and dst.first_gemm. is the same tensor,
             # and it is already updated.
@@ -313,11 +321,12 @@ class DebugQuantizedTensor(QuantizedTensor):
             restore_from_saved([self.first_gemm_tensor, self.second_gemm_tensor], tensors, return_saved_tensors=True)
         return saved_tensors
 
-    def _quantize(self, tensor):
+    def quantize_(self, tensor, *, noop_flag = None):
+        assert noop_flag is None, "CUDA Graphs are not supported with debug=True!"
         self.quantizer.update_quantized(tensor, self)
     
     def dequantize(self, *, dtype = torch.float32):
-        return self.first_gemm.dequantize().to(dtype)
+        return self.first_gemm_tensor.dequantize().to(dtype)
 
     def get_tensor(self, transpose:bool):
         # Is used in the python gemm() to get tensor or transpose of the tensor.

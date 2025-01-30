@@ -33,7 +33,7 @@ class DisableFp8Layer:
     """
 
     @api_method
-    def fp8_gemm(self, config, layer_name, gemm):
+    def fp8_gemm(self, config, layer_name, *args, **kwargs):
         for key in config:
             if key not in ["enabled", "gemm"]:
               raise ValueError(f"[NVTORCH INSPECT ERROR] Unexpected key in config: \"{key}\".")

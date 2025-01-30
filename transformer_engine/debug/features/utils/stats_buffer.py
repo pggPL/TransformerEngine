@@ -102,7 +102,7 @@ class _Buffer:
             combiner = STATS[stat_name][1]
             stat_value = combiner(gathered_helper_stats)
 
-            MetricLogger.log_scalar(f"{self.layer_name}_{self.tensor_name}_{stat_name}", stat_value.float(), self.iteration)
+            MetricLogger.log_scalar(f"{self.layer_name}_{self.tensor_name}_{stat_name}", stat_value, self.iteration)
             output[(self.layer_name, self.tensor_name, stat_name, self.iteration)] = stat_value # for debuggin purpouses
         self._reset_before_next_step()
         return output

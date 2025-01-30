@@ -96,8 +96,8 @@ class _Linear(torch.autograd.Function):
         debug: bool,
     ) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-
         # Make sure input dimensions are compatible
+
         _, in_features = weight.shape
         inp_shape = inp.shape
         assert inp_shape[-1] == in_features, "GEMM not possible"
@@ -163,7 +163,6 @@ class _Linear(torch.autograd.Function):
                             and not in_fp8_activation_recompute_phase()
                         )
                     weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
-
                 # FP8 cast to workspace buffer
                 update_workspace = is_first_microbatch is None or is_first_microbatch
                 weightmat = module.get_weight_workspace(
@@ -174,6 +173,7 @@ class _Linear(torch.autograd.Function):
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
                 )
+
 
         # Cast bias to expected dtype
         bias_dtype = activation_dtype
@@ -208,7 +208,7 @@ class _Linear(torch.autograd.Function):
                     ub_algo = tex.UbufOverlapAlgo.SPLIT_PIPELINED_RS
             if fp8 and ub_obj_projout.is_fp8_ubuf():
                 assert fp8_output
-                ub_obj_projout.set_ubuf_scale_inv(torch.reciprocal(output_quantizer.scale))
+                ub_obj_projout.set_ubuf_scale_inv(torch.reciprocal(output_quantizer.scale)) 
         out, _, _ = general_gemm(
             weightmat,
             inputmat_total,
@@ -220,6 +220,7 @@ class _Linear(torch.autograd.Function):
             ub_algo=ub_algo if ub_overlap_rs else None,
             ub=ub_obj_projout if ub_overlap_rs else None,
             ub_buffer=ub_buffer if ub_overlap_rs else None,
+            debug=debug
         )
 
         if is_grad_enabled:
@@ -257,7 +258,6 @@ class _Linear(torch.autograd.Function):
             ctx.activation_dtype = activation_dtype
             ctx.fp8 = fp8
             ctx.input_quantizer = input_quantizer
-
             ctx.gradient_quantizer = gradient_quantizer
             ctx.dgrad_quantizer = dgrad_quantizer
             ctx.wgrad_quantizer = wgrad_quantizer
@@ -283,6 +283,7 @@ class _Linear(torch.autograd.Function):
             ctx.reduce_and_update_bwd_fp8_tensors = False
             ctx.owns_input = saved_inputmat is not inp
             ctx.is_input_fp8 = not own_quantized_input
+            ctx.module = module # pgadzinski: remove
             if ctx.fp8 and requires_grad(inp, weight, bias):
                 _first_fp8_module = FP8GlobalStateManager.IS_FIRST_FP8_MODULE
                 ctx.reduce_and_update_bwd_fp8_tensors = FP8GlobalStateManager.is_first_fp8_module()
@@ -301,7 +302,6 @@ class _Linear(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
         # pylint: disable=missing-function-docstring
-
         with torch.cuda.nvtx.range("_Linear_backward"):
             saved_tensors = ctx.saved_tensors
             inputmat, weight_fp8, weight, bias = (
@@ -512,6 +512,7 @@ class _Linear(torch.autograd.Function):
         # Scatter fp8 weight buffers
         if ctx.fp8 and not isinstance(weight, QuantizedTensor):
             _fsdp_scatter_tensors(ctx.fsdp_group, weight_fp8)
+        #import pdb; pdb.set_trace()
         return (
             wgrad,
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,

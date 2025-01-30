@@ -56,7 +56,6 @@ from .. import cpp_extensions as pytex
 from ..constants import dist_group_type
 from ..jit import no_torch_dynamo
 from ..graph import is_graph_capturing
-from ..tensor import Float8Tensor, Float8Quantizer
 from ..tensor.float8_tensor import Float8Tensor
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ._common import apply_normalization
@@ -291,7 +290,6 @@ class _LayerNormMLP(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
-                    is_grad_enabled=is_grad_enabled,
                 )
             if not isinstance(fc2_weight, QuantizedTensor):
                 fc2_weight_quantizer.set_usage(rowwise=True, columnwise=True)
@@ -301,8 +299,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     cache_name=(None if is_first_microbatch is None else "fc2_weight"),
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
-                    fsdp_group=fsdp_group,
-                    is_grad_enabled=is_grad_enabled,
+                    fsdp_group=fsdp_group
                 )
         if not isinstance(fc1_weight_final, QuantizedTensor) and not type(fc1_weight_final) in [Float8TensorBase, MXFP8TensorBase]:
             fc1_weight_final = cast_if_needed(fc1_weight_final, activation_dtype)
@@ -573,7 +570,6 @@ class _LayerNormMLP(torch.autograd.Function):
                 inputmat,
                 ln_weight,
                 ln_out,
-                _,
                 fc1_weight,
                 fc1_bias,
                 fc1_out,
@@ -900,10 +896,10 @@ class _LayerNormMLP(torch.autograd.Function):
                 fc1_dgrad_work = None
 
             # Residual gradient
-            dgrad = fc1_dgrad.view(inputmat.shape)
-            if ctx.return_layernorm_output and not ctx.return_layernorm_output_gathered:
-                dgrad = dgrad + grad_outputs[1].view_as(dgrad)
-
+            #dgrad = fc1_dgrad.view(inputmat.shape)
+            #if ctx.return_layernorm_output and not ctx.return_layernorm_output_gathered:
+            #    dgrad = dgrad + grad_outputs[1].view_as(dgrad)
+            dgrad = fc1_dgrad
             # Norm gradient
             dgamma = None
             dbeta = None
@@ -1524,16 +1520,14 @@ class LayerNormMLP(TransformerEngineBaseModule):
             fc2_weight_quantizer = self.quantizers["scaling_fwd"][tex.FP8FwdTensors.GEMM2_WEIGHT]
             fc2_weight_quantizer.internal = True
             if torch.is_grad_enabled():
-                grad_fc2_output_quantizer = self.quantizers["scaling_bwd"][
+                fc2_gradient_quantizer = self.quantizers["scaling_bwd"][
                     tex.FP8BwdTensors.GRAD_OUTPUT1
                 ]
-                grad_fc2_output_quantizer.internal = True
-                grad_fc1_output_quantizer = self.quantizers["scaling_bwd"][
+                fc2_gradient_quantizer.internal = True
+                fc1_gradient_quantizer = self.quantizers["scaling_bwd"][
                     tex.FP8BwdTensors.GRAD_INPUT1
                 ]
-                grad_fc1_output_quantizer.internal = True
-                grad_input_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT2]
-                grad_input_quantizer.internal = True
+                fc1_gradient_quantizer.internal = True
 
         return (
             fc1_input_quantizer,

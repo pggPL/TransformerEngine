@@ -1045,7 +1045,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             if cache_name is not None:
                 self._fp8_workspaces[cache_name] = out
             return out
-
         # Update workspace if needed
         if skip_update_flag is not None:
             update_workspace = True
@@ -1056,7 +1055,6 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 out.quantize_(tensor, noop_flag=skip_update_flag)
             else:
                 tex.quantize(tensor, quantizer, out, skip_update_flag)
-
         return out
 
     def _load_from_state_dict(

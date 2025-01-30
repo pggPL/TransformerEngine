@@ -256,6 +256,7 @@ class _LayerNormLinear(torch.autograd.Function):
             ub=ub_obj_lnout if ub_overlap_ag else None,
             debug=debug
         )
+
         if not weight.requires_grad:
             if not return_layernorm_output:
                 ln_out = ln_out_total = None
@@ -600,6 +601,7 @@ class _LayerNormLinear(torch.autograd.Function):
         # Scatter fp8 weight buffers
         # if ctx.fp8 and not isinstance(weight, QuantizedTensor):
         #    _fsdp_scatter_tensors(ctx.fsdp_group, weight_fp8)
+
 
         return (
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,

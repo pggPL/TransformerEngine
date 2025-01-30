@@ -100,7 +100,7 @@ class TEDefaultFeatures:
         return False
     
     def process_tensor(self, *args, **kwargs):
-        return kwargs["tensor"]
+        raise RuntimeError("use_process_tensor() returned True, process_tensor() was invoked, but it is not handled by any API.")
     
     def look_at_tensor_before_process(self, *args, **kwargs):
         pass
@@ -167,9 +167,10 @@ class TransformerEngineAPI (BaseNamespaceAPI):
         return status, modified_config
 
     def output_assertions_hook(self, api_name, ret, **kwargs):
-        if api_name in {"process_tensor"}:
-            assert type(ret) in [torch.Tensor, Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase], \
-                f"This API {api_name} must return a tensor."
+        pass
+        #if api_name in {"process_tensor"}:
+        #    assert type(ret) in [torch.Tensor, Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase], \
+        #        f"This API {api_name} must return a tensor."
         
 
         

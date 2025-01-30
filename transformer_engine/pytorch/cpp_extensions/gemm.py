@@ -115,8 +115,6 @@ def general_gemm(
     quantization_params_final = quantization_params
     if debug:
         quantization_params_final = quantization_params.parent_quantizer
-
-        #import pdb; pdb.set_trace()
         # Get tensor object from transposes
         A = A.get_tensor(not transa)
         B = B.get_tensor(transb)
@@ -137,7 +135,6 @@ def general_gemm(
     if bias is None and not grad:
         bias = _empty_tensor()
     
-
     args = (
         A,
         transa,  # transa

@@ -30,6 +30,7 @@ class TEDebugState:
     def reset(cls):
         from .features.utils.stats_buffer import STATS_BUFFERS, StatsBuffers
         STATS_BUFFERS.reset()
+        cls.debug_enabled = None
         cls.layers_initialized.clear()
     
     @classmethod

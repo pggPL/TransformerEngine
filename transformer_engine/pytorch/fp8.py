@@ -711,10 +711,6 @@ class RecipeState(abc.ABC):
 
     """
 
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/release_v2.0
     @staticmethod
     def create(
         recipe: Recipe,
@@ -825,10 +821,6 @@ class BlockScalingRecipeState(RecipeState):
 
     """
 
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/release_v2.0
     recipe: BlockScaling
     mode: str
     dtype: tex.DType
