@@ -30,8 +30,6 @@ from .tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 __all__ = ["checkpoint", "CudaRNGStatesTracker"]
 
 
-_FP8TensorBase = Union[Float8TensorBase, MXFP8TensorBase]
-
 
 _MODEL_PARALLEL_ATTRIBUTE_DEFAULTS = {
     "tensor_model_parallel": False,

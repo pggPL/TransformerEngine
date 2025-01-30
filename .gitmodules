@@ -4,4 +4,3 @@
 [submodule "3rdparty/cudnn-frontend"]
 	path = 3rdparty/cudnn-frontend
 	url = ../../../cudnn/cudnn_frontend.git
-	branch = develop
