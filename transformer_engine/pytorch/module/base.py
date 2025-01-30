@@ -763,6 +763,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         if self.debug and self.fp8_parameters:
             import nvdlfw_inspect.api as nvinspect_api
+
             nvinspect_api.log_message(
                 "> Primary FP8 parameters is not supported in the debug module. "
                 "Using this flag will not affect the debug module. ",
@@ -846,17 +847,15 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         if self.fp8 and in_fp8_activation_recompute_phase():
             FP8GlobalStateManager.restore_fp8_meta_tensors(self.fp8_meta)
-        
+
         if self.debug:
             import nvdlfw_inspect.api as nvinspect_api
+
             # if nvinspect_api is ended,
             # then simply end debug
             if nvinspect_api.DEBUG_MANAGER is None:
                 self.debug = False
                 TEDebugState.reset()
-
-
-
 
     def set_nccl_overlap_warning_if_tp(self) -> None:
         """When using TP, the NCCL communication needs to be scheduled

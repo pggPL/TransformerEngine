@@ -206,7 +206,7 @@ class _LayerNormLinear(torch.autograd.Function):
         # Cast weight to expected dtype
         weightmat = weight
         quantized_weight = False
-        if not fp8 and not debug: # pgadzinski (check it)
+        if not fp8 and not debug:  # pgadzinski (check it)
             weightmat = cast_if_needed(weightmat, activation_dtype)
         else:
             if not isinstance(weight, QuantizedTensor):
@@ -254,7 +254,7 @@ class _LayerNormLinear(torch.autograd.Function):
             use_split_accumulator=_2X_ACC_FPROP,
             ub_algo=tex.CommOverlapAlgo.SPLIT_PIPELINED_AG_P2P if ub_overlap_ag else None,
             ub=ub_obj_lnout if ub_overlap_ag else None,
-            debug=debug
+            debug=debug,
         )
 
         if not weight.requires_grad:
@@ -478,7 +478,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 quantization_params=ctx.dgrad_quantizer,
                 out_dtype=ctx.activation_dtype,
                 use_split_accumulator=_2X_ACC_DGRAD,
-                debug=ctx.debug
+                debug=ctx.debug,
             )
 
             # Launch tensor-parallel communication
@@ -522,7 +522,7 @@ class _LayerNormLinear(torch.autograd.Function):
                     use_split_accumulator=_2X_ACC_WGRAD,
                     accumulate=accumulate_wgrad_into_param_main_grad,
                     debug=ctx.debug,
-                    quantization_params=ctx.wgrad_quantizer
+                    quantization_params=ctx.wgrad_quantizer,
                 )
                 if grad_bias is None:
                     grad_bias = grad_bias_
@@ -764,10 +764,9 @@ class LayerNormLinear(TransformerEngineBaseModule):
         ub_overlap_ag: bool = False,
         ub_overlap_rs_dgrad: bool = False,
         ub_name: Optional[str] = None,
-        debug_name: str  = None,
+        debug_name: str = None,
     ) -> None:
         super().__init__()
-
 
         params_dtype = torch.get_default_dtype() if params_dtype is None else params_dtype
         self.in_features = in_features
@@ -792,18 +791,26 @@ class LayerNormLinear(TransformerEngineBaseModule):
         self.debug = TEDebugState.debug_enabled
         self.debug_name = debug_name
         if not self.debug and debug_name is not None:
-            raise RuntimeError(f"[Error] Layer {self.debug_name} has a debug name, but nvidia-dlframework-inspect was not initialized.")
+            raise RuntimeError(
+                f"[Error] Layer {self.debug_name} has a debug name, but nvidia-dlframework-inspect"
+                " was not initialized."
+            )
 
         if self.debug:
-            if (ub_bulk_wgrad or ub_bulk_dgrad or ub_overlap_ag or ub_overlap_rs_dgrad):
+            if ub_bulk_wgrad or ub_bulk_dgrad or ub_overlap_ag or ub_overlap_rs_dgrad:
                 try:
                     import nvdlfw_inspect.api as nvinspect_api
                 except (ModuleNotFoundError, ImportError):
-                    raise ModuleNotFoundError("ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed correctly.")
+                    raise ModuleNotFoundError(
+                        "ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed"
+                        " correctly."
+                    )
 
-                nvinspect_api.log_message("> UserBuffers are not supported in debug module. "
-                                        "Using UB optimization will not affect the debug module. ",
-                                        level=logging.WARNING)
+                nvinspect_api.log_message(
+                    "> UserBuffers are not supported in debug module. "
+                    "Using UB optimization will not affect the debug module. ",
+                    level=logging.WARNING,
+                )
                 ub_bulk_wgrad = None
                 ub_bulk_dgrad = None
                 ub_overlap_ag = None
@@ -1024,7 +1031,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
         inp: torch.Tensor,
         is_first_microbatch: Optional[bool] = None,
         fp8_output: Optional[bool] = False,
-        overwrite_debug_name: Optional[str] = None
+        overwrite_debug_name: Optional[str] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
         """
         Apply layer normalization to the input followed by a linear transformation.
@@ -1079,10 +1086,14 @@ class LayerNormLinear(TransformerEngineBaseModule):
                 bias_tensor = getattr(self, self.bias_names[0])  # Unused
 
             debug = self.debug
-            quantizers = self._get_quantizers(fp8_output) if not self.debug \
+            quantizers = (
+                self._get_quantizers(fp8_output)
+                if not self.debug
                 else self._get_debug_quantizers(fp8_output)
+            )
             if self.debug:
                 from ...debug.debug_quantization import use_any_feature
+
                 if not use_any_feature(quantizers):
                     quantizers = self._get_quantizers(fp8_output)
                     debug = False
@@ -1141,7 +1152,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
                 self.fsdp_group,
                 self,
                 skip_fp8_weight_update,
-                debug
+                debug,
             )
             out = fwd_fn(*args)
 
@@ -1182,7 +1193,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
             output_quantizer,
             gradient_quantizer,
             dgrad_quantizer,
-            wgrad_quantizer
+            wgrad_quantizer,
         )
 
     def _get_debug_quantizers(self, fp8_output):
@@ -1192,24 +1203,27 @@ class LayerNormLinear(TransformerEngineBaseModule):
             output_quantizer,
             gradient_quantizer,
             dgrad_quantizer,
-            wgrad_quantizer
+            wgrad_quantizer,
         ) = self._get_quantizers(fp8_output)
 
         assert self.debug
 
         from ...debug.debug_quantization import DebugQuantizer
+
         input_quantizer = DebugQuantizer(
-            self.debug_name, "activation", input_quantizer, self.tp_group)
+            self.debug_name, "activation", input_quantizer, self.tp_group
+        )
         weight_quantizer = DebugQuantizer(
-            self.debug_name, "weight", weight_quantizer, self.tp_group)
+            self.debug_name, "weight", weight_quantizer, self.tp_group
+        )
         output_quantizer = DebugQuantizer(
-            self.debug_name, "output", output_quantizer, self.tp_group)
+            self.debug_name, "output", output_quantizer, self.tp_group
+        )
         gradient_quantizer = DebugQuantizer(
-            self.debug_name, "gradient", gradient_quantizer, self.tp_group)
-        dgrad_quantizer = DebugQuantizer(
-            self.debug_name, "dgrad", dgrad_quantizer, self.tp_group)
-        wgrad_quantizer = DebugQuantizer(
-            self.debug_name, "wgrad", wgrad_quantizer, self.tp_group)
+            self.debug_name, "gradient", gradient_quantizer, self.tp_group
+        )
+        dgrad_quantizer = DebugQuantizer(self.debug_name, "dgrad", dgrad_quantizer, self.tp_group)
+        wgrad_quantizer = DebugQuantizer(self.debug_name, "wgrad", wgrad_quantizer, self.tp_group)
 
         return (
             input_quantizer,
@@ -1217,5 +1231,5 @@ class LayerNormLinear(TransformerEngineBaseModule):
             output_quantizer,
             gradient_quantizer,
             dgrad_quantizer,
-            wgrad_quantizer
+            wgrad_quantizer,
         )

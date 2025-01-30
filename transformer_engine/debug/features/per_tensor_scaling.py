@@ -81,7 +81,15 @@ class PerTensorScaling(TEConfigAPIMapper):
 
     @api_method
     def process_tensor(
-        self, config, layer_name, gemm, tensor_name, tensor, iteration, default_quantizer=None, out=None
+        self,
+        config,
+        layer_name,
+        gemm,
+        tensor_name,
+        tensor,
+        iteration,
+        default_quantizer=None,
+        out=None,
     ):
         for key in config.keys():
             if key not in ["gemm", "tensor", "margin"]:

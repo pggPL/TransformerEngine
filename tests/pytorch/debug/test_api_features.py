@@ -27,7 +27,6 @@ def test_transformer_engine_no_config(feature_dirs):
         # FP8 enabled - true by the default
         assert nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="fprop")
 
-
         # use process tensor - False by default
         assert not nvinspect_api.transformer_engine.use_process_tensor(
             "decoder.1.attn.qkv", tensor=tensor, gemm="fprop", tensor_name="activation"
