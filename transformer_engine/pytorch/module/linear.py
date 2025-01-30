@@ -1007,6 +1007,7 @@ class Linear(TransformerEngineBaseModule):
             wgrad_quantizer,
         )
 
+    def _get_debug_quantizers(self, fp8_output, fp8_grad):
         (
             input_quantizer,
             weight_quantizer,

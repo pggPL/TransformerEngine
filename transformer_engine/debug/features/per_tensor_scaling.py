@@ -1,17 +1,6 @@
-# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+# See LICENSE for license information.
 import torch
 
 from transformer_engine.debug.features.api import TEConfigAPIMapper
@@ -22,7 +11,7 @@ from nvdlfw_inspect.utils import append_parent_docstring
 import transformer_engine_torch as tex
 from transformer_engine.common.recipe import Format
 from transformer_engine.pytorch.fp8 import _default_sf_compute
-from transformer_engine.pytorch.tensor import Float8Quantizer
+from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
 
 
 def per_tensor_cast(tensor: torch.Tensor, fp8_dtype, margin=0, out=None) -> torch.Tensor:
@@ -42,7 +31,7 @@ def per_tensor_cast(tensor: torch.Tensor, fp8_dtype, margin=0, out=None) -> torc
         fp8_max = Format.E4M3.value.max_fwd
     else:
         fp8_max = Format.E5M2.value.max_fwd
-    amax = torch.max(torch.abs(tensor)).float()
+    amax = tensor.abs().max().float()
     one = torch.ones(1, device=tensor.device)
 
     scale = _default_sf_compute(amax, one, fp8_max, margin)
@@ -82,17 +71,17 @@ class PerTensorScaling(TEConfigAPIMapper):
         return 0
 
     @api_method
-    def fp8_gemm(self, config, layer_name, gemm):
+    def fp8_gemm(self, config, layer_name, gemm, iteration):
         assert config["gemm"] == gemm
         return True
 
     @api_method
-    def use_process_tensor(self, config, layer_name, gemm, tensor_name):
+    def use_process_tensor(self, config, layer_name, gemm, tensor_name, iteration):
         return True
 
     @api_method
     def process_tensor(
-        self, config, layer_name, gemm, tensor_name, tensor, default_quantizer=None, out=None
+        self, config, layer_name, gemm, tensor_name, tensor, iteration, default_quantizer=None, out=None
     ):
         for key in config.keys():
             if key not in ["gemm", "tensor", "margin"]:

@@ -1,15 +1,6 @@
-# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# See LICENSE for license information.
 
 import torch
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor, Float8Quantizer
@@ -36,11 +27,6 @@ def test_transformer_engine_no_config(feature_dirs):
         # FP8 enabled - true by the default
         assert nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="fprop")
 
-        # process tensor - do nothing by the default
-        output = nvinspect_api.transformer_engine.process_tensor(
-            "decoder.1.attn.qkv", tensor=tensor, gemm="fprop", tensor_name="activation"
-        )
-        assert (output == tensor).all()
 
         # use process tensor - False by default
         assert not nvinspect_api.transformer_engine.use_process_tensor(

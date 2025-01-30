@@ -1,4 +1,7 @@
-import pathlib, os
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+#
+# See LICENSE for license information.
+# import pathlib, os
 
 from nvdlfw_inspect.config_manager import ConfigManager
 

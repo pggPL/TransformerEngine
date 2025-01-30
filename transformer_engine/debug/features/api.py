@@ -1,25 +1,13 @@
-# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# See LICENSE for license information.
 
 import torch
 import copy
 from typing import Any
 from nvdlfw_inspect.base import BaseNamespaceAPI, BaseConfigAPIMapper
-from nvdlfw_inspect.registry import Registry
-
-
-from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Tensor, MXFP8TensorBase
-from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor, Float8TensorBase
+from nvdlfw_inspect.registry import Registry, api_method
+from transformer_engine.debug.debug_state import TEDebugState
 
 
 class TEConfigAPIMapper(BaseConfigAPIMapper):
