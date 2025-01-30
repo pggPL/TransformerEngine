@@ -601,7 +601,10 @@ class _LayerNormLinear(torch.autograd.Function):
         # Scatter fp8 weight buffers
         # if ctx.fp8 and not isinstance(weight, QuantizedTensor):
         #    _fsdp_scatter_tensors(ctx.fsdp_group, weight_fp8)
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/nvdlff-inspect-support
 
         return (
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,

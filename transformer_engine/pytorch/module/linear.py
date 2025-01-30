@@ -512,7 +512,6 @@ class _Linear(torch.autograd.Function):
         # Scatter fp8 weight buffers
         if ctx.fp8 and not isinstance(weight, QuantizedTensor):
             _fsdp_scatter_tensors(ctx.fsdp_group, weight_fp8)
-        #import pdb; pdb.set_trace()
         return (
             wgrad,
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
@@ -998,7 +997,6 @@ class Linear(TransformerEngineBaseModule):
         )
 
 
-    def _get_debug_quantizers(self, fp8_output, fp8_grad):
         (
             input_quantizer,
             weight_quantizer,

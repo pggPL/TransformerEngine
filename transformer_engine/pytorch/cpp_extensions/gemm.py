@@ -11,23 +11,11 @@ from ..tensor.quantized_tensor import Quantizer
 import transformer_engine_torch as tex
 from ..constants import TE_DType
 from ..utils import assert_dim_for_fp8_exec, get_sm_count
-from ..tensor.quantized_tensor import QuantizedTensor
-from ..tensor.float8_tensor import Float8Tensor, Float8TensorBase
-from ..tensor.mxfp8_tensor import MXFP8Tensor, MXFP8TensorBase
 
 from ..tensor.quantized_tensor import Quantizer
+from ..tensor.float8_tensor import Float8Tensor
+from ..tensor.mxfp8_tensor import MXFP8Tensor
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
-from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
-
-
-
-from ..tensor.quantized_tensor import (
-    QuantizedTensor,
-    Quantizer,
-    prepare_for_saving,
-    restore_from_saved,
-)
-
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 
 __all__ = [

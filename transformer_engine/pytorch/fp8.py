@@ -102,7 +102,6 @@ class FP8GlobalStateManager:
     skip_fp8_weight_update_tensor = None
     mxfp8_available = None
     reason_for_no_mxfp8 = ""
-    debug_enabled = False
 
     @classmethod
     def reset(cls) -> None:

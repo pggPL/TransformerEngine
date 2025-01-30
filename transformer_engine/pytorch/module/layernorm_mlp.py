@@ -748,7 +748,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 if fc2_bias_grad is None:
                     fc2_bias_grad = fc2_bias_grad_
                 del fc2_bias_grad_
-            clear_tensor_data(act_out, grad_output)
+            clear_tensor_data(act_out)
 
             # bias computation
             fc1_bias_grad = None
@@ -896,10 +896,10 @@ class _LayerNormMLP(torch.autograd.Function):
                 fc1_dgrad_work = None
 
             # Residual gradient
-            #dgrad = fc1_dgrad.view(inputmat.shape)
-            #if ctx.return_layernorm_output and not ctx.return_layernorm_output_gathered:
-            #    dgrad = dgrad + grad_outputs[1].view_as(dgrad)
-            dgrad = fc1_dgrad
+            dgrad = fc1_dgrad.view(inputmat.shape)
+            if ctx.return_layernorm_output and not ctx.return_layernorm_output_gathered:
+                dgrad = dgrad + grad_outputs[1].view_as(dgrad)
+
             # Norm gradient
             dgamma = None
             dbeta = None
