@@ -58,7 +58,7 @@ class LogFp8TensorStats(BaseLogTensorStats):
         )
 
         if not rowwise:
-            return None # tensor was already seen rowwise in the other gemm
+            return None  # tensor was already seen rowwise in the other gemm
 
         tensor = tensor._data
         options = (

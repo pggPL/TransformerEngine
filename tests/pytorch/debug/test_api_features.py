@@ -31,7 +31,7 @@ def test_transformer_engine_no_config(feature_dirs):
 
         # use look at tensor before process - False by default
         assert not nvinspect_api.transformer_engine.use_look_at_tensor_before_process(
-            "decoder.1.attn.qkv",  gemm="fprop", tensor_name="activation"
+            "decoder.1.attn.qkv", gemm="fprop", tensor_name="activation"
         )
 
         # use look at tensor after the process - False by default
@@ -48,14 +48,26 @@ def test_disable_fp8_gemm(configs_dir, feature_dirs):
     try:
         nvinspect_api.initialize(configs_dir + "disable_fp8_gemms.yaml", feature_dirs=feature_dirs)
 
-        assert nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="fprop", iteration=0)
-        assert not nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="dgrad", iteration=0)
-        assert not nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="wgrad", iteration=0)
+        assert nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.attn.qkv", gemm="fprop", iteration=0
+        )
+        assert not nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.attn.qkv", gemm="dgrad", iteration=0
+        )
+        assert not nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.attn.qkv", gemm="wgrad", iteration=0
+        )
 
         # caching
-        assert nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="fprop", iteration=0)
-        assert not nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="dgrad", iteration=0)
-        assert not nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="wgrad", iteration=0)
+        assert nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.attn.qkv", gemm="fprop", iteration=0
+        )
+        assert not nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.attn.qkv", gemm="dgrad", iteration=0
+        )
+        assert not nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.attn.qkv", gemm="wgrad", iteration=0
+        )
 
     finally:
         nvinspect_api.end_debug()
@@ -66,12 +78,24 @@ def test_disable_fp8_layer(configs_dir, feature_dirs):
     try:
         nvinspect_api.initialize(configs_dir + "disable_fp8_layer.yaml", feature_dirs=feature_dirs)
 
-        assert nvinspect_api.transformer_engine.fp8_gemm("decoder.1.mlp.fc1", gemm="fprop", iteration=0)
-        assert nvinspect_api.transformer_engine.fp8_gemm("decoder.1.mlp.fc1", gemm="wgrad", iteration=0)
-        assert nvinspect_api.transformer_engine.fp8_gemm("decoder.1.mlp.fc1", gemm="dgrad", iteration=0)
-        assert not nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="fprop", iteration=0)
-        assert not nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="wgrad", iteration=0)
-        assert not nvinspect_api.transformer_engine.fp8_gemm("decoder.1.attn.qkv", gemm="dgrad", iteration=0)
+        assert nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.mlp.fc1", gemm="fprop", iteration=0
+        )
+        assert nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.mlp.fc1", gemm="wgrad", iteration=0
+        )
+        assert nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.mlp.fc1", gemm="dgrad", iteration=0
+        )
+        assert not nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.attn.qkv", gemm="fprop", iteration=0
+        )
+        assert not nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.attn.qkv", gemm="wgrad", iteration=0
+        )
+        assert not nvinspect_api.transformer_engine.fp8_gemm(
+            "decoder.1.attn.qkv", gemm="dgrad", iteration=0
+        )
 
     finally:
         nvinspect_api.end_debug()
@@ -124,7 +148,7 @@ def test_per_tensor_scaling(configs_dir, feature_dirs):
             tensor_name="activation",
             default_quantizer=default_quantizer1,
             iteration=0,
-            tensor=tensor
+            tensor=tensor,
         )
         assert type(output1) == Float8Tensor
         assert output1._fp8_dtype == tex.DType.kFloat8E4M3
@@ -135,7 +159,7 @@ def test_per_tensor_scaling(configs_dir, feature_dirs):
             tensor=tensor,
             tensor_name="gradient",
             default_quantizer=default_quantizer2,
-            iteration=0
+            iteration=0,
         )
         assert type(output2) == Float8Tensor
         assert output2._fp8_dtype == tex.DType.kFloat8E5M2
@@ -146,7 +170,7 @@ def test_per_tensor_scaling(configs_dir, feature_dirs):
             tensor=tensor,
             tensor_name="gradient",
             default_quantizer=default_quantizer2,
-            iteration=0
+            iteration=0,
         )
 
         assert not nvinspect_api.transformer_engine.use_process_tensor(
@@ -155,7 +179,7 @@ def test_per_tensor_scaling(configs_dir, feature_dirs):
             tensor=tensor,
             tensor_name="activation",
             fp8_dtype=tex.DType.kFloat8E4M3,
-            iteration=0
+            iteration=0,
         )
     finally:
         nvinspect_api.end_debug()
@@ -224,17 +248,29 @@ def test_statistics_collection(configs_dir, feature_dirs):
 
         # TE tensor stats --
         nvinspect_api.transformer_engine.look_at_tensor_before_process(
-            "decoder.1.mlp.fc1", tensor=tensor, tensor_name="activation", iteration=200, rowwise=True
+            "decoder.1.mlp.fc1",
+            tensor=tensor,
+            tensor_name="activation",
+            iteration=200,
+            rowwise=True,
         )
         stats = log()
         assert stats[("decoder.1.mlp.fc1", "activation", "cur_amax", 200)] == tensor.abs().max()
 
         nvinspect_api.transformer_engine.look_at_tensor_before_process(
-            "decoder.1.mlp.fc1", tensor=tensor, tensor_name="activation", iteration=201, rowwise=True
+            "decoder.1.mlp.fc1",
+            tensor=tensor,
+            tensor_name="activation",
+            iteration=201,
+            rowwise=True,
         )
         assert_empty()
         nvinspect_api.transformer_engine.look_at_tensor_before_process(
-            "decoder.2.mlp.fc1", tensor=tensor, tensor_name="activation", iteration=200, rowwise=True
+            "decoder.2.mlp.fc1",
+            tensor=tensor,
+            tensor_name="activation",
+            iteration=200,
+            rowwise=True,
         )
         assert_empty()
         nvinspect_api.transformer_engine.look_at_tensor_before_process(
@@ -247,25 +283,41 @@ def test_statistics_collection(configs_dir, feature_dirs):
 
         # TE FP8 tensor stats --
         nvinspect_api.transformer_engine.look_at_tensor_after_process(
-            "decoder.1.mlp.fc1", tensor=tensor_fp8, tensor_name="gradient", iteration=200, rowwise=True
+            "decoder.1.mlp.fc1",
+            tensor=tensor_fp8,
+            tensor_name="gradient",
+            iteration=200,
+            rowwise=True,
         )
         stats = log()
         assert stats[("decoder.1.mlp.fc1", "gradient", "underflows%", 200)] == expected_underflows
         assert stats[("decoder.1.mlp.fc1", "gradient", "overflows%", 200)] == expected_overflows
 
         nvinspect_api.transformer_engine.look_at_tensor_after_process(
-            "decoder.1.mlp.fc1", tensor=tensor_fp8, tensor_name="activation", iteration=201, rowwise=True
+            "decoder.1.mlp.fc1",
+            tensor=tensor_fp8,
+            tensor_name="activation",
+            iteration=201,
+            rowwise=True,
         )
         assert_empty()
         nvinspect_api.transformer_engine.look_at_tensor_after_process(
-            "decoder.2.mlp.fc1", tensor=tensor_fp8, tensor_name="gradient", iteration=200, rowwise=True
+            "decoder.2.mlp.fc1",
+            tensor=tensor_fp8,
+            tensor_name="gradient",
+            iteration=200,
+            rowwise=True,
         )
         assert_empty()
 
         # Second config in same yaml
         tensor = torch.rand((100, 100, 5))
         nvinspect_api.transformer_engine.look_at_tensor_before_process(
-            "decoder.6.mlp.fc1", tensor=tensor, tensor_name="activation", iteration=200, rowwise=True
+            "decoder.6.mlp.fc1",
+            tensor=tensor,
+            tensor_name="activation",
+            iteration=200,
+            rowwise=True,
         )
         stats = log()
         stats_names = [x[3] for x in stats.keys()]
@@ -300,12 +352,18 @@ def test_statistics_multi_run(configs_dir, feature_dirs):
 
         def feed(tensor, tensor_fp8):
             nvinspect_api.transformer_engine.look_at_tensor_before_process(
-                "decoder.5.mlp.fc1", tensor=tensor, tensor_name="activation", iteration=1,
-                rowwise=True
+                "decoder.5.mlp.fc1",
+                tensor=tensor,
+                tensor_name="activation",
+                iteration=1,
+                rowwise=True,
             )
             nvinspect_api.transformer_engine.look_at_tensor_after_process(
-                "decoder.5.mlp.fc1", tensor=tensor_fp8, tensor_name="activation", iteration=1,
-                rowwise=True
+                "decoder.5.mlp.fc1",
+                tensor=tensor_fp8,
+                tensor_name="activation",
+                iteration=1,
+                rowwise=True,
             )
 
         def log_stats():
@@ -342,7 +400,6 @@ def test_statistics_multi_run(configs_dir, feature_dirs):
     finally:
         nvinspect_api.end_debug()
         transformer_engine.debug.debug_state.TEDebugState.reset()
-
 
 
 if __name__ == "__main__":

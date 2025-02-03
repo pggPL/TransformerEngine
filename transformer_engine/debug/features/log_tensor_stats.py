@@ -60,7 +60,7 @@ class LogTensorStats(BaseLogTensorStats):
             " log_tensor_stats. Use log_fp8_tensor_stats for FP8 tensors."
         )
         if not rowwise:
-            return None # tensor was already seen rowwise in the other gemm
+            return None  # tensor was already seen rowwise in the other gemm
         FP8GlobalStateManager.debug_tool = True
         options = (
             config.get("start_step", None),
