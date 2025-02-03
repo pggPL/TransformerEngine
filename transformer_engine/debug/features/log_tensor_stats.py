@@ -45,12 +45,12 @@ class LogTensorStats(BaseLogTensorStats):
         return BaseLogTensorStats._get_supported_stats_list(None) | {"cur_amax", "dynamic_range"}
 
     @api_method
-    def use_look_at_tensor_before_process(self, config, layer_name, tensor_name, iteration=None):
+    def use_look_at_tensor_before_process(self, config, layer_name, tensor_name, iteration):
         return self._check_params(config, layer_name, iteration=iteration)
 
     @api_method
     def look_at_tensor_before_process(
-        self, config, layer_name, tensor_name, tensor, iteration=None
+        self, config, layer_name, tensor_name, tensor, rowwise, iteration
     ):
         assert (
             type(tensor) not in [Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase]
@@ -59,6 +59,8 @@ class LogTensorStats(BaseLogTensorStats):
             f"[NVTORCH INSPECT ERROR] Tensor {tensor_name} must be in high precision when using"
             " log_tensor_stats. Use log_fp8_tensor_stats for FP8 tensors."
         )
+        if not rowwise:
+            return None # tensor was already seen rowwise in the other gemm
         FP8GlobalStateManager.debug_tool = True
         options = (
             config.get("start_step", None),

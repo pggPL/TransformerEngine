@@ -44,7 +44,7 @@ class LogFp8TensorStats(BaseLogTensorStats):
         return {"underflows%", "overflows%"}
 
     @api_method
-    def use_look_at_tensor_before_process(self, config, layer_name, tensor_name, iteration=None):
+    def use_look_at_tensor_before_process(self, config, layer_name, tensor_name, iteration):
         return self._check_params(config, layer_name, iteration=iteration)
 
     @api_method
@@ -57,6 +57,9 @@ class LogFp8TensorStats(BaseLogTensorStats):
             " tensors."
         )
 
+        if not rowwise:
+            return None # tensor was already seen rowwise in the other gemm
+
         tensor = tensor._data
         options = (
             config.get("start_step", None),
@@ -66,7 +69,7 @@ class LogFp8TensorStats(BaseLogTensorStats):
         )
         skip_reduction = False
         reduction_group = nvinspect_api.get_tensor_reduction_group()
-        if self.tensor_name == "weight":
+        if tensor_name == "weight":
             if TEDebugState.weight_tensor_tp_group_reduce:
                 reduction_group = self.tp_group
             else:
