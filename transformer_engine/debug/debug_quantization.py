@@ -172,7 +172,7 @@ class DebugQuantizer(Quantizer):
             args["rowwise"] = False
             nvinspect_api.transformer_engine.look_at_tensor_after_process(**args)
 
-    def quantize(self, tensor, *, out=None):
+    def quantize(self, tensor, *, out=None, dtype=None):
         assert not self.output_tensor
         if out is not None:
             return self.update_quantized(tensor, self)
@@ -213,6 +213,7 @@ class DebugQuantizer(Quantizer):
                 tensor=tensor,
                 default_quantizer=self.parent_quantizer,
                 iteration=iteration,
+                dtype=dtype
             )
         if self.process_tensor_first_gemm:
             first_gemm_tensor = nvinspect_api.transformer_engine.process_tensor(
@@ -222,13 +223,15 @@ class DebugQuantizer(Quantizer):
                 tensor=tensor,
                 default_quantizer=self.parent_quantizer,
                 iteration=iteration,
+                dtype=dtype
             )
 
         # 3. If some tensors still are not defined we use input tensor.
         if first_gemm_tensor is None:
-            first_gemm_tensor = tensor
+            first_gemm_tensor = tensor.to(dtype)
         if second_gemm_tensor is None:
-            second_gemm_tensor = tensor
+            second_gemm_tensor = tensor.to(dtype)
+        
 
         self._call_look_at_tensor_api(tensor, first_gemm_tensor, second_gemm_tensor)
 
@@ -341,15 +344,17 @@ class DebugQuantizer(Quantizer):
     def use_any_feature(self):
         if self.output_tensor:
             return self.use_look_at_tensor_before_process or self.output_process_tensor
-        return (
-            self.use_look_at_tensor_before_process
-            or self.use_look_at_tensor_after_process
-            or self.process_tensor_first_gemm
-            or self.process_tensor_second_gemm
-            or not self.fp8_quantize_first_gemm
-            or not self.fp8_quantize_second_gemm
-        )
-
+        if self.use_look_at_tensor_before_process\
+            or self.use_look_at_tensor_after_process\
+            or self.process_tensor_first_gemm\
+            or self.process_tensor_second_gemm:
+            return True
+        if self.parent_quantizer is not None:
+            if not self.fp8_quantize_first_gemm:
+                return True
+            if not self.fp8_quantize_second_gemm:
+                return True
+        return False
 
 class DebugQuantizedTensor(QuantizedTensor):
     def __new__(
