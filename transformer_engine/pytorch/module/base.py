@@ -762,8 +762,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self.fp8_meta["fp8_checkpoint"] = self.fp8 or self.fp8_calibration
 
         if self.debug and self.fp8_parameters:
-            raise RuntimeError(
-                "Primary FP8 parameters is not supported in the debug module. ")
+            raise RuntimeError("Primary FP8 parameters is not supported in the debug module. ")
 
         if self.fp8_parameters or fp8_enabled:
             if (
@@ -993,7 +992,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         update_workspace: bool = True,
         skip_update_flag: Optional[torch.Tensor] = None,
         fsdp_group: Optional[dist_group_type] = None,
-        activation_dtype: torch.dtype = None
+        activation_dtype: torch.dtype = None,
     ) -> QuantizedTensor:
         """Get FP8 workspace buffer and maybe update its values
 
@@ -1056,10 +1055,11 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 out.quantize_(tensor, noop_flag=skip_update_flag)
             else:
                 tex.quantize(tensor, quantizer, out, skip_update_flag)
-        
-        if type(out) == torch.tensor: # only holds for debug quantizer
-            assert out.dtype == activation_dtype, \
-                "Activation dtype cannot be changed with debug=True."
+
+        if type(out) == torch.tensor:  # only holds for debug quantizer
+            assert (
+                out.dtype == activation_dtype
+            ), "Activation dtype cannot be changed with debug=True."
 
         return out
 

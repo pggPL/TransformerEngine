@@ -103,9 +103,8 @@ if os.environ.get("DEBUG", False):
     # to prevent switching off debug, what can happend if
     # no feature is active.
     import nvdlfw_inspect.api as nvinspect_api
-    nvinspect_api.initialize(
-        os.environ["CONFIG_FILE"],
-        feature_dirs=os.environ["FEATURE_DIRS"])
+
+    nvinspect_api.initialize(os.environ["CONFIG_FILE"], feature_dirs=os.environ["FEATURE_DIRS"])
 
 fp8_recipes = [
     recipe.BlockScaling(),
@@ -723,7 +722,7 @@ def test_gpt_full_activation_recompute(
     if fp8 or fp8_model_params:
         tols.update(dict(rtol=0.125, atol=0.0675))
     for i, (ref, test) in enumerate(zip(outputs, outputs_recompute)):
-        #if i == 10:
+        # if i == 10:
         #    import pdb; pdb.set_trace()
         torch.testing.assert_close(
             test,

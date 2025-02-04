@@ -14,7 +14,7 @@
 
 from transformer_engine.debug.features.api import TEConfigAPIMapper
 
-import nvdlfw_inspect.api  as nvinspect_api
+import nvdlfw_inspect.api as nvinspect_api
 from nvdlfw_inspect.registry import Registry, api_method
 from nvdlfw_inspect.utils import append_parent_docstring
 
@@ -29,7 +29,7 @@ class DummyFeature(TEConfigAPIMapper):
     @api_method
     def use_look_at_tensor_before_process(self, *args, **kwargs):
         return True
-    
+
     @api_method
     def look_at_tensor_before_process(self, *args, **kwargs):
         pass

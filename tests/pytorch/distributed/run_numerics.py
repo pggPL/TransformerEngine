@@ -37,9 +37,8 @@ if os.environ.get("DEBUG", False):
     # to prevent switching off debug, what can happend if
     # no feature is active.
     import nvdlfw_inspect.api as nvinspect_api
-    nvinspect_api.initialize(
-        os.environ["CONFIG_FILE"],
-        feature_dirs=os.environ["FEATURE_DIRS"])
+
+    nvinspect_api.initialize(os.environ["CONFIG_FILE"], feature_dirs=os.environ["FEATURE_DIRS"])
 
 
 # Disable TF32

@@ -226,10 +226,12 @@ class _LayerNormLinear(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
-                    activation_dtype=activation_dtype
+                    activation_dtype=activation_dtype,
                 )
             else:
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
 
         # Cast bias to expected dtype
         bias_dtype = activation_dtype
