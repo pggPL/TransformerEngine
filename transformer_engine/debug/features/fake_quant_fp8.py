@@ -99,6 +99,7 @@ class FakeQuantFp8(TEConfigAPIMapper):
         iteration,
         default_quantizer=None,
         out=None,
+        dtype=None,
     ):
         for key in config.keys():
             if key not in ["gemm", "tensor", "quant_format", "margin"]:
@@ -125,4 +126,6 @@ class FakeQuantFp8(TEConfigAPIMapper):
         quant_format = config["quant_format"]
         margin = config.get("margin", self._get_margin_default())
         q_tensor = fake_quantize_fp8(tensor, quant_format, margin=margin, out=out)
+        if dtype is not None:
+            q_tensor = q_tensor.to(dtype)
         return q_tensor

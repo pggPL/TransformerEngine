@@ -224,6 +224,8 @@ class _LayerNormMLP(torch.autograd.Function):
             fwd_ln_sm_margin,
             zero_centered_gamma,
         )
+        if debug:
+            ln_out = fc1_input_quantizer(ln_out)
         ln_out_return = ln_out if return_layernorm_output else None
 
         # Prepare GEMM input
@@ -269,8 +271,7 @@ class _LayerNormMLP(torch.autograd.Function):
                         ]  # TODO(pgadzinski) - check this
                     else:
                         ln_out = ln_out_total
-        if debug:
-            ln_out_total = fc1_input_quantizer(ln_out_total)
+
 
         # Cast weights to expected dtype
         fc1_weight_final = fc1_weight
@@ -289,6 +290,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
+                    activation_dtype=activation_dtype
                 )
             if not isinstance(fc2_weight, QuantizedTensor):
                 fc2_weight_quantizer.set_usage(rowwise=True, columnwise=True)
@@ -299,16 +301,10 @@ class _LayerNormMLP(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
+                    activation_dtype=activation_dtype
                 )
-        if not isinstance(fc1_weight_final, QuantizedTensor) and not type(fc1_weight_final) in [
-            Float8TensorBase,
-            MXFP8TensorBase,
-        ]:
+        else:
             fc1_weight_final = cast_if_needed(fc1_weight_final, activation_dtype)
-        if not isinstance(fc2_weight_final, QuantizedTensor) and not type(fc1_weight_final) in [
-            Float8TensorBase,
-            MXFP8TensorBase,
-        ]:
             fc2_weight_final = cast_if_needed(fc2_weight_final, activation_dtype)
 
         # Cast biases to expected dtype
@@ -684,6 +680,9 @@ class _LayerNormMLP(torch.autograd.Function):
                 if ctx.fp8:
                     quantizer = ctx.fc1_input_quantizer
                     quantizer.set_usage(rowwise=True, columnwise=True)
+                if ctx.debug:
+                    ln_out_obj = ln_out
+                    ln_out = ln_out_obj.get_tensor(False)
                 ln_out_total, ln_out_total_work = gather_along_first_dim(
                     ln_out,
                     ctx.tp_group,
@@ -692,8 +691,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 )
             else:
                 ln_out_total = ln_out
-                if ctx.debug:
-                    ln_out_total = ctx.fc1_input_quantizer(ln_out)
+
             # Check whether to output wgrad GEMM directly into main grad
             if ctx.is_first_microbatch is not None:
                 accumulate_wgrad_into_param_main_grad = (
@@ -772,6 +770,7 @@ class _LayerNormMLP(torch.autograd.Function):
             elif ctx.debug:
                 dact_func = _act_func(ctx.activation)[1]
                 dact = dact_func(fc2_dgrad, fc1_out.to(ctx.activation_dtype), None)
+                fc1_bias_grad = dact.sum(dim=0)
                 dact = ctx.fc1_gradient_quantizer(dact)
             elif _act_func(ctx.activation)[2] is not None and ctx.fp8 and not ctx.debug:
                 # Fusion: gemm, bias + gelu + quantize
@@ -873,7 +872,6 @@ class _LayerNormMLP(torch.autograd.Function):
 
                 if hasattr(ln_out_total, "_create_transpose"):
                     ln_out_total._create_transpose()  # TODO(pgadzinski) - temporary
-
                 fc1_wgrad_outputs = general_gemm(
                     ln_out_total,
                     dact,

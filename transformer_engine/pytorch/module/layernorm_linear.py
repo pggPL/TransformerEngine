@@ -206,7 +206,7 @@ class _LayerNormLinear(torch.autograd.Function):
         # Cast weight to expected dtype
         weightmat = weight
         quantized_weight = False
-        if not fp8 and not debug:  # pgadzinski (check it)
+        if not fp8 and not debug:
             weightmat = cast_if_needed(weightmat, activation_dtype)
         else:
             if not isinstance(weight, QuantizedTensor):
@@ -218,6 +218,7 @@ class _LayerNormLinear(torch.autograd.Function):
 
                 # FP8 cast to workspace buffer
                 update_workspace = is_first_microbatch is None or is_first_microbatch
+
                 weightmat = module.get_weight_workspace(
                     tensor=weight,
                     quantizer=weight_quantizer,
@@ -225,7 +226,10 @@ class _LayerNormLinear(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
+                    activation_dtype=activation_dtype
                 )
+            else:
+                import pdb; pdb.set_trace()
 
         # Cast bias to expected dtype
         bias_dtype = activation_dtype

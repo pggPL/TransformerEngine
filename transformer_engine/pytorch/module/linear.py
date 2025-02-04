@@ -124,10 +124,8 @@ class _Linear(torch.autograd.Function):
                 inputmat_total, _ = gather_along_first_dim(
                     inputmat,
                     tp_group,
-                    quantizer=input_quantizer if not debug else None,
+                    quantizer=input_quantizer,
                 )
-                if debug:
-                    inputmat_total = input_quantizer(inputmat_total)
             else:
                 input_quantizer.set_usage(
                     rowwise=True,
@@ -149,11 +147,9 @@ class _Linear(torch.autograd.Function):
 
         # Cast weight to expected dtype
         weightmat = weight
-
-        if not fp8 and not debug:
-            weightmat = cast_if_needed(weightmat, activation_dtype)
-        else:
-            if not isinstance(weight, QuantizedTensor):
+        
+        if fp8 or debug:
+            if not isinstance(weight, QuantizedTensor) or debug:
                 # Configure quantizer
                 if weight_quantizer is not None:
                     columnwise_usage = is_grad_enabled and inp.requires_grad
@@ -172,7 +168,10 @@ class _Linear(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
+                    activation_dtype=activation_dtype
                 )
+        else:
+            weightmat = cast_if_needed(weightmat, activation_dtype)
 
         # Cast bias to expected dtype
         bias_dtype = activation_dtype
