@@ -886,9 +886,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         gather_grad_output = row_parallel_mode and ctx.sequence_parallel
 
         # Non-FP8 case: bgrad is fused with wgrad for this case.
-        if not ctx.fp8:
-            if ctx.debug:
-                grad_output = quantizer(grad_output)
+        if not ctx.fp8 and not ctx.debug:
             if gather_grad_output:
                 if not ctx.ub_overlap_ag:
                     grad_output, _ = gather_along_first_dim(grad_output, ctx.tp_group)

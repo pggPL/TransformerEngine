@@ -178,10 +178,10 @@ class _LayerNormLinear(torch.autograd.Function):
         # Prepare GEMM input
         # Note: Cast to expected dtype and perform tensor-parallel communication
         if with_input_all_gather:
-            with_quantized_all_gather = fp8
+            with_quantized_all_gather = fp8 or debug
             if return_layernorm_output and return_layernorm_output_gathered:
                 with_quantized_all_gather = False
-            if fp8:
+            if fp8 or debug:
                 input_quantizer.set_usage(rowwise=True, columnwise=False)
             ln_out_total, _ = gather_along_first_dim(
                 ln_out,

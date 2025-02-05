@@ -224,17 +224,17 @@ class _LayerNormMLP(torch.autograd.Function):
             fwd_ln_sm_margin,
             zero_centered_gamma,
         )
-        if debug:
+        if debug and not (return_layernorm_output):
             ln_out = fc1_input_quantizer(ln_out)
         ln_out_return = ln_out if return_layernorm_output else None
 
         # Prepare GEMM input
         # Note: Cast to expected dtype and perform tensor-parallel communication
-        with_quantized_all_gather = fp8
+        with_quantized_all_gather = fp8 or debug
         if with_input_all_gather:
             if return_layernorm_output and return_layernorm_output_gathered:
                 with_quantized_all_gather = False
-            if fp8:
+            if fp8 or debug:
                 fc1_input_quantizer.set_usage(rowwise=True, columnwise=False)
             ln_out_total, _ = gather_along_first_dim(
                 ln_out,
@@ -251,7 +251,7 @@ class _LayerNormMLP(torch.autograd.Function):
         # of an extra fp8 cast.
         if return_layernorm_output:
             ln_out_return = ln_out_total if return_layernorm_output_gathered else ln_out
-            if fp8:
+            if fp8 or debug:
                 if ub_overlap_ag:
                     raise NotImplementedError
                     ln_out = pytex.cast_to_fp8(
@@ -676,18 +676,24 @@ class _LayerNormMLP(torch.autograd.Function):
             ln_out_total_work = None
             if ctx.fc1_weight_requires_grad and ctx.tensor_parallel and ctx.sequence_parallel:
                 quantizer = None
-                if ctx.fp8:
+                if ctx.fp8 or ctx.debug:
                     quantizer = ctx.fc1_input_quantizer
                     quantizer.set_usage(rowwise=True, columnwise=True)
-                if ctx.debug:
+                if ctx.debug and not ctx.return_layernorm_output:
                     ln_out_obj = ln_out
-                    ln_out = ln_out_obj.get_tensor(False)
+                    ln_out = ln_out_obj.get_tensor(True)
+                    quantizer = None if type(ln_out) == torch.Tensor else quantizer.parent_quantizer
+                    if quantizer is not None:
+                        quantizer.set_usage(rowwise=True, columnwise=True)
                 ln_out_total, ln_out_total_work = gather_along_first_dim(
                     ln_out,
                     ctx.tp_group,
                     async_op=True,
                     quantizer=quantizer,
                 )
+                if ctx.debug and not ctx.return_layernorm_output:
+                    ln_out_obj.second_gemm_tensor = ln_out_total
+                    ln_out_total = ln_out_obj
             else:
                 ln_out_total = ln_out
 

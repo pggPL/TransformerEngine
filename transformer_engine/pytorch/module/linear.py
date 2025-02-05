@@ -113,7 +113,7 @@ class _Linear(torch.autograd.Function):
         inputmat_total = None
         with_input_all_gather = parallel_mode == "column" and sequence_parallel
         own_quantized_input = False
-        if fp8:
+        if fp8 or debug:
             if input_quantizer is None:
                 raise ValueError("Missing quantizer for input tensor")
             if with_input_all_gather:
@@ -138,12 +138,11 @@ class _Linear(torch.autograd.Function):
                 inputmat_total = inputmat
         else:
             inputmat = cast_if_needed(inp, activation_dtype)
-            if debug:
-                inputmat = input_quantizer(inputmat)
             if with_input_all_gather:
                 inputmat_total, _ = gather_along_first_dim(inputmat, tp_group)
             else:
                 inputmat_total = inputmat
+
 
         # Cast weight to expected dtype
         weightmat = weight
@@ -364,22 +363,15 @@ class _Linear(torch.autograd.Function):
             inputmat_total_work = None
             if ctx.requires_wgrad and ctx.parallel_mode == "column" and ctx.sequence_parallel:
                 quantizer = None
-                if ctx.fp8:
+                if ctx.fp8 or ctx.debug:
                     quantizer = ctx.input_quantizer
                     quantizer.set_usage(rowwise=True, columnwise=True)
                 inputmat_total, inputmat_total_work = gather_along_first_dim(
                     inputmat,
                     ctx.tp_group,
                     async_op=True,
-                    quantizer=quantizer if not ctx.debug else None,
+                    quantizer=quantizer,
                 )
-                if ctx.debug:
-                    if inputmat_total_work is not None:
-                        inputmat_total_work.wait()
-                    inputmat_total = (
-                        quantizer(inputmat_total) if quantizer is not None else inputmat_total
-                    )
-
             else:
                 inputmat_total = inputmat
 

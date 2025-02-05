@@ -1003,7 +1003,6 @@ def gather_along_first_dim(
             quantizer=quantizer,
             out_shape=out_shape,
         )
-
     # High-precision communication for quantized tensors
     if quantizer is not None:
         warnings.warn(
