@@ -2,15 +2,17 @@
 #
 # See LICENSE for license information.
 
-import torch
+""" 
+    This file combines all mathematical functions used to compute
+    the statistics or combine computed statistics for subtensors
+    for statistics for full tensor.
+"""
+
 import math
-
-# This file combines all mathematical functions used to compute
-# the statistics or combine computed statistics for subtensors
-# for statistics for full tensor.
-
+import torch
 
 def _compute_dynamic_range_top(tensor):
+    """ Computes the log2 of the amax of the tensor """
     tensor_abs = tensor.abs()
     tensor_abs = tensor_abs[tensor_abs != 0]
     amax = tensor_abs.max().float()
@@ -20,6 +22,7 @@ def _compute_dynamic_range_top(tensor):
 
 
 def _compute_dynamic_range_bottom(tensor):
+    """ Computes the log2 of the amin of the tensor """
     tensor_abs = tensor.abs()
     tensor_abs = tensor_abs[tensor_abs != 0]
     if tensor_abs.any():
@@ -30,7 +33,7 @@ def _compute_dynamic_range_bottom(tensor):
 
 
 def compute_variance(variances, numels, sums):
-    # We use Welford algorithm for numerically stable distributed variance computation.
+    """ Welford algorithm is used for numerically stable distributed variance computation. """
     mean = torch.sum(sums) / torch.sum(numels)
     means = sums / numels
     var = torch.sum(numels * (variances - torch.pow((means - mean), 2))) / torch.sum(numels)
@@ -38,6 +41,7 @@ def compute_variance(variances, numels, sums):
 
 
 def compute_std(variances, numels, sums):
+    """ Computates standard deviation. """
     return torch.sqrt(compute_variance(variances, numels, sums))
 
 
