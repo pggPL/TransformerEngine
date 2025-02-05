@@ -2,21 +2,23 @@
 #
 # See LICENSE for license information.
 
+"""LogFp8TensorStats Feature support for nvidia-dlframework-inspect"""
+
+from typing import Dict, Union
+
+import torch
 
 from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS
-from transformer_engine.pytorch.fp8 import FP8GlobalStateManager
+from transformer_engine.pytorch.tensor import QuantizedTensor
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor
 from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Tensor
 from transformer_engine.pytorch.tensor._internal.float8_tensor_base import Float8TensorBase
 from transformer_engine.pytorch.tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
-import nvdlfw_inspect.api as nvinspect_api
 from transformer_engine.debug.debug_state import TEDebugState
 
-
+import nvdlfw_inspect.api as nvinspect_api
 from nvdlfw_inspect.debug_features.log_tensor_stats import LogTensorStats as BaseLogTensorStats
 from nvdlfw_inspect.registry import Registry, api_method
-from nvdlfw_inspect.utils import append_parent_docstring
-
 
 @Registry.register_feature(namespace="transformer_engine")
 class LogFp8TensorStats(BaseLogTensorStats):
@@ -41,24 +43,35 @@ class LogFp8TensorStats(BaseLogTensorStats):
     """
 
     def _get_supported_stats_list(self):
+        """ Returns stats this feature can log. """
         return {"underflows%", "overflows%"}
 
     @api_method
-    def use_look_at_tensor_before_process(self, config, layer_name, tensor_name, iteration):
+    def use_look_at_tensor_before_process(
+        self, config: Dict, layer_name: str, tensor_name: str, iteration: int): # pylint: disable=unused-argument
+        """ API call used to determine whether to run look_at_tensor_before_process() in the forward."""
+        # check whether logging should happen in this iteration
         return self._check_params(config, layer_name, iteration=iteration)
 
     @api_method
     def look_at_tensor_after_process(
-        self, config, layer_name, tensor_name, tensor, rowwise, iteration
+        self, config: Dict, layer_name: str, tensor_name: str, tensor: Union[torch.Tensor, QuantizedTensor],
+        rowwise: bool, iteration: int, tp_group: torch.distributed.process_group
     ):
+        """ 
+            API call used to collect the data about the tensor after process_tensor()/quantization. 
+        """
+
         assert type(tensor) in [Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase], (
             f"[NVTORCH INSPECT ERROR] Tensor {tensor_name} must be quantized tensor when using"
             " log_fp8_tensor_stats.                Use log_tensor_stats for high precision"
             " tensors."
         )
 
+        # This api can be invoked twice - with the tensor and with the transpose.
+        # We want to collect the stats once.
         if not rowwise:
-            return None  # tensor was already seen rowwise in the other gemm
+            return  # tensor was already seen rowwise in the other gemm
 
         tensor = tensor._data
         options = (
@@ -67,15 +80,15 @@ class LogFp8TensorStats(BaseLogTensorStats):
             config.get("start_end_list", None),
             "fp8",
         )
+
         skip_reduction = False
         reduction_group = nvinspect_api.get_tensor_reduction_group()
+        reduce_within_microbatch = tensor_name != "weight"
         if tensor_name == "weight":
             if TEDebugState.weight_tensor_tp_group_reduce:
-                reduction_group = self.tp_group
+                reduction_group = tp_group
             else:
                 skip_reduction = True
-
-        FP8GlobalStateManager.debug_tool = True
 
         for stat in config["stats"]:
             assert (
@@ -83,13 +96,13 @@ class LogFp8TensorStats(BaseLogTensorStats):
             ), f"[NVTORCH INSPECT ERROR] Statistic {stat} is not supported."
 
         STATS_BUFFERS.try_add_buffer(
-            layer_name, tensor_name, config["stats"], options, reduction_group
+            layer_name=layer_name,
+            tensor_name=tensor_name,
+            stats=config["stats"],
+            options=options,
+            reduction_group=reduction_group,
+            reduce_within_microbatch=reduce_within_microbatch
         )
-
-        if not self._check_params(config, layer_name, iteration=iteration):
-            return {}
-
-        iteration = super()._get_current_iteration(iteration=iteration)
 
         STATS_BUFFERS.feed(layer_name, tensor_name, options, tensor, iteration, skip_reduction)
 
@@ -98,7 +111,3 @@ class LogFp8TensorStats(BaseLogTensorStats):
             layer_name,
             extra_cachable_args=(tensor_name),
         )
-
-    @api_method
-    def step(self):
-        STATS_BUFFERS.log_stats()

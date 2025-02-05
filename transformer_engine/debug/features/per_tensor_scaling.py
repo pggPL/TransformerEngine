@@ -1,20 +1,30 @@
 # Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
+
+"""PerTensorScaling Feature support for nvidia-dlframework-inspect"""
+
+from typing import Optional
+
 import torch
 
-from transformer_engine.debug.features.api import TEConfigAPIMapper
 import nvdlfw_inspect.api as nvinspect_api
 from nvdlfw_inspect.registry import Registry, api_method
-from nvdlfw_inspect.utils import append_parent_docstring
 
 import transformer_engine_torch as tex
 from transformer_engine.common.recipe import Format
 from transformer_engine.pytorch.fp8 import _default_sf_compute
-from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
+from transformer_engine.pytorch.tensor import Quantizer
+from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer, Float8Tensor
+from transformer_engine.debug.features.api import TEConfigAPIMapper
 
 
-def per_tensor_cast(tensor: torch.Tensor, fp8_dtype, margin=0, out=None) -> torch.Tensor:
+def per_tensor_cast(
+        tensor: torch.Tensor, fp8_dtype: tex.DType,
+        margin: int  =0, out: Float8Tensor = None) -> Float8Tensor:
+    """
+        This function ocmputes the scaling factors based on the tensor amax and then casts it to the fp8
+    """
 
     assert tensor.dtype in (
         torch.float,
@@ -40,9 +50,8 @@ def per_tensor_cast(tensor: torch.Tensor, fp8_dtype, margin=0, out=None) -> torc
 
     if out is not None:
         quantizer.update_quantized(tensor, out)
-        return None
-    else:
-        return quantizer(tensor)
+        return out
+    return quantizer(tensor)
 
 
 @Registry.register_feature(namespace="transformer_engine")
@@ -68,29 +77,33 @@ class PerTensorScaling(TEConfigAPIMapper):
     """
 
     def _get_margin_default(self):
+        """ Returns default value of the margin parameter of the quantization. """
         return 0
 
     @api_method
-    def fp8_gemm(self, config, layer_name, gemm, iteration):
-        assert config["gemm"] == gemm
-        return True
+    def fp8_gemm(self, config, layer_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+        """API call responsible for selecting between high-precision and FP8 GEMM execution."""
+        return False
 
     @api_method
-    def use_process_tensor(self, config, layer_name, gemm, tensor_name, iteration):
+    def use_process_tensor(self, config, layer_name: str, tensor_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+        """ API call used to determine whether to run process_tensor() in the forward."""
         return True
 
     @api_method
     def process_tensor(
         self,
         config,
-        layer_name,
-        gemm,
-        tensor_name,
-        tensor,
-        iteration,
-        default_quantizer=None,
-        out=None,
-    ):
+        layer_name: str,
+        gemm: str,
+        tensor_name: str,
+        tensor: torch.Tensor,
+        iteration: int,
+        default_quantizer: Quantizer,
+        out: Optional[Float8Tensor],
+        dtype: Optional[torch.dtype]
+    ): # pylint: disable=unused-argument
+        """ API call used to process the tensor."""
         for key in config.keys():
             if key not in ["gemm", "tensor", "margin"]:
                 raise ValueError(f'[NVTORCH INSPECT ERROR] Unexpected key in config: "{key}".')

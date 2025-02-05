@@ -2,23 +2,29 @@
 #
 # See LICENSE for license information.
 
+"""FakeQuantFp8 Feature support for nvidia-dlframework-inspect"""
+
+from typing import Optional
+
 import torch
 
-from transformer_engine.debug.features.api import TEConfigAPIMapper
 import nvdlfw_inspect.api as nvinspect_api
 from nvdlfw_inspect.registry import Registry, api_method
 from nvdlfw_inspect.utils import append_parent_docstring
 
 
 import transformer_engine_torch as tex
+from transformer_engine.debug.features.api import TEConfigAPIMapper
 from transformer_engine.common.recipe import Format
+from transformer_engine.pytorch.tensor import Quantizer
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
 from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Quantizer
 from transformer_engine.pytorch.fp8 import _default_sf_compute
-from transformer_engine.pytorch.constants import TE_DType
 
 
-def fake_quantize_fp8(tensor: torch.Tensor, fp8_format, margin=0, out=None):
+def fake_quantize_fp8(tensor: torch.Tensor, fp8_format: tex.DType, margin=0, out=None):
+    """ Input tensor is quantized to fp8 and then dequantized. """
+
     assert tensor.dtype in (
         torch.float,
         torch.float16,
@@ -44,11 +50,11 @@ def fake_quantize_fp8(tensor: torch.Tensor, fp8_format, margin=0, out=None):
 
         quantizer = Float8Quantizer(scale, amax, fp8_dtype)
     else:
-        MXFP8Quantizer(fp8_dtype=fp8_format)
-    if out is None:
-        return quantizer(tensor).dequantize()
-    else:
-        out.copy_(quantizer(tensor).dequantize())
+        quantizer = MXFP8Quantizer(fp8_dtype=fp8_format)
+    if out is not None:
+        return out.copy_(quantizer(tensor).dequantize())
+    return quantizer(tensor).dequantize()
+
 
 
 @Registry.register_feature(namespace="transformer_engine")
@@ -75,32 +81,38 @@ class FakeQuantFp8(TEConfigAPIMapper):
     """
 
     def _supported_formats(self):
+        """ Returns formats than one can fake quant tensor to. """
         return ["E4M3", "E5M2", "MXE4M3", "MXE5M2"]
 
     def _get_margin_default(self):
+        """ Returns default value of the margin parameter of the quantization. """
         return 0
 
     @api_method
-    def fp8_gemm(self, config, layer_name, gemm, iteration):
+    def fp8_gemm(self, config, layer_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+        """API call responsible for selecting between high-precision and FP8 GEMM execution."""
         return False
 
     @api_method
-    def use_process_tensor(self, config, layer_name, tensor_name, gemm, iteration):
+    def use_process_tensor(self, config, layer_name: str, tensor_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+        """ API call used to determine whether to run process_tensor() in the forward."""
         return True
 
     @api_method
     def process_tensor(
         self,
         config,
-        layer_name,
-        gemm,
-        tensor_name,
-        tensor,
-        iteration,
-        default_quantizer=None,
-        out=None,
-        dtype=None,
-    ):
+        layer_name: str,
+        gemm: str,
+        tensor_name: str,
+        tensor: torch.Tensor,
+        iteration: int,
+        default_quantizer: Quantizer,
+        out: Optional[torch.Tensor] = None,
+        dtype: Optional[torch.dtype] = None,
+    ): # pylint: disable=unused-argument
+        """ API call used to process the tensor."""
+
         for key in config.keys():
             if key not in ["gemm", "tensor", "quant_format", "margin"]:
                 raise ValueError(f'[NVTORCH INSPECT ERROR] Unexpected key in config: "{key}".')

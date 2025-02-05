@@ -2,8 +2,7 @@
 #
 # See LICENSE for license information.
 
-
-from transformer_engine.debug.features.api import TEConfigAPIMapper
+"""DisableFp8Layer Feature support for nvidia-dlframework-inspect"""
 
 import nvdlfw_inspect.api as nvinspect_api
 from nvdlfw_inspect.registry import Registry, api_method
@@ -24,18 +23,23 @@ class DisableFp8Layer:
     """
 
     @api_method
-    def fp8_gemm(self, config, layer_name, *args, **kwargs):
+    def fp8_gemm(self, config, layer_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+        """API call responsible for selecting between high-precision and FP8 GEMM execution."""
         for key in config:
             if key not in ["enabled", "gemm"]:
                 raise ValueError(f'[NVTORCH INSPECT ERROR] Unexpected key in config: "{key}".')
         # If FP8 training, disable FP8 for the selected layers if this feature is enabled in config.
-        nvinspect_api.log_message(f"FP8 Disabled", layer_name)
+        nvinspect_api.log_message("FP8 Disabled", layer_name)
+
+        # If this feature is invoked, then fp8 gemm is disabled.
+        # If not, then default behaviour in TransformerEngineAPI
+        # is that fp8_gemm() API call returns True.
         return False
 
-    def parse_config_and_api(self, config, **kwargs):
-        # Determines whether to run the API
-        # DisableFp8Layer is the only feature provided by the Transformer Engine
-        # which does not inherit from TEConfigAPIMapper.
-        #
-        # Explanation of the parse_config_and_api can be found in the nvidia-dlframework-inspect documentation.
+    def parse_config_and_api(self, config, **_kwargs):
+        """ Determines whether to run the API
+         DisableFp8Layer is the only feature provided by the Transformer Engine
+         which does not inherit from TEConfigAPIMapper.
+        
+         Explanation of the parse_config_and_api can be found in the nvidia-dlframework-inspect documentation. """
         return config["enabled"], None

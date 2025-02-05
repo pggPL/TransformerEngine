@@ -2,17 +2,16 @@
 #
 # See LICENSE for license information.
 
+"""DisableFp8Gemm Feature support for nvidia-dlframework-inspect"""
+
 from transformer_engine.debug.features.api import TEConfigAPIMapper
 
-import nvdlfw_inspect.api as nvinspect_api
 from nvdlfw_inspect.registry import Registry, api_method
-from nvdlfw_inspect.utils import append_parent_docstring
-
 
 @Registry.register_feature(namespace="transformer_engine")
 class DisableFp8Gemm(TEConfigAPIMapper):
     """
-    Feature to disable FP8 GEMM in transformer engine.
+    Feature to disable FP8 GEMM in Transformer Engine.
 
     Config:
 
@@ -24,9 +23,14 @@ class DisableFp8Gemm(TEConfigAPIMapper):
     """
 
     @api_method
-    def fp8_gemm(self, config, layer_name, gemm, iteration):
+    def fp8_gemm(self, config, layer_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+        """API call responsible for choice between high-precision and FP8 GEMM execution."""
+
         for key in config:
             if key != "gemm":
                 raise ValueError(f'[NVTORCH INSPECT ERROR] Unexpected key in config: "{key}".')
 
+        # If this feature is invoked, then fp8 gemm is disabled.
+        # If not, then default behaviour in TransformerEngineAPI
+        # is that fp8_gemm() API call returns True.
         return False
