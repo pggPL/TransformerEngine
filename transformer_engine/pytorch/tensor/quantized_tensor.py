@@ -124,7 +124,6 @@ class Quantizer(abc.ABC):
         tensor: torch.Tensor,
         *,
         out: Optional[QuantizedTensor] = None,
-        dtype: Optional[torch.dtype] = None,
     ) -> QuantizedTensor:
         """Quantize tensor"""
         if out is not None:
