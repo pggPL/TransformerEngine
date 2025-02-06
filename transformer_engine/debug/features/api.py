@@ -14,6 +14,7 @@ import torch
 from transformer_engine.debug.features.utils.stats_buffer import STATS_BUFFERS
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor, Float8TensorBase
 from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Tensor, MXFP8TensorBase
+from transformer_engine.debug.pytorch.debug_state import TEDebugState
 
 
 class TEConfigAPIMapper(BaseConfigAPIMapper):
@@ -231,3 +232,7 @@ class TransformerEngineAPI(BaseNamespaceAPI):
     def step(self):
         """This function is called by the nvidia-dlframework-inspect after every debug_api.step()"""
         STATS_BUFFERS.log_stats()
+
+    def end_debug(self):
+        """This function is called by the nvidia-dlframework-inspect after every debug_api.end_debug()"""
+        TEDebugState.reset()
