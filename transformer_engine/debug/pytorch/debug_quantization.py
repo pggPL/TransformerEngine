@@ -429,10 +429,6 @@ class DebugQuantizedTensor(QuantizedTensor):
         it can contain one or two different objects. These objects can be accessed by the method
         get_tensor().
     """
-    Class containing quantized tensors after debug. Depending on configuration
-    it can contain one or two different objects. These objects can be accessed by the method
-    get_tensor().
-    """
 
     def __new__(
         cls,
