@@ -2,6 +2,7 @@
 #
 # See LICENSE for license information.
 
+""" Utils functions for the debug module. """
 
 def any_feature_enabled(quantizers):
     """Returns True if at least one API call is made from DebugQuantizer."""
@@ -12,4 +13,7 @@ def any_feature_enabled(quantizers):
 
 
 class DebugQuantizerBase:
-    pass
+    """ 
+        Parent class to DebugQuantizer. It is used to recoginze if object is instance of 
+        DebugQuantizer withouth the loading of the debuq_quantization.py
+    """

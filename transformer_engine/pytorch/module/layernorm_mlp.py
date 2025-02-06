@@ -14,7 +14,6 @@ from torch.nn.parameter import Parameter
 from torch.nn import init
 
 import transformer_engine_torch as tex
-from transformer_engine.debug.debug_state import TEDebugState
 
 from .base import (
     get_workspace,
@@ -71,6 +70,7 @@ from ..cpp_extensions import (
     general_gemm,
 )
 from ...debug.pytorch.utils import use_any_feature
+from ...debug.pytorch.debug_state import TEDebugState
 
 __all__ = ["LayerNormMLP"]
 
@@ -370,7 +370,7 @@ class _LayerNormMLP(torch.autograd.Function):
         elif gemm_gelu_fusion:
             act_out, _, fc1_out, _ = fc1_outputs
         elif debug:
-            fc1_out, _, _ = fc1_outputs
+            fc1_out, *_ = fc1_outputs
             act_out = activation_func(fc1_out, None)
             act_out = fc2_input_quantizer(act_out)
         else:
@@ -393,7 +393,7 @@ class _LayerNormMLP(torch.autograd.Function):
             dim_size[0] = dim_size[0] // tp_world_size
             dim_size[1] = fc2_weight.size(0)
             rs_out = torch.empty(dim_size, dtype=activation_dtype, device=device)
-            fc2_out = ub_obj_fc2out.get_buffer(output_quantizer)
+            fc2_out = ub_obj_fc2out.get_buffer(fc2_output_quantizer)
         else:
             dim_size = list(act_out.size())
             dim_size[1] = fc2_weight.size(0)
@@ -485,7 +485,7 @@ class _LayerNormMLP(torch.autograd.Function):
             ctx.fc1_grad_output_quantizer = fc1_grad_output_quantizer
             ctx.fc2_grad_input_quantizer = fc2_grad_input_quantizer
             ctx.fc2_grad_weight_quantizer = fc2_grad_weight_quantizer
-            ctx.fc2_output_quantizer = fc2_output_quantizer
+            ctx.fc2_grad_output_quantizer = fc2_grad_output_quantizer
             ctx.fc1_input_quantizer = fc1_input_quantizer
             ctx.fc2_input_quantizer = fc2_input_quantizer
 
@@ -717,6 +717,7 @@ class _LayerNormMLP(torch.autograd.Function):
             )
             if fc2_dgrad_gemm_gelu_fusion:
                 dact = gemm_output
+                fc2_dgrad = None
             else:
                 fc2_dgrad = gemm_output
 

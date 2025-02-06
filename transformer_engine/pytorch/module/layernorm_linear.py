@@ -11,7 +11,6 @@ from operator import mul as multiply_op
 
 import torch
 from torch.nn import init
-import logging
 
 import transformer_engine_torch as tex
 
@@ -39,7 +38,6 @@ from ..distributed import (
     allreduce,
     reduce_scatter_along_first_dim,
     gather_along_first_dim,
-    is_fp8_activation_recompute_enabled,
     in_fp8_activation_recompute_phase,
     _fsdp_scatter_tensors,
     _fsdp_gather_tensors,
@@ -54,10 +52,7 @@ from ..tensor.quantized_tensor import (
     prepare_for_saving,
     restore_from_saved,
 )
-from ..tensor._internal.float8_tensor_base import Float8TensorBase
-from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
-from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
-from transformer_engine.debug.pytorch.debug_state import TEDebugState
+from ...debug.pytorch.debug_state import TEDebugState
 from ...debug.pytorch.utils import use_any_feature
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param

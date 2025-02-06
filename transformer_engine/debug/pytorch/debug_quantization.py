@@ -3,18 +3,19 @@
 # See LICENSE for license information.
 
 """
-This file contains DebugQuantizer and DebugQuantizedTensor objects,
-which are wrappers over Quantizer and QuantizedTensor.
-These wrapper add logic related to the debugging, using the nvdlfw_inspect package.
+    This file contains DebugQuantizer and DebugQuantizedTensor objects,
+    which are wrappers over Quantizer and QuantizedTensor.
+    These wrapper add logic related to the debugging, using the nvdlfw_inspect package.
 """
 
 from __future__ import annotations
-from typing import Optional, Tuple, Iterable, Any, Dict, List, Union
+from typing import Optional, Tuple, Iterable, Union
 import torch
+
+import transformer_engine_torch as tex
 
 from .utils import DebugQuantizerBase
 
-aten = torch.ops.aten
 
 from ...pytorch.tensor.quantized_tensor import (
     QuantizedTensor,
@@ -22,9 +23,8 @@ from ...pytorch.tensor.quantized_tensor import (
     prepare_for_saving,
     restore_from_saved,
 )
-from transformer_engine.debug.debug_state import TEDebugState
-import transformer_engine_torch as tex
 
+aten = torch.ops.aten
 
 _tensor_to_gemm_names_map = {
     "weight": ["fprop", "dgrad"],
@@ -46,14 +46,8 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
     It allows to add custom calls inside quantization process - which enable to modify tensors
     or gather tensors stats.
     """
-
-    def __init__(
-        self,
-        layer_name: str,
-        tensor_name: str,
-        parent_quantizer: Optional[Quantizer],
-        tp_group: torch.distributed.process_group,
-    ):
+    def __init__(self, layer_name: str, tensor_name: str,
+                 parent_quantizer: Optional[Quantizer], tp_group: torch.distributed.process_group):
         import nvdlfw_inspect.api as nvinspect_api
 
         super().__init__(rowwise=True, columnwise=True)
@@ -89,9 +83,9 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
 
     def get_plans_for_output_tensors(self) -> Tuple[bool, str]:
         """
-        Returns tuple (inspect_tensor_enabled: bool, plan: str). Plan is one of the
-        CALL_PROCESS_TENSOR or HIGH_PRECISION, because debug quantizer does not support
-        gemm output in FP8.
+            Returns tuple (inspect_tensor_enabled: bool, plan: str). Plan is one of the
+            CALL_PROCESS_TENSOR or HIGH_PRECISION, because debug quantizer does not support
+            gemm output in FP8.
         """
         import nvdlfw_inspect.api as nvinspect_api
 
@@ -108,19 +102,17 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
 
         return inspect_tensor_enabled, plan
 
-    def get_enabled_look_at_tensors(self, iteration):
+    def get_enabled_look_at_tensors(self):
         """
-        Returns tuple of booleans determining which functions look_at_tensor_*(...) should be called.
+            Returns tuple of booleans determining which functions look_at_tensor_*(...) should be called.
         """
         import nvdlfw_inspect.api as nvinspect_api
 
         inspect_tensor_enabled = nvinspect_api.transformer_engine.inspect_tensor_enabled(
-            layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration
+            layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=self.iteration
         )
-        inspect_tensor_postquantize_enabled = (
-            nvinspect_api.transformer_engine.inspect_tensor_postquantize_enabled(
-                layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration
-            )
+        inspect_tensor_postquantize_enabled = nvinspect_api.transformer_engine.inspect_tensor_postquantize_enabled(
+            layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=self.iteration
         )
 
         return inspect_tensor_enabled, inspect_tensor_postquantize_enabled
@@ -183,6 +175,7 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         """
         Logs the messages about the plans for each of the tensors.
         """
+        import nvdlfw_inspect.api as nvinspect_api
 
         nvinspect_api.log_message(
             f"Tensor: {self.tensor_name}, gemm {self.rowwise_gemm_name} -"
@@ -224,14 +217,9 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
             args["rowwise"] = False
             nvinspect_api.transformer_engine.inspect_tensor_postquantize(**args)
 
-    def quantize(
-        self,
-        tensor: torch.Tensor,
-        *,
-        out: Optional[Union[torch.Tensor, DebugQuantizedTensor]] = None,
-        dtype: torch.dtype = None,
-    ):
-        """Returns DebugQuantizedTensor object."""
+    def quantize(self, tensor: torch.Tensor, *,
+                 out: Optional[Union[torch.Tensor, DebugQuantizedTensor]] = None, dtype: torch.dtype=None):
+        """ Returns DebugQuantizedTensor object. """
         import nvdlfw_inspect.api as nvinspect_api
 
         assert not self.output_tensor
@@ -251,10 +239,8 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         if columnwise_gemm_quantize and not rowwise_gemm_quantize:
             rowwise_gemm_quantize = True  # only columnwise quantization not implemented
 
-        if (
-            self.rowwise_tensor_plan == STANDARD_FP8_QUANTIZE
-            or self.columnwise_tensor_plan == STANDARD_FP8_QUANTIZE
-        ):
+        rowwise_gemm_tensor, columnwise_gemm_tensor = None, None
+        if STANDARD_FP8_QUANTIZE in [self.rowwise_tensor_plan, self.columnwise_tensor_plan]:
             self.parent_quantizer.set_usage(
                 rowwise=rowwise_gemm_quantize, columnwise=columnwise_gemm_quantize
             )
@@ -347,8 +333,7 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         """Override make_empty() from Quantizer class."""
         if self.parent_quantizer is not None:
             return self.parent_quantizer(shape, dtype=dtype, device=device)
-        else:
-            return torch.empty(shape, dtype=dtype, device=device)
+        return torch.empty(shape, dtype=dtype, device=device)
 
     def calibrate(self, tensor: torch.Tensor):
         """Calibration override, should not be invoked."""
@@ -440,6 +425,10 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
 
 class DebugQuantizedTensor(QuantizedTensor):
     """
+        Class containing quantized tensors after debug. Depending on configuration
+        it can contain one or two different objects. These objects can be accessed by the method
+        get_tensor().
+    """
     Class containing quantized tensors after debug. Depending on configuration
     it can contain one or two different objects. These objects can be accessed by the method
     get_tensor().
@@ -471,6 +460,8 @@ class DebugQuantizedTensor(QuantizedTensor):
         tensor_list, tensor_objects_list = prepare_for_saving(
             self.rowwise_gemm_tensor, self.columnwise_gemm_tensor
         )
+        assert len(tensor_objects_list) == 2
+        # pylint: disable=unbalanced-tuple-unpacking
         self.rowwise_gemm_tensor, self.columnwise_gemm_tensor = tensor_objects_list
         return tensor_list, self
 

@@ -19,7 +19,6 @@ import torch
 import torch.nn.functional as F
 
 import transformer_engine_torch as tex
-from transformer_engine.common.recipe import Recipe
 
 from ._common import _ParameterInitMeta
 from ..fp8 import (
@@ -38,8 +37,9 @@ from ..constants import dist_group_type
 from ..tensor import QuantizedTensor, Quantizer
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
-from transformer_engine.common.recipe import Recipe
-from transformer_engine.debug.debug_state import TEDebugState
+from ..utils import is_float8_tensor
+from ...common.recipe import Recipe
+from ...debug.pytorch.debug_state import TEDebugState
 
 
 __all__ = ["initialize_ub", "destroy_ub"]
@@ -1065,7 +1065,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             else:
                 tex.quantize(tensor, quantizer, out, skip_update_flag)
 
-        if type(out) == torch.tensor:  # only holds for debug quantizer
+        if not is_float8_tensor(type(out)):  # only holds for debug quantizer
             assert (
                 out.dtype == activation_dtype
             ), "Activation dtype cannot be changed with debug=True."
@@ -1106,15 +1106,12 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             Only needed if layer names are assigned after model initialization like in Megatron-LM.
         """
         assert self.debug
-
-        from ...debug.pytorch.debug_state import TEDebugState
-
         import nvdlfw_inspect.api as nvinspect_api
 
         if overwrite_debug_name:
             self.debug_name = overwrite_debug_name
 
-        if self.debug_name == None:
+        if self.debug_name is None:
             nvinspect_api.log_message(
                 "[DEBUG-WARNING] Names are not provided to debug modules. ",
                 "Creating and using generic names. Pass names to debug modules for better"
@@ -1124,20 +1121,12 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             self.debug_name = f"Layer_{TEDebugState.get_layer_count()}"
 
     def _turn_off_unsupported_features_in_debug(self):
-        if (
-            getattr(self, "ub_bulk_wgrad", False)
-            or getattr(self, "ub_bulk_dgrad", False)
-            or getattr(self, "ub_overlap_ag", False)
-            or getattr(self, "ub_overlap_rs_dgrad", False)
-            or getattr(self, "ub_overlap_rs", False)
-        ):
-            try:
-                import nvdlfw_inspect.api as nvinspect_api
-            except (ModuleNotFoundError, ImportError):
-                raise ModuleNotFoundError(
-                    "ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed"
-                    " correctly."
-                )
+        if getattr(self, "ub_bulk_wgrad", False) or \
+           getattr(self, "ub_bulk_dgrad", False) or \
+           getattr(self, "ub_overlap_ag", False) or \
+           getattr(self, "ub_overlap_rs_dgrad", False) or \
+           getattr(self, "ub_overlap_rs", False):
+            import nvdlfw_inspect.api as nvinspect_api
 
             nvinspect_api.log_message(
                 "> UserBuffers are not supported in debug module. "

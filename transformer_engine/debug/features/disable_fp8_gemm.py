@@ -4,9 +4,8 @@
 
 """DisableFp8Gemm Feature support for nvidia-dlframework-inspect"""
 
-from transformer_engine.debug.features.api import TEConfigAPIMapper
-
 from nvdlfw_inspect.registry import Registry, api_method
+from transformer_engine.debug.features.api import TEConfigAPIMapper
 
 
 @Registry.register_feature(namespace="transformer_engine")

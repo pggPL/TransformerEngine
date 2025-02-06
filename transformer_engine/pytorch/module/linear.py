@@ -27,7 +27,7 @@ from ..utils import (
     clear_tensor_data,
     init_method_constant,
     requires_grad,
-    is_float8_tensor
+    is_float8_tensor,
     non_tn_fp8_gemm_supported,
 )
 from ..distributed import (
@@ -53,7 +53,7 @@ from ..tensor.quantized_tensor import (
     prepare_for_saving,
     restore_from_saved,
 )
-from transformer_engine.debug.pytorch.debug_state import TEDebugState
+from ...debug.pytorch.debug_state import TEDebugState
 from ...debug.pytorch.utils import use_any_feature
 
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
@@ -748,23 +748,7 @@ class Linear(TransformerEngineBaseModule):
             )
 
         if self.debug:
-            try:
-                import nvdlfw_inspect.api as nvinspect_api
-            except (ModuleNotFoundError, ImportError):
-                raise ModuleNotFoundError(
-                    "ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed"
-                    " correctly."
-                )
-
-            nvinspect_api.log_message(
-                "> UserBuffers are not supported in debug module. "
-                "Using UB optimization will not affect the debug module. ",
-                level=logging.WARNING,
-            )
-            if ub_overlap_rs or ub_overlap_ag:
-
-                self.ub_overlap_rs = False
-                self.ub_overlap_ag = False
+            self._turn_off_unsupported_features_in_debug() # turn of userbuffers
 
         if device == "meta":
             assert parameters_split is None, "Cannot split module parameters on 'meta' device."

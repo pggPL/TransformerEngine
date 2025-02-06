@@ -2,6 +2,8 @@
 #
 # See LICENSE for license information.
 
+"""Top level package"""
+
 try:
     from . import pytorch
 except ImportError as e:
