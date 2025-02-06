@@ -914,7 +914,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
             )
 
         if self.debug:
-            self._turn_off_unsupported_features_in_debug() # turn off userbuffers
+            self._turn_off_unsupported_features_in_debug()  # turn off userbuffers
 
         if tp_group is None:
             self.tp_size = tp_size
@@ -1342,5 +1342,9 @@ class LayerNormLinear(TransformerEngineBaseModule):
         original_quantizers = self._get_quantizers(fp8_output)
         assert self.debug
         from ...debug.pytorch.debug_quantization import DebugQuantizer
+
         names = ["activation", "weight", "output", "gradient", "dgrad", "wgrad"]
-        return tuple(DebugQuantizer(self.debug_name, name, q, self.tp_group) for name, q in zip(names, original_quantizers))
+        return tuple(
+            DebugQuantizer(self.debug_name, name, q, self.tp_group)
+            for name, q in zip(names, original_quantizers)
+        )

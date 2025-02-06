@@ -30,7 +30,7 @@ class TEDebugState:
 
     @classmethod
     def reset(cls):
-        """ Resets layer count and stats buffers. """
+        """Resets layer count and stats buffers."""
         from ..features.utils.stats_buffer import STATS_BUFFERS
 
         STATS_BUFFERS.reset()
@@ -48,10 +48,10 @@ class TEDebugState:
 
     @classmethod
     def set_weight_tensor_tp_group_reduce(cls, enabled):
-        """ Sets weight tensor reduction mode. """
+        """Sets weight tensor reduction mode."""
         cls.weight_tensor_tp_group_reduce = enabled
 
 
 def set_weight_tensor_tp_group_reduce(enabled):
-    """ Sets weight tensor reduction mode. """
+    """Sets weight tensor reduction mode."""
     TEDebugState.set_weight_tensor_tp_group_reduce(enabled)

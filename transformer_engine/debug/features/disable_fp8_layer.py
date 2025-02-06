@@ -23,7 +23,9 @@ class DisableFp8Layer:
     """
 
     @api_method
-    def fp8_gemm_enabled(self, config, layer_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+    def fp8_gemm_enabled(
+        self, config, layer_name: str, gemm: str, iteration: int
+    ):  # pylint: disable=unused-argument
         """API call responsible for selecting between high-precision and FP8 GEMM execution."""
         for key in config:
             if key not in ["enabled", "gemm"]:
@@ -37,9 +39,10 @@ class DisableFp8Layer:
         return False
 
     def parse_config_and_api(self, config, **_kwargs):
-        """ Determines whether to run the API
-         DisableFp8Layer is the only feature provided by the Transformer Engine
-         which does not inherit from TEConfigAPIMapper.
-        
-         Explanation of the parse_config_and_api can be found in the nvidia-dlframework-inspect documentation. """
+        """Determines whether to run the API
+        DisableFp8Layer is the only feature provided by the Transformer Engine
+        which does not inherit from TEConfigAPIMapper.
+
+        Explanation of the parse_config_and_api can be found in the nvidia-dlframework-inspect documentation.
+        """
         return config["enabled"], None

@@ -23,7 +23,7 @@ from transformer_engine.pytorch.fp8 import _default_sf_compute
 
 
 def fake_quantize_fp8(tensor: torch.Tensor, fp8_format: tex.DType, margin=0, out=None):
-    """ Input tensor is quantized to fp8 and then dequantized. """
+    """Input tensor is quantized to fp8 and then dequantized."""
 
     assert tensor.dtype in (
         torch.float,
@@ -56,7 +56,6 @@ def fake_quantize_fp8(tensor: torch.Tensor, fp8_format: tex.DType, margin=0, out
     return quantizer(tensor).dequantize()
 
 
-
 @Registry.register_feature(namespace="transformer_engine")
 @append_parent_docstring(parent=TEConfigAPIMapper)
 class FakeQuantFp8(TEConfigAPIMapper):
@@ -81,21 +80,25 @@ class FakeQuantFp8(TEConfigAPIMapper):
     """
 
     def _supported_formats(self):
-        """ Returns formats than one can fake quant tensor to. """
+        """Returns formats than one can fake quant tensor to."""
         return ["E4M3", "E5M2", "MXE4M3", "MXE5M2"]
 
     def _get_margin_default(self):
-        """ Returns default value of the margin parameter of the quantization. """
+        """Returns default value of the margin parameter of the quantization."""
         return 0
 
     @api_method
-    def fp8_gemm_enabled(self, config, layer_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+    def fp8_gemm_enabled(
+        self, config, layer_name: str, gemm: str, iteration: int
+    ):  # pylint: disable=unused-argument
         """API call responsible for selecting between high-precision and FP8 GEMM execution."""
         return False
 
     @api_method
-    def modify_tensor_enabled(self, config, layer_name: str, tensor_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
-        """ API call used to determine whether to run process_tensor() in the forward."""
+    def modify_tensor_enabled(
+        self, config, layer_name: str, tensor_name: str, gemm: str, iteration: int
+    ):  # pylint: disable=unused-argument
+        """API call used to determine whether to run process_tensor() in the forward."""
         return True
 
     @api_method
@@ -110,8 +113,8 @@ class FakeQuantFp8(TEConfigAPIMapper):
         default_quantizer: Quantizer,
         out: Optional[torch.Tensor] = None,
         dtype: Optional[torch.dtype] = None,
-    ): # pylint: disable=unused-argument
-        """ API call used to process the tensor."""
+    ):  # pylint: disable=unused-argument
+        """API call used to process the tensor."""
 
         for key in config.keys():
             if key not in ["gemm", "tensor", "quant_format", "margin"]:

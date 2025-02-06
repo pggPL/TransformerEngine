@@ -8,6 +8,7 @@ from transformer_engine.debug.features.api import TEConfigAPIMapper
 
 from nvdlfw_inspect.registry import Registry, api_method
 
+
 @Registry.register_feature(namespace="transformer_engine")
 class DisableFp8Gemm(TEConfigAPIMapper):
     """
@@ -23,7 +24,9 @@ class DisableFp8Gemm(TEConfigAPIMapper):
     """
 
     @api_method
-    def fp8_gemm_enabled(self, config, layer_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+    def fp8_gemm_enabled(
+        self, config, layer_name: str, gemm: str, iteration: int
+    ):  # pylint: disable=unused-argument
         """API call responsible for choice between high-precision and FP8 GEMM execution."""
 
         for key in config:

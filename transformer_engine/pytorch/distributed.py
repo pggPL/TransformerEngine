@@ -1027,9 +1027,7 @@ def gather_along_first_dim(
         rowwise = input_.get_tensor(False)
         columnwise = input_.get_tensor(True)
         final_quantizer = None if not is_float8_tensor(input_) else quantizer.parent_quantizer
-        rowwise_total = gather_along_first_dim(
-            rowwise, process_group, async_op, final_quantizer
-        )
+        rowwise_total = gather_along_first_dim(rowwise, process_group, async_op, final_quantizer)
         out_obj.rowwise_gemm_tensor = rowwise_total
         if rowwise is not columnwise:
             columnwise_total = gather_along_first_dim(

@@ -3,9 +3,9 @@
 # See LICENSE for license information.
 
 """
-    Buffer used for LogTensorStats and LogFp8TensorStats features.
-    Buffer are fed with tensors, they compute necessary stats and save them.
-    When log() is called, they gather stats from all nodes, compute combined final stats and log them.
+Buffer used for LogTensorStats and LogFp8TensorStats features.
+Buffer are fed with tensors, they compute necessary stats and save them.
+When log() is called, they gather stats from all nodes, compute combined final stats and log them.
 """
 
 
@@ -22,12 +22,12 @@ from nvdlfw_inspect.utils import gather_along_first_dim
 from nvdlfw_inspect.logging import MetricLogger
 
 
-
 class _Buffer:
     """
-        Buffer stores temporary statisitcs for one tensor for one layer.
-        It also can synchronize between nodes and log final stats.
+    Buffer stores temporary statisitcs for one tensor for one layer.
+    It also can synchronize between nodes and log final stats.
     """
+
     def __init__(self, layer_name, tensor_name, stats, reduction_group, reduce_within_microbatch):
         self.layer_name = layer_name
         self.tensor_name = tensor_name
@@ -51,13 +51,13 @@ class _Buffer:
         self.skip_reduction = False
 
     def _reset_before_next_step(self):
-        """ Resets the state after the logging. """
+        """Resets the state after the logging."""
         self.modified[0] = False
 
     def _gather_helper_stats(self) -> torch.Tensor:
         """
-            If tensor stats should be accumulated among many nodes,
-            this method gather all stats from the nodes where the stat was modified.
+        If tensor stats should be accumulated among many nodes,
+        this method gather all stats from the nodes where the stat was modified.
         """
         if self.skip_reduction:
             return self._buffer.unsqueeze(0)
@@ -69,12 +69,12 @@ class _Buffer:
 
     def feed(self, tensor, iteration):
         """
-          feed() is used to add tensor for computing the statistics.
-          Because of the microbatching, feed() can be used multiple
-          times for one log().
+        feed() is used to add tensor for computing the statistics.
+        Because of the microbatching, feed() can be used multiple
+        times for one log().
 
-          Ability to combine result for already processed tensors with
-          results new tensor are the main reason for such a design of this class.
+        Ability to combine result for already processed tensors with
+        results new tensor are the main reason for such a design of this class.
         """
 
         self.iteration = iteration
@@ -107,7 +107,7 @@ class _Buffer:
 
     def log(self):
         """
-            Log the tensor stats and resets buffer.
+        Log the tensor stats and resets buffer.
         """
         # [num_active_nodes, num_stats]
         gathered_helper_stats = self._gather_helper_stats()
@@ -131,8 +131,8 @@ class _Buffer:
 
 class StatsBuffers:
     """
-        StatsBuffers class represents all buffers of the statistics for all tensors.
-        It is used to feed the tensors to the correct buffers.
+    StatsBuffers class represents all buffers of the statistics for all tensors.
+    It is used to feed the tensors to the correct buffers.
     """
 
     def __init__(self):
@@ -140,13 +140,14 @@ class StatsBuffers:
         self.reduction_group_to_buffer = defaultdict(list)
 
     def reset(self):
-        """ Resets all buffers. """
+        """Resets all buffers."""
         self.buffers = {}  # (layer_name, tensor_name) -> buffer
         self.reduction_group_to_buffer = defaultdict(list)
 
-    def try_add_buffer(self, layer_name, tensor_name, stats, options,
-                       reduction_group, reduce_within_microbatch):
-        """ If buffer for such combination of stats/tensor_name/... is not present, this method creates it. """
+    def try_add_buffer(
+        self, layer_name, tensor_name, stats, options, reduction_group, reduce_within_microbatch
+    ):
+        """If buffer for such combination of stats/tensor_name/... is not present, this method creates it."""
         if (layer_name, tensor_name, options) in self.buffers:
             return
         buffer = _Buffer(layer_name, tensor_name, stats, reduction_group, reduce_within_microbatch)
@@ -154,13 +155,13 @@ class StatsBuffers:
         self.reduction_group_to_buffer[reduction_group].append((buffer))
 
     def feed(self, layer_name, tensor_name, options, tensor, iteration, skip_reduciton):
-        """ Feeds the tensor into the respective buffer. """
+        """Feeds the tensor into the respective buffer."""
         buffer = self.buffers[(layer_name, tensor_name, options)]
         buffer.feed(tensor, iteration)
         buffer.skip_reduction = skip_reduciton
 
     def log_stats(self):
-        """ Logs the stats from all the buffers. """
+        """Logs the stats from all the buffers."""
         output = {}
         for reduction_group, buffers in self.reduction_group_to_buffer.items():
             changed_buffers = [

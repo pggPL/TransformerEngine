@@ -3,9 +3,9 @@
 # See LICENSE for license information.
 
 """
-    This file contains DebugQuantizer and DebugQuantizedTensor objects, 
-    which are wrappers over Quantizer and QuantizedTensor. 
-    These wrapper add logic related to the debugging, using the nvdlfw_inspect package.
+This file contains DebugQuantizer and DebugQuantizedTensor objects,
+which are wrappers over Quantizer and QuantizedTensor.
+These wrapper add logic related to the debugging, using the nvdlfw_inspect package.
 """
 
 from __future__ import annotations
@@ -42,13 +42,20 @@ HIGH_PRECISION = "High Precision"
 
 class DebugQuantizer(Quantizer, DebugQuantizerBase):
     """
-        DebugQuantizer is Quantizer object used for debugging with nvidia-dlframework-inspect.
-        It allows to add custom calls inside quantization process - which enable to modify tensors
-        or gather tensors stats.
+    DebugQuantizer is Quantizer object used for debugging with nvidia-dlframework-inspect.
+    It allows to add custom calls inside quantization process - which enable to modify tensors
+    or gather tensors stats.
     """
-    def __init__(self, layer_name: str, tensor_name: str, 
-                 parent_quantizer: Optional[Quantizer], tp_group: torch.distributed.process_group):
+
+    def __init__(
+        self,
+        layer_name: str,
+        tensor_name: str,
+        parent_quantizer: Optional[Quantizer],
+        tp_group: torch.distributed.process_group,
+    ):
         import nvdlfw_inspect.api as nvinspect_api
+
         super().__init__(rowwise=True, columnwise=True)
         self.layer_name = layer_name
         self.tensor_name = tensor_name
@@ -58,33 +65,36 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
 
         self.rowwise_gemm_name, self.columwise_gemm_name = _tensor_to_gemm_names_map[tensor_name]
 
-        # The values of the inspect_tensor_enabled, inspect_tensor_postquantize_enabled, 
-        # rowwise_tensor_plan and  columnwise_tensor_plan are computed. 
+        # The values of the inspect_tensor_enabled, inspect_tensor_postquantize_enabled,
+        # rowwise_tensor_plan and  columnwise_tensor_plan are computed.
         # These fields indicate the path which API calls will be inserted.
         #
-        # inspect_tensor*_enabled are bool fields, 
+        # inspect_tensor*_enabled are bool fields,
         # inicating whether some feature will need to run inspect_tensor_* calls.
         #
         # *_tensor_plan are one of [API_TENSOR_MODIFY, STANDARD_FP8_QUANTIZE, HIGH_PRECISION]
         # determining what will happen when quantizer is used for that tensor.
         self.output_tensor = tensor_name in ["output", "wgrad", "dgrad"]
         if self.output_tensor:
-            self.inspect_tensor_enabled, self.rowwise_tensor_plan = self.get_plans_for_output_tensors()
+            self.inspect_tensor_enabled, self.rowwise_tensor_plan = (
+                self.get_plans_for_output_tensors()
+            )
         else:
-            self.inspect_tensor_enabled, self.inspect_tensor_postquantize_enabled = \
+            self.inspect_tensor_enabled, self.inspect_tensor_postquantize_enabled = (
                 self.get_enabled_look_at_tensors()
-            self.rowwise_tensor_plan, self.columnwise_tensor_plan = \
-                self.get_tensors_plan()
+            )
+            self.rowwise_tensor_plan, self.columnwise_tensor_plan = self.get_tensors_plan()
 
             self.log_messages_about_plans()
-        
+
     def get_plans_for_output_tensors(self) -> Tuple[bool, str]:
-        """ 
-            Returns tuple (inspect_tensor_enabled: bool, plan: str). Plan is one of the 
-            CALL_PROCESS_TENSOR or HIGH_PRECISION, because debug quantizer does not support
-            gemm output in FP8.
+        """
+        Returns tuple (inspect_tensor_enabled: bool, plan: str). Plan is one of the
+        CALL_PROCESS_TENSOR or HIGH_PRECISION, because debug quantizer does not support
+        gemm output in FP8.
         """
         import nvdlfw_inspect.api as nvinspect_api
+
         inspect_tensor_enabled = nvinspect_api.transformer_engine.inspect_tensor_enabled(
             layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=self.iteration
         )
@@ -97,31 +107,35 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         plan = API_CALL_MODIFY if modify_enabled else HIGH_PRECISION
 
         return inspect_tensor_enabled, plan
-    
+
     def get_enabled_look_at_tensors(self, iteration):
-        """ 
-            Returns tuple of booleans determining which functions look_at_tensor_*(...) should be called.
+        """
+        Returns tuple of booleans determining which functions look_at_tensor_*(...) should be called.
         """
         import nvdlfw_inspect.api as nvinspect_api
+
         inspect_tensor_enabled = nvinspect_api.transformer_engine.inspect_tensor_enabled(
             layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration
         )
-        inspect_tensor_postquantize_enabled = nvinspect_api.transformer_engine.inspect_tensor_postquantize_enabled(
-            layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration
+        inspect_tensor_postquantize_enabled = (
+            nvinspect_api.transformer_engine.inspect_tensor_postquantize_enabled(
+                layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=iteration
+            )
         )
 
         return inspect_tensor_enabled, inspect_tensor_postquantize_enabled
 
     def get_tensors_plan(self):
         """
-            Retruns (rowwise_plan, columnwise_plan), that each element of the tuple is one of the
-            API_CALL_MODIFY, STANDARD_FP8_QUANTIZE, HIGH_PRECISION, indicating what quanitzer
-            does with these tensors.
+        Retruns (rowwise_plan, columnwise_plan), that each element of the tuple is one of the
+        API_CALL_MODIFY, STANDARD_FP8_QUANTIZE, HIGH_PRECISION, indicating what quanitzer
+        does with these tensors.
         """
         import nvdlfw_inspect.api as nvinspect_api
+
         rowwise_plan = None
         columnwise_plan = None
-        
+
         modify_rowwise = nvinspect_api.transformer_engine.modify_tensor_enabled(
             layer_name=self.layer_name,
             gemm=self.rowwise_gemm_name,
@@ -133,7 +147,9 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         else:
             if self.parent_quantizer is not None:
                 fp8_quantize = nvinspect_api.transformer_engine.fp8_gemm_enabled(
-                    layer_name=self.layer_name, gemm=self.rowwise_gemm_name, iteration=self.iteration
+                    layer_name=self.layer_name,
+                    gemm=self.rowwise_gemm_name,
+                    iteration=self.iteration,
                 )
                 if fp8_quantize:
                     rowwise_plan = STANDARD_FP8_QUANTIZE
@@ -152,39 +168,46 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
             else:
                 if self.parent_quantizer is not None:
                     fp8_quantize = nvinspect_api.transformer_engine.fp8_gemm_enabled(
-                        layer_name=self.layer_name, gemm=self.columnwise_gemm_name, iteration=self.iteration
+                        layer_name=self.layer_name,
+                        gemm=self.columnwise_gemm_name,
+                        iteration=self.iteration,
                     )
                     if fp8_quantize:
                         columnwise_plan = STANDARD_FP8_QUANTIZE
         if columnwise_plan is None:
             columnwise_plan = HIGH_PRECISION
-        
+
         return rowwise_plan, columnwise_plan
-        
+
     def log_messages_about_plans(self):
         """
-            Logs the messages about the plans for each of the tensors.
+        Logs the messages about the plans for each of the tensors.
         """
 
         nvinspect_api.log_message(
-            f"Tensor: {self.tensor_name}, gemm {self.rowwise_gemm_name} - {self.rowwise_tensor_plan}",
+            f"Tensor: {self.tensor_name}, gemm {self.rowwise_gemm_name} -"
+            f" {self.rowwise_tensor_plan}",
             layer_name=self.layer_name,
             extra_cachable_args=(self.rowwise_gemm_name, self.tensor_name),
         )
         nvinspect_api.log_message(
-            f"Tensor: {self.tensor_name}, gemm {self.columnwise_gemm_name} - {self.columnwise_tensor_plan}",
+            f"Tensor: {self.tensor_name}, gemm {self.columnwise_gemm_name} -"
+            f" {self.columnwise_tensor_plan}",
             layer_name=self.layer_name,
             extra_cachable_args=(self.columnwise_gemm_name, self.tensor_name),
         )
 
-    def _call_inspect_tensor_api(self, tensor, rowwise_gemm_tensor=None, columnwise_gemm_tensor=None):
+    def _call_inspect_tensor_api(
+        self, tensor, rowwise_gemm_tensor=None, columnwise_gemm_tensor=None
+    ):
         import nvdlfw_inspect.api as nvinspect_api
+
         args = {
             "layer_name": self.layer_name,
             "tensor": tensor,
             "tensor_name": self.tensor_name,
             "iteration": nvinspect_api.DEBUG_MANAGER._trainer_iteration_count,
-            "tp_group": self.tp_group
+            "tp_group": self.tp_group,
         }
         if tensor is not None:
             nvinspect_api.transformer_engine.inspect_tensor(**args)
@@ -201,10 +224,16 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
             args["rowwise"] = False
             nvinspect_api.transformer_engine.inspect_tensor_postquantize(**args)
 
-    def quantize(self, tensor: torch.Tensor, *, 
-                 out: Optional[Union[torch.Tensor, DebugQuantizedTensor]] = None, dtype: torch.dtype=None):
-        """ Returns DebugQuantizedTensor object. """
+    def quantize(
+        self,
+        tensor: torch.Tensor,
+        *,
+        out: Optional[Union[torch.Tensor, DebugQuantizedTensor]] = None,
+        dtype: torch.dtype = None,
+    ):
+        """Returns DebugQuantizedTensor object."""
         import nvdlfw_inspect.api as nvinspect_api
+
         assert not self.output_tensor
         if out is not None:
             return self.update_quantized(tensor, self)
@@ -213,13 +242,19 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         #    the quantization using the self.parent_quantizer is performed.
 
         # rowwise gemm corresponds to the rowwise_usage in fp8, similarly with columnwise
-        rowwise_gemm_quantize = self.rowwise_usage and self.rowwise_tensor_plan == STANDARD_FP8_QUANTIZE
-        columnwise_gemm_quantize = self.columnwise_usage and self.columnwise_tensor_plan == STANDARD_FP8_QUANTIZE
+        rowwise_gemm_quantize = (
+            self.rowwise_usage and self.rowwise_tensor_plan == STANDARD_FP8_QUANTIZE
+        )
+        columnwise_gemm_quantize = (
+            self.columnwise_usage and self.columnwise_tensor_plan == STANDARD_FP8_QUANTIZE
+        )
         if columnwise_gemm_quantize and not rowwise_gemm_quantize:
             rowwise_gemm_quantize = True  # only columnwise quantization not implemented
 
-        if self.rowwise_tensor_plan == STANDARD_FP8_QUANTIZE or\
-           self.columnwise_tensor_plan == STANDARD_FP8_QUANTIZE:
+        if (
+            self.rowwise_tensor_plan == STANDARD_FP8_QUANTIZE
+            or self.columnwise_tensor_plan == STANDARD_FP8_QUANTIZE
+        ):
             self.parent_quantizer.set_usage(
                 rowwise=rowwise_gemm_quantize, columnwise=columnwise_gemm_quantize
             )
@@ -265,13 +300,13 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         # sometimes we may want to return simple tensor with only rowwise_gemm
         if self.tensor_name in ["wgrad", "dgrad", "output"]:
             return rowwise_gemm_tensor
-        
+
         assert (type(rowwise_gemm_tensor) in [torch.Tensor, torch.nn.parameter.Parameter]) == (
             type(columnwise_gemm_tensor) in [torch.Tensor, torch.nn.parameter.Parameter]
         ), (
-            f"[Debug tools] Processed tensors should both be FP8 tensors or both be torch tensors\
-              but type(rowwise_gemm_tensor) = {type(rowwise_gemm_tensor)}, \
-              type(columnwise_gemm_tensor) = {type(columnwise_gemm_tensor)}"
+            "[Debug tools] Processed tensors should both be FP8 tensors or both be torch tensors  "
+            f"            but type(rowwise_gemm_tensor) = {type(rowwise_gemm_tensor)},             "
+            f"  type(columnwise_gemm_tensor) = {type(columnwise_gemm_tensor)}"
         )
 
         return DebugQuantizedTensor(
@@ -285,8 +320,9 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         )
 
     def process_gemm_output(self, tensor: torch.Tensor):
-        """ This call is invoked after the gemm to inspect and modify the output tensor. """
+        """This call is invoked after the gemm to inspect and modify the output tensor."""
         import nvdlfw_inspect.api as nvinspect_api
+
         assert self.parent_quantizer is None, "FP8 output is not supported for debug=True."
         assert self.output_tensor
         tensor_to_gemm = {"output": "fprop", "wgrad": "wgrad", "dgrad": "dgrad"}
@@ -308,14 +344,14 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         dtype: torch.dtype = torch.float32,
         device: Optional[torch.device] = None,
     ) -> QuantizedTensor:
-        """ Override make_empty() from Quantizer class. """
+        """Override make_empty() from Quantizer class."""
         if self.parent_quantizer is not None:
             return self.parent_quantizer(shape, dtype=dtype, device=device)
         else:
             return torch.empty(shape, dtype=dtype, device=device)
 
     def calibrate(self, tensor: torch.Tensor):
-        """ Calibration override, should not be invoked. """
+        """Calibration override, should not be invoked."""
         raise RuntimeError("[NVTORCH-INSPECT ERROR] Calibration with debug is not supported")
 
     def update_quantized(
@@ -325,21 +361,27 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         *,
         noop_flag: Optional[torch.Tensor] = None,
     ) -> QuantizedTensor:
-        """ Update quantized tensor - used in weight caching. """
+        """Update quantized tensor - used in weight caching."""
         import nvdlfw_inspect.api as nvinspect_api
 
         assert noop_flag is None, "CUDA Graphs are not supported with debug=True!"
 
         updated_rowwise_gemm = False
         if self.parent_quantizer is not None:
-            if dst.rowwise_gemm_tensor is not None and self.rowwise_tensor_plan == STANDARD_FP8_QUANTIZE:
+            if (
+                dst.rowwise_gemm_tensor is not None
+                and self.rowwise_tensor_plan == STANDARD_FP8_QUANTIZE
+            ):
                 if hasattr(dst.rowwise_gemm_tensor, "quantize_"):
                     dst.rowwise_gemm_tensor.quantize_(src, noop_flag=None)
                 else:
                     tex.quantize(src, self.parent_quantizer, dst.rowwise_gemm_tensor, None)
                 updated_rowwise_gemm = True
-            if dst.columnwise_gemm_tensor is not None and self.columnwise_tensor_plan == STANDARD_FP8_QUANTIZE \
-                  and not updated_rowwise_gemm:
+            if (
+                dst.columnwise_gemm_tensor is not None
+                and self.columnwise_tensor_plan == STANDARD_FP8_QUANTIZE
+                and not updated_rowwise_gemm
+            ):
                 if hasattr(dst.columnwise_gemm_tensor, "quantize_"):
                     dst.columnwise_gemm_tensor.quantize_(src, noop_flag=None)
                 else:
@@ -378,7 +420,7 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
                 dst.columnwise_gemm_tensor.copy_(src)
 
     def any_feature_enabled(self) -> bool:
-        """ Returns bool if there is at least one API call enabled. """
+        """Returns bool if there is at least one API call enabled."""
         if self.output_tensor:
             return self.inspect_tensor_enabled or self.rowwise_gemm_name == API_CALL_MODIFY
         if (
@@ -397,11 +439,12 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
 
 
 class DebugQuantizedTensor(QuantizedTensor):
-    """ 
-        Class containing quantized tensors after debug. Depending on configuration 
-        it can contain one or two different objects. These objects can be accessed by the method
-        get_tensor().
     """
+    Class containing quantized tensors after debug. Depending on configuration
+    it can contain one or two different objects. These objects can be accessed by the method
+    get_tensor().
+    """
+
     def __new__(
         cls,
         shape,
@@ -424,7 +467,7 @@ class DebugQuantizedTensor(QuantizedTensor):
         return instance
 
     def prepare_for_saving(self):
-        """" Prepare for saving method override """
+        """ " Prepare for saving method override"""
         tensor_list, tensor_objects_list = prepare_for_saving(
             self.rowwise_gemm_tensor, self.columnwise_gemm_tensor
         )
@@ -432,30 +475,32 @@ class DebugQuantizedTensor(QuantizedTensor):
         return tensor_list, self
 
     def restore_from_saved(self, tensors):
-        """" Restore for saved method override """
+        """ " Restore for saved method override"""
         (self.rowwise_gemm_tensor, self.columnwise_gemm_tensor), saved_tensors = restore_from_saved(
-            [self.rowwise_gemm_tensor, self.columnwise_gemm_tensor], tensors, return_saved_tensors=True
+            [self.rowwise_gemm_tensor, self.columnwise_gemm_tensor],
+            tensors,
+            return_saved_tensors=True,
         )
         return saved_tensors
 
     def quantize_(self, tensor, *, noop_flag=None):
-        """" quantize_ method override """
+        """ " quantize_ method override"""
         assert noop_flag is None, "CUDA Graphs are not supported with debug=True!"
         self.quantizer.update_quantized(tensor, self)
 
     def dequantize(self, *, dtype=None):
-        """" dequantize method override """
+        """ " dequantize method override"""
         if dtype is None:
             dtype = self.rowwise_gemm_tensor.dtype
         return self.rowwise_gemm_tensor.dequantize().to(dtype)
 
     def get_tensor(self, transpose: bool):
-        """ Is used in the python gemm() to get tensor or transpose of the tensor. """
+        """Is used in the python gemm() to get tensor or transpose of the tensor."""
         return self.rowwise_gemm_tensor if not transpose else self.columnwise_gemm_tensor
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args, kwargs=None):
-        """" Method use to define .slice() on DebugQuantizedTensor. """
+        """ " Method use to define .slice() on DebugQuantizedTensor."""
         if func in [aten.slice.Tensor]:
             tensor = args[0]
             rowwise_gemm_tensor = tensor.rowwise_gemm_tensor.__torch_dispatch__(
@@ -474,5 +519,5 @@ class DebugQuantizedTensor(QuantizedTensor):
                 layer_name=tensor._layer_name,
                 tensor_name=tensor._tensor_name,
             )
-        
+
         return super().__torch_dispatch__(func, types, args, kwargs)

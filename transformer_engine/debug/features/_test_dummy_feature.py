@@ -2,7 +2,7 @@
 #
 # See LICENSE for license information.
 
-""" Feature doing nothing, used for testing purposes. """
+"""Feature doing nothing, used for testing purposes."""
 
 from transformer_engine.debug.features.api import TEConfigAPIMapper
 from nvdlfw_inspect.registry import Registry, api_method
@@ -11,14 +11,14 @@ from nvdlfw_inspect.registry import Registry, api_method
 @Registry.register_feature(namespace="transformer_engine")
 class TestDummyFeature(TEConfigAPIMapper):
     """
-        This is feature used only in tests. It invokes look_at_tensor_before_process
-        and does nothing. 
+    This is feature used only in tests. It invokes look_at_tensor_before_process
+    and does nothing.
 
-        If no features are used, then TE layer automatically switches to the non-debug mode.
-        This feature is invoked for each gemm to prevent this behavior.
+    If no features are used, then TE layer automatically switches to the non-debug mode.
+    This feature is invoked for each gemm to prevent this behavior.
     """
 
     @api_method
     def inspect_tensor_enabled(self, *_args, **_kwargs):
-        """ API call used to determine whether to run look_at_tensor_before_process in the forward."""
+        """API call used to determine whether to run look_at_tensor_before_process in the forward."""
         return True

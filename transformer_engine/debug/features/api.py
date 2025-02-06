@@ -2,7 +2,7 @@
 #
 # See LICENSE for license information.
 
-""" API definition for nvidia-dlframework-inspect. """
+"""API definition for nvidia-dlframework-inspect."""
 
 import copy
 
@@ -17,7 +17,7 @@ from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Tensor, MXFP8Ten
 
 
 class TEConfigAPIMapper(BaseConfigAPIMapper):
-    """ Class responsible for determining which API should be run for each tensors and gemms. """
+    """Class responsible for determining which API should be run for each tensors and gemms."""
 
     def parse_config_and_api(self, config, **kwargs):
         # Process the config and returns True if the config and api args match, along with processed config.
@@ -97,35 +97,35 @@ required_kwargs = {
 
 
 class TEDefaultFeatures:
-    """ Transformer Engine API calls default behaviour. """
+    """Transformer Engine API calls default behaviour."""
 
     def fp8_gemm_enabled(self, *_args, **_kwargs):
         """API call responsible for choice between high-precision and FP8 GEMM execution."""
         return True  # if it is false, fp8_gemm will be turned off. Otherwise nothing happens.
 
     def modify_tensor_enabled(self, *_args, **_kwargs):
-        """ API call used to determine whether to run modify_tensor() in the forward."""
+        """API call used to determine whether to run modify_tensor() in the forward."""
         return False
 
     def modify_tensor(self, *_args, **_kwargs):
-        """ API call used to process the tensor."""
+        """API call used to process the tensor."""
         raise RuntimeError(
             "modify_tensor_enabled() returned True, modify_tensor() was invoked, but it is not"
             " handled by any API."
         )
 
     def inspect_tensor(self, *_args, **_kwargs):
-        """ API call used to collect the data about the tensor before modify_tensor()/quantization. """
+        """API call used to collect the data about the tensor before modify_tensor()/quantization."""
 
     def inspect_tensor_postquantize(self, *_args, **_kwargs):
-        """ API call used to collect the data about the tensor after modify_tensor()/quantization. """
+        """API call used to collect the data about the tensor after modify_tensor()/quantization."""
 
     def inspect_tensor_enabled(self, *_args, **_kwargs):
-        """ API call used to determine whether to run look_at_tensor_before_process() in the forward."""
+        """API call used to determine whether to run look_at_tensor_before_process() in the forward."""
         return False
 
     def inspect_tensor_postquantize_enabled(self, *_args, **_kwargs):
-        """ API call used to determine whether to run look_at_tensor_after_process() in the forward."""
+        """API call used to determine whether to run look_at_tensor_after_process() in the forward."""
         return False
 
 
@@ -145,10 +145,29 @@ class TransformerEngineAPI(BaseNamespaceAPI):
             "fp8_gemm": ["gemm"],
             "modify_tensor": ["tensor_name", "gemm"],
             "inspect_tensor": ["tensor_name", "rowwise", "tp_group", "tensor"],
-            "inspect_tensor_postquantize": ["tensor_name", "rowwise", "iteration", "tp_group", "tensor"],
+            "inspect_tensor_postquantize": [
+                "tensor_name",
+                "rowwise",
+                "iteration",
+                "tp_group",
+                "tensor",
+            ],
             "inspect_tensor_enabled": ["tensor_name", "rowwise", "tp_group"],
-            "inspect_tensor_postquantize_enabled": ["tensor_name", "rowwise", "iteration", "tp_group"],
-            "modify_tensor_enabled": ["tensor_name", "tensor", "tensor_name", "iteration", "default_quantizer", "out", "dtype"],
+            "inspect_tensor_postquantize_enabled": [
+                "tensor_name",
+                "rowwise",
+                "iteration",
+                "tp_group",
+            ],
+            "modify_tensor_enabled": [
+                "tensor_name",
+                "tensor",
+                "tensor_name",
+                "iteration",
+                "default_quantizer",
+                "out",
+                "dtype",
+            ],
         }
 
     def is_multiple_feature_invocation_allowed(self, api_name):
@@ -199,10 +218,15 @@ class TransformerEngineAPI(BaseNamespaceAPI):
             assert ret is None
         if api_name == "modity_tensor":
             assert type(ret) in [
-                torch.Tensor, Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase]
-            if type(ret) == torch.Tensor: # pylint: disable=unidiomatic-typecheck
+                torch.Tensor,
+                Float8Tensor,
+                Float8TensorBase,
+                MXFP8Tensor,
+                MXFP8TensorBase,
+            ]
+            if type(ret) == torch.Tensor:  # pylint: disable=unidiomatic-typecheck
                 assert ret.dtype == kwargs["dtype"]
 
     def step(self):
-        """ This function is called by the nvidia-dlframework-inspect after every nvinspect_api.step()"""
+        """This function is called by the nvidia-dlframework-inspect after every nvinspect_api.step()"""
         STATS_BUFFERS.log_stats()

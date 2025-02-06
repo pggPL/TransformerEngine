@@ -230,7 +230,7 @@ class _LayerNormMLP(torch.autograd.Function):
         if debug and not return_layernorm_output:
             ln_out = fc1_input_quantizer(ln_out)
         ln_out_return = ln_out if return_layernorm_output else None
-            
+
         # Prepare GEMM input
         # Note: Cast to expected dtype and perform tensor-parallel communication
         ln_out_gathered = False
@@ -704,7 +704,9 @@ class _LayerNormMLP(torch.autograd.Function):
                 layout="NN",
                 grad=True,
                 quantization_params=(
-                    ctx.grad_fc1_output_quantizer if fc2_dgrad_gemm_gelu_fusion or ctx.debug else None
+                    ctx.grad_fc1_output_quantizer
+                    if fc2_dgrad_gemm_gelu_fusion or ctx.debug
+                    else None
                 ),  # high precision to activation
                 out_dtype=ctx.activation_dtype,
                 gelu=fc2_dgrad_gemm_gelu_fusion,
@@ -1206,7 +1208,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
         self.debug_name = debug_name
 
         if self.debug:
-            self._turn_off_unsupported_features_in_debug() # turn off userbuffers
+            self._turn_off_unsupported_features_in_debug()  # turn off userbuffers
 
         if tp_group is None:
             self.tp_size = tp_size
@@ -1562,13 +1564,19 @@ class LayerNormMLP(TransformerEngineBaseModule):
 
     def _get_debug_quantizers(self):
         from ...debug.pytorch.debug_quantization import DebugQuantizer
+
         base_quantizers = list(self._get_quantizers())
         assert self.debug
 
         def make_debug(prefix, offset):
             labels = ["activation", "weight", "output", "gradient", "dgrad", "wgrad"]
             return [
-                DebugQuantizer(f"{self.debug_name}.{prefix}", label, None if label in ("dgrad", "wgrad") else base_quantizers[i + offset], self.tp_group)
+                DebugQuantizer(
+                    f"{self.debug_name}.{prefix}",
+                    label,
+                    None if label in ("dgrad", "wgrad") else base_quantizers[i + offset],
+                    self.tp_group,
+                )
                 for i, label in enumerate(labels)
             ]
 

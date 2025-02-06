@@ -2,12 +2,14 @@
 #
 # See LICENSE for license information.
 
+
 def any_feature_enabled(quantizers):
-    """ Returns True if at least one API call is made from DebugQuantizer. """
+    """Returns True if at least one API call is made from DebugQuantizer."""
     for q in quantizers:
         if q.any_feature_enabled():
             return True
     return False
+
 
 class DebugQuantizerBase:
     pass

@@ -20,10 +20,10 @@ from transformer_engine.debug.features.api import TEConfigAPIMapper
 
 
 def per_tensor_cast(
-        tensor: torch.Tensor, fp8_dtype: tex.DType,
-        margin: int  =0, out: Float8Tensor = None) -> Float8Tensor:
+    tensor: torch.Tensor, fp8_dtype: tex.DType, margin: int = 0, out: Float8Tensor = None
+) -> Float8Tensor:
     """
-        This function ocmputes the scaling factors based on the tensor amax and then casts it to the fp8
+    This function ocmputes the scaling factors based on the tensor amax and then casts it to the fp8
     """
 
     assert tensor.dtype in (
@@ -77,17 +77,21 @@ class PerTensorScaling(TEConfigAPIMapper):
     """
 
     def _get_margin_default(self):
-        """ Returns default value of the margin parameter of the quantization. """
+        """Returns default value of the margin parameter of the quantization."""
         return 0
 
     @api_method
-    def fp8_gemm(self, config, layer_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+    def fp8_gemm(
+        self, config, layer_name: str, gemm: str, iteration: int
+    ):  # pylint: disable=unused-argument
         """API call responsible for selecting between high-precision and FP8 GEMM execution."""
         return False
 
     @api_method
-    def modify_tensor_enabled(self, config, layer_name: str, tensor_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
-        """ API call used to determine whether to run process_tensor() in the forward."""
+    def modify_tensor_enabled(
+        self, config, layer_name: str, tensor_name: str, gemm: str, iteration: int
+    ):  # pylint: disable=unused-argument
+        """API call used to determine whether to run process_tensor() in the forward."""
         return True
 
     @api_method
@@ -101,9 +105,9 @@ class PerTensorScaling(TEConfigAPIMapper):
         iteration: int,
         default_quantizer: Quantizer,
         out: Optional[Float8Tensor],
-        dtype: Optional[torch.dtype]
-    ): # pylint: disable=unused-argument
-        """ API call used to process the tensor."""
+        dtype: Optional[torch.dtype],
+    ):  # pylint: disable=unused-argument
+        """API call used to process the tensor."""
         for key in config.keys():
             if key not in ["gemm", "tensor", "margin"]:
                 raise ValueError(f'[NVTORCH INSPECT ERROR] Unexpected key in config: "{key}".')

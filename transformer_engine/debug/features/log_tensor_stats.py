@@ -44,21 +44,28 @@ class LogTensorStats(BaseLogTensorStats):
     """
 
     def _get_supported_stats_list(self):
-        """ Returns stats this feature can log. """
+        """Returns stats this feature can log."""
         return BaseLogTensorStats._get_supported_stats_list(None) | {"cur_amax", "dynamic_range"}
 
     @api_method
     def inspect_tensor_enabled(
-        self, config: Dict, layer_name: str, tensor_name: str, iteration: int): # pylint: disable=unused-argument
-        """ API call used to determine whether to run look_at_tensor_before_process() in the forward."""
+        self, config: Dict, layer_name: str, tensor_name: str, iteration: int
+    ):  # pylint: disable=unused-argument
+        """API call used to determine whether to run look_at_tensor_before_process() in the forward."""
         return self._check_params(config, layer_name, iteration=iteration)
 
     @api_method
     def inspect_tensor(
-        self, config: Dict, layer_name: str, tensor_name: str, tensor: Union[torch.Tensor, QuantizedTensor],
-        rowwise: bool, iteration: int, tp_group: torch.distributed.process_group # pylint: disable=unused-argument
+        self,
+        config: Dict,
+        layer_name: str,
+        tensor_name: str,
+        tensor: Union[torch.Tensor, QuantizedTensor],
+        rowwise: bool,
+        iteration: int,
+        tp_group: torch.distributed.process_group,  # pylint: disable=unused-argument
     ):
-        """ API call used to collect the data about the tensor before process_tensor()/quantization. """
+        """API call used to collect the data about the tensor before process_tensor()/quantization."""
 
         assert (
             type(tensor) not in [Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase]
@@ -94,7 +101,7 @@ class LogTensorStats(BaseLogTensorStats):
             stats=config["stats"],
             options=options,
             reduction_group=reduction_group,
-            reduce_within_microbatch=reduce_within_microbatch
+            reduce_within_microbatch=reduce_within_microbatch,
         )
 
         STATS_BUFFERS.feed(layer_name, tensor_name, options, tensor, iteration, skip_reduction)
