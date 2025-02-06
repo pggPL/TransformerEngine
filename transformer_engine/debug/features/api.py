@@ -20,7 +20,7 @@ class TEConfigAPIMapper(BaseConfigAPIMapper):
     """Class responsible for determining which API should be run for each tensors and gemms."""
 
     def parse_config_and_api(self, config, **kwargs):
-        # Process the config and returns True if the config and api args match, along with processed config.
+        """ Process the config and returns True if the config and api args match, along with processed config. """
         processed_config = None
         config_copy = copy.deepcopy(config)
         gemm_parsing = kwargs.get("gemm_parsing", False)
@@ -200,7 +200,7 @@ class TransformerEngineAPI(BaseNamespaceAPI):
                     f" {api_name}."
                 )
 
-    def routing_condition(self, api_name, config, layer_name, feature_obj, **kwargs):
+    def routing_condition(self, api_name, config, _, feature_obj, **kwargs):
         """
         Overridden APIs are selected based on the GEMM name in the config and kwargs.
         """
@@ -212,6 +212,7 @@ class TransformerEngineAPI(BaseNamespaceAPI):
         return status, modified_config
 
     def output_assertions_hook(self, api_name, ret, **kwargs):
+        """ Output hooks using to check correctness of the outputs of the API calls. """
         if "enabled" in api_name or api_name == "fp8_gemm":
             assert isinstance(ret, bool)
         if api_name in ["inspect_tensor", "inspect_tensor_postquantize"]:
