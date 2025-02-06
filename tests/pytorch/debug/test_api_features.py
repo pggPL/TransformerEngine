@@ -78,15 +78,9 @@ def test_disable_fp8_layer(configs_dir, feature_dirs):
     try:
         debug_api.initialize(configs_dir + "disable_fp8_layer.yaml", feature_dirs=feature_dirs)
 
-        assert debug_api.transformer_engine.fp8_gemm(
-            "decoder.1.mlp.fc1", gemm="fprop", iteration=0
-        )
-        assert debug_api.transformer_engine.fp8_gemm(
-            "decoder.1.mlp.fc1", gemm="wgrad", iteration=0
-        )
-        assert debug_api.transformer_engine.fp8_gemm(
-            "decoder.1.mlp.fc1", gemm="dgrad", iteration=0
-        )
+        assert debug_api.transformer_engine.fp8_gemm("decoder.1.mlp.fc1", gemm="fprop", iteration=0)
+        assert debug_api.transformer_engine.fp8_gemm("decoder.1.mlp.fc1", gemm="wgrad", iteration=0)
+        assert debug_api.transformer_engine.fp8_gemm("decoder.1.mlp.fc1", gemm="dgrad", iteration=0)
         assert not debug_api.transformer_engine.fp8_gemm(
             "decoder.1.attn.qkv", gemm="fprop", iteration=0
         )
