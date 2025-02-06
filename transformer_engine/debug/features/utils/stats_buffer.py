@@ -21,6 +21,7 @@ from transformer_engine.debug.features.utils.stats_computation import (
     stats_to_num,
 )
 
+
 class _Buffer:
     """
     Buffer stores temporary statisitcs for one tensor for one layer.

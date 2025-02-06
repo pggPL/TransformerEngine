@@ -1121,11 +1121,13 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             self.debug_name = f"Layer_{TEDebugState.get_layer_count()}"
 
     def _turn_off_unsupported_features_in_debug(self):
-        if getattr(self, "ub_bulk_wgrad", False) or \
-           getattr(self, "ub_bulk_dgrad", False) or \
-           getattr(self, "ub_overlap_ag", False) or \
-           getattr(self, "ub_overlap_rs_dgrad", False) or \
-           getattr(self, "ub_overlap_rs", False):
+        if (
+            getattr(self, "ub_bulk_wgrad", False)
+            or getattr(self, "ub_bulk_dgrad", False)
+            or getattr(self, "ub_overlap_ag", False)
+            or getattr(self, "ub_overlap_rs_dgrad", False)
+            or getattr(self, "ub_overlap_rs", False)
+        ):
             import nvdlfw_inspect.api as nvinspect_api
 
             nvinspect_api.log_message(

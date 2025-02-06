@@ -3,7 +3,7 @@
 # See LICENSE for license information.
 
 """
-    Managin the state of all the debuged layers.
+Managin the state of all the debuged layers.
 """
 
 import sys
@@ -23,7 +23,7 @@ class TEDebugState:
     @classmethod
     def initialize(cls):
         """
-            If nvinspect_api is module is initialized, then sets cls.debug_enabled to True.
+        If nvinspect_api is module is initialized, then sets cls.debug_enabled to True.
         """
 
         if "nvdlfw_inspect" in sys.modules:

@@ -158,7 +158,6 @@ class _Linear(torch.autograd.Function):
             else:
                 inputmat_total = inputmat
 
-
         # Cast weight to expected dtype
         weightmat = weight
 
@@ -748,7 +747,7 @@ class Linear(TransformerEngineBaseModule):
             )
 
         if self.debug:
-            self._turn_off_unsupported_features_in_debug() # turn of userbuffers
+            self._turn_off_unsupported_features_in_debug()  # turn of userbuffers
 
         if device == "meta":
             assert parameters_split is None, "Cannot split module parameters on 'meta' device."
@@ -1122,5 +1121,9 @@ class Linear(TransformerEngineBaseModule):
         original_quantizers = self._get_quantizers(fp8_output, fp8_grad)
         assert self.debug
         from ...debug.pytorch.debug_quantization import DebugQuantizer
+
         names = ["activation", "weight", "output", "gradient", "dgrad", "wgrad"]
-        return tuple(DebugQuantizer(self.debug_name, name, q, self.tp_group) for name, q in zip(names, original_quantizers))
+        return tuple(
+            DebugQuantizer(self.debug_name, name, q, self.tp_group)
+            for name, q in zip(names, original_quantizers)
+        )
