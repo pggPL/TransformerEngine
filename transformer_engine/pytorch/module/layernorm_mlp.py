@@ -1521,7 +1521,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
             fc2_grad_weight_quantizer,
             fc2_grad_output_quantizer,
         )
-    
+
     def _get_debug_quantizers(self):
         from ...debug.pytorch.debug_quantization import DebugQuantizer
         base_quantizers = list(self._get_quantizers())

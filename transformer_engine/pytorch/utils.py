@@ -332,4 +332,5 @@ def round_up_to_nearest_multiple(value, multiple):
     return ((value + multiple - 1) // multiple) * multiple
 
 def is_float8_tensor(obj):
+    """ Used to check if obj will need quantized gemm or normal gemm. """
     return type(obj) in [Float8TensorBase, Float8Tensor, MXFP8Tensor, MXFP8TensorBase]

@@ -17,7 +17,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp._common_utils import _get_module_fsdp_state
 from torch.distributed.fsdp._traversal_utils import _get_fsdp_states_with_modules
 
-from .utils import safely_set_viewless_tensor_data
+from .utils import safely_set_viewless_tensor_data, is_float8_tensor
 from .constants import dist_group_type
 from .fp8 import FP8GlobalStateManager
 from .tensor.float8_tensor import Float8Quantizer, Float8Tensor
@@ -1010,7 +1010,7 @@ def gather_along_first_dim(
         out_obj = input_
         rowwise = input_.get_tensor(False)
         columnwise = input_.get_tensor(True)
-        final_quantizer = None if type(input_) == torch.Tensor else quantizer.parent_quantizer
+        final_quantizer = None if not is_float8_tensor(input_) else quantizer.parent_quantizer
         rowwise_total = gather_along_first_dim(
             rowwise, process_group, async_op, final_quantizer
         )

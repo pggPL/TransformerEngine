@@ -23,7 +23,7 @@ import torch.nn.functional as F
 
 import transformer_engine_torch as tex
 import transformer_engine as te
-from transformer_engine.debug.debug_state import TEDebugState
+from transformer_engine.debug.pytorch.debug_state import TEDebugState
 from transformer_engine.pytorch.utils import get_cudnn_version
 from transformer_engine.pytorch.cpp_extensions.fused_attn import (
     fused_attn_fwd,
