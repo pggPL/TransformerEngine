@@ -3,9 +3,9 @@
 # See LICENSE for license information.
 
 """
-    This file contains DebugQuantizer and DebugQuantizedTensor objects,
-    which are wrappers over Quantizer and QuantizedTensor.
-    These wrapper add logic related to the debugging, using the nvdlfw_inspect package.
+This file contains DebugQuantizer and DebugQuantizedTensor objects,
+which are wrappers over Quantizer and QuantizedTensor.
+These wrapper add logic related to the debugging, using the nvdlfw_inspect package.
 """
 
 from __future__ import annotations
@@ -46,8 +46,14 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
     It allows to add custom calls inside quantization process - which enable to modify tensors
     or gather tensors stats.
     """
-    def __init__(self, layer_name: str, tensor_name: str,
-                 parent_quantizer: Optional[Quantizer], tp_group: torch.distributed.process_group):
+
+    def __init__(
+        self,
+        layer_name: str,
+        tensor_name: str,
+        parent_quantizer: Optional[Quantizer],
+        tp_group: torch.distributed.process_group,
+    ):
         import nvdlfw_inspect.api as nvinspect_api
 
         super().__init__(rowwise=True, columnwise=True)
@@ -83,9 +89,9 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
 
     def get_plans_for_output_tensors(self) -> Tuple[bool, str]:
         """
-            Returns tuple (inspect_tensor_enabled: bool, plan: str). Plan is one of the
-            CALL_PROCESS_TENSOR or HIGH_PRECISION, because debug quantizer does not support
-            gemm output in FP8.
+        Returns tuple (inspect_tensor_enabled: bool, plan: str). Plan is one of the
+        CALL_PROCESS_TENSOR or HIGH_PRECISION, because debug quantizer does not support
+        gemm output in FP8.
         """
         import nvdlfw_inspect.api as nvinspect_api
 
@@ -104,15 +110,17 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
 
     def get_enabled_look_at_tensors(self):
         """
-            Returns tuple of booleans determining which functions look_at_tensor_*(...) should be called.
+        Returns tuple of booleans determining which functions look_at_tensor_*(...) should be called.
         """
         import nvdlfw_inspect.api as nvinspect_api
 
         inspect_tensor_enabled = nvinspect_api.transformer_engine.inspect_tensor_enabled(
             layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=self.iteration
         )
-        inspect_tensor_postquantize_enabled = nvinspect_api.transformer_engine.inspect_tensor_postquantize_enabled(
-            layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=self.iteration
+        inspect_tensor_postquantize_enabled = (
+            nvinspect_api.transformer_engine.inspect_tensor_postquantize_enabled(
+                layer_name=self.layer_name, tensor_name=self.tensor_name, iteration=self.iteration
+            )
         )
 
         return inspect_tensor_enabled, inspect_tensor_postquantize_enabled
@@ -217,9 +225,14 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
             args["rowwise"] = False
             nvinspect_api.transformer_engine.inspect_tensor_postquantize(**args)
 
-    def quantize(self, tensor: torch.Tensor, *,
-                 out: Optional[Union[torch.Tensor, DebugQuantizedTensor]] = None, dtype: torch.dtype=None):
-        """ Returns DebugQuantizedTensor object. """
+    def quantize(
+        self,
+        tensor: torch.Tensor,
+        *,
+        out: Optional[Union[torch.Tensor, DebugQuantizedTensor]] = None,
+        dtype: torch.dtype = None,
+    ):
+        """Returns DebugQuantizedTensor object."""
         import nvdlfw_inspect.api as nvinspect_api
 
         assert not self.output_tensor
@@ -425,9 +438,9 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
 
 class DebugQuantizedTensor(QuantizedTensor):
     """
-        Class containing quantized tensors after debug. Depending on configuration
-        it can contain one or two different objects. These objects can be accessed by the method
-        get_tensor().
+    Class containing quantized tensors after debug. Depending on configuration
+    it can contain one or two different objects. These objects can be accessed by the method
+    get_tensor().
     """
 
     def __new__(
