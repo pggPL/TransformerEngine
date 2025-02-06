@@ -4,7 +4,7 @@
 
 """DisableFp8Layer Feature support for nvidia-dlframework-inspect"""
 
-import nvdlfw_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as debug_api
 from nvdlfw_inspect.registry import Registry, api_method
 
 
@@ -31,7 +31,7 @@ class DisableFp8Layer:
             if key not in ["enabled", "gemm"]:
                 raise ValueError(f'[NVTORCH INSPECT ERROR] Unexpected key in config: "{key}".')
         # If FP8 training, disable FP8 for the selected layers if this feature is enabled in config.
-        nvinspect_api.log_message("FP8 Disabled", layer_name)
+        debug_api.log_message("FP8 Disabled", layer_name)
 
         # If this feature is invoked, then fp8 gemm is disabled.
         # If not, then default behaviour in TransformerEngineAPI

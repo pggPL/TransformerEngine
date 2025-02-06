@@ -8,7 +8,7 @@ from typing import Optional
 
 import torch
 
-import nvdlfw_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as debug_api
 from nvdlfw_inspect.registry import Registry, api_method
 from nvdlfw_inspect.utils import append_parent_docstring
 
@@ -132,7 +132,7 @@ class FakeQuantFp8(TEConfigAPIMapper):
                 f" quant_format: {config['quant_format']} for Tensor: {tensor_name} in the config"
                 " yaml for FakeQuantFp8 feature is not supported"
             )
-        nvinspect_api.log_message(
+        debug_api.log_message(
             f"Feature={self.__class__.__name__}, API=process_tensor: {gemm}, {tensor_name}",
             layer_name,
             extra_cachable_args=(gemm, tensor_name),

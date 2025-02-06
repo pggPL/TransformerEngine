@@ -10,7 +10,7 @@ import torch
 
 from nvdlfw_inspect.debug_features.log_tensor_stats import LogTensorStats as BaseLogTensorStats
 from nvdlfw_inspect.registry import Registry, api_method
-import nvdlfw_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as debug_api
 
 from transformer_engine.pytorch.tensor import QuantizedTensor
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor
@@ -61,7 +61,7 @@ class LogTensorStats(BaseLogTensorStats):
         layer_name: str,
         tensor_name: str,
         tensor: Union[torch.Tensor, QuantizedTensor],
-        rowwise: bool,  # pylint: disable=unused-argument
+        rowwise: bool, # pylint: disable=unused-argument
         iteration: int,
         tp_group: torch.distributed.process_group,
     ):
@@ -82,7 +82,7 @@ class LogTensorStats(BaseLogTensorStats):
         )
 
         skip_reduction = False
-        reduction_group = nvinspect_api.get_tensor_reduction_group()
+        reduction_group = debug_api.get_tensor_reduction_group()
         reduce_within_microbatch = tensor_name != "weight"
         if tensor_name == "weight":
             if TEDebugState.weight_tensor_tp_group_reduce:
@@ -106,7 +106,7 @@ class LogTensorStats(BaseLogTensorStats):
 
         STATS_BUFFERS.feed(layer_name, tensor_name, options, tensor, iteration, skip_reduction)
 
-        nvinspect_api.log_message(
+        debug_api.log_message(
             f"Feature={self.__class__.__name__}, API=look_at_tensor_before_process: {tensor_name}",
             layer_name,
             extra_cachable_args=(tensor_name),

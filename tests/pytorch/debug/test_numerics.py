@@ -12,7 +12,7 @@ from string import Template
 import pytest
 import torch
 
-import nvdlfw_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as debug_api
 import transformer_engine.debug
 import transformer_engine.pytorch as tepytorch
 import transformer_engine_torch as tex
@@ -191,7 +191,7 @@ def _emulate_linear(
 
 
 def _init_debug(config_name, log_dir, feature_dirs):
-    nvinspect_api.initialize(
+    debug_api.initialize(
         config_file=config_name,
         feature_dirs=feature_dirs,
         log_dir=log_dir,
@@ -210,7 +210,7 @@ def create_config_file(func):
                     result = func(*args, **kwargs)
                 finally:
                     temp_file_name = temp_file.name
-                    nvinspect_api.end_debug()
+                    debug_api.end_debug()
                     transformer_engine.debug.debug_state.TEDebugState.reset()
             os.unlink(temp_file_name)
         return result
@@ -235,7 +235,7 @@ def _run_forward_backward(x, model, loss_scale=1.0, is_first_microbatch=None):
     with tepytorch.fp8_autocast(enabled=True, fp8_recipe=FP8_RECIPE):
         y = model(x, is_first_microbatch=is_first_microbatch)
     (y.sum() * loss_scale).backward()
-    nvinspect_api.step()
+    debug_api.step()
     return y
 
 

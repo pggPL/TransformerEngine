@@ -14,7 +14,7 @@ import torch
 import torch.distributed as dist
 import transformer_engine
 import transformer_engine_torch as tex
-import nvdlfw_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as debug_api
 from transformer_engine.debug import set_weight_tensor_tp_group_reduce
 
 
@@ -129,7 +129,7 @@ def _run_forward_backward(x, model, parallel_mode=None, group=None):
     elif parallel_mode == "row":
         l = y.sum()
         l.backward()
-    nvinspect_api.step()
+    debug_api.step()
     return y
 
 
@@ -213,7 +213,7 @@ def run_debug_test(func):
             if rank == 0 and temp_file_name is not None:
                 os.unlink(temp_file_name)
 
-            nvinspect_api.end_debug()
+            debug_api.end_debug()
             transformer_engine.debug.debug_state.TEDebugState.reset()
 
             if rank == 0 and hasattr(wrapper, "temp_dir_obj"):
@@ -276,7 +276,7 @@ def test_log_distributed(parallel_mode, gather_weight, **kwargs):
     TP_RANK = WORLD_RANK % TP_SIZE
     DP_RANK = (WORLD_RANK - TP_RANK) // TP_SIZE
 
-    nvinspect_api.set_tensor_reduction_group(NCCL_WORLD)
+    debug_api.set_tensor_reduction_group(NCCL_WORLD)
 
     x, weight = _get_tensors(
         parallel_mode,
@@ -356,7 +356,7 @@ def test_log_expert_parallel(**kwargs):
     """
     _prepare_config_test_log_distributed(kwargs["config_file"])
     _init_debug(kwargs["config_file"].name, kwargs["log_dir"], FEATURE_DIRS)
-    nvinspect_api.set_tensor_reduction_group(NCCL_WORLD)
+    debug_api.set_tensor_reduction_group(NCCL_WORLD)
     x, weight = _get_tensors(
         "row", weight_seed=WORLD_RANK * 1234, data_seed=WORLD_RANK * 1234, tp_size=1, tp_rank=0
     )  # data parallel
@@ -367,7 +367,7 @@ def test_log_expert_parallel(**kwargs):
         y2 = model1(x)
         y = y1 + y2
     y.sum().backward()
-    nvinspect_api.step()
+    debug_api.step()
     with transformer_engine.pytorch.fp8_autocast(enabled=True, fp8_recipe=FP8_RECIPE):
         y = model(x)
         if WORLD_RANK != 0:

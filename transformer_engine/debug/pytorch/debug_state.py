@@ -3,7 +3,7 @@
 # See LICENSE for license information.
 
 """
-Managin the state of all the debuged layers.
+    Managin the state of all the debuged layers.
 """
 
 import sys
@@ -23,26 +23,26 @@ class TEDebugState:
     @classmethod
     def initialize(cls):
         """
-        If nvinspect_api is module is initialized, then sets cls.debug_enabled to True.
+            If debug_api is module is initialized, then sets cls.debug_enabled to True.
         """
 
         if "nvdlfw_inspect" in sys.modules:
-            import nvdlfw_inspect.api as nvinspect_api
+            import nvdlfw_inspect.api as debug_api
 
-            if cls.debug_enabled is False and nvinspect_api.DEBUG_MANAGER is not None:
+            if cls.debug_enabled is False and debug_api.DEBUG_MANAGER is not None:
                 # This method in invoked when initializing TE modules.
                 # If this error is thrown, it means that some TE module had been initialized before
-                # nvinspect_api was initialized, and now new TE module is being initialized.
+                # debug_api was initialized, and now new TE module is being initialized.
                 # This is likely to be a bug.
                 raise RuntimeError(
                     "[nv_dlfw_inspect] nv_dlfw_inspect module should be initialized before"
                     " initialization of the first TE module"
                 )
-            cls.debug_enabled = nvinspect_api.DEBUG_MANAGER is not None
+            cls.debug_enabled = debug_api.DEBUG_MANAGER is not None
 
     @classmethod
     def reset(cls):
-        """Resets layer count and stats buffers."""
+        """ Resets layer count and stats buffers. """
         from ..features.utils.stats_buffer import STATS_BUFFERS
 
         STATS_BUFFERS.reset()
@@ -60,10 +60,10 @@ class TEDebugState:
 
     @classmethod
     def set_weight_tensor_tp_group_reduce(cls, enabled):
-        """Sets weight tensor reduction mode."""
+        """ Sets weight tensor reduction mode. """
         cls.weight_tensor_tp_group_reduce = enabled
 
 
 def set_weight_tensor_tp_group_reduce(enabled):
-    """Sets weight tensor reduction mode."""
+    """ Sets weight tensor reduction mode. """
     TEDebugState.set_weight_tensor_tp_group_reduce(enabled)

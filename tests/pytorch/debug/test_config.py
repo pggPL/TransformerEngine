@@ -5,7 +5,7 @@ import pathlib, os
 
 from nvdlfw_inspect.config_manager import ConfigManager
 
-import nvdlfw_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as debug_api
 
 try:
     import transformer_engine
@@ -16,7 +16,7 @@ except (ImportError, ModuleNotFoundError):
 
 
 def test_transformer_engine_config_parsing(feature_dirs):
-    nvinspect_api.initialize(
+    debug_api.initialize(
         config_file=pathlib.Path(__file__).resolve().parent
         / "test_configs/tensor_manipulation_transformer_engine.yaml",
         feature_dirs=feature_dirs,

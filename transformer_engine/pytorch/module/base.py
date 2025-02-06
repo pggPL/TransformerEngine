@@ -847,11 +847,11 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             FP8GlobalStateManager.restore_fp8_meta_tensors(self.fp8_meta)
 
         if self.debug:
-            import nvdlfw_inspect.api as nvinspect_api
+            import nvdlfw_inspect.api as debug_api
 
-            # if nvinspect_api is ended,
+            # if debug_api is ended,
             # then simply end debug
-            if nvinspect_api.DEBUG_MANAGER is None:
+            if debug_api.DEBUG_MANAGER is None:
                 self.debug = False
                 TEDebugState.reset()
 
@@ -1106,13 +1106,13 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             Only needed if layer names are assigned after model initialization like in Megatron-LM.
         """
         assert self.debug
-        import nvdlfw_inspect.api as nvinspect_api
+        import nvdlfw_inspect.api as debug_api
 
         if overwrite_debug_name:
             self.debug_name = overwrite_debug_name
 
         if self.debug_name is None:
-            nvinspect_api.log_message(
+            debug_api.log_message(
                 "[DEBUG-WARNING] Names are not provided to debug modules. ",
                 "Creating and using generic names. Pass names to debug modules for better"
                 " insight. ",
@@ -1128,9 +1128,9 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             or getattr(self, "ub_overlap_rs_dgrad", False)
             or getattr(self, "ub_overlap_rs", False)
         ):
-            import nvdlfw_inspect.api as nvinspect_api
+            import nvdlfw_inspect.api as debug_api
 
-            nvinspect_api.log_message(
+            debug_api.log_message(
                 "> UserBuffers are not supported in debug module. "
                 "Using UB optimization will not affect the debug module. ",
                 level=logging.WARNING,

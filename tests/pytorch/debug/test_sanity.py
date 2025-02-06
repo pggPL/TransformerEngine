@@ -12,7 +12,7 @@ from string import Template
 import pytest
 import torch
 
-import nvdlfw_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as debug_api
 import transformer_engine.debug
 import transformer_engine.pytorch as te
 import transformer_engine_torch as tex
@@ -81,7 +81,7 @@ def _run_forward_backward(model, fp8):
         with te.fp8_autocast(enabled=fp8):
             out = model(inp)
         out.sum().backward()
-        nvinspect_api.step()
+        debug_api.step()
 
 
 @create_config_file
@@ -91,13 +91,13 @@ def _run_test(model_key, fp8, config, feature_dirs, config_file, log_dir):
             config_file.write(config)
             config_file.flush()
         config_file_name = config_file.name if config != "" else ""
-        nvinspect_api.initialize(feature_dirs=feature_dirs, config_file=config_file_name)
+        debug_api.initialize(feature_dirs=feature_dirs, config_file=config_file_name)
         model = _get_model(model_key)
         _run_forward_backward(model, fp8)
     except Exception as error:
         raise error
     finally:
-        nvinspect_api.end_debug()
+        debug_api.end_debug()
         transformer_engine.debug.debug_state.TEDebugState.reset()
 
 

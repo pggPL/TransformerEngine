@@ -102,9 +102,9 @@ if os.environ.get("DEBUG", False):
     # when debug=True. I fed them with dummy feature
     # to prevent switching off debug, what can happend if
     # no feature is active.
-    import nvdlfw_inspect.api as nvinspect_api
+    import nvdlfw_inspect.api as debug_api
 
-    nvinspect_api.initialize(os.environ["CONFIG_FILE"], feature_dirs=os.environ["FEATURE_DIRS"])
+    debug_api.initialize(os.environ["CONFIG_FILE"], feature_dirs=os.environ["FEATURE_DIRS"])
 
 fp8_recipes = [
     recipe.MXFP8BlockScaling(),

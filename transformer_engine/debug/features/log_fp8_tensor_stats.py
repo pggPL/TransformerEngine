@@ -8,7 +8,7 @@ from typing import Dict, Union
 
 import torch
 
-import nvdlfw_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as debug_api
 from nvdlfw_inspect.debug_features.log_tensor_stats import LogTensorStats as BaseLogTensorStats
 from nvdlfw_inspect.registry import Registry, api_method
 
@@ -44,30 +44,23 @@ class LogFp8TensorStats(BaseLogTensorStats):
     """
 
     def _get_supported_stats_list(self):
-        """Returns stats this feature can log."""
+        """ Returns stats this feature can log. """
         return {"underflows%", "overflows%"}
 
     @api_method
     def inspect_tensor_postquantize_enabled(
-        self, config: Dict, layer_name: str, tensor_name: str, iteration: int
-    ):  # pylint: disable=unused-argument
-        """API call used to determine whether to run look_at_tensor_before_process() in the forward."""
+        self, config: Dict, layer_name: str, tensor_name: str, iteration: int): # pylint: disable=unused-argument
+        """ API call used to determine whether to run look_at_tensor_before_process() in the forward."""
         # check whether logging should happen in this iteration
         return self._check_params(config, layer_name, iteration=iteration)
 
     @api_method
     def inspect_tensor_postquantize(
-        self,
-        config: Dict,
-        layer_name: str,
-        tensor_name: str,
-        tensor: Union[torch.Tensor, QuantizedTensor],
-        rowwise: bool,
-        iteration: int,
-        tp_group: torch.distributed.process_group,
+        self, config: Dict, layer_name: str, tensor_name: str, tensor: Union[torch.Tensor, QuantizedTensor],
+        rowwise: bool, iteration: int, tp_group: torch.distributed.process_group
     ):
-        """
-        API call used to collect the data about the tensor after process_tensor()/quantization.
+        """ 
+            API call used to collect the data about the tensor after process_tensor()/quantization. 
         """
 
         assert type(tensor) in [Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase], (
@@ -90,7 +83,7 @@ class LogFp8TensorStats(BaseLogTensorStats):
         )
 
         skip_reduction = False
-        reduction_group = nvinspect_api.get_tensor_reduction_group()
+        reduction_group = debug_api.get_tensor_reduction_group()
         reduce_within_microbatch = tensor_name != "weight"
         if tensor_name == "weight":
             if TEDebugState.weight_tensor_tp_group_reduce:
@@ -109,12 +102,12 @@ class LogFp8TensorStats(BaseLogTensorStats):
             stats=config["stats"],
             options=options,
             reduction_group=reduction_group,
-            reduce_within_microbatch=reduce_within_microbatch,
+            reduce_within_microbatch=reduce_within_microbatch
         )
 
         STATS_BUFFERS.feed(layer_name, tensor_name, options, tensor, iteration, skip_reduction)
 
-        nvinspect_api.log_message(
+        debug_api.log_message(
             f"Feature={self.__class__.__name__}, API=look_at_tensor_after_process: {tensor_name}",
             layer_name,
             extra_cachable_args=(tensor_name),

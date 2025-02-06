@@ -8,7 +8,7 @@ from typing import Optional
 
 import torch
 
-import nvdlfw_inspect.api as nvinspect_api
+import nvdlfw_inspect.api as debug_api
 from nvdlfw_inspect.registry import Registry, api_method
 
 import transformer_engine_torch as tex
@@ -117,7 +117,7 @@ class PerTensorScaling(TEConfigAPIMapper):
             f" Provide FP8 dtype when using process_tensor for per_tensor_scaling. {layer_name}"
         )
 
-        nvinspect_api.log_message(
+        debug_api.log_message(
             f"Feature={self.__class__.__name__}, API=process_tensor: {gemm}, {tensor_name}",
             layer_name,
             extra_cachable_args=(gemm, tensor_name),
