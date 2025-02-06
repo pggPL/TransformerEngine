@@ -85,13 +85,13 @@ class TEConfigAPIMapper(BaseConfigAPIMapper):
 
 
 required_kwargs = {
-    "fp8_gemm": ["gemm"],
-    "use_process_tensor": ["tensor_name", "gemm"],
-    "process_tensor": ["tensor_name", "gemm"],
-    "use_look_at_tensor_before_process": ["tensor_name"],
-    "use_look_at_tensor_after_process": ["tensor_name"],
-    "look_at_tensor_before_process": ["tensor_name"],
-    "look_at_tensor_after_process": ["tensor_name"],
+    "fp8_gemm_enabled": ["gemm"],
+    "modify_tensor_enabled": ["tensor_name", "gemm"],
+    "modify_tensor": ["tensor_name", "gemm"],
+    "inspect_tensor": ["tensor_name"],
+    "inspect_tensor_postquantize": ["tensor_name"],
+    "inspect_tensor_enabled": ["tensor_name"],
+    "inspect_tensor_postquantize_enabled": ["tensor_name"],
     "default": ["tensor_name", "gemm"],
 }
 
@@ -99,32 +99,32 @@ required_kwargs = {
 class TEDefaultFeatures:
     """ Transformer Engine API calls default behaviour. """
 
-    def fp8_gemm(self, *_args, **_kwargs):
+    def fp8_gemm_enabled(self, *_args, **_kwargs):
         """API call responsible for choice between high-precision and FP8 GEMM execution."""
         return True  # if it is false, fp8_gemm will be turned off. Otherwise nothing happens.
 
-    def use_process_tensor(self, *_args, **_kwargs):
-        """ API call used to determine whether to run process_tensor() in the forward."""
+    def modify_tensor_enabled(self, *_args, **_kwargs):
+        """ API call used to determine whether to run modify_tensor() in the forward."""
         return False
 
-    def process_tensor(self, *_args, **_kwargs):
+    def modify_tensor(self, *_args, **_kwargs):
         """ API call used to process the tensor."""
         raise RuntimeError(
-            "use_process_tensor() returned True, process_tensor() was invoked, but it is not"
+            "modify_tensor_enabled() returned True, modify_tensor() was invoked, but it is not"
             " handled by any API."
         )
 
-    def look_at_tensor_before_process(self, *_args, **_kwargs):
-        """ API call used to collect the data about the tensor before process_tensor()/quantization. """
+    def inspect_tensor(self, *_args, **_kwargs):
+        """ API call used to collect the data about the tensor before modify_tensor()/quantization. """
 
-    def look_at_tensor_after_process(self, *_args, **_kwargs):
-        """ API call used to collect the data about the tensor after process_tensor()/quantization. """
+    def inspect_tensor_postquantize(self, *_args, **_kwargs):
+        """ API call used to collect the data about the tensor after modify_tensor()/quantization. """
 
-    def use_look_at_tensor_before_process(self, *_args, **_kwargs):
+    def inspect_tensor_enabled(self, *_args, **_kwargs):
         """ API call used to determine whether to run look_at_tensor_before_process() in the forward."""
         return False
 
-    def use_look_at_tensor_after_process(self, *_args, **_kwargs):
+    def inspect_tensor_postquantize_enabled(self, *_args, **_kwargs):
         """ API call used to determine whether to run look_at_tensor_after_process() in the forward."""
         return False
 
@@ -143,12 +143,12 @@ class TransformerEngineAPI(BaseNamespaceAPI):
         self._default_api_impl = TEDefaultFeatures()
         self._cacheable_api_kwargs_map = {
             "fp8_gemm": ["gemm"],
-            "process_tensor": ["tensor_name", "gemm"],
-            "look_at_tensor_before_process": ["tensor_name", "rowwise", "tp_group", "tensor"],
-            "look_at_tensor_after_process": ["tensor_name", "rowwise", "iteration", "tp_group", "tensor"],
-            "use_look_at_tensor_before_process": ["tensor_name", "rowwise", "tp_group"],
-            "use_look_at_tensor_after_process": ["tensor_name", "rowwise", "iteration", "tp_group"],
-            "use_process_tensor": ["tensor_name", "tensor", "tensor_name", "iteration", "default_quantizer", "out", "dtype"],
+            "modify_tensor": ["tensor_name", "gemm"],
+            "inspect_tensor": ["tensor_name", "rowwise", "tp_group", "tensor"],
+            "inspect_tensor_postquantize": ["tensor_name", "rowwise", "iteration", "tp_group", "tensor"],
+            "inspect_tensor_enabled": ["tensor_name", "rowwise", "tp_group"],
+            "inspect_tensor_postquantize_enabled": ["tensor_name", "rowwise", "iteration", "tp_group"],
+            "modify_tensor_enabled": ["tensor_name", "tensor", "tensor_name", "iteration", "default_quantizer", "out", "dtype"],
         }
 
     def is_multiple_feature_invocation_allowed(self, api_name):
@@ -156,11 +156,11 @@ class TransformerEngineAPI(BaseNamespaceAPI):
         Check if API allowes executing multiple features for a single call
         """
         return api_name in {
-            "fp8_gemm",
-            "look_at_tensor_before_process",
-            "look_at_tensor_after_process",
-            "use_look_at_tensor_before_process",
-            "use_look_at_tensor_after_process",
+            "fp8_gemm_enabled",
+            "inspect_tensor",
+            "inspect_tensor_postquantize",
+            "inspect_tensor_enabled",
+            "inspect_tensor_postquantize_enabled",
         }
 
     def input_assertions_hook(self, api_name, **kwargs):
@@ -193,11 +193,11 @@ class TransformerEngineAPI(BaseNamespaceAPI):
         return status, modified_config
 
     def output_assertions_hook(self, api_name, ret, **kwargs):
-        if api_name.startswith("use_") or api_name == "fp8_gemm":
+        if "enabled" in api_name or api_name == "fp8_gemm":
             assert isinstance(ret, bool)
-        if api_name.startswith("look_"):
+        if api_name in ["inspect_tensor", "inspect_tensor_postquantize"]:
             assert ret is None
-        if api_name == "process_tensor":
+        if api_name == "modity_tensor":
             assert type(ret) in [
                 torch.Tensor, Float8Tensor, Float8TensorBase, MXFP8Tensor, MXFP8TensorBase]
             if type(ret) == torch.Tensor: # pylint: disable=unidiomatic-typecheck

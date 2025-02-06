@@ -6,7 +6,7 @@ set -e
 
 : ${TE_PATH:=/opt/transformerengine}
 : ${DUMMY_CONFIG_FILE:=$TE_PATH/tests/pytorch/debug/test_configs/dummy_feature.yaml}
-: ${DUMMY_FEATURE_DIRS:=$TE_PATH/tests/pytorch/debug/dummy_feature}
+: ${FEATURE_DIRS:=$TE_PATH/transformer_engine/debug/features}
 
 
 pip install pytest==8.2.1
@@ -20,4 +20,4 @@ pytest -v -s $TE_PATH/tests/pytorch/fused_attn/test_fused_attn_with_cp.py
 # debug tests
 pytest -v -s $TE_PATH/tests/pytorch/debug/test_distributed.py
 # standard numerics tests with initialized debug
-DEBUG=True CONFIG_FILE=$DUMMY_CONFIG_FILE FEATURE_DIRS=$DUMMY_FEATURE_DIRS pytest -v -s $TE_PATH/tests/pytorch/distributed/test_numerics.py
+DEBUG=True CONFIG_FILE=$DUMMY_CONFIG_FILE FEATURE_DIRS=$FEATURE_DIRS pytest -v -s $TE_PATH/tests/pytorch/distributed/test_numerics.py

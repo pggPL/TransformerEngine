@@ -86,12 +86,12 @@ class PerTensorScaling(TEConfigAPIMapper):
         return False
 
     @api_method
-    def use_process_tensor(self, config, layer_name: str, tensor_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
+    def modify_tensor_enabled(self, config, layer_name: str, tensor_name: str, gemm: str, iteration: int): # pylint: disable=unused-argument
         """ API call used to determine whether to run process_tensor() in the forward."""
         return True
 
     @api_method
-    def process_tensor(
+    def modify_tensor(
         self,
         config,
         layer_name: str,

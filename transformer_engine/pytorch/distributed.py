@@ -25,6 +25,7 @@ from .tensor.mxfp8_tensor import MXFP8Quantizer, MXFP8Tensor
 from .tensor.quantized_tensor import QuantizedTensor, Quantizer
 from .tensor._internal.float8_tensor_base import Float8TensorBase
 from .tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
+from ..debug.pytorch.utils import DebugQuantizerBase
 
 
 __all__ = ["checkpoint", "CudaRNGStatesTracker"]
@@ -1003,6 +1004,26 @@ def gather_along_first_dim(
             quantizer=quantizer,
             out_shape=out_shape,
         )
+
+    # Debug case - call gather_along_first_dim on each tensor
+    if isinstance(quantizer, DebugQuantizerBase):
+        out_obj = input_
+        rowwise = input_.get_tensor(False)
+        columnwise = input_.get_tensor(True)
+        final_quantizer = None if type(input_) == torch.Tensor else quantizer.parent_quantizer
+        rowwise_total = gather_along_first_dim(
+            rowwise, process_group, async_op, final_quantizer
+        )
+        out_obj.rowwise_gemm_tensor = rowwise_total
+        if rowwise is not columnwise:
+            columnwise_total = gather_along_first_dim(
+                columnwise, process_group, async_op, final_quantizer
+            )
+            out_obj.columnwise_gemm_tensor = columnwise_total
+        else:
+            out_obj.columnwise_gemm_tensor = out_obj.rowwise_gemm_tensor
+        return out_obj
+
     # High-precision communication for quantized tensors
     if quantizer is not None:
         warnings.warn(

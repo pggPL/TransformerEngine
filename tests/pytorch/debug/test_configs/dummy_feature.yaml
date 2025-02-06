@@ -3,7 +3,7 @@ deummy_feature_everywhere:
   layers:
      layer_name_regex_pattern: .*
   transformer_engine:
-    DummyFeature:
+    TestDummyFeature:
       enabled: True
       tensors: [weight, activation, gradient, output, wgrad, dgrad]
       gemms: [wgrad, dgrad, fprop]

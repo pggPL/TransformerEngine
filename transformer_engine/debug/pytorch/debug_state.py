@@ -2,11 +2,6 @@
 #
 # See LICENSE for license information.
 
-import torch
-
-from collections import namedtuple
-from dataclasses import dataclass
-from typing import Dict, Union
 import sys
 
 
@@ -35,7 +30,8 @@ class TEDebugState:
 
     @classmethod
     def reset(cls):
-        from .features.utils.stats_buffer import STATS_BUFFERS, StatsBuffers
+        """ Resets layer count and stats buffers. """
+        from ..features.utils.stats_buffer import STATS_BUFFERS
 
         STATS_BUFFERS.reset()
         cls.debug_enabled = None
@@ -52,8 +48,10 @@ class TEDebugState:
 
     @classmethod
     def set_weight_tensor_tp_group_reduce(cls, enabled):
+        """ Sets weight tensor reduction mode. """
         cls.weight_tensor_tp_group_reduce = enabled
 
 
 def set_weight_tensor_tp_group_reduce(enabled):
+    """ Sets weight tensor reduction mode. """
     TEDebugState.set_weight_tensor_tp_group_reduce(enabled)

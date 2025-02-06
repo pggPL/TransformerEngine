@@ -467,7 +467,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         self._fp8_workspaces: Dict[str, QuantizedTensor] = {}
         self.activation_dtype: Optional[torch.dtype] = None
 
-        TEDebugState.initialize()
+        if not TEDebugState.debug_enabled:
+            TEDebugState.initialize()
 
     # Names of attributes that can be set quickly (see __setattr__
     # method)
@@ -1097,7 +1098,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         """
         assert self.debug
 
-        from ...debug.debug_state import TEDebugState
+        from ...debug.pytorch.debug_state import TEDebugState
 
         import nvdlfw_inspect.api as nvinspect_api
 
@@ -1112,3 +1113,34 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 level=logging.WARNING,
             )
             self.debug_name = f"Layer_{TEDebugState.get_layer_count()}"
+    
+    def _turn_off_unsupported_features_in_debug(self):
+        if getattr(self, "ub_bulk_wgrad", False) or \
+           getattr(self, "ub_bulk_dgrad", False) or \
+           getattr(self, "ub_overlap_ag", False) or \
+           getattr(self, "ub_overlap_rs_dgrad", False) or \
+           getattr(self, "ub_overlap_rs", False):
+            try:
+                import nvdlfw_inspect.api as nvinspect_api
+            except (ModuleNotFoundError, ImportError):
+                raise ModuleNotFoundError(
+                    "ERROR: Could not locate nvdlfw_inspect package. Make sure it is installed"
+                    " correctly."
+                )
+
+            nvinspect_api.log_message(
+                "> UserBuffers are not supported in debug module. "
+                "Using UB optimization will not affect the debug module. ",
+                level=logging.WARNING,
+            )
+            if hasattr(self, "ub_bulk_wgrad"):
+                self.ub_bulk_wgrad = None
+            if hasattr(self, "ub_bulk_dgrad"):
+                self.ub_bulk_dgrad = None
+            if hasattr(self, "ub_overlap_ag"):
+                self.ub_overlap_ag = None
+            if hasattr(self, "ub_overlap_rs_dgrad"):
+                self.ub_overlap_rs_dgrad = None
+            if hasattr(self, "ub_overlap_rs"):
+                self.ub_overlap_rs = None
+            

@@ -48,13 +48,13 @@ class LogTensorStats(BaseLogTensorStats):
         return BaseLogTensorStats._get_supported_stats_list(None) | {"cur_amax", "dynamic_range"}
 
     @api_method
-    def use_look_at_tensor_before_process(
+    def inspect_tensor_enabled(
         self, config: Dict, layer_name: str, tensor_name: str, iteration: int): # pylint: disable=unused-argument
         """ API call used to determine whether to run look_at_tensor_before_process() in the forward."""
         return self._check_params(config, layer_name, iteration=iteration)
 
     @api_method
-    def look_at_tensor_before_process(
+    def inspect_tensor(
         self, config: Dict, layer_name: str, tensor_name: str, tensor: Union[torch.Tensor, QuantizedTensor],
         rowwise: bool, iteration: int, tp_group: torch.distributed.process_group # pylint: disable=unused-argument
     ):
