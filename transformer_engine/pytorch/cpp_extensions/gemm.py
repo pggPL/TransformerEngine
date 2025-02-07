@@ -94,7 +94,6 @@ def general_gemm(
     transb = layout[1] == "T"
     # assert quantization_params is None, "FP8 output not supported yet"
 
-
     if ub_type is not None:
         assert ub is not None, (
             f"{'AG+GEMM' if ub_type == tex.CommOverlapType.AG else 'GEMM+RS'} overlap requires"
@@ -117,7 +116,6 @@ def general_gemm(
         quantization_params = quantization_params.parent_quantizer
         A = A.get_tensor(not transa)
         B = B.get_tensor(transb)
-    
 
     assert (type(A) in [torch.Tensor, torch.nn.parameter.Parameter]) == (
         type(B) in [torch.Tensor, torch.nn.parameter.Parameter]
