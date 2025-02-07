@@ -124,7 +124,7 @@ class Quantizer(abc.ABC):
         tensor: torch.Tensor,
         *,
         out: Optional[QuantizedTensor] = None,
-        dtype: Optional[torch.dtype] = None # pylint: disable=unused-argument # used by override
+        dtype: Optional[torch.dtype] = None,  # pylint: disable=unused-argument # used by override
     ) -> QuantizedTensor:
         """Quantize tensor"""
         if out is not None:

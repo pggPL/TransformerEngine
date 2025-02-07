@@ -117,7 +117,6 @@ def general_gemm(
         A = A.get_tensor(not transa)
         B = B.get_tensor(transb)
 
-
     # Use bfloat16 as default bias_dtype
     bias_dtype = TE_DType[torch.bfloat16 if bias is None else bias.dtype]
 
@@ -145,7 +144,6 @@ def general_gemm(
         "extra_output": extra_output,
         "bulk_overlap": bulk_overlap,
     }
-
 
     original_scale_inverses = swizzle_inputs(A, B, layout)
     out, bias_grad, gelu_input, extra_output = tex.generic_gemm(*args, **kwargs)

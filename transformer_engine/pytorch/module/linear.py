@@ -406,7 +406,7 @@ class _Linear(torch.autograd.Function):
             # Note: Cast to expected dtype and perform tensor-parallel communication
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(rowwise=True, columnwise=True)
-            
+
             (
                 grad_output,
                 grad_bias,

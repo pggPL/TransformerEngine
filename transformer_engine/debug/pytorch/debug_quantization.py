@@ -497,7 +497,7 @@ class DebugQuantizedTensor(QuantizedTensor):
     def get_tensor(self, transpose: bool):
         """Is used in the python gemm() to get tensor or transpose of the tensor."""
         return self.rowwise_gemm_tensor if not transpose else self.columnwise_gemm_tensor
-    
+
     def update_usage(self, rowwise_usage=True, columnwise_usage=True):
         pass
 
