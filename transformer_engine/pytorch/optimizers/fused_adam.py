@@ -423,9 +423,6 @@ class FusedAdam(torch.optim.Optimizer):
                 param = id_map[k]
                 self.state[param] = {}
                 for name in v:
-<<<<<<< HEAD
-                    if v[name] is not None:
-=======
                     if v[name] is None:
                         continue
                     if (
@@ -436,7 +433,6 @@ class FusedAdam(torch.optim.Optimizer):
                         self.set_scaled_state(param, name, v[name])
                         assert v[name].dtype == torch.int16
                     else:
->>>>>>> upstream/main
                         self.set_scaled_state(param, name, v[name].float())
 
     def step(self, closure=None, grad_scaler=None):

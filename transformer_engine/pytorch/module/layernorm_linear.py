@@ -295,8 +295,6 @@ class _LayerNormLinear(torch.autograd.Function):
             ub_type=ub_type,
             extra_output=rs_out,
         )
-        ln_out_return = ln_out if return_layernorm_output else None
-
         if not weight.requires_grad:
             if not return_layernorm_output:
                 ln_out = ln_out_total = None

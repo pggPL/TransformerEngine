@@ -229,7 +229,6 @@ class _LayerNormMLP(torch.autograd.Function):
         )
         if debug and not return_layernorm_output:
             ln_out = fc1_input_quantizer(ln_out)
-        ln_out_return = ln_out if return_layernorm_output else None
 
         # Prepare GEMM input
         # Note: Cast to expected dtype and perform tensor-parallel communication
@@ -578,7 +577,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 )
 
             saved_tensors = ctx.saved_tensors
-            (
+            ( # pylint: disable=unbalanced-tuple-unpacking
                 inputmat,
                 ln_weight,
                 ln_out,
@@ -919,6 +918,10 @@ class _LayerNormMLP(torch.autograd.Function):
                     else:
                         fc1_dgrad = ub_obj_fc1_wgrad.get_buffer(None, local_chunk=True)
 
+            # Synchronize tensor parallel communication
+            if ln_out_total_work is not None:
+                ln_out_total_work.wait()
+                ln_out_total_work = None
             if fc1_dgrad_work is not None:
                 fc1_dgrad_work.wait()
                 fc1_dgrad_work = None
