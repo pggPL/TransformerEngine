@@ -52,7 +52,8 @@ def fake_quantize_fp8(tensor: torch.Tensor, fp8_format: tex.DType, margin=0, out
     else:
         quantizer = MXFP8Quantizer(fp8_dtype=fp8_format)
     if out is not None:
-        return out.copy_(quantizer(tensor).dequantize())
+        out.copy_(quantizer(tensor).dequantize())
+        return None
     return quantizer(tensor).dequantize()
 
 
