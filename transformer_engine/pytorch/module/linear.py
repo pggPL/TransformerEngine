@@ -220,6 +220,7 @@ class _Linear(torch.autograd.Function):
                 assert ub_obj.is_fp8_ubuf(), "AG overlap with FP8 GEMM inputs requires FP8 buffer."
             ub_obj.copy_into_buffer(inputmat_total, input_quantizer, local_chunk=True)
             inputmat_total = ub_obj.get_buffer(input_quantizer)
+
         out, *_, rs_out = general_gemm(
             weightmat,
             inputmat_total,
@@ -594,6 +595,7 @@ class _Linear(torch.autograd.Function):
         # Scatter fp8 weight buffers
         if ctx.fp8 and not isinstance(weight, QuantizedTensor):
             _fsdp_scatter_tensors(ctx.fsdp_group, weight_fp8)
+
         return (
             wgrad,
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,

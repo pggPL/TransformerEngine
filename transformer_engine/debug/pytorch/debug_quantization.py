@@ -14,7 +14,7 @@ import torch
 
 import transformer_engine_torch as tex
 
-from .utils import DebugQuantizerBase
+from .utils import DebugQuantizerBase, DebugQuantizedTensorBase
 
 
 from ...pytorch.tensor.quantized_tensor import (
@@ -300,14 +300,6 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         if self.tensor_name in ["wgrad", "dgrad", "output"]:
             return rowwise_gemm_tensor
 
-        assert (type(rowwise_gemm_tensor) in [torch.Tensor, torch.nn.parameter.Parameter]) == (
-            type(columnwise_gemm_tensor) in [torch.Tensor, torch.nn.parameter.Parameter]
-        ), (
-            "[Debug tools] Processed tensors should both be FP8 tensors or both be torch tensors  "
-            f"            but type(rowwise_gemm_tensor) = {type(rowwise_gemm_tensor)},             "
-            f"  type(columnwise_gemm_tensor) = {type(columnwise_gemm_tensor)}"
-        )
-
         return DebugQuantizedTensor(
             shape=tensor.shape,
             dtype=tensor.dtype,
@@ -436,7 +428,7 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         return False
 
 
-class DebugQuantizedTensor(QuantizedTensor):
+class DebugQuantizedTensor(QuantizedTensor, DebugQuantizedTensorBase):
     """
     Class containing quantized tensors after debug. Depending on configuration
     it can contain one or two different objects. These objects can be accessed by the method

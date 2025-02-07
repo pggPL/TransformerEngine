@@ -18,3 +18,10 @@ class DebugQuantizerBase:
     Parent class to DebugQuantizer. It is used to recoginze if object is instance of
     DebugQuantizer withouth the loading of the debuq_quantization.py
     """
+
+
+class DebugQuantizedTensorBase:
+    """
+    Parent class to DebugQuantizedTensor. It is used to recoginze if object is instance of
+    DebugQuantizedTensor withouth the loading of the debuq_quantization.py
+    """

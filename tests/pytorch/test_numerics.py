@@ -722,8 +722,6 @@ def test_gpt_full_activation_recompute(
     if fp8 or fp8_model_params:
         tols.update(dict(rtol=0.125, atol=0.0675))
     for i, (ref, test) in enumerate(zip(outputs, outputs_recompute)):
-        # if i == 10:
-        #    import pdb; pdb.set_trace()
         torch.testing.assert_close(
             test,
             ref,
@@ -1784,6 +1782,8 @@ def _test_gpt_e2e_cuda_graph(block, bs, dtype, config, graph):
 @pytest.mark.parametrize("bs", batch_sizes)
 @pytest.mark.parametrize("model", ["126m"])
 def test_gpt_cuda_graph(dtype, bs, model):
+    if os.environ.get("DEBUG", False):
+        pytest.skip("Cuda Graphs are not supported in debug mode.")
     config = model_configs[model]
 
     sigma = 0.023

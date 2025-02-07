@@ -922,17 +922,30 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 )
             return grad_output, grad_bias
 
+        # Debug without all-gather: unfused cast and bgrad
+        # bgrad only if wgrad is in FP8, otherwise it is fused with wgrad and we return None
+        if ctx.debug:
+            grad_output_ = quantizer(grad_output)
+            if (
+                isinstance(
+                    grad_output_.get_tensor(True),
+                    (QuantizedTensor, Float8TensorBase, MXFP8TensorBase),
+                )
+                and ctx.use_bias
+            ):
+                grad_bias = grad_output.view(-1, grad_output.shape[-1]).sum(dim=0)
+            else:
+                grad_bias = None
+            grad_output = grad_output_
+            return grad_output, grad_bias
+
         # FP8 without all-gather: fused bgrad + cast + transpose
         grad_bias = None
         if ctx.use_bias:
             if isinstance(grad_output, (QuantizedTensor, Float8TensorBase, MXFP8TensorBase)):
                 grad_bias = grad_output.dequantize().view(-1, grad_output.shape[-1]).sum(dim=0)
             else:
-                if ctx.debug:
-                    grad_bias = grad_output.view(-1, grad_output.shape[-1]).sum(dim=0)
-                    grad_output = quantizer(grad_output)
-                else:
-                    grad_bias, grad_output = tex.bgrad_quantize(grad_output, quantizer)
+                grad_bias, grad_output = tex.bgrad_quantize(grad_output, quantizer)
         if not isinstance(grad_output, (QuantizedTensor, Float8TensorBase, MXFP8TensorBase)):
             grad_output = quantizer(grad_output)
         return grad_output, grad_bias

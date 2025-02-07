@@ -104,8 +104,8 @@ class PerTensorScaling(TEConfigAPIMapper):
         tensor: torch.Tensor,
         iteration: int,
         default_quantizer: Quantizer,
-        out: Optional[Float8Tensor],
-        dtype: Optional[torch.dtype],
+        out: Optional[Float8Tensor] = None,
+        dtype: Optional[torch.dtype] = None,
     ):  # pylint: disable=unused-argument
         """API call used to process the tensor."""
         for key in config.keys():
