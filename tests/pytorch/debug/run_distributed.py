@@ -214,7 +214,7 @@ def run_debug_test(func):
                 os.unlink(temp_file_name)
 
             debug_api.end_debug()
-            transformer_engine.debug.debug_state.TEDebugState.reset()
+            transformer_engine.debug.pytorch.debug_state.TEDebugState.reset()
 
             if rank == 0 and hasattr(wrapper, "temp_dir_obj"):
                 wrapper.temp_dir_obj.cleanup()

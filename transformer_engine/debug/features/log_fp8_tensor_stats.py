@@ -64,7 +64,7 @@ class LogFp8TensorStats(BaseLogTensorStats):
         tensor: Union[torch.Tensor, QuantizedTensor],
         rowwise: bool,
         iteration: int,
-        tp_group: torch.distributed.process_group,
+        tp_group: torch.distributed.ProcessGroup,
     ):
         """
         API call used to collect the data about the tensor after process_tensor()/quantization.

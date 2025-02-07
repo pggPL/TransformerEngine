@@ -11,10 +11,6 @@ from typing import Any, Callable, List, Optional, Tuple
 import torch
 import transformer_engine.pytorch.cpp_extensions as ext
 
-from .tensor.float8_tensor import Float8Tensor
-from .tensor.mxfp8_tensor import MXFP8Tensor
-from .tensor._internal.float8_tensor_base import Float8TensorBase
-from .tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 from .tensor.quantized_tensor import QuantizedTensor
 
 
@@ -334,4 +330,4 @@ def round_up_to_nearest_multiple(value, multiple):
 
 def is_float8_tensor(obj):
     """Used to check if obj will need quantized gemm or normal gemm."""
-    return type(obj) in [Float8TensorBase, Float8Tensor, MXFP8Tensor, MXFP8TensorBase]
+    return type(obj) is not torch.Tensor

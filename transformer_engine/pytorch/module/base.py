@@ -889,6 +889,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         grad_output = grad_output.contiguous()
         gather_grad_output = row_parallel_mode and ctx.sequence_parallel
 
+
         # Non-FP8 case: bgrad is fused with wgrad for this case.
         if not ctx.fp8 and not ctx.debug:
             if gather_grad_output:

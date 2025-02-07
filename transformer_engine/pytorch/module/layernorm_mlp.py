@@ -69,7 +69,7 @@ from ..tensor.quantized_tensor import (
 from ..cpp_extensions import (
     general_gemm,
 )
-from ...debug.pytorch.utils import use_any_feature
+from ...debug.pytorch.utils import any_feature_enabled
 from ...debug.pytorch.debug_state import TEDebugState
 
 __all__ = ["LayerNormMLP"]
@@ -704,7 +704,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 layout="NN",
                 grad=True,
                 quantization_params=(
-                    ctx.grad_fc1_output_quantizer
+                    ctx.fc1_grad_input_quantizer
                     if fc2_dgrad_gemm_gelu_fusion or ctx.debug
                     else None
                 ),  # high precision to activation
@@ -750,8 +750,8 @@ class _LayerNormMLP(torch.autograd.Function):
             # bias computation
             fc1_bias_grad = None
             fuse_gemm_and_bias_fc1_wgrad = False
-            if ctx.grad_fc1_output_quantizer is not None:
-                ctx.grad_fc1_output_quantizer.set_usage(rowwise=True, columnwise=True)
+            if ctx.fc1_grad_output_quantizer is not None:
+                ctx.fc1_grad_output_quantizer.set_usage(rowwise=True, columnwise=True)
             if ctx.bias_gelu_fusion:
                 # Fusion: gemm, bias + gelu
                 assert ctx.activation == "gelu"
@@ -1402,7 +1402,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
             quantizers = self._get_quantizers() if not self.debug else self._get_debug_quantizers()
             debug = self.debug
             if self.debug:
-                if not use_any_feature(quantizers):
+                if not any_feature_enabled(quantizers):
                     quantizers = self._get_quantizers()
                     debug = False
             # Get quantizers
@@ -1570,7 +1570,7 @@ class LayerNormMLP(TransformerEngineBaseModule):
         assert self.debug
 
         def make_debug(prefix, offset):
-            labels = ["activation", "weight", "output", "gradient", "dgrad", "wgrad"]
+            labels = ["activation", "weight", "output", "dgrad", "wgrad", "gradient"]
             return [
                 DebugQuantizer(
                     f"{self.debug_name}.{prefix}",

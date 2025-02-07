@@ -52,7 +52,7 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         layer_name: str,
         tensor_name: str,
         parent_quantizer: Optional[Quantizer],
-        tp_group: torch.distributed.process_group,
+        tp_group: torch.distributed.ProcessGroup,
     ):
         import nvdlfw_inspect.api as debug_api
 
@@ -63,7 +63,7 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         self.tp_group = tp_group  # used in inspect_tensor calls
         self.iteration = debug_api.DEBUG_MANAGER._trainer_iteration_count
 
-        self.rowwise_gemm_name, self.columwise_gemm_name = _tensor_to_gemm_names_map[tensor_name]
+        self.rowwise_gemm_name, self.columnwise_gemm_name = _tensor_to_gemm_names_map[tensor_name]
 
         # The values of the inspect_tensor_enabled, inspect_tensor_postquantize_enabled,
         # rowwise_tensor_plan and  columnwise_tensor_plan are computed.
@@ -325,7 +325,7 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         assert self.parent_quantizer is None, "FP8 output is not supported for debug=True."
         assert self.output_tensor
         tensor_to_gemm = {"output": "fprop", "wgrad": "wgrad", "dgrad": "dgrad"}
-        if self.output_process_tensor:
+        if self.rowwise_tensor_plan == API_CALL_MODIFY:
             tensor = debug_api.transformer_engine.modify_tensor(
                 layer_name=self.layer_name,
                 gemm=tensor_to_gemm[self.tensor_name],
@@ -497,6 +497,9 @@ class DebugQuantizedTensor(QuantizedTensor):
     def get_tensor(self, transpose: bool):
         """Is used in the python gemm() to get tensor or transpose of the tensor."""
         return self.rowwise_gemm_tensor if not transpose else self.columnwise_gemm_tensor
+    
+    def update_usage(self, rowwise_usage=True, columnwise_usage=True):
+        pass
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args, kwargs=None):

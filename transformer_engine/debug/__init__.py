@@ -9,4 +9,4 @@ try:
 except ImportError as e:
     pass
 
-from .debug_state import set_weight_tensor_tp_group_reduce
+from .pytorch.debug_state import set_weight_tensor_tp_group_reduce

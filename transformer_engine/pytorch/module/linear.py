@@ -54,7 +54,7 @@ from ..tensor.quantized_tensor import (
     restore_from_saved,
 )
 from ...debug.pytorch.debug_state import TEDebugState
-from ...debug.pytorch.utils import use_any_feature
+from ...debug.pytorch.utils import any_feature_enabled
 
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
 
@@ -220,7 +220,6 @@ class _Linear(torch.autograd.Function):
                 assert ub_obj.is_fp8_ubuf(), "AG overlap with FP8 GEMM inputs requires FP8 buffer."
             ub_obj.copy_into_buffer(inputmat_total, input_quantizer, local_chunk=True)
             inputmat_total = ub_obj.get_buffer(input_quantizer)
-
         out, *_, rs_out = general_gemm(
             weightmat,
             inputmat_total,
@@ -268,7 +267,7 @@ class _Linear(torch.autograd.Function):
 
             ctx.activation_dtype = activation_dtype
             ctx.fp8 = fp8
-            ctx.input_quantizer = grad_input_quantizer
+            ctx.input_quantizer = input_quantizer
             ctx.grad_input_quantizer = grad_input_quantizer
             ctx.grad_weight_quantizer = grad_weight_quantizer
             ctx.grad_output_quantizer = grad_output_quantizer
@@ -407,6 +406,7 @@ class _Linear(torch.autograd.Function):
             # Note: Cast to expected dtype and perform tensor-parallel communication
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(rowwise=True, columnwise=True)
+            
             (
                 grad_output,
                 grad_bias,
@@ -1020,7 +1020,7 @@ class Linear(TransformerEngineBaseModule):
             )
             debug = self.debug
             if self.debug:
-                if not use_any_feature(quantizers):
+                if not any_feature_enabled(quantizers):
                     # If no feature is used, then run faster implementation with debug = False.
                     quantizers = self._get_quantizers(fp8_output, fp8_grad)
                     debug = False
@@ -1122,7 +1122,7 @@ class Linear(TransformerEngineBaseModule):
         assert self.debug
         from ...debug.pytorch.debug_quantization import DebugQuantizer
 
-        names = ["activation", "weight", "output", "gradient", "dgrad", "wgrad"]
+        names = ["activation", "weight", "output", "dgrad", "wgrad", "gradient"]
         return tuple(
             DebugQuantizer(self.debug_name, name, q, self.tp_group)
             for name, q in zip(names, original_quantizers)

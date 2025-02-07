@@ -41,7 +41,7 @@ def test_transformer_engine_no_config(feature_dirs):
 
     finally:
         debug_api.end_debug()
-        transformer_engine.debug.debug_state.TEDebugState.reset()
+        transformer_engine.debug.pytorch.debug_state.TEDebugState.reset()
 
 
 def test_disable_fp8_gemm(configs_dir, feature_dirs):
@@ -71,7 +71,7 @@ def test_disable_fp8_gemm(configs_dir, feature_dirs):
 
     finally:
         debug_api.end_debug()
-        transformer_engine.debug.debug_state.TEDebugState.reset()
+        transformer_engine.debug.pytorch.debug_state.TEDebugState.reset()
 
 
 def test_disable_fp8_layer(configs_dir, feature_dirs):
@@ -93,7 +93,7 @@ def test_disable_fp8_layer(configs_dir, feature_dirs):
 
     finally:
         debug_api.end_debug()
-        transformer_engine.debug.debug_state.TEDebugState.reset()
+        transformer_engine.debug.pytorch.debug_state.TEDebugState.reset()
 
 
 def test_per_tensor_scaling(configs_dir, feature_dirs):
@@ -177,7 +177,7 @@ def test_per_tensor_scaling(configs_dir, feature_dirs):
         )
     finally:
         debug_api.end_debug()
-        transformer_engine.debug.debug_state.TEDebugState.reset()
+        transformer_engine.debug.pytorch.debug_state.TEDebugState.reset()
 
 
 def test_fake_quant(configs_dir, feature_dirs):
@@ -211,7 +211,7 @@ def test_fake_quant(configs_dir, feature_dirs):
         assert debug_api.transformer_engine.fp8_gemm("decoder.1.fc2", gemm="wgrad", iteration=0)
     finally:
         debug_api.end_debug()
-        transformer_engine.debug.debug_state.TEDebugState.reset()
+        transformer_engine.debug.pytorch.debug_state.TEDebugState.reset()
 
 
 def test_statistics_collection(configs_dir, feature_dirs):
@@ -333,7 +333,7 @@ def test_statistics_collection(configs_dir, feature_dirs):
 
     finally:
         debug_api.end_debug()
-        transformer_engine.debug.debug_state.TEDebugState.reset()
+        transformer_engine.debug.pytorch.debug_state.TEDebugState.reset()
 
 
 def test_statistics_multi_run(configs_dir, feature_dirs):
@@ -393,7 +393,7 @@ def test_statistics_multi_run(configs_dir, feature_dirs):
             torch.testing.assert_close(stats1[k], stats2[k])
     finally:
         debug_api.end_debug()
-        transformer_engine.debug.debug_state.TEDebugState.reset()
+        transformer_engine.debug.pytorch.debug_state.TEDebugState.reset()
 
 
 if __name__ == "__main__":

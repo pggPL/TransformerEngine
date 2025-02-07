@@ -63,7 +63,7 @@ class LogTensorStats(BaseLogTensorStats):
         tensor: Union[torch.Tensor, QuantizedTensor],
         rowwise: bool,  # pylint: disable=unused-argument
         iteration: int,
-        tp_group: torch.distributed.process_group,
+        tp_group: torch.distributed.ProcessGroup,
     ):
         """API call used to collect the data about the tensor before process_tensor()/quantization."""
 
