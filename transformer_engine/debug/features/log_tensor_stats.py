@@ -61,7 +61,6 @@ class LogTensorStats(BaseLogTensorStats):
         layer_name: str,
         tensor_name: str,
         tensor: Union[torch.Tensor, QuantizedTensor],
-        rowwise: bool,  # pylint: disable=unused-argument
         iteration: int,
         tp_group: torch.distributed.ProcessGroup,
     ):

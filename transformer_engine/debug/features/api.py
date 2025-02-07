@@ -145,29 +145,16 @@ class TransformerEngineAPI(BaseNamespaceAPI):
         self._cacheable_api_kwargs_map = {
             "fp8_gemm": ["gemm"],
             "modify_tensor": ["tensor_name", "gemm"],
-            "inspect_tensor": ["tensor_name", "rowwise", "tp_group", "tensor"],
+            "inspect_tensor": ["tensor_name"],
             "inspect_tensor_postquantize": [
-                "tensor_name",
-                "rowwise",
-                "iteration",
-                "tp_group",
-                "tensor",
+                "tensor_name"
             ],
-            "inspect_tensor_enabled": ["tensor_name", "rowwise", "tp_group"],
+            "inspect_tensor_enabled": ["tensor_name"],
             "inspect_tensor_postquantize_enabled": [
-                "tensor_name",
-                "rowwise",
-                "iteration",
-                "tp_group",
+                "tensor_name"
             ],
             "modify_tensor_enabled": [
-                "tensor_name",
-                "tensor",
-                "tensor_name",
-                "iteration",
-                "default_quantizer",
-                "out",
-                "dtype",
+                "tensor_name"
             ],
         }
 

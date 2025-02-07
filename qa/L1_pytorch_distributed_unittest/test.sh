@@ -18,6 +18,6 @@ pytest -v -s $TE_PATH/tests/pytorch/distributed/test_comm_gemm_overlap.py
 pytest -v -s $TE_PATH/tests/pytorch/fused_attn/test_fused_attn_with_cp.py
 
 # debug tests
-pytest -v -s $TE_PATH/tests/pytorch/debug/test_distributed.py
+pytest -v -s $TE_PATH/tests/pytorch/debug/test_distributed.py --feature_dirs=$FEATURE_DIRS
 # standard numerics tests with initialized debug
 DEBUG=True CONFIG_FILE=$DUMMY_CONFIG_FILE FEATURE_DIRS=$FEATURE_DIRS pytest -v -s $TE_PATH/tests/pytorch/distributed/test_numerics.py
