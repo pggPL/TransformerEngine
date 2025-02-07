@@ -324,7 +324,7 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
                 tensor_name=self.tensor_name,
                 tensor=tensor,
                 iteration=self.iteration,
-                default_quantizer=self.parent_quantizer
+                default_quantizer=self.parent_quantizer,
             )
         self._call_inspect_tensor_api(tensor)
         return tensor
