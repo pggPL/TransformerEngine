@@ -146,16 +146,10 @@ class TransformerEngineAPI(BaseNamespaceAPI):
             "fp8_gemm": ["gemm"],
             "modify_tensor": ["tensor_name", "gemm"],
             "inspect_tensor": ["tensor_name"],
-            "inspect_tensor_postquantize": [
-                "tensor_name"
-            ],
+            "inspect_tensor_postquantize": ["tensor_name"],
             "inspect_tensor_enabled": ["tensor_name"],
-            "inspect_tensor_postquantize_enabled": [
-                "tensor_name"
-            ],
-            "modify_tensor_enabled": [
-                "tensor_name"
-            ],
+            "inspect_tensor_postquantize_enabled": ["tensor_name"],
+            "modify_tensor_enabled": ["tensor_name"],
         }
 
     def is_multiple_feature_invocation_allowed(self, api_name):
