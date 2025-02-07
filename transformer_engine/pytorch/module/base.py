@@ -900,6 +900,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             return grad_output, None
 
         # FP8 with all-gather: unfused bgrad, fused cast + transpose
+        # Also supports debug quantization, which is handled inside gather_along_first_dim.
         if gather_grad_output:
             grad_bias = None
             if ctx.use_bias:
@@ -1014,7 +1015,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
         update_workspace: bool = True,
         skip_update_flag: Optional[torch.Tensor] = None,
         fsdp_group: Optional[dist_group_type] = None,
-        activation_dtype: torch.dtype = None,
+        workspace_dtype: Optional[torch.dtype] = None,
     ) -> QuantizedTensor:
         """Get FP8 workspace buffer and maybe update its values
 
@@ -1037,6 +1038,9 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             over `update_workspace` if provided.
         fsdp_group: bool, default = None
             FSDP process group that the weights are distributed over.
+        workspace_dtype: torch.dtype, default = None
+            If weight workspace contains high-precision tensor - for example
+            for debug quantization, this will be stored in such precision.
         """
 
         # Try getting workspace from cache
@@ -1061,12 +1065,13 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 raise ValueError(
                     "tensor and quantizer kwargs must be provided to construct FP8 workspace"
                 )
-            out = quantizer.quantize(tensor, dtype=activation_dtype)
+            out = quantizer.quantize(tensor, dtype=workspace_dtype)
 
             # Update cache
             if cache_name is not None:
                 self._fp8_workspaces[cache_name] = out
             return out
+
         # Update workspace if needed
         if skip_update_flag is not None:
             update_workspace = True
@@ -1080,8 +1085,8 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
 
         if not is_float8_tensor(type(out)):  # only holds for debug quantizer
             assert (
-                out.dtype == activation_dtype
-            ), "Activation dtype cannot be changed with debug=True."
+                out.dtype == workspace_dtype
+            ), "Activation dtype cannot be changed with nvidia-dlframework-inspect."
 
         return out
 
