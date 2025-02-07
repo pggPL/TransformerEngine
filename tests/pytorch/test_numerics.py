@@ -570,8 +570,6 @@ def test_gpt_selective_activation_recompute(dtype, bs, model, fp8, recipe, fp8_m
     if fp8_model_params and os.environ.get("DEBUG", False):
         pytest.skip("FP8 parameters are not supported in debug mode.")
 
-    config = model_configs[model]
-
     outputs = _test_e2e_selective_recompute(
         bs, dtype, config, fp8, recipe, fp8_model_params, recompute=False
     )
@@ -684,11 +682,8 @@ def test_gpt_full_activation_recompute(
     if fp8_model_params and os.environ.get("DEBUG", False):
         pytest.skip("FP8 parameters are not supported in debug mode.")
 
-    config = model_configs[model]
 
     if not use_reentrant:
-        # Non-reentrant checkpoint becomes non-deterministic with bias+GELU fusion
-        os.environ["NVTE_BIAS_GELU_NVFUSION"] = "0"
 
     outputs, names = _test_e2e_full_recompute(
         bs,
@@ -1486,11 +1481,8 @@ def test_grouped_linear_accuracy(
     config = model_configs[model]
     if config.seq_len % 16 != 0 and fp8:
         pytest.skip("FP8 requires sequence length to be divisible by 16.")
-
     with fp8_model_init(enabled=fp8 and fp8_model_params, recipe=recipe):
         grouped_linear = GroupedLinear(
-            num_gemms,
-            config.hidden_size,
             4 * config.hidden_size,
             bias=True,
             params_dtype=dtype,
@@ -1676,11 +1668,8 @@ def test_padding_grouped_linear_accuracy(
 
     with fp8_model_init(enabled=fp8 and fp8_model_params, recipe=recipe):
         grouped_linear = TorchGroupedLinearWithPadding(
-            num_gemms,
             config.hidden_size,
             4 * config.hidden_size,
-            bias=False,
-            params_dtype=dtype,
             parallel_mode=parallel_mode,
             fp8=fp8,
         ).eval()

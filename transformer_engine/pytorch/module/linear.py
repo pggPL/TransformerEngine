@@ -56,8 +56,6 @@ from ..tensor.quantized_tensor import (
 from ...debug.pytorch.debug_state import TEDebugState
 from ...debug.pytorch.utils import any_feature_enabled
 
-from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
-
 __all__ = ["Linear"]
 
 
@@ -278,10 +276,7 @@ class _Linear(torch.autograd.Function):
 
             ctx.debug = debug
             ctx.cpu_offloading = cpu_offloading
-            ctx.is_first_microbatch = is_first_microbatch
             ctx.use_bias = bias is not None
-            ctx.sequence_parallel = sequence_parallel
-            ctx.tensor_parallel = tensor_parallel
             ctx.inp_shape = inp_shape
             ctx.parallel_mode = parallel_mode
             ctx.tp_group = tp_group
@@ -407,7 +402,6 @@ class _Linear(torch.autograd.Function):
             # Note: Cast to expected dtype and perform tensor-parallel communication
             if ctx.grad_output_quantizer is not None:
                 ctx.grad_output_quantizer.set_usage(rowwise=True, columnwise=True)
-
             (
                 grad_output,
                 grad_bias,
@@ -595,7 +589,6 @@ class _Linear(torch.autograd.Function):
         # Scatter fp8 weight buffers
         if ctx.fp8 and not isinstance(weight, QuantizedTensor):
             _fsdp_scatter_tensors(ctx.fsdp_group, weight_fp8)
-
         return (
             wgrad,
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
@@ -1083,10 +1076,7 @@ class Linear(TransformerEngineBaseModule):
                 skip_fp8_weight_update,
                 debug,
             )
-            out = linear_fn(*args)
         if self.gemm_bias_unfused_add:
-            out = out + cast_if_needed(bias_tensor, self.activation_dtype)
-
         if self.return_bias:
             return out, cast_if_needed(bias_tensor, self.activation_dtype)
         return out
@@ -1109,7 +1099,6 @@ class Linear(TransformerEngineBaseModule):
             grad_output_quantizer.internal = True
             if fp8_grad:
                 grad_input_quantizer = self.quantizers["scaling_bwd"][tex.FP8BwdTensors.GRAD_INPUT1]
-
         return (
             input_quantizer,
             weight_quantizer,

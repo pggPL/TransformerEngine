@@ -17,7 +17,7 @@ import transformer_engine_torch as tex
 
 def prepare_for_saving(
     *tensors,
-) -> Tuple[list[Optional[Union[torch.Tensor, torch.nn.Parameter]]], Optional[list[Any]]]:
+) -> Tuple[list[Optional[Union[torch.Tensor, torch.nn.Parameter]]], Optional[Any]]:
     """Prepare tensors for saving. Needed because save_for_backward accepts only
     torch.Tensor/torch.nn.Parameter types, while we want to be able to save
     the internal TensorBase types too."""

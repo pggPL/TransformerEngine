@@ -295,6 +295,7 @@ class _LayerNormLinear(torch.autograd.Function):
             ub_type=ub_type,
             extra_output=rs_out,
         )
+        ln_out_return = ln_out if return_layernorm_output else None
 
         if not weight.requires_grad:
             if not return_layernorm_output:
@@ -546,10 +547,6 @@ class _LayerNormLinear(torch.autograd.Function):
             # dgrad GEMM
             if ctx.grad_input_quantizer is not None:
                 ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
-
-            if hasattr(grad_output, "_transpose"):
-                if grad_output._transpose is None:
-                    grad_output._create_transpose()
 
             dgrad, *_ = general_gemm(
                 weight,

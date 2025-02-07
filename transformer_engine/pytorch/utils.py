@@ -14,6 +14,8 @@ from transformer_engine.debug.pytorch.utils import DebugQuantizedTensorBase
 
 from .tensor.quantized_tensor import QuantizedTensor
 
+from .tensor.quantized_tensor import QuantizedTensor
+
 
 def requires_grad(*tensors: Tuple[Optional[torch.Tensor], ...]) -> None:
     """Check if any of the given tensors require gradient."""
