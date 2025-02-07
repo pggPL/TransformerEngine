@@ -211,7 +211,7 @@ class _LayerNormLinear(torch.autograd.Function):
             )
             if return_layernorm_output and return_layernorm_output_gathered:
                 ln_out_return = ln_out_total
-            if fp8 and not with_quantized_all_gather:
+            if (fp8 or debug) and not with_quantized_all_gather:
                 ln_out_total = input_quantizer(ln_out_total)
         else:
             if ub_overlap_ag_fprop:

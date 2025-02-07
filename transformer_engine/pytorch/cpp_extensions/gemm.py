@@ -94,13 +94,6 @@ def general_gemm(
     transb = layout[1] == "T"
     # assert quantization_params is None, "FP8 output not supported yet"
 
-    assert (type(A) in [torch.Tensor, torch.nn.parameter.Parameter]) == (
-        type(B) in [torch.Tensor, torch.nn.parameter.Parameter]
-    ), (
-        "[Debug tools] Processed tensors should both be FP8 tensors or both be torch tensors  "
-        f"            but type(A) = {type(A)},             "
-        f"  type(B) = {type(B)}"
-    )
 
     if ub_type is not None:
         assert ub is not None, (
@@ -124,6 +117,15 @@ def general_gemm(
         quantization_params = quantization_params.parent_quantizer
         A = A.get_tensor(not transa)
         B = B.get_tensor(transb)
+    
+
+    assert (type(A) in [torch.Tensor, torch.nn.parameter.Parameter]) == (
+        type(B) in [torch.Tensor, torch.nn.parameter.Parameter]
+    ), (
+        "[Debug tools] Processed tensors should both be FP8 tensors or both be torch tensors  "
+        f"            but type(A) = {type(A)},             "
+        f"  type(B) = {type(B)}"
+    )
 
     # Use bfloat16 as default bias_dtype
     bias_dtype = TE_DType[torch.bfloat16 if bias is None else bias.dtype]
