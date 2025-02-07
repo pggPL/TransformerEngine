@@ -211,7 +211,6 @@ def create_config_file(func):
                 finally:
                     temp_file_name = temp_file.name
                     debug_api.end_debug()
-                    transformer_engine.debug.pytorch.debug_state.TEDebugState.reset()
             os.unlink(temp_file_name)
         return result
 
