@@ -14,7 +14,6 @@ import torch
 
 import transformer_engine_torch as tex
 
-from .utils import DebugQuantizerBase, DebugQuantizedTensorBase
 
 
 from ...pytorch.tensor.quantized_tensor import (
@@ -40,7 +39,7 @@ STANDARD_FP8_QUANTIZE = "FP8 Quantize"
 HIGH_PRECISION = "High Precision"
 
 
-class DebugQuantizer(Quantizer, DebugQuantizerBase):
+class DebugQuantizer(Quantizer):
     """
     DebugQuantizer is Quantizer object used for debugging with nvidia-dlframework-inspect.
     It allows to add custom calls inside quantization process - which enable to modify tensors
@@ -429,7 +428,7 @@ class DebugQuantizer(Quantizer, DebugQuantizerBase):
         return False
 
 
-class DebugQuantizedTensor(QuantizedTensor, DebugQuantizedTensorBase):
+class DebugQuantizedTensor(QuantizedTensor):
     """
     Class containing quantized tensors after debug. Depending on configuration
     it can contain one or two different objects. These objects can be accessed by the method

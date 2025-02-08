@@ -26,7 +26,7 @@ from .tensor.mxfp8_tensor import MXFP8Quantizer, MXFP8Tensor
 from .tensor.quantized_tensor import QuantizedTensor, Quantizer
 from .tensor._internal.float8_tensor_base import Float8TensorBase
 from .tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
-from ..debug.pytorch.utils import DebugQuantizedTensorBase
+from ..debug.pytorch.debug_quantization import DebugQuantizedTensor
 
 
 __all__ = ["checkpoint", "CudaRNGStatesTracker"]
@@ -1022,7 +1022,7 @@ def gather_along_first_dim(
         )
 
     # Debug case - call gather_along_first_dim on each tensor
-    if isinstance(input_, DebugQuantizedTensorBase):
+    if isinstance(input_, DebugQuantizedTensor):
         out_obj = input_
         rowwise = input_.get_tensor(False)
         columnwise = input_.get_tensor(True)

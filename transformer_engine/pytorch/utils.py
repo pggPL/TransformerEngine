@@ -10,7 +10,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 import torch
 import transformer_engine.pytorch.cpp_extensions as ext
-from transformer_engine.debug.pytorch.utils import DebugQuantizedTensorBase
+from ..debug.pytorch.debug_quantization import DebugQuantizedTensor
 
 from .tensor.quantized_tensor import QuantizedTensor
 
@@ -331,7 +331,7 @@ def round_up_to_nearest_multiple(value, multiple):
 
 def needs_quantized_gemm(obj, rowwise=True):
     """Used to check if obj will need quantized gemm or normal gemm."""
-    if isinstance(obj, DebugQuantizedTensorBase):
+    if isinstance(obj, DebugQuantizedTensor):
         return (
             type(obj.get_tensor(not rowwise))
             is not torch.Tensor  # pylint: disable=unidiomatic-typecheck
