@@ -1026,11 +1026,17 @@ def gather_along_first_dim(
         out_obj = input_
         rowwise = input_.get_tensor(False)
         columnwise = input_.get_tensor(True)
-        final_quantizer = None if not needs_quantized_gemm(input_, rowwise=True) else quantizer.parent_quantizer
+        final_quantizer = (
+            None if not needs_quantized_gemm(input_, rowwise=True) else quantizer.parent_quantizer
+        )
         rowwise_total = gather_along_first_dim(rowwise, process_group, False, final_quantizer)[0]
         out_obj.rowwise_gemm_tensor = rowwise_total
         if rowwise is not columnwise:
-            final_quantizer_columnwise = None if not needs_quantized_gemm(input_, rowwise=False) else quantizer.parent_quantizer
+            final_quantizer_columnwise = (
+                None
+                if not needs_quantized_gemm(input_, rowwise=False)
+                else quantizer.parent_quantizer
+            )
             columnwise_total, _ = gather_along_first_dim(
                 columnwise, process_group, False, final_quantizer_columnwise
             )
