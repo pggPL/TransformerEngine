@@ -27,7 +27,7 @@ from ..utils import (
     clear_tensor_data,
     init_method_constant,
     requires_grad,
-    is_float8_tensor,
+    needs_quantized_gemm,
     non_tn_fp8_gemm_supported,
 )
 from ..distributed import (
@@ -187,7 +187,7 @@ class _Linear(torch.autograd.Function):
 
         # Cast bias to expected dtype
         bias_dtype = activation_dtype
-        if is_float8_tensor(inputmat_total) and activation_dtype == torch.float32:
+        if needs_quantized_gemm(inputmat_total) and activation_dtype == torch.float32:
             bias_dtype = torch.bfloat16
         bias = cast_if_needed(bias, bias_dtype) if bias is not None else bias
 

@@ -329,10 +329,10 @@ def round_up_to_nearest_multiple(value, multiple):
     return ((value + multiple - 1) // multiple) * multiple
 
 
-def is_float8_tensor(obj):
+def needs_quantized_gemm(obj, rowwise=True):
     """Used to check if obj will need quantized gemm or normal gemm."""
     if isinstance(obj, DebugQuantizedTensorBase):
         return (
-            type(obj.get_tensor(False)) is not torch.Tensor  # pylint: disable=unidiomatic-typecheck
+            type(obj.get_tensor(not rowwise)) is not torch.Tensor # pylint: disable=unidiomatic-typecheck
         )
     return type(obj) is not torch.Tensor  # pylint: disable=unidiomatic-typecheck
