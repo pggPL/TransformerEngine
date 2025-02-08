@@ -287,7 +287,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
-                    activation_dtype=activation_dtype,
+                    workspace_dtype=activation_dtype,
                 )
             if not isinstance(fc2_weight, QuantizedTensor):
                 fc2_weight_quantizer.set_usage(rowwise=True, columnwise=True)
@@ -298,7 +298,7 @@ class _LayerNormMLP(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
-                    activation_dtype=activation_dtype,
+                    workspace_dtype=activation_dtype,
                 )
         else:
             fc1_weight_final = cast_if_needed(fc1_weight_final, activation_dtype)

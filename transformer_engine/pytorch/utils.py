@@ -14,8 +14,6 @@ from transformer_engine.debug.pytorch.utils import DebugQuantizedTensorBase
 
 from .tensor.quantized_tensor import QuantizedTensor
 
-from .tensor.quantized_tensor import QuantizedTensor
-
 
 def requires_grad(*tensors: Tuple[Optional[torch.Tensor], ...]) -> None:
     """Check if any of the given tensors require gradient."""
@@ -335,6 +333,6 @@ def is_float8_tensor(obj):
     """Used to check if obj will need quantized gemm or normal gemm."""
     if isinstance(obj, DebugQuantizedTensorBase):
         return (
-            type(obj.get_tensor(False)) is not torch.Tensor
-        )  # pylint: disable=unidiomatic-typecheck
+            type(obj.get_tensor(False)) is not torch.Tensor # pylint: disable=unidiomatic-typecheck
+        )
     return type(obj) is not torch.Tensor  # pylint: disable=unidiomatic-typecheck
