@@ -38,7 +38,7 @@ from ..constants import dist_group_type
 from ..tensor import QuantizedTensor, Quantizer
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
-from ..utils import is_float8_tensor
+from ..utils import needs_quantized_gemm
 from ...common.recipe import Recipe
 from ...debug.pytorch.debug_state import TEDebugState
 
@@ -1084,7 +1084,7 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
             else:
                 tex.quantize(tensor, quantizer, out, skip_update_flag)
 
-        if not is_float8_tensor(type(out)):  # only holds for debug quantizer
+        if not needs_quantized_gemm(type(out)):  # only holds for debug quantizer
             assert (
                 out.dtype == workspace_dtype
             ), "Activation dtype cannot be changed with nvidia-dlframework-inspect."
