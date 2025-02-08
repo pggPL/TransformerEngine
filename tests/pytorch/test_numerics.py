@@ -569,7 +569,7 @@ def test_gpt_selective_activation_recompute(dtype, bs, model, fp8, recipe, fp8_m
         pytest.skip(reason_for_no_mxfp8)
     if fp8_model_params and os.environ.get("DEBUG", False):
         pytest.skip("FP8 parameters are not supported in debug mode.")
-    
+
     config = model_configs[model]
 
     outputs = _test_e2e_selective_recompute(
@@ -684,13 +684,12 @@ def test_gpt_full_activation_recompute(
     if fp8_model_params and os.environ.get("DEBUG", False):
         pytest.skip("FP8 parameters are not supported in debug mode.")
 
-
     config = model_configs[model]
 
     if not use_reentrant:
         # Non-reentrant checkpoint becomes non-deterministic with bias+GELU fusion
         os.environ["NVTE_BIAS_GELU_NVFUSION"] = "0"
-    
+
     outputs, names = _test_e2e_full_recompute(
         bs,
         dtype,
@@ -1676,15 +1675,15 @@ def test_padding_grouped_linear_accuracy(
         pytest.skip("FP8 requires sequence length to be divisible by 16.")
 
     with fp8_model_init(enabled=fp8 and fp8_model_params, recipe=recipe):
-       grouped_linear = TorchGroupedLinearWithPadding(
-             num_gemms,
-             config.hidden_size,
-             4 * config.hidden_size,
-             bias=False,
-             params_dtype=dtype,
-             parallel_mode=parallel_mode,
-             fp8=fp8,
-         ).eval()
+        grouped_linear = TorchGroupedLinearWithPadding(
+            num_gemms,
+            config.hidden_size,
+            4 * config.hidden_size,
+            bias=False,
+            params_dtype=dtype,
+            parallel_mode=parallel_mode,
+            fp8=fp8,
+        ).eval()
 
     with fp8_model_init(enabled=fp8 and fp8_model_params, recipe=recipe):
         ref_grouped_linear = GroupedLinear(
