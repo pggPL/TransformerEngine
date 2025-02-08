@@ -15,7 +15,6 @@ import torch
 import transformer_engine_torch as tex
 
 
-
 from ...pytorch.tensor.quantized_tensor import (
     QuantizedTensor,
     Quantizer,
