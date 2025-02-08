@@ -409,6 +409,8 @@ class DebugQuantizer(Quantizer):
             if dst.columnwise_gemm_tensor is not dst.columnwise_gemm_tensor:
                 dst.columnwise_gemm_tensor.copy_(src)
 
+        self._call_inspect_tensor_api(src, dst.rowwise_gemm_tensor, dst.columnwise_gemm_tensor)
+
     def any_feature_enabled(self) -> bool:
         """Returns bool if there is at least one API call enabled."""
         if self.output_tensor:

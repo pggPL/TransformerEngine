@@ -82,7 +82,7 @@ class _Buffer:
         # If the stats are not reduced within microbatch and
         # buffer was feed, we do not change the stats for the tensor.
         # It is used for weights and microbatching.
-        if self.modified and not self.reduce_within_microbatch:
+        if self.modified[0] and not self.reduce_within_microbatch:
             return
 
         # save stats for tensor to tmp buffer

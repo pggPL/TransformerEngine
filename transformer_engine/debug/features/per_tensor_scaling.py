@@ -50,7 +50,7 @@ def per_tensor_cast(
 
     if out is not None:
         quantizer.update_quantized(tensor, out)
-        return out
+        return None
     return quantizer(tensor)
 
 
