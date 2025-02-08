@@ -261,7 +261,6 @@ def test_statistics_collection(configs_dir, feature_dirs):
             tensor=tensor,
             tensor_name="activation",
             iteration=200,
-            rowwise=True,
             tp_group=None,
         )
         stats = log()
@@ -313,7 +312,6 @@ def test_statistics_collection(configs_dir, feature_dirs):
             tensor=tensor,
             tensor_name="activation",
             iteration=200,
-            rowwise=True,
             tp_group=None,
         )
         stats = log()
@@ -326,7 +324,6 @@ def test_statistics_collection(configs_dir, feature_dirs):
             tensor=tensor,
             tensor_name="weight",
             iteration=200,
-            rowwise=True,
             tp_group=None,
         )
         stats = log()
@@ -357,7 +354,6 @@ def test_statistics_multi_run(configs_dir, feature_dirs):
                 tensor=tensor,
                 tensor_name="activation",
                 iteration=1,
-                rowwise=True,
                 tp_group=None,
             )
             debug_api.transformer_engine.inspect_tensor_postquantize(

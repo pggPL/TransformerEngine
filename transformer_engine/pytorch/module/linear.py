@@ -53,6 +53,7 @@ from ..tensor.quantized_tensor import (
     prepare_for_saving,
     restore_from_saved,
 )
+from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
 from ...debug.pytorch.debug_state import TEDebugState
 from ...debug.pytorch.utils import any_feature_enabled
 
@@ -179,7 +180,7 @@ class _Linear(torch.autograd.Function):
                     update_workspace=update_workspace,
                     skip_update_flag=skip_fp8_weight_update,
                     fsdp_group=fsdp_group,
-                    activation_dtype=activation_dtype,
+                    workspace_dtype=activation_dtype,
                 )
         else:
             weightmat = cast_if_needed(weightmat, activation_dtype)
@@ -275,8 +276,11 @@ class _Linear(torch.autograd.Function):
                 ctx.main_grad = weight.main_grad
 
             ctx.debug = debug
-            ctx.cpu_offloading = cpu_offloading
+            ctx.cpu_offloading = cpu_offloading            
+            ctx.is_first_microbatch = is_first_microbatch
             ctx.use_bias = bias is not None
+            ctx.sequence_parallel = sequence_parallel
+            ctx.tensor_parallel = tensor_parallel
             ctx.inp_shape = inp_shape
             ctx.parallel_mode = parallel_mode
             ctx.tp_group = tp_group
@@ -1076,7 +1080,10 @@ class Linear(TransformerEngineBaseModule):
                 skip_fp8_weight_update,
                 debug,
             )
+            out = linear_fn(*args)
         if self.gemm_bias_unfused_add:
+            out = out + cast_if_needed(bias_tensor, self.activation_dtype)
+
         if self.return_bias:
             return out, cast_if_needed(bias_tensor, self.activation_dtype)
         return out
