@@ -519,6 +519,8 @@ class _Linear(torch.autograd.Function):
 
                 # wgrad GEMM
                 # Note: Fuse with bgrad computation if needed
+                print(f"inputmat_total.sum() = {inputmat_total.sum()}")
+                print(f"grad_output.sum() = {grad_output.sum()}")
                 wgrad, grad_bias_, _, rs_out = general_gemm(
                     inputmat_total,
                     grad_output,
@@ -538,6 +540,7 @@ class _Linear(torch.autograd.Function):
                     extra_output=rs_out,
                     bulk_overlap=ctx.ub_bulk_wgrad,
                 )
+                print(f"wgrad.sum() = {wgrad.sum()}")
 
                 if ctx.ub_bulk_wgrad:
                     if ub_obj_wgrad.is_fp8_ubuf():
