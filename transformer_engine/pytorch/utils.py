@@ -333,7 +333,7 @@ def needs_quantized_gemm(obj, rowwise=True):
     """Used to check if obj will need quantized gemm or normal gemm."""
     if isinstance(obj, DebugQuantizedTensor):
         return (
-            type(obj.get_tensor(not rowwise)) # pylint: disable=unidiomatic-typecheck
+            type(obj.get_tensor(not rowwise))  # pylint: disable=unidiomatic-typecheck
             is not torch.Tensor
         )
     return type(obj) is not torch.Tensor  # pylint: disable=unidiomatic-typecheck
