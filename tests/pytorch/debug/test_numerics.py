@@ -185,6 +185,15 @@ def _emulate_linear(
             if wgrad_input_fake_quant is not None
             else input
         )
+        wgrad, *_ = tepytorch.cpp_extensions.general_gemm(
+            wgrad_input,
+            wgrad_gradient,
+            tepytorch.module.base.get_workspace(),
+            torch.float32,
+            layout="NT",
+            grad=True,
+            use_split_accumulator=_2X_ACC_WGRAD,
+        )
         wgrad = wgrad_gradient.T @ wgrad_input
 
     return {"activation": activation, "wgrad": wgrad, "dgrad": dgrad}
