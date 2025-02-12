@@ -896,12 +896,6 @@ class LayerNormLinear(TransformerEngineBaseModule):
 
         self.debug = TEDebugState.debug_enabled
         self.debug_name = debug_name
-        if not self.debug and debug_name is not None:
-            raise RuntimeError(
-                f"[Error] Layer {self.debug_name} has a debug name, but nvidia-dlframework-inspect"
-                " was not initialized."
-            )
-
         if self.debug:
             self._turn_off_unsupported_features_in_debug()  # turn off userbuffers
 

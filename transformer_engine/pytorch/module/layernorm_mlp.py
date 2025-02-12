@@ -355,6 +355,7 @@ class _LayerNormMLP(torch.autograd.Function):
             ub=ub_obj_lnout,
             ub_type=tex.CommOverlapType.AG if ub_overlap_ag else None,
         )
+
         if not is_grad_enabled and (ln_out_total is not ln_out_return):
             clear_tensor_data(ln_out_total)
 
@@ -412,6 +413,7 @@ class _LayerNormMLP(torch.autograd.Function):
             ub_type=tex.CommOverlapType.RS if ub_overlap_rs else None,
             extra_output=rs_out,
         )
+
         if not is_grad_enabled:
             clear_tensor_data(act_out, fc1_out_without_bias, fc1_out)
 

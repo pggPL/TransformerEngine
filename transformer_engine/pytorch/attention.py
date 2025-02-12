@@ -8352,6 +8352,7 @@ class MultiheadAttention(torch.nn.Module):
 
             mixed_kv_layer = mixed_kv_layer.view(*new_tensor_shape)
 
+
             # mixed_kv_layer --> 2 [sk, b, ng, hn]
             key_layer, value_layer = _SplitAlongDim.apply(
                 mixed_kv_layer,
@@ -8474,6 +8475,7 @@ class MultiheadAttention(torch.nn.Module):
             fast_zero_fill=fast_zero_fill,
             inference_params=inference_params,
         )
+
 
         # ===================
         # Output. [sq, b, h]

@@ -28,16 +28,6 @@ class TEDebugState:
 
         if "nvdlfw_inspect" in sys.modules:
             import nvdlfw_inspect.api as debug_api
-
-            if cls.debug_enabled is False and debug_api.DEBUG_MANAGER is not None:
-                # This method in invoked when initializing TE modules.
-                # If this error is thrown, it means that some TE module had been initialized before
-                # debug_api was initialized, and now new TE module is being initialized.
-                # This is likely to be a bug.
-                raise RuntimeError(
-                    "[nv_dlfw_inspect] nv_dlfw_inspect module should be initialized before"
-                    " initialization of the first TE module"
-                )
             cls.debug_enabled = debug_api.DEBUG_MANAGER is not None
 
     @classmethod
