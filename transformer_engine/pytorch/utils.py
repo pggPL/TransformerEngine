@@ -339,6 +339,7 @@ def needs_quantized_gemm(obj, rowwise=True):
         )
     return type(obj) is not torch.Tensor  # pylint: disable=unidiomatic-typecheck
 
+
 @functools.lru_cache(maxsize=None)
 def _nvtx_enabled() -> bool:
     """Check if NVTX range profiling is enabled"""

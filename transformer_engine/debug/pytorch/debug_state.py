@@ -28,6 +28,7 @@ class TEDebugState:
 
         if "nvdlfw_inspect" in sys.modules:
             import nvdlfw_inspect.api as debug_api
+
             cls.debug_enabled = debug_api.DEBUG_MANAGER is not None
 
     @classmethod
