@@ -24,12 +24,14 @@ from .base import (
 )
 from ..fp8 import FP8GlobalStateManager
 from ..utils import (
+    assert_dim_for_fp8_exec,
+    cast_if_needed,
+    clear_tensor_data,
     divide,
     get_default_init_method,
     init_method_constant,
-    cast_if_needed,
-    assert_dim_for_fp8_exec,
-    clear_tensor_data,
+    nvtx_range_pop,
+    nvtx_range_push,
     requires_grad,
 )
 from ..distributed import (
@@ -116,6 +118,12 @@ class _LayerNormLinear(torch.autograd.Function):
         debug: bool,
     ) -> Union[Tuple[torch.Tensor, ...], torch.Tensor]:
         # pylint: disable=missing-function-docstring
+
+        # NVTX label for profiling
+        nvtx_label = "transformer_engine._LayerNormLinear.forward"
+        if ub_name is not None:
+            nvtx_label = f"{nvtx_label}.{ub_name}"
+
         # Make sure input dimensions are compatible
         out_features, in_features = weight.shape
         inp_shape = inp.shape
@@ -125,10 +133,12 @@ class _LayerNormLinear(torch.autograd.Function):
             assert_dim_for_fp8_exec(inputmat, weight)
 
         # Cast for native AMP
+        nvtx_range_push(f"{nvtx_label}.norm_input_cast")
         inputmat = cast_if_needed(inputmat, activation_dtype)
         ln_weight = cast_if_needed(ln_weight, activation_dtype)
         if ln_bias is not None:
             ln_bias = cast_if_needed(ln_bias, activation_dtype)
+        nvtx_range_pop(f"{nvtx_label}.norm_input_cast")
 
         tp_world_size = get_distributed_world_size(tp_group)
         ub_overlap_ag_fprop = (
@@ -181,6 +191,7 @@ class _LayerNormLinear(torch.autograd.Function):
             )
 
         # Apply normalization
+        nvtx_range_push(f"{nvtx_label}.norm")
         ln_out, mu, rsigma = apply_normalization(
             inputmat,
             ln_out,
@@ -194,9 +205,11 @@ class _LayerNormLinear(torch.autograd.Function):
             zero_centered_gamma,
         )
         ln_out_return = ln_out if return_layernorm_output else None
+        nvtx_range_pop(f"{nvtx_label}.norm")
 
         # Prepare GEMM input
         # Note: Cast to expected dtype and perform tensor-parallel communication
+        nvtx_range_push(f"{nvtx_label}.gemm_input_cast_comm")
         if with_input_all_gather and not ub_overlap_ag_fprop:
             with_quantized_all_gather = fp8 or debug
             with_quantized_all_gather = fp8
@@ -224,6 +237,7 @@ class _LayerNormLinear(torch.autograd.Function):
                     elif backward_needs_input:
                         ln_out.update_usage(rowwise_usage=True, columnwise_usage=True)
                 ln_out_total = ln_out
+        nvtx_range_pop(f"{nvtx_label}.gemm_input_cast_comm")
 
         # Cast weight to expected dtype
         weightmat = weight
@@ -283,6 +297,8 @@ class _LayerNormLinear(torch.autograd.Function):
             if fp8:
                 assert ub_obj.is_fp8_ubuf(), "AG overlap with FP8 GEMM inputs requires FP8 buffer."
             ln_out_total = ub_obj.get_buffer(input_quantizer)
+
+        nvtx_range_push(f"{nvtx_label}.gemm")
         out, *_, rs_out = general_gemm(
             weightmat,
             ln_out_total,
@@ -295,6 +311,8 @@ class _LayerNormLinear(torch.autograd.Function):
             ub_type=ub_type,
             extra_output=rs_out,
         )
+        nvtx_range_pop(f"{nvtx_label}.gemm")
+
         if not weight.requires_grad:
             if not return_layernorm_output:
                 ln_out = ln_out_total = None
@@ -315,6 +333,7 @@ class _LayerNormLinear(torch.autograd.Function):
             # Scatter intermediate/activation tensors saved for the backward pass
             # NOTE: weight_fp8 = weight when ctx.fp8 == False and torch.disttributed.FSDP already
             #       shards/unshards the base weights so we don't do it ourselves
+            nvtx_range_push(f"{nvtx_label}.fsdp_scatter")
             ctx.fsdp_group = fsdp_group
             ctx.fsdp_shapes = _fsdp_scatter_tensors(
                 fsdp_group,
@@ -323,6 +342,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 weightmat if quantized_weight else None,
                 ln_out if weight.requires_grad else None,
             )
+            nvtx_range_pop(f"{nvtx_label}.fsdp_scatter")
 
             tensors_to_save, tensor_objects = prepare_for_saving(
                 inputmat,
@@ -382,10 +402,12 @@ class _LayerNormLinear(torch.autograd.Function):
         if ub_overlap_rs_fprop:
             out = rs_out
         elif parallel_mode == "row":
+            nvtx_range_push(f"{nvtx_label}.row_parallel_comm")
             if sequence_parallel:
                 out, _ = reduce_scatter_along_first_dim(out, tp_group)
             elif tensor_parallel:
                 out, _ = allreduce(out, tp_group)
+            nvtx_range_pop(f"{nvtx_label}.row_parallel_comm")
 
         # [*, in_features] -> [*, out_features] except first dimension changes for SP
         out = out.view(-1, *inp_shape[1:-1], out_features)
@@ -403,6 +425,11 @@ class _LayerNormLinear(torch.autograd.Function):
         ctx, *grad_outputs: Tuple[torch.Tensor, ...]
     ) -> Tuple[Union[torch.Tensor, None], ...]:
         # pylint: disable=missing-function-docstring
+
+        # NVTX label for profiling
+        nvtx_label = "transformer_engine._LayerNormLinear.backward"
+        if ctx.ub_name is not None:
+            nvtx_label = f"{nvtx_label}.{ctx.ub_name}"
 
         with torch.cuda.nvtx.range("_LayerNormLinear_backward"):
             if (
@@ -443,6 +470,7 @@ class _LayerNormLinear(torch.autograd.Function):
             # Gather intermediate/activation tensors if needed
             # NOTE: weight_fp8 = weight when ctx.fp8 == False and torch.disttributed.FSDP already
             #       shards/unshards the base weights so we don't do it ourselves
+            nvtx_range_push(f"{nvtx_label}.fsdp_gather")
             _fsdp_gather_tensors(
                 ctx.fsdp_group,
                 ctx.fsdp_shapes,
@@ -451,6 +479,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 weight if ctx.fp8 and ctx.quantized_weight else None,
                 ln_out,
             )
+            nvtx_range_pop(f"{nvtx_label}.fsdp_gather")
 
             # For CPU offloading, we offloaded weight and weight.main_grad to different tensors,
             # we need to connect them into one.
@@ -525,12 +554,14 @@ class _LayerNormLinear(torch.autograd.Function):
                 if ctx.input_quantizer is not None:
                     quantizer = ctx.input_quantizer
                     quantizer.set_usage(rowwise=True, columnwise=True)
+                nvtx_range_push(f"{nvtx_label}.column_parallel_comm_input")
                 ln_out_total, ln_out_total_work = gather_along_first_dim(
                     ln_out,
                     ctx.tp_group,
                     async_op=True,
                     quantizer=quantizer,
                 )
+                nvtx_range_pop(f"{nvtx_label}.column_parallel_comm_input")
             else:
                 ln_out_total = ln_out
 
@@ -546,6 +577,7 @@ class _LayerNormLinear(torch.autograd.Function):
             if ctx.grad_input_quantizer is not None:
                 ctx.grad_input_quantizer.set_usage(rowwise=True, columnwise=False)
 
+            nvtx_range_push(f"{nvtx_label}.dgrad_gemm")
             dgrad, *_ = general_gemm(
                 weight,
                 grad_output,
@@ -561,12 +593,14 @@ class _LayerNormLinear(torch.autograd.Function):
                 extra_output=rs_out,
                 bulk_overlap=ctx.ub_bulk_dgrad,
             )
+            nvtx_range_pop(f"{nvtx_label}.dgrad_gemm")
 
             # Launch tensor-parallel communication
             dgrad_work = None
             if ctx.ub_overlap_rs_dgrad:
                 dgrad = rs_out
             elif ctx.parallel_mode == "column" and not ctx.ub_bulk_wgrad:
+                nvtx_range_push(f"{nvtx_label}.column_parallel_comm_dgrad")
                 if ctx.sequence_parallel:
                     if ctx.return_layernorm_output and ctx.return_layernorm_output_gathered:
                         dgrad = dgrad + grad_outputs[1].view_as(dgrad)
@@ -577,6 +611,7 @@ class _LayerNormLinear(torch.autograd.Function):
                     )
                 else:
                     dgrad, dgrad_work = allreduce(dgrad, ctx.tp_group, async_op=True)
+                nvtx_range_pop(f"{nvtx_label}.column_parallel_comm_dgrad")
 
             # Compute grad weight tensor
             wgrad = None
@@ -613,6 +648,7 @@ class _LayerNormLinear(torch.autograd.Function):
 
                 # wgrad GEMM
                 # Note: Fuse with bgrad computation if needed
+                nvtx_range_push(f"{nvtx_label}.wgrad_gemm")
                 wgrad, grad_bias_, *_, rs_out = general_gemm(
                     ln_out_total,
                     grad_output,
@@ -632,6 +668,7 @@ class _LayerNormLinear(torch.autograd.Function):
                     extra_output=rs_out,
                     bulk_overlap=ctx.ub_bulk_wgrad,
                 )
+                nvtx_range_pop(f"{nvtx_label}.wgrad_gemm")
 
                 if ctx.ub_bulk_wgrad:
                     if ub_obj_wgrad.is_fp8_ubuf():
@@ -668,6 +705,7 @@ class _LayerNormLinear(torch.autograd.Function):
             # Norm gradient
             dgamma = None
             dbeta = None
+            nvtx_range_push(f"{nvtx_label}.norm")
             if ctx.normalization == "LayerNorm":
                 dgrad, dgamma, dbeta = tex.layernorm_bwd(
                     dgrad,
@@ -690,6 +728,7 @@ class _LayerNormLinear(torch.autograd.Function):
                 )
                 dgrad = dgrad.reshape(inputmat.size())
                 dbeta = None
+            nvtx_range_pop(f"{nvtx_label}.norm")
             clear_tensor_data(mu)
             clear_tensor_data(rsigma)
 
