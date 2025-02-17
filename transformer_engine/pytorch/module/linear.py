@@ -54,9 +54,54 @@ from ..tensor.quantized_tensor import (
 )
 
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
+from ..export import is_in_onnx_export_mode, ONNXExtensions
 
 __all__ = ["Linear"]
+from torch.onnx import symbolic_helper
 
+class _ONNXLinear(torch.autograd.Function):
+    """Linear module for ONNX export."""
+    @staticmethod
+    def forward(weight, inp, bias, *args):
+        return (inp @ weight + bias).to(inp.dtype)
+
+    def symbolic(g: torch._C.Graph,
+                weight: torch._C.Value, 
+                inp: torch._C.Value, 
+                bias: torch._C.Value, *args) -> torch._C.Value:
+        """ONNX symbolic method for linear operation.
+        
+        Args:
+            g: ONNX graph
+            _: Unused placeholder parameter
+            weight: Weight tensor value
+            inp: Input tensor value  
+            bias: Bias tensor value
+            *args: Additional arguments containing quantizers
+                args[3]: input_quantizer
+                args[4]: weight_quantizer 
+                args[5]: output_quantizer
+
+        Returns:
+            Tensor output from linear operation
+        """
+        input_quantizer = args[3]
+        weight_quantizer = args[4]
+        output_quantizer = args[5]
+
+        if input_quantizer is not None:
+            inp = input_quantizer.onnx_quantize(g, inp)
+            inp = input_quantizer.onnx_dequantize(g, inp)
+        if weight_quantizer is not None:
+            weight = weight_quantizer.onnx_quantize(g, weight)
+            weight = weight_quantizer.onnx_dequantize(g, weight)
+            
+        out = ONNXExtensions.onnx_gemm(g, inp, weight, bias)
+
+        if output_quantizer is not None:
+            out = output_quantizer.onnx_quantize(g, out)
+
+        return out
 
 class _Linear(torch.autograd.Function):
     """Linear semi-top level module
@@ -972,7 +1017,7 @@ class Linear(TransformerEngineBaseModule):
             inp,
             allow_non_contiguous=isinstance(inp, QuantizedTensor),
         ) as inp:
-
+            
             # Get concatenated weight and bias tensors
             unfused_weights = [getattr(self, name) for name in self.weight_names]
             if any(isinstance(w, QuantizedTensor) for w in unfused_weights):
@@ -1003,7 +1048,10 @@ class Linear(TransformerEngineBaseModule):
             if weight_quantizer is not None and isinstance(weight_tensor, QuantizedTensor):
                 weight_tensor._quantizer = weight_quantizer
 
-            if torch.is_grad_enabled():
+            if is_in_onnx_export_mode():
+                linear_fn = _ONNXLinear.forward
+                args = []
+            elif torch.is_grad_enabled():
                 linear_fn = _Linear.apply
                 args = []
             else:
@@ -1042,6 +1090,8 @@ class Linear(TransformerEngineBaseModule):
                 self,
                 skip_fp8_weight_update,
             )
+            if is_in_onnx_export_mode():
+                args = [weight_tensor, inp, bias_tensor]
             out = linear_fn(*args)
         if self.gemm_bias_unfused_add:
             out = out + cast_if_needed(bias_tensor, self.activation_dtype)
