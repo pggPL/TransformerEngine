@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 # Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+=======
+# Copyright (c) 2022-2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+>>>>>>> Stashed changes
 #
 # See LICENSE for license information.
 
@@ -38,6 +42,7 @@ def onnx_export(
 def is_in_onnx_export_mode() -> bool:
     """Returns True if onnx export mode is enabled, False otherwise."""
     return _IN_ONNX_EXPORT_MODE
+<<<<<<< Updated upstream
 
 class ONNXExtensions:
     """Extensions for ONNX export."""
@@ -45,3 +50,5 @@ class ONNXExtensions:
     @staticmethod
     def onnx_gemm(g, inp, weight, bias):
         return g.op("Gemm", inp, weight, bias)
+=======
+>>>>>>> Stashed changes

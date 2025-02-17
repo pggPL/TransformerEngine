@@ -59,6 +59,8 @@ from ..tensor.float8_tensor import Float8Tensor
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ._common import apply_normalization, _fix_gathered_fp8_transpose
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
+from ..export import is_in_onnx_export_mode
+from ..te_onnx_extensions import _quantizer
 
 from ..tensor.quantized_tensor import (
     QuantizedTensor,
@@ -72,17 +74,25 @@ from ..cpp_extensions import (
 
 __all__ = ["LayerNormMLP"]
 
+def _onnx_act_wrapper(func):
+    def wrapper(input, quantizer):
+        out =  func(input, *_quantizer(quantizer))
+        if quantizer is not None:
+            return quantizer.onnx_create_from_raw_tensors(out)
+        else:  
+            return out[0]
+    return wrapper
 
 def _act_func(activation: str):
     funcs = {
-        "gelu": (tex.gelu, tex.dgelu, tex.dbias_dgelu),
-        "relu": (tex.relu, tex.drelu, tex.dbias_drelu),
-        "geglu": (tex.geglu, tex.dgeglu, None),
-        "reglu": (tex.reglu, tex.dreglu, None),
-        "swiglu": (tex.swiglu, tex.dswiglu, None),
-        "qgelu": (tex.qgelu, tex.dqgelu, tex.dbias_dqgelu),
-        "qgeglu": (tex.qgeglu, tex.dqgeglu, None),
-        "srelu": (tex.srelu, tex.dsrelu, tex.dbias_dsrelu),
+        "gelu": (tex.gelu, tex.dgelu, tex.dbias_dgelu, _onnx_act_wrapper(torch.ops.tex_ts.gelu_ts)),
+        "relu": (tex.relu, tex.drelu, tex.dbias_drelu, _onnx_act_wrapper(torch.ops.tex_ts.relu_ts)),
+        "geglu": (tex.geglu, tex.dgeglu, None, _onnx_act_wrapper(torch.ops.tex_ts.geglu_ts)),
+        "reglu": (tex.reglu, tex.dreglu, None, _onnx_act_wrapper(torch.ops.tex_ts.reglu_ts)),
+        "swiglu": (tex.swiglu, tex.dswiglu, None, _onnx_act_wrapper(torch.ops.tex_ts.swiglu_ts)),
+        "qgelu": (tex.qgelu, tex.dqgelu, tex.dbias_dqgelu, _onnx_act_wrapper(torch.ops.tex_ts.qgelu_ts)),
+        "qgeglu": (tex.qgeglu, tex.dqgeglu, None, _onnx_act_wrapper(torch.ops.tex_ts.qgeglu_ts)),
+        "srelu": (tex.srelu, tex.dsrelu, tex.dbias_dsrelu, _onnx_act_wrapper(torch.ops.tex_ts.srelu_ts)),
     }
     if activation not in funcs:
         raise NotImplementedError("Activation type " + activation + " is not supported!")
@@ -160,8 +170,10 @@ class _LayerNormMLP(torch.autograd.Function):
                 raise NotImplementedError(
                     "Comm+GEMM overlap is only supported with FP8 delayed scaling"
                 )
-
-        activation_func = _act_func(activation)[0]
+        if is_in_onnx_export_mode():
+            activation_func = _act_func(activation)[3]
+        else:
+            activation_func = _act_func(activation)[0]
         device = inp.device
 
         # Cast for native AMP
@@ -313,7 +325,7 @@ class _LayerNormMLP(torch.autograd.Function):
         # - gemm_gelu_fusion - default for full precision, optional for fp8 - need to turn on gemm_gelu_fusion,
         # - bias_gelu_fusion - only for full precision.
         # If both gemm_gelu_fusion and bias_gelu_fusion are enabled, only bias_gelu_fusion will be performer
-        if activation != "gelu":
+        if activation != "gelu" or is_in_onnx_export_mode():
             gemm_gelu_fusion = bias_gelu_fusion = False
         else:
             if fp8:

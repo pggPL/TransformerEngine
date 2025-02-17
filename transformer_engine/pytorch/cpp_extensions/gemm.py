@@ -15,6 +15,9 @@ from ..tensor.quantized_tensor import Quantizer
 from ..tensor._internal.float8_tensor_base import Float8TensorBase
 from ..tensor._internal.mxfp8_tensor_base import MXFP8TensorBase
 
+from ..export import is_in_onnx_export_mode
+from ..te_onnx_extensions import _quantizer, _tensor
+
 __all__ = [
     "general_gemm",
     "general_grouped_gemm",
@@ -93,6 +96,7 @@ def general_gemm(
     transb = layout[1] == "T"
     # assert quantization_params is None, "FP8 output not supported yet"
 
+
     if ub_type is not None:
         assert ub is not None, (
             f"{'AG+GEMM' if ub_type == tex.CommOverlapType.AG else 'GEMM+RS'} overlap requires"
@@ -136,9 +140,43 @@ def general_gemm(
         "extra_output": extra_output,
         "bulk_overlap": bulk_overlap,
     }
+    
+    fn = tex.generic_gemm
+
+    if is_in_onnx_export_mode():
+        args = (
+            *_tensor(A),
+            transa,
+            *_tensor(B),
+            transb,
+            *_tensor(out),
+            *_quantizer(quantization_params),
+            int(TE_DType[out_dtype]) if out_dtype is not None else None,
+            bias,
+            int(bias_dtype),
+            gelu,
+            gelu_in,
+            grad,
+            workspace,
+            workspace.shape[0],
+            accumulate,
+            use_split_accumulator,
+        )
+        kwargs = {}
+        fn = torch.ops.tex_ts.general_gemm_ts
+    
 
     original_scale_inverses = swizzle_inputs(A, B, layout)
-    out, bias_grad, gelu_input, extra_output = tex.generic_gemm(*args, **kwargs)
+    outputs = fn(*args, **kwargs)
+
+    if is_in_onnx_export_mode():
+        out, bias_grad, gelu_input, extra_output = outputs, None, None, None
+        if quantization_params is not None:
+            out = quantization_params.onnx_create_from_raw_tensors
+        else:
+            out = out[0]
+    else:
+        out, bias_grad, gelu_input, extra_output = outputs
     reset_swizzled_inputs(A, B, original_scale_inverses)
 
     return out, bias_grad, gelu_input, extra_output

@@ -17,11 +17,39 @@ from ..constants import TE_DType
 from ..utils import get_default_init_method
 from ..tensor.float8_tensor import Float8Tensor
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
+from ..export import is_in_onnx_export_mode
+from ..te_onnx_extensions import _quantizer, _tensor
 
 _use_cudnn_mxfp8_norm = bool(int(os.getenv("NVTE_CUDNN_MXFP8_NORM", "0")))
 
+def onnx_layernorm_fwd(input, weight, bias, eps, ln_out, quantizer, out_dtype, sm_margin, zero_centered_gamma):
+    raw_tensors = torch.ops.tex_ts.layernorm_fwd_ts(*_tensor(input), *_tensor(weight), bias, eps, 
+        *_tensor(ln_out), *_quantizer(quantizer), out_dtype, sm_margin, zero_centered_gamma)
+    if quantizer is not None:
+        output =  quantizer.onnx_create_from_raw_tensors(raw_tensors)
+    else:
+        output = raw_tensors[0]
+    return output, None, None
+
+def onnx_rmsnorm_fwd(input, weight, eps, ln_out, quantizer, out_dtype, sm_margin, zero_centered_gamma):
+    raw_tensors = torch.ops.tex_ts.rmsnorm_fwd_ts(*_tensor(input), *_tensor(weight), eps, 
+        *_tensor(ln_out), *_quantizer(quantizer), out_dtype, sm_margin, zero_centered_gamma)
+    if quantizer is not None:
+        output =  quantizer.onnx_create_from_raw_tensors(raw_tensors)
+    else:
+        output = raw_tensors[0]
+    return output, None, None
 
 def _get_normalization_func(normalization: str, forward: bool):
+    if is_in_onnx_export_mode():
+        assert forward, "ONNX export does not support backward."
+        if normalization == "LayerNorm":
+            return onnx_layernorm_fwd
+        elif normalization == "RMSNorm":
+            return onnx_rmsnorm_fwd
+        else:
+            raise ValueError(f"Unsupported normalization: {normalization}")
+
     fwd_normalization_funcs = {
         "LayerNorm": tex.layernorm_fwd,
         "RMSNorm": tex.rmsnorm_fwd,

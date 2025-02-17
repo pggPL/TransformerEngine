@@ -165,6 +165,18 @@ class Float8Quantizer(Quantizer):
             quantizer=self,
         )
 
+    def onnx_create_from_raw_tensors(self, raw_tensors):
+        return Float8Tensor(
+            shape=raw_tensors[0].shape,
+            dtype=torch.float32, # TODO: change 
+            data=raw_tensors[0],
+            fp8_scale_inv=1 / self.scale,
+            fp8_dtype=self.dtype,
+            requires_grad=False,
+            data_transpose=raw_tensors[1],
+            quantizer=self,
+        )
+
 
 class Float8Tensor(Float8TensorBase, QuantizedTensor):
     """Experimental tensor class with FP8 data
@@ -196,6 +208,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
         Builder class for FP8 tensors
 
     """
+
 
     def __repr__(self, *, tensor_contents=None):
         return (
@@ -528,6 +541,7 @@ class Float8Tensor(Float8TensorBase, QuantizedTensor):
 
     # Cast to FP8 when setting Float8Tensor.data
     data = property(_get_data, _set_data)
+
 
 
 class _ViewFunc(torch.autograd.Function):

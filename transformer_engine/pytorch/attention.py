@@ -83,6 +83,8 @@ from transformer_engine.pytorch.tensor.quantized_tensor import (
     restore_from_saved,
 )
 
+from transformer_engine.pytorch.export import is_in_onnx_export_mode
+
 
 # NVTE_DEBUG = 0/1 # disables/enables debug mode, default = 0
 _NVTE_DEBUG = int(os.getenv("NVTE_DEBUG", "0"))
@@ -444,6 +446,14 @@ def get_attention_backend(
         logger.debug("Disabling FusedAttention due to NVTE_FUSED_ATTN=0")
     if not use_unfused_attention:
         logger.debug("Disabling UnfusedDotProductAttention due to NVTE_UNFUSED_ATTN=0")
+    
+    if is_in_onnx_export_mode():
+        if use_flash_attention and _flash_attn_is_installed:
+            logger.debug("Disabling FlashAttention due to ONNX mode")
+        use_flash_attention = False
+        if use_fused_attention:
+            logger.debug("Disabling FusedAttention due to ONNX mode")
+        use_fused_attention = False
 
     # Filter: Compute capability
     if device_compute_capability < (8, 0):

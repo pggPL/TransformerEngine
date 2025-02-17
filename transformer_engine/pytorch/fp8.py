@@ -18,6 +18,7 @@ from transformer_engine.common.recipe import Recipe, DelayedScaling, Format, MXF
 from .constants import dist_group_type
 from .utils import get_device_compute_capability
 from .jit import jit_fuser
+from .export import is_in_onnx_export_mode
 
 
 __all__ = ["fp8_autocast", "fp8_model_init"]
@@ -425,7 +426,7 @@ class FP8GlobalStateManager:
         # Reduce only the non-FP8 weight modules here.
         # FP8 weight modules are reduced at the end of the optimizer
         # step after the weight amax is populated.
-        if enabled and cls.FP8_AUTOCAST_DEPTH == 0 and not _graph and torch.is_grad_enabled():
+        if enabled and cls.FP8_AUTOCAST_DEPTH == 0 and not _graph and torch.is_grad_enabled() and not is_in_onnx_export_mode():
             cls.reduce_and_update_fp8_tensors(forward=True)
 
     @classmethod

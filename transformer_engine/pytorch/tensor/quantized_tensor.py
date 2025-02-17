@@ -13,6 +13,8 @@ import torch
 from torch.utils._pytree import tree_map
 
 import transformer_engine_torch as tex
+from ..export import is_in_onnx_export_mode
+from ..te_onnx_extensions import _quantizer, _tensor
 
 
 def prepare_for_saving(
@@ -190,6 +192,10 @@ class _QuantizeFunc(torch.autograd.Function):
         quantizer: Quantizer,
     ) -> QuantizedTensor:
         # pylint: disable=missing-function-docstring
+        if is_in_onnx_export_mode():
+            print(tensor, *_quantizer(quantizer), *_tensor(None))
+            raw_tensors = torch.ops.tex_ts.quantize(tensor, *_quantizer(quantizer), *_tensor(None))
+            return quantizer.onnx_create_from_raw_tensors(raw_tensors)
         return tex.quantize(tensor, quantizer)
 
     @staticmethod

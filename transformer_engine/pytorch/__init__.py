@@ -88,6 +88,12 @@ from transformer_engine.pytorch.cpu_offload import get_cpu_offload_context
 from transformer_engine.pytorch import ops
 from transformer_engine.pytorch import optimizers
 
+# Register custom op symbolic ONNX functions
+from transformer_engine.pytorch.te_onnx_extensions import (
+    quantize,
+    dequantize,
+)
+
 try:
     torch._dynamo.config.error_on_nested_jit_trace = False
 except AttributeError:

@@ -52,14 +52,17 @@ from ..tensor.quantized_tensor import (
     prepare_for_saving,
     restore_from_saved,
 )
+from ..export import is_in_onnx_export_mode
 
 from ..cpu_offload import is_cpu_offload_enabled, set_offloading_param
 from ..export import is_in_onnx_export_mode, ONNXExtensions
+
 
 __all__ = ["Linear"]
 from torch.onnx import symbolic_helper
 
 class _ONNXLinear(torch.autograd.Function):
+<<<<<<< Updated upstream
     """Linear module for ONNX export."""
     @staticmethod
     def forward(weight, inp, bias, *args):
@@ -102,6 +105,15 @@ class _ONNXLinear(torch.autograd.Function):
             out = output_quantizer.onnx_quantize(g, out)
 
         return out
+=======
+    @staticmethod
+    def forward(ctx, *args):
+        pass
+
+    @staticmethod
+    def symbolic(g, *args):
+        pass
+>>>>>>> Stashed changes
 
 class _Linear(torch.autograd.Function):
     """Linear semi-top level module
@@ -1047,9 +1059,14 @@ class Linear(TransformerEngineBaseModule):
             # recipe changed
             if weight_quantizer is not None and isinstance(weight_tensor, QuantizedTensor):
                 weight_tensor._quantizer = weight_quantizer
+<<<<<<< Updated upstream
 
             if is_in_onnx_export_mode():
                 linear_fn = _ONNXLinear.forward
+=======
+            if is_in_onnx_export_mode():
+                linear_fn = _ONNXLinear.onnx_forward
+>>>>>>> Stashed changes
                 args = []
             elif torch.is_grad_enabled():
                 linear_fn = _Linear.apply

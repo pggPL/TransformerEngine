@@ -14,6 +14,8 @@ from transformer_engine_torch import DType as TE_DType
 from ...constants import TE_DType as torch_to_transformer_engine_dtype
 
 from ..quantized_tensor import Quantizer
+from ...export import is_in_onnx_export_mode
+from ...te_onnx_extensions import _quantizer, _tensor
 
 
 class _FromFloat8Func(torch.autograd.Function):
@@ -31,6 +33,9 @@ class _FromFloat8Func(torch.autograd.Function):
         # Make sure FP8 data is in expected format
         if tensor._data is not None:
             # Cast from FP8
+
+            if is_in_onnx_export_mode():
+                return torch.ops.tex_ts.dequantize(*_tensor(tensor), int(dtype))
             return tex.dequantize(tensor, dtype)
 
         raise NotImplementedError("Casting back from the transpose not implemented yet!")
