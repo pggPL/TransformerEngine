@@ -1100,7 +1100,7 @@ class Linear(TransformerEngineBaseModule):
             grad_output_quantizer,
             grad_input_quantizer,
         )
-    
+
     def _get_weight_and_bias_tensors(self):
         # Get concatenated weight and bias tensors
         unfused_weights = [getattr(self, name) for name in self.weight_names]
@@ -1118,7 +1118,7 @@ class Linear(TransformerEngineBaseModule):
         else:
             bias_tensor = None
         return weight_tensor, bias_tensor
-    
+
     def onnx_forward(
         self,
         input: torch.Tensor,
@@ -1138,17 +1138,19 @@ class Linear(TransformerEngineBaseModule):
             input = self.input_quantizer.onnx_dequantize(input, input_dtype)
         if self.weight_quantizer is not None:
             weight_tensor, weight_tensor_dtype = self.weight_quantizer.onnx_quantize(weight_tensor)
-            weight_tensor = self.weight_quantizer.onnx_dequantize(weight_tensor, weight_tensor_dtype)
-        
+            weight_tensor = self.weight_quantizer.onnx_dequantize(
+                weight_tensor, weight_tensor_dtype
+            )
+
         if self.apply_bias:
             output = torch.ops.tex.gemm_inf(input, weight_tensor, bias_tensor)
         else:
             output = torch.ops.tex.gemm_inf(input, weight_tensor, None)
-        
+
         if self.output_quantizer is not None:
             output = self.output_quantizer.onnx_quantize(output)
-        
+
         if self.return_bias:
             return output, bias_tensor
-        
+
         return output

@@ -172,12 +172,21 @@ class Float8Quantizer(Quantizer):
         # custom ops, so cast the input if needed.
         if tensor.dtype != torch.float32:
             tensor = tensor.to(torch.float32)
-        data = torch.ops.tex.quantize(tensor, id(Float8Quantizer), self.amax, self.scale, 1 / self.scale, int(self.dtype))
+        data = torch.ops.tex.quantize(
+            tensor, id(Float8Quantizer), self.amax, self.scale, 1 / self.scale, int(self.dtype)
+        )
         return data, tensor.dtype
-    
+
     def onnx_dequantize(self, tensor: QuantizedTensor, fake_dtype: torch.dtype) -> torch.Tensor:
         """Symbolic function for ONNX export"""
-        out =  torch.ops.tex.dequantize(tensor, id(Float8Quantizer), self.amax, self.scale,  int(self.dtype), int(TE_DType_map[fake_dtype]))
+        out = torch.ops.tex.dequantize(
+            tensor,
+            id(Float8Quantizer),
+            self.amax,
+            self.scale,
+            int(self.dtype),
+            int(TE_DType_map[fake_dtype]),
+        )
         if out.dtype != torch.float32:
             out = out.to(torch.float32)
         return out

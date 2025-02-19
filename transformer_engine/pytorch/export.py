@@ -46,47 +46,59 @@ def is_in_onnx_export_mode() -> bool:
     """Returns True if onnx export mode is enabled, False otherwise."""
     return _IN_ONNX_EXPORT_MODE
 
+
 # ONNX GEMM for inference
 
+
 @torch.library.custom_op("tex::gemm_inf", mutates_args=[])
-def torch_onnx_gemm_inf_op(inp: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
-    """ Gemm used for inference -- weight is transposed"""
+def torch_onnx_gemm_inf_op(
+    inp: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor
+) -> torch.Tensor:
+    """Gemm used for inference -- weight is transposed"""
     out = inp @ weight.T
     if bias is not None:
         out = out + bias
     return out
+
 
 @torch_onnx_gemm_inf_op.register_fake
 def _(inp, weight, bias):
-    """ Fake gemm used for inference. """    
+    """Fake gemm used for inference."""
     out = inp @ weight.T
     if bias is not None:
         out = out + bias
     return out
 
+
 _onnx_opset = onnxscript.values.Opset("tex", version=1)
+
+
 @onnxscript.script(_onnx_opset, default_opset=op)
 def onnx_gemm_inf_symbolic(inp, weight, bias):
-    """ Symbolic gemm used for inference. """
+    """Symbolic gemm used for inference."""
     return op.Gemm(inp, weight, bias, transA=1, transB=0)
+
 
 # ONNX Quantization
 
+
 def _get_te_dtype(id: int):
-    """ Get the tex.DType enum value from the given id - reverse for int(tex.DType.*). """
+    """Get the tex.DType enum value from the given id - reverse for int(tex.DType.*)."""
     all_te_dtypes = list(tex.DType.__members__.values())
     for te_dtype in all_te_dtypes:
         if int(te_dtype) == id:
             return te_dtype
     raise ValueError(f"Unknown transformer engine dtype id: {id}")
 
+
 def _get_torch_dtype(te_dtype: tex.DType):
-    """ Get the torch.dtype value from the given tex.DType enum value. """
+    """Get the torch.dtype value from the given tex.DType enum value."""
     all_torch_dtypes = [torch.float32, torch.float16, torch.bfloat16]
     for torch_dtype in all_torch_dtypes:
         if TE_DType[torch_dtype] == te_dtype:
             return torch_dtype
     raise ValueError(f"Unknown torch dtype: {te_dtype}")
+
 
 def _get_quantizer_class(quantizer_id: int):
     """
@@ -98,33 +110,50 @@ def _get_quantizer_class(quantizer_id: int):
             return cls
     raise ValueError(f"Unknown quantizer id: {quantizer_id}")
 
+
 @torch.library.custom_op("tex::quantize", mutates_args=[])
 def onnx_quantize_op(
-    tensor: torch.Tensor, quantizer_id: int, amax: torch.Tensor, 
-    scale: torch.Tensor, scale_inv: torch.Tensor, fp8_dtype: int) -> torch.Tensor:
-    """ Quantize used for inference. """
+    tensor: torch.Tensor,
+    quantizer_id: int,
+    amax: torch.Tensor,
+    scale: torch.Tensor,
+    scale_inv: torch.Tensor,
+    fp8_dtype: int,
+) -> torch.Tensor:
+    """Quantize used for inference."""
     quantizer_type = _get_quantizer_class(quantizer_id)
     quantizer = quantizer_type(amax, scale, _get_te_dtype(fp8_dtype))
     return quantizer.quantize(tensor)._data
 
+
 @onnx_quantize_op.register_fake
 def _(tensor, *_):
-    """ Fake quantize used for inference. """
+    """Fake quantize used for inference."""
     return torch.empty(tensor.shape, dtype=torch.uint8, device=tensor.device)
 
+
 _onnx_opset = onnxscript.values.Opset("tex", version=1)
+
+
 @onnxscript.script(_onnx_opset, default_opset=op)
 def onnx_quantize_symbolic(tensor, quantizer_id: int, amax, scale, scale_inv, fp8_dtype: int):
-    """ Symbolic quantize used for inference. """
+    """Symbolic quantize used for inference."""
     return op.TRT_FP8QuantizeLinear(tensor, scale_inv)
+
 
 # ONNX Dequantization
 
+
 @torch.library.custom_op("tex::dequantize", mutates_args=[])
-def onnx_dequantize_op(tensor: torch.Tensor, quantizer_id: int, 
-                       amax: torch.Tensor, scale: torch.Tensor, 
-                       fp8_dtype: int, fake_dtype: int) -> torch.Tensor:
-    """ Dequantize used for inference. """
+def onnx_dequantize_op(
+    tensor: torch.Tensor,
+    quantizer_id: int,
+    amax: torch.Tensor,
+    scale: torch.Tensor,
+    fp8_dtype: int,
+    fake_dtype: int,
+) -> torch.Tensor:
+    """Dequantize used for inference."""
     quantizer_type = _get_quantizer_class(quantizer_id)
     quantizer = quantizer_type(amax, scale, _get_te_dtype(fp8_dtype))
     te_dtype = _get_te_dtype(fake_dtype)
@@ -132,18 +161,27 @@ def onnx_dequantize_op(tensor: torch.Tensor, quantizer_id: int,
     quantizer_tensor = quantizer.create_tensor_from_data(tensor, fake_dtype=torch_dtype)
     return quantizer_tensor.dequantize()
 
+
 @onnx_dequantize_op.register_fake
-def _(tensor: torch.Tensor, quantizer_id: int, 
-      amax: torch.Tensor, scale: torch.Tensor, 
-      fp8_dtype: int, fake_dtype: int) -> torch.Tensor:
-    """ Fake dequantize used for inference. """
+def _(
+    tensor: torch.Tensor,
+    quantizer_id: int,
+    amax: torch.Tensor,
+    scale: torch.Tensor,
+    fp8_dtype: int,
+    fake_dtype: int,
+) -> torch.Tensor:
+    """Fake dequantize used for inference."""
     te_dtype = _get_te_dtype(fake_dtype)
     torch_dtype = _get_torch_dtype(te_dtype)
     return torch.empty(tensor.shape, dtype=torch_dtype, device=tensor.device)
 
+
 @onnxscript.script(_onnx_opset, default_opset=op)
-def onnx_dequantize_symbolic(tensor, quantizer_id: int, amax, scale, fp8_dtype: int, fake_dtype: int):
-    """ Symbolic dequantize used for inference. """
+def onnx_dequantize_symbolic(
+    tensor, quantizer_id: int, amax, scale, fp8_dtype: int, fake_dtype: int
+):
+    """Symbolic dequantize used for inference."""
     out = op.TRT_FP8DequantizeLinear(tensor, scale)
     return out
 
@@ -153,5 +191,5 @@ def onnx_dequantize_symbolic(tensor, quantizer_id: int, amax, scale, fp8_dtype: 
 te_translation_table = {
     torch.ops.tex.gemm_inf.default: onnx_gemm_inf_symbolic,
     torch.ops.tex.quantize.default: onnx_quantize_symbolic,
-    torch.ops.tex.dequantize.default: onnx_dequantize_symbolic
+    torch.ops.tex.dequantize.default: onnx_dequantize_symbolic,
 }

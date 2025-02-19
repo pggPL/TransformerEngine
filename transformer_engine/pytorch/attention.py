@@ -461,7 +461,7 @@ def get_attention_backend(
         if use_flash_attention and _flash_attn_3_is_installed:
             logger.debug("Disabling FlashAttention 3 as it requires compute capability sm90+")
         _use_flash_attn_3 = False
-    
+
     # Filter: ONNX mode
     if is_in_onnx_export_mode():
         if use_flash_attention and _flash_attn_is_installed:

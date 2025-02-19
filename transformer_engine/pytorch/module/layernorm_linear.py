@@ -1314,8 +1314,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
             grad_output_quantizer,
             grad_input_quantizer,
         )
-    
-        
+
     def _get_weight_and_bias_tensors(self):
         # Get concatenated weight and bias tensors
         unfused_weights = [getattr(self, name) for name in self.weight_names]
@@ -1333,7 +1332,7 @@ class LayerNormLinear(TransformerEngineBaseModule):
         else:
             bias_tensor = None
         return weight_tensor, bias_tensor
-    
+
     def onnx_forward(
         self,
         input: torch.Tensor,
@@ -1341,23 +1340,28 @@ class LayerNormLinear(TransformerEngineBaseModule):
     ) -> torch.Tensor:
         weight_tensor, bias_tensor = self._get_weight_and_bias_tensors()
 
-        ln_weight = self.layer_norm_weight if not self.zero_centered_gamma else self.layer_norm_weight + 1
+        ln_weight = (
+            self.layer_norm_weight if not self.zero_centered_gamma else self.layer_norm_weight + 1
+        )
         if self.normalization == "RMSNorm":
             ln_out = torch.nn.functional.rms_norm(input, input.shape[-1:], ln_weight, self.eps)
         else:
-            ln_out = torch.nn.functional.layer_norm(input, input.shape[-1:], ln_weight, self.layer_norm_bias, self.eps)
-        
+            ln_out = torch.nn.functional.layer_norm(
+                input, input.shape[-1:], ln_weight, self.layer_norm_bias, self.eps
+            )
 
         if self.input_quantizer is not None:
             ln_out, ln_out_dtype = self.input_quantizer.onnx_quantize(ln_out)
             ln_out = self.input_quantizer.onnx_dequantize(ln_out, ln_out_dtype)
-        
+
         if self.weight_quantizer is not None:
             weight_tensor, weight_tensor_dtype = self.weight_quantizer.onnx_quantize(weight_tensor)
-            weight_tensor = self.weight_quantizer.onnx_dequantize(weight_tensor, weight_tensor_dtype)
-        
+            weight_tensor = self.weight_quantizer.onnx_dequantize(
+                weight_tensor, weight_tensor_dtype
+            )
+
         output = torch.ops.tex.gemm_inf(ln_out, weight_tensor, bias_tensor)
-        
+
         if self.output_quantizer is not None:
             output, output_dtype = self.output_quantizer.onnx_quantize(output)
             output = self.output_quantizer.onnx_dequantize(output, output_dtype)
