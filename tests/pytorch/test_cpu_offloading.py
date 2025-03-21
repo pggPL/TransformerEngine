@@ -18,6 +18,7 @@ models = {
     "linear": te.Linear,
     "layernorm_mlp": te.LayerNormMLP,
     "layernorm_linear": te.LayerNormLinear,
+    "transformer_layer": te.TransformerLayer,
 }
 
 
@@ -25,11 +26,17 @@ def _get_input():
     return torch.empty((128, SIZE, SIZE)).cuda()
 
 
-def _measure_memory_between_forward_and_backward(model_cls, fp8, cpu_offload):
-
-    input_layer = model_cls(SIZE, SIZE)
-    hidden_layer = model_cls(SIZE, SIZE)
-    output_layer = model_cls(SIZE, SIZE)
+def _measure_memory_between_forward_and_backward(
+        model_cls, fp8, cpu_offload, activation_offload=None, memory_offload=None):
+    # Special case for TransformerLayer which needs different dimensions
+    if model_cls == te.TransformerLayer:
+        input_layer = model_cls(SIZE, SIZE, 1)
+        hidden_layer = model_cls(SIZE, SIZE, 1)
+        output_layer = model_cls(SIZE, SIZE, 1)
+    else:
+        input_layer = model_cls(SIZE, SIZE)
+        hidden_layer = model_cls(SIZE, SIZE)
+        output_layer = model_cls(SIZE, SIZE)
 
     input = _get_input()
     if cpu_offload:
@@ -37,8 +44,8 @@ def _measure_memory_between_forward_and_backward(model_cls, fp8, cpu_offload):
             enabled=True,
             num_layers=2,
             model_layers=3,
-            offload_activations=True,
-            offload_weights=False,
+            offload_activations=activation_offload,
+            offload_weights=memory_offload,
         )
     else:
         offload_context = nullcontext()
@@ -70,16 +77,20 @@ def _measure_memory_between_forward_and_backward(model_cls, fp8, cpu_offload):
 
 
 @pytest.mark.parametrize("fp8", [True, False])
+@pytest.mark.parametrize("memory_offload", [True, False])
+@pytest.mark.parametrize("activation_offload", [True, False])
 @pytest.mark.parametrize("model_key", models.keys())
-def test_cpu_offload(fp8, model_key) -> None:
+def test_cpu_offload(fp8, memory_offload, activation_offload, model_key) -> None:
 
     if fp8 and not fp8_available:
         pytest.skip(reason_for_no_fp8)
 
     model_cls = models[model_key]
 
-    without_offloading = _measure_memory_between_forward_and_backward(model_cls, fp8, False)
+    without_offloading = _measure_memory_between_forward_and_backward(
+        model_cls, fp8, False)
 
-    with_offloading = _measure_memory_between_forward_and_backward(model_cls, fp8, True)
+    with_offloading = _measure_memory_between_forward_and_backward(
+        model_cls, fp8, True, activation_offload, memory_offload)
 
     assert with_offloading < without_offloading
