@@ -81,7 +81,7 @@ In the current code, hooks for backward are included in `GroupCommitFunction`, w
 The double buffering feature allocates two copies of buffers during the forward pass and uses them during the backward pass. It aims to reduce memory fragmentation.
 
 Without double buffering enabled, one can observe multiple `cudaFree()` calls in the profile when running close to peak memory.
-We ran experiments and believe these calls are the result of Python’s poor handling of tensors allocated on different streams.
+We ran experiments [in .ipynb here](ex.ipynb) and believe these calls are the result of Python’s poor handling of tensors allocated on different streams.
 
 We ensure that all tensors are allocated on the main stream in the refactored code, and we think this is sufficient to deprecate double buffering.
 
