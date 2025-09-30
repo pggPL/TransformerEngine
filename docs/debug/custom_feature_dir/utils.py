@@ -43,10 +43,3 @@ def plot_stats(log_dir):
 
     plt.tight_layout()
     plt.show()
-
-def plot_times_per_iteration(times_per_iteration):
-    # plot times
-    times = times_per_iteration[1:]
-    plt.plot(times, label="Time per iteration (ms)")
-    plt.legend()
-    plt.show()
