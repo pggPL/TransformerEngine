@@ -35,11 +35,11 @@ def plot_stats(log_dir):
 
     axs[0].plot(min_values, label="min")
     axs[0].legend()
-    axs[0].set_title("Min Values")
+    axs[0].set_title("Min values")
 
-    axs[1].plot(custom_feature_values, label="custom_feature")
+    axs[1].plot(custom_feature_values, label="percentage_greater_than_threshold_0.1")
     axs[1].legend()
-    axs[1].set_title("Custom Feature Values")
+    axs[1].set_title("Percentage greater than threshold 0.1 values")
 
     plt.tight_layout()
     plt.show()
