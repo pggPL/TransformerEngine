@@ -53,8 +53,7 @@ class PercentageGreaterThanThreshold(TEConfigAPIMapper):
         # This call is used by TE to determine if the unfused debug layer - which is slower - needs to be run.
         # It returns a tuple (bool, int), where the int indicates the next iteration when the feature will be enabled
         # and bool indicates if the feature should be enabled at the current iteration.
-        
-        
+
         run_current = iteration % config["freq"] == 0
         # run in next multiple of freq
         next_iter = iteration + (config["freq"] - iteration % config["freq"])

@@ -8,16 +8,20 @@
 import os
 import matplotlib.pyplot as plt
 
+
 def plot_stats(log_dir):
 
     # print and plot the stats
-    stat_file = os.path.join(log_dir, "nvdlfw_inspect_statistics_logs", "nvdlfw_inspect_globalrank-0.log")
+    stat_file = os.path.join(
+        log_dir, "nvdlfw_inspect_statistics_logs", "nvdlfw_inspect_globalrank-0.log"
+    )
 
     min_values = []
     custom_feature_values = []
 
     with open(stat_file, "r") as f:
         import re
+
         number_pattern = re.compile(r"[-+]?\d*\.\d+|\d+")
 
         for line in f:
