@@ -5,13 +5,12 @@
 """LogFp8TensorStats Feature support for nvidia-dlframework-inspect"""
 
 
-from nvdlfw_inspect.debug_features.log_quantized_tensor_stats import LogQuantizedTensorStats
+from transformer_engine.debug.features.log_quantized_tensor_stats import LogQuantizedTensorStats
 from nvdlfw_inspect.registry import Registry
-
 
 
 @Registry.register_feature(namespace="transformer_engine")
 class LogFp8TensorStats(LogQuantizedTensorStats):
     """
-    The same as LogQuantizedTensorStats, for backward compatibility.
+        This class is functionally identical to LogQuantizedTensorStats and exists to ensure backward compatibility.
     """

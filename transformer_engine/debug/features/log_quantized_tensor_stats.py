@@ -2,7 +2,7 @@
 #
 # See LICENSE for license information.
 
-"""LogFp8TensorStats Feature support for nvidia-dlframework-inspect"""
+"""LogQuantizedTensorStats Feature support for nvidia-dlframework-inspect"""
 
 from typing import Dict, Optional, List, Tuple
 from contextlib import contextmanager
@@ -20,6 +20,7 @@ from transformer_engine.pytorch.tensor.float8_tensor import (
     Float8Quantizer,
     Float8CurrentScalingQuantizer,
 )
+from transformer_engine.pytorch.tensor.nvfp4_tensor import NVFP4Quantizer
 from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Quantizer
 from transformer_engine.pytorch.tensor.float8_blockwise_tensor import Float8BlockQuantizer
 from transformer_engine.debug.features.utils import get_reduction_params, next_enabled_iter
@@ -53,6 +54,8 @@ def _get_new_quantizer(recipe_name, fp8_dtype):
         return MXFP8Quantizer(fp8_dtype=fp8_dtype, rowwise=True, columnwise=True)
     if recipe_name == "fp8_delayed_scaling":
         raise ValueError("Cannot recreate quantizer for fp8_delayed_scaling")
+    if recipe_name == "nvfp4":
+        return NVFP4Quantizer(rowwise=True, columnwise=True)
     raise ValueError(f"Unsupported recipe name: {recipe_name}")
 
 
@@ -103,6 +106,7 @@ class LogQuantizedTensorStats(BaseLogTensorStats):
                 - fp8_current_scaling,
                 - mxfp8,
                 - fp8_block_scaling,
+                - nvfp4,
 
             stats:
                 - underflows% - percentage of non-zero elements of tensor clipped to 0 after quantization,
@@ -130,12 +134,12 @@ class LogQuantizedTensorStats(BaseLogTensorStats):
     -------
     .. code-block:: yaml
 
-        example_fp8_tensor_stat_collection:
+        example_quantized_tensor_stat_collection:
             enabled: True
             layers:
                 layer_types: [layernorm_linear]
             transformer_engine:
-                LogFp8TensorStats:
+                LogQuantizedTensorStats:
                     enabled: True
                     tensors_struct:
                     - tensor: activation
@@ -176,7 +180,7 @@ class LogQuantizedTensorStats(BaseLogTensorStats):
         if recipe_from_stat in ["fp8_block_scaling"] and torch.cuda.get_device_capability()[0] < 9:
             raise ValueError(f"Stat {stat} needs Hopper or later GPU.")
 
-        if recipe_from_stat == "mxfp8" and torch.cuda.get_device_capability()[0] < 10:
+        if recipe_from_stat in ["mxfp8", "nvfp4"] and torch.cuda.get_device_capability()[0] < 10:
             raise ValueError(f"Stat {stat} needs Blackwell or later GPU.")
 
         supported_stats = ["underflows%", "scale_inv_min", "scale_inv_max", "mse"]
@@ -279,12 +283,12 @@ class LogQuantizedTensorStats(BaseLogTensorStats):
         assert rowwise_quantized_tensor is columnwise_quantized_tensor
         assert (
             quantizer is not None
-        ), "[NVTORCH INSPECT ERROR] LogFp8TensorStats cannot be run without low-precision recipe."
+        ), "[NVTORCH INSPECT ERROR] LogQuantizedTensorStats/LogFp8TensorStats cannot be run without low-precision recipe."
 
         quantized_tensor = rowwise_quantized_tensor
         assert isinstance(
             quantized_tensor, QuantizedTensor
-        ), "[NVTORCH INSPECT ERROR] LogFp8TensorStats quantized_tensor must be a QuantizedTensor."
+        ), "[NVTORCH INSPECT ERROR] LogQuantizedTensorStats/LogFp8TensorStats quantized_tensor must be a QuantizedTensor."
         recipe_name = _get_recipe_name(quantizer)
 
         for stat in config["stats"]:
