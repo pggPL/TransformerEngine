@@ -19,6 +19,7 @@ from transformer_engine.common.recipe import Format
 from transformer_engine.pytorch.tensor import Quantizer
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Quantizer
 from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Quantizer
+from transformer_engine.pytorch.tensor.nvfp4_tensor import NVFP4Quantizer
 from transformer_engine.pytorch.fp8 import _default_sf_compute
 
 
@@ -52,8 +53,15 @@ def fake_quantize(tensor: torch.Tensor, fp8_format: tex.DType, out=None):
         scale = _default_sf_compute(amax, one, fp8_max, 0)
 
         quantizer = Float8Quantizer(scale, amax, fp8_dtype)
+    elif fp8_format == "NVFP4":
+        quantizer = NVFP4Quantizer()
     else:
-        quantizer = MXFP8Quantizer(fp8_dtype=fp8_format)
+        if fp8_format == "MXFP8E4M3":
+            fp8_dtype = tex.DType.kFloat8E4M3
+        else:
+            fp8_dtype = tex.DType.kFloat8E5M2
+        quantizer = MXFP8Quantizer(fp8_dtype=fp8_dtype)
+    
     if out is not None:
         out.copy_(quantizer(tensor).dequantize())
         return None
@@ -120,7 +128,7 @@ class FakeQuant(TEConfigAPIMapper):
 
     def _supported_formats(self):
         """Returns formats that one can fake quantize tensor to."""
-        return ["FP8E4M3", "FP8E5M2", "MXFP8E4M3", "MXFP8E5M2"]
+        return ["FP8E4M3", "FP8E5M2", "MXFP8E4M3", "MXFP8E5M2", "NVFP4"]
 
     @api_method
     def fp8_gemm_enabled(
