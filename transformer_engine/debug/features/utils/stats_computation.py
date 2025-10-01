@@ -323,6 +323,7 @@ for _columnwise in [True, False]:
         "mxfp8",
         "fp8_current_scaling",
         "fp8_block_scaling",
+        "nvfp4",
     ]:
         add_underflows_stats(_recipe_name, _columnwise)
         add_scale_inv_stats(_recipe_name, _columnwise)
