@@ -44,6 +44,7 @@ recipes = [
     "fp8_current_scaling",
     "fp8_block_scaling",
     "mxfp8",
+    "nvfp4",
 ]
 
 bare_stats = [
@@ -64,7 +65,7 @@ for r in recipes:
             ):
                 # hopper is needed for current-scaling, block-scaling
                 continue
-            if r == "mxfp8" and torch.cuda.get_device_capability()[0] < 10:
+            if r in ["mxfp8", "nvfp4"] and torch.cuda.get_device_capability()[0] < 10:
                 # blackwell is needed for mxfp8
                 continue
             if (
