@@ -47,7 +47,10 @@ class PercentageGreaterThanThreshold(TEConfigAPIMapper):
         count = (tensor > threshold).sum().float()
         total = torch.tensor(tensor.numel(), dtype=torch.float32, device=tensor.device)
 
-        # Perform reduction across the group if needed
+        # Perform reduction across the group if needed.
+        # Note that we perform all_reduce twice per every tensor, which is suboptimal.
+        # For guidance on implementing efficient statistics reduction, see the implementation in the `LogTensorStats` feature.
+        # In this tutorial we only showcase basic implementation of the feature.
         if reduction_group is not None:
             torch.distributed.all_reduce(count, group=reduction_group)
             torch.distributed.all_reduce(total, group=reduction_group)
