@@ -10,6 +10,7 @@ import torch
 
 from nvdlfw_inspect.registry import Registry, api_method
 from nvdlfw_inspect.logging import MetricLogger
+import nvdlfw_inspect.api as debug_api
 
 from transformer_engine.debug.features.api import TEConfigAPIMapper
 from transformer_engine.pytorch.tensor import QuantizedTensor, Quantizer
@@ -37,7 +38,21 @@ class PercentageGreaterThanThreshold(TEConfigAPIMapper):
         # section of the documentation.
 
         threshold = config["threshold"]
-        percentage = (tensor > threshold).sum() / tensor.numel()
+        
+        # Get the reduction group from the debug tool
+        # one can set it using debug_api.set_tensor_reduction_group(group)
+        reduction_group = debug_api.get_tensor_reduction_group()
+        
+        # Compute percentage on local tensor
+        count = (tensor > threshold).sum().float()
+        total = torch.tensor(tensor.numel(), dtype=torch.float32, device=tensor.device)
+        
+        # Perform reduction across the group if needed
+        if reduction_group is not None:
+            torch.distributed.all_reduce(count, group=reduction_group)
+            torch.distributed.all_reduce(total, group=reduction_group)
+        
+        percentage = count / total
 
         # MetricLogger is a class from nvidia-dlframework-inspect.
         # By using it we can also use functionalities provided by nvidia-dlframework-inspect,
