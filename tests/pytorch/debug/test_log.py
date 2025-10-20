@@ -8,6 +8,7 @@ import transformer_engine.pytorch as te
 import torch
 import tempfile
 from transformer_engine.common import recipe
+import transformer_engine_torch as tex
 import pytest
 import contextlib
 import os
@@ -15,6 +16,7 @@ from transformer_engine.pytorch import (
     is_fp8_available,
     is_mxfp8_available,
     is_fp8_block_scaling_available,
+    Float8CurrentScalingQuantizer,
 )
 from transformer_engine.pytorch.quantization import RecipeState
 from transformer_engine.debug.pytorch.debug_state import TEDebugState
@@ -256,3 +258,54 @@ def test_log_every_3_or_5_layers(layer, configs_dir, feature_dirs):
 
     debug_api.end_debug()
     TEDebugState._reset()
+
+
+def test_custom_recipe_logging(feature_dirs):
+    """Test that logging works correctly with custom recipe and custom quantizers."""
+    if not fp8_available:
+        pytest.skip(reason_for_no_fp8)
+
+    config = """log:
+  layers:
+    layer_name_regex_pattern: .*
+  enabled: True
+  transformer_engine:
+    LogTensorStats:
+      enabled: True
+      tensors: [activation, weight]
+      stats: [min, max, mean]
+      start_step: 0
+      end_step: 5
+"""
+
+    with debug_session(config, feature_dirs) as log_dir:
+        # Create custom quantizer factory
+        def quantizer_factory(role):
+            if role in ("linear_input", "linear_weight", "linear_output"):
+                return Float8CurrentScalingQuantizer(tex.DType.kFloat8E4M3, device="cuda")
+            if role in ("linear_grad_output", "linear_grad_input"):
+                return Float8CurrentScalingQuantizer(tex.DType.kFloat8E5M2, device="cuda")
+            return Float8CurrentScalingQuantizer(tex.DType.kFloat8E4M3, device="cuda")
+
+        custom_recipe = recipe.CustomRecipe(qfactory=quantizer_factory)
+
+        # Run a simple forward/backward pass
+        model = te.Linear(64, 64, params_dtype=torch.bfloat16).cuda()
+        inp = torch.randn(16, 64, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+
+        for _ in range(3):
+            with te.autocast(enabled=True, recipe=custom_recipe):
+                out = model(inp)
+            loss = out.float().sum()
+            loss.backward()
+            debug_api.step()
+
+        output = read_log(log_dir)
+
+    # Verify that logging worked
+    assert output, "Log output is empty"
+    assert "activation" in output, "activation tensor not logged"
+    assert "weight" in output, "weight tensor not logged"
+    assert "min" in output, "min stat not logged"
+    assert "max" in output, "max stat not logged"
+    assert "mean" in output, "mean stat not logged"
