@@ -748,6 +748,13 @@ def get_cpu_offload_context(
             double_buffering=double_buffering,
         )
 
+    # Early return if offloading is not enabled
+    if not enabled:
+        if manual_synchronization:
+            return contextlib.nullcontext(), lambda x: x, None
+        return contextlib.nullcontext(), lambda x: x
+
+
     if not offload_weights and not offload_activations:
         raise ValueError(
             "CPU Offloading is enabled while it is not "
@@ -767,6 +774,12 @@ def get_cpu_offload_context(
 
     if TEDebugState.debug_enabled:
         raise RuntimeError("CPU offload is not supported in debug mode.")
+
+    # Early return if offloading is not enabled
+    if not enabled:
+        if manual_synchronization:
+            return contextlib.nullcontext(), lambda x: x, None
+        return contextlib.nullcontext(), lambda x: x
 
     if not manual_synchronization:
         assert (
@@ -848,15 +861,13 @@ def get_cpu_offload_context(
 
     cpu_offload_context = _CpuOffloadContext()
 
-    if enabled:
-        if manual_synchronization:
-            return (
-                cpu_offload_context,
-                cpu_offload_context.synchronization_function,
-                offload_synchronizer,
-            )
+    if manual_synchronization:
         return (
             cpu_offload_context,
             cpu_offload_context.synchronization_function,
+            offload_synchronizer,
         )
-    return contextlib.nullcontext(), lambda x: x
+    return (
+        cpu_offload_context,
+        cpu_offload_context.synchronization_function,
+    )
