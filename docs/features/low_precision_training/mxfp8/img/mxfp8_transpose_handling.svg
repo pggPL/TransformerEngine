@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 350">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="350" fill="#ffffff"/>
+
+  <!-- Left Side: Rowwise -->
+  <g transform="translate(100, 50)">
+    <text x="100" y="-20" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="bold">Rowwise Quantization</text>
+    <text x="100" y="0" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#666">(Standard Format)</text>
+    
+    <!-- Tensor Rectangle -->
+    <rect x="0" y="20" width="200" height="200" fill="#f0f4f8" stroke="#333" stroke-width="2"/>
+    
+    <!-- Horizontal Blocks -->
+    <g stroke="#0066cc" fill="#e6f0ff" stroke-width="1">
+      <!-- Row 0 -->
+      <rect x="5" y="25" width="190" height="20" rx="2"/>
+      <rect x="5" y="50" width="190" height="20" rx="2"/>
+      <rect x="5" y="75" width="190" height="20" rx="2"/>
+      <rect x="5" y="100" width="190" height="20" rx="2"/>
+      <rect x="5" y="125" width="190" height="20" rx="2"/>
+      <rect x="5" y="150" width="190" height="20" rx="2"/>
+      <rect x="5" y="175" width="190" height="20" rx="2"/>
+      <rect x="5" y="200" width="190" height="15" rx="2"/> <!-- slightly cut off for visual effect -->
+    </g>
+    
+    <text x="100" y="240" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#0066cc">Blocks aligned with Rows</text>
+  </g>
+
+  <!-- Middle: Arrow and X -->
+  <g transform="translate(350, 150)">
+    <!-- Arrow -->
+    <line x1="0" y1="0" x2="90" y2="0" stroke="#333" stroke-width="3" marker-end="url(#arrowhead)"/>
+    
+    <!-- Red X -->
+    <line x1="35" y1="-15" x2="65" y2="15" stroke="#cc0000" stroke-width="5"/>
+    <line x1="65" y1="-15" x2="35" y2="15" stroke="#cc0000" stroke-width="5"/>
+    
+    <text x="50" y="40" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="bold" fill="#cc0000">Not Compatible</text>
+  </g>
+
+  <!-- Right Side: Columnwise -->
+  <g transform="translate(500, 50)">
+    <text x="100" y="-20" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="bold">Columnwise Quantization</text>
+    <text x="100" y="0" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#666">(Required for Transpose)</text>
+    
+    <!-- Tensor Rectangle -->
+    <rect x="0" y="20" width="200" height="200" fill="#f0f4f8" stroke="#333" stroke-width="2"/>
+    
+    <!-- Vertical Blocks -->
+    <g stroke="#cc6600" fill="#fff0e6" stroke-width="1">
+      <!-- Col 0 -->
+      <rect x="5" y="25" width="20" height="190" rx="2"/>
+      <rect x="30" y="25" width="20" height="190" rx="2"/>
+      <rect x="55" y="25" width="20" height="190" rx="2"/>
+      <rect x="80" y="25" width="20" height="190" rx="2"/>
+      <rect x="105" y="25" width="20" height="190" rx="2"/>
+      <rect x="130" y="25" width="20" height="190" rx="2"/>
+      <rect x="155" y="25" width="20" height="190" rx="2"/>
+      <rect x="180" y="25" width="15" height="190" rx="2"/>
+    </g>
+    
+    <text x="100" y="240" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#cc6600">Blocks aligned with Columns</text>
+  </g>
+
+</svg>
+

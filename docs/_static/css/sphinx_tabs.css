@@ -9,7 +9,7 @@
     border: 1px solid #ccc;
     border-bottom: none;
     padding: 0.5rem 1rem;
-    margin-right: 0.25rem;
+    margin-right: 0.5rem;
     cursor: pointer;
     font-weight: 500;
     transition: background-color 0.2s;
@@ -23,6 +23,7 @@
     background-color: #76b900; /* NVIDIA green */
     color: white;
     border-color: #76b900;
+    margin-right: 0.5rem;
 }
 
 .sphinx-tabs-panel {

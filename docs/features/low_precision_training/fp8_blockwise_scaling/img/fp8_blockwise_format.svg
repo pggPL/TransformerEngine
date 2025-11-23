@@ -1,0 +1,260 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
+  <defs>
+  <style>
+      .title { font: bold 18px sans-serif; fill: #333; }
+      .label { font: 14px sans-serif; fill: #333; }
+      .cell { stroke: #444; stroke-width: 2; }
+      .grid-line { stroke: #666; stroke-width: 1; }
+      .scale-cell { stroke: #666; stroke-width: 1; opacity: 0.8; }
+      .text { font: 10px monospace; fill: #000; text-anchor: middle; }
+      
+      /* High precision color */
+      .high-precision { fill: #E8E8E8; stroke: #666; stroke-width: 2; }
+      
+      /* Tile colors - two shades for checkerboard */
+      .tile-rowwise-light { fill: #87CEEB; }
+      .tile-rowwise-dark { fill: #5F9FCC; }
+      .tile-columnwise-light { fill: #98FB98; }
+      .tile-columnwise-dark { fill: #6FCC6F; }
+      
+      /* Scaling factor colors */
+      .scale-factor { fill: #FFA500; }
+    </style>
+  </defs>
+  
+  <!-- Title for high precision tensor -->
+  <text x="300" y="30" class="title">High Precision Tensor (12×8)</text>
+  
+  <!-- High precision tensor (12 rows × 8 columns) - single gray rectangle -->
+  <g id="high-precision-tensor" transform="translate(150, 50)">
+    <rect x="0" y="0" width="160" height="180" class="high-precision"/>
+  </g>
+  
+  <!-- Left side: Rowwise FP8 Blockwise Tensor with 1x4 tiles -->
+  <text x="200" y="290" class="title">Rowwise FP8 Blockwise (12×8)</text>
+  <text x="180" y="310" class="label">Tiles: 1×4</text>
+  
+  <g id="rowwise-tensor" transform="translate(50, 330)">
+    <!-- Tensor is 12 rows × 8 cols -->
+    <!-- Tiles are 1 row × 4 cols -->
+    <!-- Checkerboard pattern: alternate colors -->
+    
+    <!-- Row 0: light, dark -->
+    <rect x="0" y="0" width="80" height="15" class="cell tile-rowwise-light"/>
+    <rect x="80" y="0" width="80" height="15" class="cell tile-rowwise-dark"/>
+    
+    <!-- Row 1: dark, light -->
+    <rect x="0" y="15" width="80" height="15" class="cell tile-rowwise-dark"/>
+    <rect x="80" y="15" width="80" height="15" class="cell tile-rowwise-light"/>
+    
+    <!-- Row 2: light, dark -->
+    <rect x="0" y="30" width="80" height="15" class="cell tile-rowwise-light"/>
+    <rect x="80" y="30" width="80" height="15" class="cell tile-rowwise-dark"/>
+    
+    <!-- Row 3: dark, light -->
+    <rect x="0" y="45" width="80" height="15" class="cell tile-rowwise-dark"/>
+    <rect x="80" y="45" width="80" height="15" class="cell tile-rowwise-light"/>
+    
+    <!-- Row 4: light, dark -->
+    <rect x="0" y="60" width="80" height="15" class="cell tile-rowwise-light"/>
+    <rect x="80" y="60" width="80" height="15" class="cell tile-rowwise-dark"/>
+    
+    <!-- Row 5: dark, light -->
+    <rect x="0" y="75" width="80" height="15" class="cell tile-rowwise-dark"/>
+    <rect x="80" y="75" width="80" height="15" class="cell tile-rowwise-light"/>
+    
+    <!-- Row 6: light, dark -->
+    <rect x="0" y="90" width="80" height="15" class="cell tile-rowwise-light"/>
+    <rect x="80" y="90" width="80" height="15" class="cell tile-rowwise-dark"/>
+    
+    <!-- Row 7: dark, light -->
+    <rect x="0" y="105" width="80" height="15" class="cell tile-rowwise-dark"/>
+    <rect x="80" y="105" width="80" height="15" class="cell tile-rowwise-light"/>
+    
+    <!-- Row 8: light, dark -->
+    <rect x="0" y="120" width="80" height="15" class="cell tile-rowwise-light"/>
+    <rect x="80" y="120" width="80" height="15" class="cell tile-rowwise-dark"/>
+    
+    <!-- Row 9: dark, light -->
+    <rect x="0" y="135" width="80" height="15" class="cell tile-rowwise-dark"/>
+    <rect x="80" y="135" width="80" height="15" class="cell tile-rowwise-light"/>
+    
+    <!-- Row 10: light, dark -->
+    <rect x="0" y="150" width="80" height="15" class="cell tile-rowwise-light"/>
+    <rect x="80" y="150" width="80" height="15" class="cell tile-rowwise-dark"/>
+    
+    <!-- Row 11: dark, light -->
+    <rect x="0" y="165" width="80" height="15" class="cell tile-rowwise-dark"/>
+    <rect x="80" y="165" width="80" height="15" class="cell tile-rowwise-light"/>
+    
+    <!-- Grid lines within tiles -->
+    <line x1="20" y1="0" x2="20" y2="180" class="grid-line"/>
+    <line x1="40" y1="0" x2="40" y2="180" class="grid-line"/>
+    <line x1="60" y1="0" x2="60" y2="180" class="grid-line"/>
+    <line x1="100" y1="0" x2="100" y2="180" class="grid-line"/>
+    <line x1="120" y1="0" x2="120" y2="180" class="grid-line"/>
+    <line x1="140" y1="0" x2="140" y2="180" class="grid-line"/>
+  </g>
+  
+  <!-- Rowwise scaling factors (12×2) -->
+  <text x="100" y="540" class="label">Scaling Factors (12×2)</text>
+  <g id="rowwise-scales" transform="translate(50, 550)">
+    <!-- 12 rows × 2 columns of scaling factors -->
+    <rect x="0" y="0" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="0" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="10" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="10" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="20" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="20" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="30" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="30" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="40" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="40" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="50" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="50" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="60" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="60" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="70" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="70" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="80" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="80" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="90" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="90" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="100" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="100" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="110" width="80" height="10" class="scale-cell scale-factor"/>
+    <rect x="80" y="110" width="80" height="10" class="scale-cell scale-factor"/>
+    
+    <text x="40" y="7" class="text">s₀</text>
+    <text x="120" y="7" class="text">s₁</text>
+  </g>
+  
+  <!-- Right side: Columnwise FP8 Blockwise Tensor with 1x4 tiles (TRANSPOSED - now 8×12) -->
+  <text x="700" y="290" class="title">Columnwise FP8 Blockwise (8×12)</text>
+  <text x="680" y="310" class="label">Tiles: 1×4</text>
+  
+  <g id="columnwise-tensor" transform="translate(550, 330)">
+    <!-- Tensor is NOW 8 rows × 12 cols (transposed) -->
+    <!-- Tiles are 1 row × 4 cols -->
+    <!-- So we have 8 rows × 3 columns of tiles = 24 tiles -->
+    <!-- Checkerboard pattern -->
+    
+    <!-- Row 0 - alternating pattern across 3 tiles -->
+    <rect x="0" y="0" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    <rect x="80" y="0" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    <rect x="160" y="0" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    
+    <!-- Row 1 - reverse pattern -->
+    <rect x="0" y="22.5" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    <rect x="80" y="22.5" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    <rect x="160" y="22.5" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    
+    <!-- Row 2 -->
+    <rect x="0" y="45" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    <rect x="80" y="45" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    <rect x="160" y="45" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    
+    <!-- Row 3 -->
+    <rect x="0" y="67.5" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    <rect x="80" y="67.5" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    <rect x="160" y="67.5" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    
+    <!-- Row 4 -->
+    <rect x="0" y="90" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    <rect x="80" y="90" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    <rect x="160" y="90" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    
+    <!-- Row 5 -->
+    <rect x="0" y="112.5" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    <rect x="80" y="112.5" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    <rect x="160" y="112.5" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    
+    <!-- Row 6 -->
+    <rect x="0" y="135" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    <rect x="80" y="135" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    <rect x="160" y="135" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    
+    <!-- Row 7 -->
+    <rect x="0" y="157.5" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    <rect x="80" y="157.5" width="80" height="22.5" class="cell tile-columnwise-light"/>
+    <rect x="160" y="157.5" width="80" height="22.5" class="cell tile-columnwise-dark"/>
+    
+    <!-- Grid lines within tiles -->
+    <line x1="20" y1="0" x2="20" y2="180" class="grid-line"/>
+    <line x1="40" y1="0" x2="40" y2="180" class="grid-line"/>
+    <line x1="60" y1="0" x2="60" y2="180" class="grid-line"/>
+    <line x1="100" y1="0" x2="100" y2="180" class="grid-line"/>
+    <line x1="120" y1="0" x2="120" y2="180" class="grid-line"/>
+    <line x1="140" y1="0" x2="140" y2="180" class="grid-line"/>
+    <line x1="180" y1="0" x2="180" y2="180" class="grid-line"/>
+    <line x1="200" y1="0" x2="200" y2="180" class="grid-line"/>
+    <line x1="220" y1="0" x2="220" y2="180" class="grid-line"/>
+  </g>
+  
+  <!-- Columnwise scaling factors (8×3) - transposed -->
+  <text x="650" y="540" class="label">Scaling Factors (8×3)</text>
+  <g id="columnwise-scales" transform="translate(550, 550)">
+    <!-- 8 rows × 3 columns of scaling factors -->
+    <rect x="0" y="0" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="80" y="0" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="160" y="0" width="80" height="15" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="15" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="80" y="15" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="160" y="15" width="80" height="15" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="30" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="80" y="30" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="160" y="30" width="80" height="15" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="45" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="80" y="45" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="160" y="45" width="80" height="15" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="60" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="80" y="60" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="160" y="60" width="80" height="15" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="75" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="80" y="75" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="160" y="75" width="80" height="15" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="90" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="80" y="90" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="160" y="90" width="80" height="15" class="scale-cell scale-factor"/>
+    
+    <rect x="0" y="105" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="80" y="105" width="80" height="15" class="scale-cell scale-factor"/>
+    <rect x="160" y="105" width="80" height="15" class="scale-cell scale-factor"/>
+    
+    <text x="40" y="10" class="text">s₀</text>
+    <text x="120" y="10" class="text">s₁</text>
+    <text x="200" y="10" class="text">s₂</text>
+  </g>
+  
+  <!-- Arrows pointing down -->
+  <g id="arrows">
+    <!-- Arrow from high precision to rowwise -->
+    <line x1="230" y1="240" x2="150" y2="320" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+    
+    <!-- Arrow from high precision to columnwise -->
+    <line x1="330" y1="240" x2="670" y2="320" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  </g>
+  
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#666"/>
+    </marker>
+  </defs>
+</svg>

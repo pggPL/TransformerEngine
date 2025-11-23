@@ -8,10 +8,11 @@ Low precision training
 
 .. toctree::
 
-   introduction.rst
-   fp8_current_scaling.rst
-   fp8_delayed_scaling.rst
-   fp8_blockwise_scaling.rst
-   mxfp8.rst
-   nvfp4.rst
-   custom_recipes.rst
+   introduction/introduction.rst
+   performance_considerations/performance_considerations.rst
+   fp8_current_scaling/fp8_current_scaling.rst
+   fp8_delayed_scaling/fp8_delayed_scaling.rst
+   fp8_blockwise_scaling/fp8_blockwise_scaling.rst
+   mxfp8/mxfp8.rst
+   nvfp4/nvfp4.rst
+   custom_recipes/custom_recipes.rst

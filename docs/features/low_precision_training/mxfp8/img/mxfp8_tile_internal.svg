@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+  <style>
+    .title { font: bold 20px sans-serif; fill: #333; }
+    .subtitle { font: bold 16px sans-serif; fill: #444; }
+    .label { font: 14px sans-serif; fill: #555; }
+    .small { font: 12px sans-serif; fill: #666; }
+    .tile-box { fill: #fff; stroke: #333; stroke-width: 2; }
+    .cell { stroke: #ddd; stroke-width: 1; }
+    .cell-text { font: 10px sans-serif; fill: #333; text-anchor: middle; dominant-baseline: middle; }
+    .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+    .group-a { fill: #ffebee; } /* Red tint */
+    .group-b { fill: #e8f5e9; } /* Green tint */
+    .group-c { fill: #e3f2fd; } /* Blue tint */
+    .group-d { fill: #fff3e0; } /* Orange tint */
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+
+  <text x="400" y="30" text-anchor="middle" class="title">MXFP8 Swizzling Part 2: Inside the Tile</text>
+
+  <!-- LEFT: Logical Tile Layout -->
+  <text x="200" y="70" text-anchor="middle" class="subtitle">Logical 128x4 Tile</text>
+  <text x="200" y="90" text-anchor="middle" class="small">(Sequential Columns)</text>
+
+  <g transform="translate(140, 110)">
+    <rect x="0" y="0" width="120" height="160" class="tile-box" />
+    
+    <!-- Column 0 -->
+    <rect x="0" y="0" width="30" height="40" class="cell group-a" /> <text x="15" y="20" class="cell-text">0</text>
+    <rect x="0" y="40" width="30" height="40" class="cell group-a" /> <text x="15" y="60" class="cell-text">1</text>
+    <rect x="0" y="80" width="30" height="40" class="cell group-a" /> <text x="15" y="100" class="cell-text">2</text>
+    <rect x="0" y="120" width="30" height="40" class="cell group-a" /> <text x="15" y="140" class="cell-text">3</text>
+    
+    <!-- Column 1 -->
+    <rect x="30" y="0" width="30" height="40" class="cell group-b" /> <text x="45" y="20" class="cell-text">128</text>
+    <rect x="30" y="40" width="30" height="40" class="cell group-b" /> <text x="45" y="60" class="cell-text">129</text>
+    <rect x="30" y="80" width="30" height="40" class="cell group-b" /> <text x="45" y="100" class="cell-text">130</text>
+    <rect x="30" y="120" width="30" height="40" class="cell group-b" /> <text x="45" y="140" class="cell-text">131</text>
+
+    <!-- Column 2 -->
+    <rect x="60" y="0" width="30" height="40" class="cell group-c" /> <text x="75" y="20" class="cell-text">256</text>
+    <rect x="60" y="40" width="30" height="40" class="cell group-c" /> <text x="75" y="60" class="cell-text">257</text>
+    <rect x="60" y="80" width="30" height="40" class="cell group-c" /> <text x="75" y="100" class="cell-text">258</text>
+    <rect x="60" y="120" width="30" height="40" class="cell group-c" /> <text x="75" y="140" class="cell-text">259</text>
+
+    <!-- Column 3 -->
+    <rect x="90" y="0" width="30" height="40" class="cell group-d" /> <text x="105" y="20" class="cell-text">384</text>
+    <rect x="90" y="40" width="30" height="40" class="cell group-d" /> <text x="105" y="60" class="cell-text">385</text>
+    <rect x="90" y="80" width="30" height="40" class="cell group-d" /> <text x="105" y="100" class="cell-text">386</text>
+    <rect x="90" y="120" width="30" height="40" class="cell group-d" /> <text x="105" y="140" class="cell-text">387</text>
+  </g>
+
+  <!-- Arrow -->
+  <path d="M 320 190 L 480 190" class="arrow" />
+  <text x="400" y="180" text-anchor="middle" class="label">Interleave</text>
+
+  <!-- RIGHT: Swizzled Layout -->
+  <text x="600" y="70" text-anchor="middle" class="subtitle">Swizzled Memory Layout</text>
+  <text x="600" y="90" text-anchor="middle" class="small">(Interleaved for Tensor Cores)</text>
+
+  <g transform="translate(540, 110)">
+    <rect x="0" y="0" width="120" height="160" class="tile-box" />
+    
+    <!-- Row 0: Interleaved -->
+    <rect x="0" y="0" width="30" height="40" class="cell group-a" /> <text x="15" y="20" class="cell-text">0</text>
+    <rect x="30" y="0" width="30" height="40" class="cell group-b" /> <text x="45" y="20" class="cell-text">128</text>
+    <rect x="60" y="0" width="30" height="40" class="cell group-c" /> <text x="75" y="20" class="cell-text">256</text>
+    <rect x="90" y="0" width="30" height="40" class="cell group-d" /> <text x="105" y="20" class="cell-text">384</text>
+
+    <!-- Row 1: Interleaved -->
+    <rect x="0" y="40" width="30" height="40" class="cell group-a" /> <text x="15" y="60" class="cell-text">1</text>
+    <rect x="30" y="40" width="30" height="40" class="cell group-b" /> <text x="45" y="60" class="cell-text">129</text>
+    <rect x="60" y="40" width="30" height="40" class="cell group-c" /> <text x="75" y="60" class="cell-text">257</text>
+    <rect x="90" y="40" width="30" height="40" class="cell group-d" /> <text x="105" y="60" class="cell-text">385</text>
+
+    <!-- Row 2: Interleaved -->
+    <rect x="0" y="80" width="30" height="40" class="cell group-a" /> <text x="15" y="100" class="cell-text">2</text>
+    <rect x="30" y="80" width="30" height="40" class="cell group-b" /> <text x="45" y="100" class="cell-text">130</text>
+    <rect x="60" y="80" width="30" height="40" class="cell group-c" /> <text x="75" y="100" class="cell-text">258</text>
+    <rect x="90" y="80" width="30" height="40" class="cell group-d" /> <text x="105" y="100" class="cell-text">386</text>
+
+    <!-- Row 3: Interleaved -->
+    <rect x="0" y="120" width="30" height="40" class="cell group-a" /> <text x="15" y="140" class="cell-text">3</text>
+    <rect x="30" y="120" width="30" height="40" class="cell group-b" /> <text x="45" y="140" class="cell-text">131</text>
+    <rect x="60" y="120" width="30" height="40" class="cell group-c" /> <text x="75" y="140" class="cell-text">259</text>
+    <rect x="90" y="120" width="30" height="40" class="cell group-d" /> <text x="105" y="140" class="cell-text">387</text>
+  </g>
+
+  <text x="400" y="320" text-anchor="middle" class="small">Within each tile, data is rearranged. Elements from different logical columns (colors)</text>
+  <text x="400" y="340" text-anchor="middle" class="small">are placed adjacently to maximize bank throughput.</text>
+</svg>
+

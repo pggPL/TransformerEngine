@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 550">
+  <defs>
+    <style>
+      .title { font: bold 20px sans-serif; fill: #333; text-anchor: middle; }
+      .subtitle { font: bold 16px sans-serif; fill: #444; text-anchor: middle; }
+      .label { font: 14px sans-serif; fill: #333; text-anchor: middle; }
+      .small-label { font: 12px sans-serif; fill: #555; text-anchor: middle; }
+      .annotation { font: italic 12px sans-serif; fill: #666; text-anchor: middle; }
+      
+      /* Data Tensors (Blue style matching transpose_handling) */
+      .data-tensor { fill: #87CEEB; stroke: #444; stroke-width: 2; }
+      .data-tensor-b { fill: #B0E0E6; stroke: #444; stroke-width: 2; } /* PowderBlue for distinction */
+      
+      /* Scaling Factors (Green/Orange for distinction) */
+      .scale-tensor { fill: #C8E6C9; stroke: #2E7D32; stroke-width: 2; }
+      .scale-tensor-swizzled { fill: #A5D6A7; stroke: #1B5E20; stroke-width: 2; stroke-dasharray: 4,2; }
+      
+      /* Components */
+      .process-box { fill: #F5F5F5; stroke: #999; stroke-width: 1; rx: 5; }
+      .gemm-box { fill: #333; stroke: #000; stroke-width: 2; rx: 5; }
+      .gemm-text { fill: #FFF; font-weight: bold; text-anchor: middle; }
+      
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+
+  <!-- Main Title -->
+  <text x="450" y="30" class="title">Pre-GEMM Swizzling Pipeline</text>
+  <text x="450" y="55" class="small-label">Optimizing scaling factor layout for both inputs</text>
+
+  <!-- LEFT STREAM: TENSOR A -->
+  <g transform="translate(100, 80)">
+    <text x="100" y="-10" class="subtitle">Tensor A Path</text>
+    
+    <!-- Step 1: Input -->
+    <g id="input-a">
+      <text x="100" y="20" class="label">MXFP8 Input</text>
+      <!-- Data Tensor -->
+      <rect x="60" y="35" width="80" height="80" class="data-tensor" />
+      <text x="100" y="75" class="small-label" fill="#333">FP8 Data</text>
+      
+      <!-- Scaling Factors (Sequential) -->
+      <rect x="30" y="35" width="20" height="80" class="scale-tensor" />
+      <text x="40" y="75" class="small-label" transform="rotate(-90, 40, 75)" fill="#1B5E20">Scales</text>
+      
+      <text x="100" y="130" class="annotation">Sequential Layout</text>
+    </g>
+    
+    <!-- Arrow to Swizzle -->
+    <path d="M 100 140 L 100 170" class="arrow" />
+    
+    <!-- Step 2: Swizzle Process -->
+    <g transform="translate(50, 175)">
+      <rect x="0" y="0" width="100" height="40" class="process-box" />
+      <text x="50" y="25" class="label">Swizzle</text>
+    </g>
+    
+    <!-- Arrow from Swizzle -->
+    <path d="M 100 215 L 100 245" class="arrow" />
+    
+    <!-- Step 3: Swizzled Output -->
+    <g transform="translate(0, 240)">
+      <text x="100" y="20" class="label">Ready for GEMM</text>
+      <!-- Data Tensor (Unchanged) -->
+      <rect x="60" y="35" width="80" height="80" class="data-tensor" />
+      <text x="100" y="75" class="small-label" fill="#333">FP8 Data</text>
+      
+      <!-- Scaling Factors (Swizzled) -->
+      <rect x="30" y="35" width="20" height="80" class="scale-tensor-swizzled" />
+      <text x="40" y="75" class="small-label" transform="rotate(-90, 40, 75)" fill="#1B5E20">Swizzled</text>
+      
+      <text x="100" y="130" class="annotation">Block-Linear Layout</text>
+    </g>
+  </g>
+
+  <!-- RIGHT STREAM: TENSOR B -->
+  <g transform="translate(600, 80)">
+    <text x="100" y="-10" class="subtitle">Tensor B Path</text>
+    
+    <!-- Step 1: Input -->
+    <g id="input-b">
+      <text x="100" y="20" class="label">MXFP8 Input</text>
+      <!-- Data Tensor -->
+      <rect x="60" y="35" width="80" height="80" class="data-tensor-b" />
+      <text x="100" y="75" class="small-label" fill="#333">FP8 Data</text>
+      
+      <!-- Scaling Factors (Sequential) -->
+      <rect x="30" y="35" width="20" height="80" class="scale-tensor" />
+      <text x="40" y="75" class="small-label" transform="rotate(-90, 40, 75)" fill="#1B5E20">Scales</text>
+      
+      <text x="100" y="130" class="annotation">Sequential Layout</text>
+    </g>
+    
+    <!-- Arrow to Swizzle -->
+    <path d="M 100 140 L 100 170" class="arrow" />
+    
+    <!-- Step 2: Swizzle Process -->
+    <g transform="translate(50, 175)">
+      <rect x="0" y="0" width="100" height="40" class="process-box" />
+      <text x="50" y="25" class="label">Swizzle</text>
+    </g>
+    
+    <!-- Arrow from Swizzle -->
+    <path d="M 100 215 L 100 245" class="arrow" />
+    
+    <!-- Step 3: Swizzled Output -->
+    <g transform="translate(0, 240)">
+      <text x="100" y="20" class="label">Ready for GEMM</text>
+      <!-- Data Tensor (Unchanged) -->
+      <rect x="60" y="35" width="80" height="80" class="data-tensor-b" />
+      <text x="100" y="75" class="small-label" fill="#333">FP8 Data</text>
+      
+      <!-- Scaling Factors (Swizzled) -->
+      <rect x="30" y="35" width="20" height="80" class="scale-tensor-swizzled" />
+      <text x="40" y="75" class="small-label" transform="rotate(-90, 40, 75)" fill="#1B5E20">Swizzled</text>
+      
+      <text x="100" y="130" class="annotation">Block-Linear Layout</text>
+    </g>
+  </g>
+
+  <!-- CONVERGENCE: GEMM -->
+  <g transform="translate(0, 420)">
+    <!-- Arrows converging -->
+    <path d="M 200 -20 Q 200 40 350 40 L 370 40" class="arrow" />
+    <path d="M 700 -20 Q 700 40 530 40 L 510 40" class="arrow" />
+    
+    <!-- GEMM Unit -->
+    <rect x="380" y="10" width="120" height="60" class="gemm-box" />
+    <text x="440" y="35" class="gemm-text" font-size="16">GEMM</text>
+    <text x="440" y="55" class="gemm-text" font-size="10" fill="#AAA">Blackwell Tensor Core</text>
+    
+    <!-- Output -->
+    <path d="M 440 70 L 440 100" class="arrow" />
+    <rect x="400" y="105" width="80" height="25" fill="#FFF9C4" stroke="#F57F17" stroke-width="2" rx="3" />
+    <text x="440" y="122" class="small-label">Result C</text>
+  </g>
+
+</svg>
