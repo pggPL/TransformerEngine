@@ -69,14 +69,13 @@ This ensures that the largest value in each block, when multiplied by the scale 
 converted to FP8, will fit within the FP8 range without saturation.
 
 
-.. figure:: img/combined_scaling.svg
-   :align: center
-   :width: 90%
-   
-   *Figure 1. Top: Comparison of standard FP8 scaling (left) using a single scaling factor per tensor versus 
-   FP8 blockwise scaling in 1 dimension (right) using multiple scaling factors, one per block of 128 elements.
-   Bottom: FP8 blockwise scaling in 2 dimensions where each 128×128 block in the data tensor has a corresponding
-   scaling factor, providing fine-grained spatial control over quantization precision.*
+.. raw:: html
+   :file: img/combined_scaling.svg
+
+*Figure 1. Top: Comparison of standard FP8 scaling (left) using a single scaling factor per tensor versus 
+FP8 blockwise scaling in 1 dimension (right) using multiple scaling factors, one per block of 128 elements.
+Bottom: FP8 blockwise scaling in 2 dimensions where each 128×128 block in the data tensor has a corresponding
+scaling factor, providing fine-grained spatial control over quantization precision.*
 
 
 
@@ -89,11 +88,10 @@ Moreover, the Tensor Cores require that quantization direction for transpose nee
 different from the quantization direction for the original tensor.
 This is illustrated in the picture below:
 
-.. figure:: img/transpose_handling.svg
-   :align: center
-   :width: 90%
-   
-  
+.. raw:: html
+   :file: img/transpose_handling.svg
+
+
 
 Note that for 1D scaling the rowwise and columnwise quantized tensors may be numerically different.
 So the gradient computation may be affected. This issue is not present for 2D scaling.
@@ -116,6 +114,44 @@ Note that - unlike in FP8 Current/Delayed Scaling - tranposing 1D qunatized tens
 Computing the rowwise quantized tensor from rowwise quantized one will lead to precision loss.
 Thus qunatized tensor can be only obtained from higher precision data.
 
+Swizzle of scaling factors
+--------------------------
+
+Here we introcude a new concept of swizzling of data.
+Sometimes the data format used for the communication is different 
+from the one require by the GEMM. It was not the case for the previous recipes,
+but for FP8 Blockwise Scaling it is.
+
+For FP8 Blockwise Scaling Tensor can have 2 formats:
+
+- compact format - used for all-gather:
+  
+  - rowwise data: not transposed, shape: ``[A, B]``
+  - columnwise data: not transposed, shape: ``[A, B]``
+  - rowwise scaling factors: not transposed, not padded, shape: ``[A, B/128]``
+  - columnwise scaling factors: not transposed, not padded, shape: ``[A/128, B]``
+
+- gemm ready format - converted from COMPACT format after all-gather and before GEMMs:
+  
+  - rowwise data: not transposed, shape: ``[A, B]``
+  - columnwise data: transposed, shape: ``[B, A]``
+  - rowwise scaling factors: transposed, padded to the multiple of 4 along the last dimension, shape: ``[B/128, pad_to_4(A)]``
+  - columnwise scaling factors: not transposed, padded to the multiple of 4 along the last dimension, shape: ``[A/128, pad_to_4(B)]``
+
+Note that data in compact format is easy to gather. Every tensor is non-tranposed and no padding is needed.
+This is not the case for gemm ready format.
+
+By the **swizzling** we mean the process of converting the data from compact format to gemm ready format.
+This can be fused into the qunatization if no all-gather is performed, but it can be also done separately.
+
+.. raw:: html
+   :file: img/blockwise_swizzle_flow.svg
+
+*Figure 2. FP8 Blockwise Scaling swizzle paths. Top: With all-gather communication - quantization produces 
+compact format, then swizzle is performed separately after communication. Bottom: Without all-gather - 
+quantize and swizzle are fused into a single operation, directly producing GEMM ready format.*
+
+
 
 Distributed training
 -----------------------
@@ -131,34 +167,8 @@ which may be sharded.
 
 Gather of columnwise tensor is supported and is used since:
 
-- as mentioned in the previous section, it is not supported to compute columnwise quantized tensor from rowwise quantized one,
+- as mentioned earlier, it is not supported to compute columnwise quantized tensor from rowwise quantized one,
 - high precision tensor is not gathered in most cases due to performance reasons,
-
-Tensor can have 2 formats:
-
-- COMPACT format - used for all-gather:
-  
-  - rowwise data: not transposed, shape: ``[A, B]``
-  - columnwise data: not transposed, shape: ``[A, B]``
-  - rowwise scaling factors: not transposed, not padded, shape: ``[A, B/128]``
-  - columnwise scaling factors: not transposed, not padded, shape: ``[A/128, B]``
-
-- GEMM_READY format - converted from COMPACT format after all-gather and before GEMMs:
-  
-  - rowwise data: not transposed, shape: ``[A, B]``
-  - columnwise data: transposed, shape: ``[B, A]``
-  - rowwise scaling factors: transposed, padded to the multiple of 4 along the last dimension, shape: ``[B/128, pad_to_4(A)]``
-  - columnwise scaling factors: not transposed, padded to the multiple of 4 along the last dimension, shape: ``[A/128, pad_to_4(B)]``
-
-Note that data in COMPACT format is easy to gather, which is not possible with padding and transpose.
-
-
-.. raw:: html
-   :file: img/allgather_flow.svg
-
-*Figure 2. All-gather flow for FP8 blockwise scaling showing rowwise path for forward pass 
-and columnwise path for backward pass.*
-
 
 
 Examples

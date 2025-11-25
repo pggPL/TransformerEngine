@@ -1,4 +1,4 @@
-# START_MXFP8_EXAMPLE
+# START_NVFP4_EXAMPLE
 
 import jax
 import jax.numpy as jnp
@@ -6,11 +6,13 @@ import optax
 import transformer_engine.jax as te
 from transformer_engine.jax.flax import DenseGeneral
 from transformer_engine.jax.sharding import MeshResource, global_shard_guard
-from transformer_engine.common.recipe import MXFP8BlockScaling, Format
+from transformer_engine.common.recipe import NVFP4Recipe, Format
 
-# Create MXFP8 recipe
-recipe = MXFP8BlockScaling(
-    fp8_format=Format.E4M3,  # FP8 format (default: E4M3, E5M2 not supported)
+# Define NVFP4 recipe
+recipe = NVFP4Recipe(
+    fp8_format=Format.E4M3,
+    use_2d_weight_quantization=True,
+    use_rht=True,
 )
 
 with global_shard_guard(MeshResource()):
@@ -21,7 +23,7 @@ with global_shard_guard(MeshResource()):
         x = jax.random.normal(key, (32, 128, 1024), dtype=jnp.bfloat16)
         params = layer.init(key, x)
         
-        # Training with MXFP8
+        # Training step
         def loss_fn(params):
             output = layer.apply(params, x)
             return output.sum()
@@ -34,7 +36,4 @@ with global_shard_guard(MeshResource()):
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
 
-# END_MXFP8_EXAMPLE
-
-
-
+# END_NVFP4_EXAMPLE

@@ -1,5 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
   <style>
+    @import url("../../../_static/css/diagram-colors.css");
+    
     .title { font: bold 20px sans-serif; fill: #333; }
     .subtitle { font: bold 16px sans-serif; fill: #444; }
     .label { font: 14px sans-serif; fill: #555; }

@@ -7,177 +7,212 @@ Custom recipes
 ===================================
 
 .. warning::
-    **EXPERIMENTAL**: Custom recipe is experimental, still under active development,
-    and the API is subject to change without notice. Use at your own risk.
+    Custom recipe is an experimental feature.
 
-Custom recipes allow you to implement your own quantization strategies while still
-benefiting from Transformer Engine's infrastructure. This is useful for experimenting 
-with novel quantization techniques, mixing different formats for different tensors, 
-or implementing research prototypes.
+Introduction
+------------
 
-Quantizer factory
-----------------------
+The Custom Recipe feature allows users to implement their own recipes and run them together with 
+the Transformer Engine layers. 
+As the recipes already provided with the TE are optimized for performance,
+it is expected that the custom recipes will not be as performant.
+These are aimed to be used in experimental and testing purposes.
+Before implementing a custom recipe, 
+we show how the recipes provided by the TE are implemented.
 
-A quantizer factory is a callable that returns a quantizer based on the semantic role of a tensor.
-For linear layers, the following roles are used:
 
-**Forward pass:**
+Quantizer API
+-------------
 
-* ``"linear_input"``: Input activation tensor
-* ``"linear_weight"``: Weight tensor  
-* ``"linear_output"``: Output activation tensor
+**Recipe**
 
-**Backward pass:**
+The core of the custom recipe system is the interaction between the Recipe, the Quantizer, and the Quantized Tensor classes.
+The ``Recipe`` class is the base class for all recipes - like for example ``Float8CurrentScaling``
+or ``MXFP8BlockScaling``. The recipe contains global state - like for example recipe setting or 
+amax buffers for Delayed Scaling recipe. This object is provided to the ``autocast`` context manager as an argument.
+We will refer to this recipe as *active recipe* in the following text.
 
-* ``"linear_grad_output"``: Gradient with respect to output
-* ``"linear_grad_input"``: Gradient with respect to input
 
-The factory should return a ``Quantizer`` instance for each role, or ``None`` to skip quantization.
+.. raw:: html
+   :file: img/recipe_creates_quantizer.svg
 
-Basic example
-^^^^^^^^^^^^^
+*Figure 1. Recipe creates Quantizer instances for each GEMM input/output.*
 
-Here's a simple factory that uses FP8 E4M3 for forward pass and E5M2 for backward pass:
+**Quantizer**
+
+Each layer consists of some number of GEMMS. For Linear layer there is 1 GEMM and for LayerNormMLP layer there are 2 GEMMS.
+Each of the GEMMs is related to 6 tensors: input, weight, output, input gradient, weight gradient and output gradient.
+For each of these tensors - except the weight gradient tensor - in each of the layers, the object of active recipe creates a ``Quantizer``.
+If no recipe is active - the run is in high precision - then ``None`` is used as a Quantizers.
+
+**Quantized Tensor**
+
+Quantizer is responsible for creating low precision tensor from the high precision one.
+For examle, the ``Float8Quantizer`` class is responsible for creating ``Float8Tensor``.
+Sometimes Quantizer stores the data - like in Delayed Scaling recipe, where it stores the amax tensor and scaling factor.
+
+
+.. raw:: html
+   :file: img/quantizer_creates_tensor.svg
+
+*Figure 2. Quantizer converts high-precision tensor to QuantizedTensor.*
+
+**Optimization**
+
+Transformer Engine can perform many optimizations with the Quantizer objects. The example of two ones:
+
+* If in LayerNormLinear the GEMM uses a Quantizer, then the layer norm can use fused kernel to return proper ``QuantizedTensor`` object.
+* If ``QuantizedTensor`` object is all-gathered and all gather for the recipe is implemented, then the Quantizer can all-gather the quantized tensor. 
+  If this is not the case, the tensor is dequantized, all-gather is performed, and then quantized again.
+
+Custom Recipes API 
+------------------
 
 .. tabs::
 
     .. tab:: PyTorch
 
+        **Creating a Custom Recipe**
+
+        To create a custom recipe, use the ``CustomRecipe`` class with a ``qfactory`` parameter.
+        The factory is a callable that receives a ``role`` string identifying which tensor needs a quantizer,
+        and returns an appropriate ``Quantizer`` instance.
+
+        **Tensor Roles**
+
+        The ``role`` parameter uses ``linear_*`` naming for all layer types:
+
+        * Forward pass: ``linear_input``, ``linear_weight``, ``linear_output``
+        * Backward pass: ``linear_grad_output``, ``linear_grad_input``
+
+        **Implementing a Custom Quantizer**
+
+        To implement a custom quantizer, inherit from the ``Quantizer`` base class 
+        and implement the ``quantize_impl`` method:
+
+        * ``__init__(self, *, rowwise: bool, columnwise: bool)``: Initialize with usage flags
+        * ``quantize_impl(self, tensor: torch.Tensor) -> QuantizedTensor``: Convert high-precision tensor to quantized format
+
+        The ``quantize_impl`` method receives a high-precision tensor and must return 
+        a ``QuantizedTensor`` (or subclass) containing the quantized data and any scaling factors.
+
+        **Implementing a Custom Tensor**
+
+        Custom quantizers must return a ``QuantizedTensorStorage`` subclass from ``quantize_impl``.
+        To trigger the custom GEMM dispatch path, the tensor must have a ``custom`` property 
+        that returns ``True``.
+
+        The ``custom_gemm`` function reads the following attributes from the tensor storage 
+        and passes them to the quantizer's ``qgemm`` method:
+
+        * ``data``, ``scale``: Rowwise quantized data and scaling factors (used in FPROP and DGRAD)
+        * ``data_t``, ``scale_t``: Columnwise quantized data and scaling factors (used in DGRAD and WGRAD)
+        * ``dtype``: The original high-precision dtype
+        * ``original_shape``: Shape of the original tensor (used to reshape 3D outputs)
+
         .. code-block:: python
 
-            from transformer_engine.pytorch import Float8CurrentScalingQuantizer
-            import transformer_engine_torch as tex
+            @dataclasses.dataclass
+            class MyCustomTensor(QuantizedTensorStorage):
+                custom: bool = True  # Triggers custom GEMM dispatch
+                
+                data: torch.Tensor = None
+                data_t: torch.Tensor = None
+                scale: torch.Tensor = None
+                scale_t: torch.Tensor = None
+                dtype: torch.dtype = None
+                original_shape: tuple = None
 
-            def my_quantizer_factory(role):
-                # Forward pass: use E4M3
-                if role in ("linear_input", "linear_weight", "linear_output"):
-                    return Float8CurrentScalingQuantizer(
-                        tex.DType.kFloat8E4M3, device="cuda"
-                    )
-                
-                # Backward pass: use E5M2
-                if role in ("linear_grad_output", "linear_grad_input"):
-                    return Float8CurrentScalingQuantizer(
-                        tex.DType.kFloat8E5M2, device="cuda"
-                    )
-                
-                return None
+        **Implementing Custom GEMM**
+
+        When tensors are marked as custom (``custom = True``), the GEMM dispatch 
+        routes to the quantizer's ``qgemm`` method instead of the optimized C++ kernels.
+
+        The ``qgemm`` method signature:
+
+        .. code-block:: python
+
+            def qgemm(
+                self,
+                qx: torch.Tensor,           # Quantized data (from A.data or A.data_t)
+                qw: torch.Tensor,           # Quantized data (from B.data or B.data_t)
+                m_params: MMParams,         # Matrix multiplication parameters
+                out_dtype: torch.dtype,     # Output data type
+                sx: torch.Tensor,           # Scale (from A.scale or A.scale_t)
+                sw: torch.Tensor,           # Scale (from B.scale or B.scale_t)
+                bias: torch.Tensor | None,  # Optional bias (only for FPROP)
+                gemm_type: GEMMType,        # FPROP, DGRAD, or WGRAD
+                qresult_x: QuantizedTensorStorage,  # Full storage object A
+                qresult_w: QuantizedTensorStorage,  # Full storage object B
+            ) -> torch.Tensor:
+
+        The ``gemm_type`` parameter indicates which GEMM is being performed and which 
+        tensor attributes are used:
+
+        * ``GEMMType.FPROP``: ``A.data``, ``A.scale``, ``B.data``, ``B.scale``
+        * ``GEMMType.DGRAD``: ``A.data``, ``A.scale``, ``B.data_t``, ``B.scale_t``
+        * ``GEMMType.WGRAD``: ``A.data_t``, ``A.scale_t``, ``B.data_t``, ``B.scale_t``
 
     .. tab:: JAX
 
-        .. code-block:: python
+        Custom recipes are currently not supported in JAX.
 
-            from transformer_engine.jax import Float8CurrentScalingQuantizer
-            import transformer_engine.jax.cpp_extensions as tex
+**Limitations of Custom Recipes**
 
-            def my_quantizer_factory(role):
-                # Forward pass: use E4M3
-                if role in ("linear_input", "linear_weight", "linear_output"):
-                    return Float8CurrentScalingQuantizer(
-                        tex.DType.kFloat8E4M3
-                    )
-                
-                # Backward pass: use E5M2
-                if role in ("linear_grad_output", "linear_grad_input"):
-                    return Float8CurrentScalingQuantizer(
-                        tex.DType.kFloat8E5M2
-                    )
-                
-                return None
+Please note that recipes provided by the TE support many optimizations and fusions,
+and are polished for performance. We do not expose possibility of 
+most of the optimizations and fusions with custom recipes. 
+Thus, custom recipes are not expected to be as performant as the ones provided by the TE.
 
-Mixed precision example
-^^^^^^^^^^^^^^^^^^^^^^^
 
-You can selectively quantize only specific tensors:
+Examples
+--------
 
-.. code-block:: python
+We showcase two examples of custom recipes that demonstrate different use cases.
 
-    def mixed_precision_factory(role):
-        # Quantize activations but not weights
-        if role == "linear_input":
-            return Float8CurrentScalingQuantizer(
-                tex.DType.kFloat8E4M3, device="cuda"
-            )
-        
-        # Don't quantize weights
-        if role == "linear_weight":
-            return None
-        
-        if role == "linear_output":
-            return Float8CurrentScalingQuantizer(
-                tex.DType.kFloat8E4M3, device="cuda"
-            )
-        
-        if role in ("linear_grad_output", "linear_grad_input"):
-            return Float8CurrentScalingQuantizer(
-                tex.DType.kFloat8E5M2, device="cuda"
-            )
-        
-        return None
+**1. Mixed Precision Recipe (FP8 Forward / MXFP8 Backward)**
 
-Using custom recipes
--------------------
+This example uses ``CustomRecipe`` to mix standard TE quantizers: FP8 current scaling for forward pass 
+and MXFP8 for backward pass. 
 
-Create a :class:`~transformer_engine.common.recipe.CustomRecipe` with your factory 
-and use it with the :func:`~transformer_engine.pytorch.autocast` context manager:
+.. note::
+    Standard quantizers like ``Float8CurrentScalingQuantizer`` and ``MXFP8Quantizer`` return 
+    standard TE tensor types (``Float8Tensor``, ``MXFP8Tensor``). These tensors have ``custom = False``,
+    so the **optimized GEMM kernels are used** - ``custom_gemm`` is NOT invoked.
+    This approach allows mixing different quantization strategies without performance penalty.
 
-.. code-block:: python
+.. tabs::
 
-    import torch
-    import transformer_engine.pytorch as te
-    from transformer_engine.common import recipe
+    .. tab:: PyTorch
 
-    # Define model
-    model = te.Linear(768, 3072, bias=True).cuda()
-    inp = torch.randn(32, 768, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        .. literalinclude:: pytorch_mixed_precision_example.py
+            :language: python
+            :start-after: # START_MIXED_PRECISION_EXAMPLE
+            :end-before: # END_MIXED_PRECISION_EXAMPLE
 
-    # Create custom recipe
-    custom_recipe = recipe.CustomRecipe(qfactory=my_quantizer_factory)
+    .. tab:: JAX
 
-    # Use with autocast
-    with te.autocast(enabled=True, recipe=custom_recipe):
-        output = model(inp)
-    
-    loss = output.sum()
-    loss.backward()
+        Custom recipes are currently not supported in JAX.
 
-Performance considerations
--------------------------
+**2. Custom Quantization Logic with Custom GEMM (Int6)**
 
-Custom recipes provide flexibility but have trade-offs:
+This example demonstrates a fully custom quantizer that implements its own quantization format 
+and GEMM logic. The custom tensor storage has ``custom = True``, which triggers the custom GEMM 
+dispatch path - all matrix multiplications are routed to the quantizer's ``qgemm()`` method.
 
-**Advantages:**
+.. warning::
+    This approach executes GEMM in Python and is significantly slower than standard recipes.
+    Use only for experimental and testing purposes.
 
-* Full control over quantization strategy
-* Can mix different formats and selectively quantize tensors
-* Useful for research and prototyping
+.. tabs::
 
-**Limitations:**
+    .. tab:: PyTorch
 
-* No kernel fusion with other operations
-* May have additional Python overhead
-* Built-in recipes have more optimized implementations
+        .. literalinclude:: pytorch_int6_example.py
+            :language: python
+            :start-after: # START_INT6_EXAMPLE
+            :end-before: # END_INT6_EXAMPLE
 
-**When to use:**
+    .. tab:: JAX
 
-* Research and prototyping of new quantization methods
-* Experimenting with mixed-precision strategies
-* Domain-specific requirements
-
-**When to use built-in recipes:**
-
-* Production training requiring maximum performance
-* When DelayedScaling, Float8CurrentScaling, etc. meet your needs
-
-Creating custom quantizers
---------------------------
-
-To implement your own quantizer, subclass :class:`~transformer_engine.pytorch.quantized_tensor.Quantizer`
-and implement the ``quantize_impl`` method. See existing quantizers in ``transformer_engine/pytorch/tensor/``
-for examples, or ``transformer_engine/pytorch/custom_recipes/quantization_nvfp4.py`` for a complete 
-reference implementation.
-
-Supported devices
------------------
-
-Ada and later (SM 8.9+)
+        Custom recipes are currently not supported in JAX.

@@ -60,9 +60,8 @@ The scaling factor for each block is computed as follows:
 2. Compute the E8M0 exponent using the formula: ``exponent = float_to_e8m0(amax / max_norm)``
    where ``max_norm = 448`` (the maximum representable value in E4M3 format)
    
-   - The ``float_to_e8m0`` conversion extracts the 8-bit exponent from the float32 representation
-   - Uses **round-up** (toward positive infinity) to ensure values are not clipped too aggressively
-   - Applies **saturation** to handle edge cases (NaN → 0xFF, inf → 0xFE, zero → 0x00)
+   - The ``float_to_e8m0`` conversion extracts the 8-bit exponent from the float32 representations
+     and rounds toward positive infinity (round-up) when mantissa bits are non-zero, rather than truncating
    
 3. The resulting scaling factor is ``s = 2^exponent``
 
@@ -80,53 +79,64 @@ quantization control with compact scaling factor representation.*
 Swizzling scaling factors
 -------------------------
 
-To optimize memory access patterns and improve performance, scaling factors for both input tensors are stored in a swizzled layout before the GEMM operation.
+MXFP8 GEMMs require scaling factors with a very specific data layout — see the `cuBLAS documentation <https://docs.nvidia.com/cuda/cublas/index.html#block-scaling-factors-layout>`__.
+The process of converting standard scaling factors to the required layout is called *swizzling* in the context of Transformer Engine.
+Swizzled scaling factors allow more efficient usage of hardware.
+Transformer Engine performs swizzling before each of the GEMM operations, after optional communication, since 
+the swizzled scaling factors cannot be communicated.
 
 .. raw:: html
    :file: img/mxfp8_swizzle_both_tensors.svg
 
-*Figure 2. Both input tensors undergo swizzling before GEMM to optimize memory access for Blackwell Tensor Cores.*
+*Figure 2. MXFP8 swizzling process: standard scaling factors are rearranged into the hardware-required layout.*
 
-Swizzling is a two-step transformation process designed for Blackwell Tensor Cores:
 
-1. **Tile Transposition**: Scaling factors are reorganized into **128x4 tiles** (representing 128 rows and 4 columns of scaling factors).
-   This results in a **block-linear layout** in memory, ensuring that all scaling factors for a specific computation tile are stored contiguously.
-
-.. raw:: html
-   :file: img/mxfp8_tile_transposition.svg
-
-*Figure 3. Tile Transposition: The logical grid of scaling factors is broken into 128x4 tiles, which are then stored linearly in memory.*
-
-2. **Internal Interleaving**: Within each 128x4 block, the scaling factors are **interleaved**.
-   Instead of storing data column-by-column or row-by-row locally, the elements are shuffled to align with the specific thread access patterns of the hardware, minimizing bank conflicts.
+Let's now look into the MXFP8 swizzling process in more detail.
+Tensor Cores on Blackwell multiply two blocks of elements of size ``128x128``.
+Each of these blocks has corresponding block of ``128x4`` bytes of *E8M0* scaling factors.
+Note that most blocks of scaling factors are not contiguous - Blackwell hardware cannot handle this. 
+Thus swizzling rearranges the elements to make each block contiguous and lie them one after another. This process is illustrated in the following figure:
 
 .. raw:: html
-   :file: img/mxfp8_tile_internal.svg
+   :file: img/mxfp8_tensor_scaling_layout.svg
 
-*Figure 4. Inside the Tile: Scaling factors within a tile are interleaved to optimize Tensor Core access.*
+*Figure 3. MXFP8 tensor and scaling factor layout: the tensor (left) is tiled into smaller blocks,
+while the corresponding scaling factors are arranged as short and tall rectangles.*
 
-The swizzling pattern is hardware-specific and designed to align with the access patterns of Blackwell Tensor Cores.
 
+Bytes inside each block needs to be permuted to satisfy the hardware requirements.
+Note that each block contains 128 x 4 bytes of scaling factors,
+we will number the consecutive quadruples of bytes as 0, 1, 2, ..., 127. Then after the permutation 
+these quadruples will be in order:
+
+.. code-block:: none
+
+   0, 32, 64, 96, 1, 33, 65, 97, ..., 0 + k, 32 + k, 64 + k, 96 + k, ..., 31, 63, 95, 127
+
+
+.. raw:: html
+   :file: img/mxfp8_scale_linearize_and_swizzle.svg
+
+*Figure 4. Linearization and swizzling of scaling factors: 2D grid of scaling factors (K blocks per row)
+is first flattened into a contiguous 1D array (top), then reordered from sequential order to interleaved
+layout required by hardware (bottom).*
 
 Handling transposes
 -------------------
 
-Unlike FP8 Blockwise Scaling on Hopper, Blackwell architecture supports more GEMM layouts (TN, NT, NN),
-so explicit transposition of tensors is often not required for hardware compatibility.
+Blackwell architecture supports multiple FP8 GEMM layouts (TN, NT, NN), so explicit transposition of tensors is not required.
+However, different scaling layouts are needed for using tensor and tensor transpose - 
+first one uses 1x32 blocks, while the second one uses 32x1 blocks.
+It means that two different quantized tensors need to be computed - one for rowwise usage and one for columnwise usage.
+Moreover, they are numerically different! 
 
-However, MXFP8 uses 1D scaling with 1 scaling factor per 32 consecutive values.
-This means that rowwise and columnwise quantized tensors are numerically different.
-Consequently, transposing a 1D quantized tensor is not supported, as the rowwise tensor has scaling factors
-aligned with rows, while a columnwise tensor would need scaling factors aligned with columns.
-Computing one from the other would lead to significant precision loss.
-Thus, a quantized tensor can only be obtained accurately from higher precision data.
+Transposing a quantized tensor is not supported, due to loss of precision. MXFP8 tensor, rowwise and/or columnwise
+can be only obtained from higher precision data.
 
 .. raw:: html
-   :file: img/mxfp8_transpose_handling.svg
+   :file: img/mxfp8_row_col.svg
 
-*Figure 5. Transpose handling in MXFP8: While the tensor shape is transposed, the internal scaling block orientation
-is different (horizontal vs vertical strips of 32 elements). Direct transposition is invalid because scaling factors
-would not align with the new dimension axis.*
+*Figure 5. MXFP8 rowwise vs columnwise quantization layout.*
 
 
 Distributed training
@@ -141,13 +151,7 @@ which may be sharded.
 
 **Quantized all-gather**
 
-Gather of columnwise tensor is supported and is used since:
-
-- as mentioned in the previous section, it is not supported to compute columnwise quantized tensor from rowwise quantized one,
-- high precision tensor is not gathered in most cases due to performance reasons,
-
-Since Blackwell architecture supports more GEMM layouts (TN, NT, NN), there is no need to transpose 
-data or scaling factors to a specific layout required by the hardware (unlike on Hopper). This makes the gathering process trivial.
+Gather of columnwise tensor is supported - since in fact rowwise tensor layout is the same as columnwise tensor layout.
 
 
 Examples

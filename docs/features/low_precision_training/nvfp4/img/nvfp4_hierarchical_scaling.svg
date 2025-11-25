@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 60 500 380" width="100%" style="max-width: 500px;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 60 500 450" width="100%" style="max-width: 500px;">
   <defs>
     <style>
       @import url("../../../_static/css/diagram-colors.css");
@@ -15,18 +15,19 @@
       
       /* Scaling factor colors */
       .scale-factor { fill: #FFA500; stroke: #444; stroke-width: 2; }
+      .global-scale { fill: #FF6B6B; stroke: #444; stroke-width: 2; }
       
       .grid-line { stroke: #444; stroke-width: 2; }
       .boundary-line { stroke: #444; stroke-width: 2; }
     </style>
   </defs>
   
-  <!-- MXFP8 Scaling -->
-  <g id="mxfp8-scaling">
-    <text x="250" y="85" class="title">MXFP8</text>
-    <text x="250" y="108" class="label" style="font-size: 12px;">(One scaling factor per 32 elements)</text>
+  <!-- NVFP4 Scaling -->
+  <g id="nvfp4-scaling">
+    <text x="250" y="85" class="title">NVFP4 Hierarchical Scaling</text>
+    <text x="250" y="108" class="label" style="font-size: 12px;">(Block scaling + Global scaling)</text>
     
-    <!-- FP8 Tensor split into many small blocks (40×10) -->
+    <!-- NVFP4 Tensor split into many small blocks (40×10) -->
     <g id="tensor-blocks">
       <!-- White backgrounds for dots areas - cross pattern -->
       <rect x="250.0" y="140.0" width="40" height="120" fill="#FFFFFF" stroke="none"/>
@@ -171,7 +172,15 @@
       <text x="255" y="350" class="dots-text" style="font-size: 14px;" transform="rotate(45 255 350)">…</text>
     </g>
     
-    <text x="250" y="430" class="small-text" text-anchor="middle">E8M0 scaling factors (one per 32 elements)</text>
+    <text x="250" y="430" class="small-text" text-anchor="middle">E4M3 scaling factors (one per 16 elements)</text>
+
+    <!-- Global Scaling Factor -->
+    <g id="global-scale" transform="translate(350, 320)">
+       <rect x="10" y="10" width="20" height="20" class="global-scale"/>
+       <text x="20" y="60" class="small-text" text-anchor="middle">Global Scale (FP32)</text>
+       <text x="20" y="75" class="small-text" text-anchor="middle">(one per tensor)</text>
+       <text x="-20" y="25" class="dots-text" style="font-size: 20px;">+</text>
+    </g>
+
   </g>
 </svg>
-
