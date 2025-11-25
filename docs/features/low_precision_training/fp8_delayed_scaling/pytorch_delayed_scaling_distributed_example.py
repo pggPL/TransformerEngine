@@ -1,3 +1,7 @@
+# Copyright (c) 2022-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+#
+# See LICENSE for license information.
+
 # START_AMAX_REDUCTION_EXAMPLE
 import torch.distributed as dist
 import transformer_engine.pytorch as te
