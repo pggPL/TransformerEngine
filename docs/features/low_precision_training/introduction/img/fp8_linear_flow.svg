@@ -22,42 +22,42 @@
   <text x="80" y="125" class="text">Input</text>
   
   <!-- Forward: Arrow -->
-  <path d="M 130 120 L 160 120" class="arrow"/>
+  <path d="M 130 120 L 155 120" class="arrow"/>
   
-  <!-- Forward: Quantize Input -->
-  <rect x="160" y="95" width="90" height="50" class="quantize" rx="6"/>
-  <text x="205" y="125" class="text">Quantize</text>
+  <!-- Forward: Quantize Input (centered: gap 130-270 = 140px, box 90px, margins 25px each) -->
+  <rect x="155" y="95" width="90" height="50" class="quantize" rx="6"/>
+  <text x="200" y="125" class="text">Quantize</text>
   
   <!-- Forward: Arrow -->
-  <path d="M 250 120 L 260 120" class="arrow"/>
+  <path d="M 245 120 L 270 120" class="arrow"/>
   
   <!-- Forward: Input FP8 -->
-  <rect x="260" y="95" width="80" height="50" class="fp8" rx="6"/>
-  <text x="300" y="125" class="text">Input</text>
+  <rect x="270" y="95" width="80" height="50" class="fp8" rx="6"/>
+  <text x="310" y="125" class="text">Input</text>
   
   <!-- Forward: Arrow -->
-  <path d="M 340 120 L 400 155" class="arrow"/>
+  <path d="M 350 120 L 400 155" class="arrow"/>
   
   <!-- Forward: Weights High Precision -->
   <rect x="30" y="185" width="100" height="50" class="hp" rx="6"/>
   <text x="80" y="215" class="text">Weight</text>
   
   <!-- Forward: Arrow -->
-  <path d="M 130 210 L 160 210" class="arrow"/>
+  <path d="M 130 210 L 155 210" class="arrow"/>
   
-  <!-- Forward: Quantize Weights -->
-  <rect x="160" y="185" width="90" height="50" class="quantize" rx="6"/>
-  <text x="205" y="215" class="text">Quantize</text>
+  <!-- Forward: Quantize Weights (centered: gap 130-270 = 140px, box 90px, margins 25px each) -->
+  <rect x="155" y="185" width="90" height="50" class="quantize" rx="6"/>
+  <text x="200" y="215" class="text">Quantize</text>
   
   <!-- Forward: Arrow -->
-  <path d="M 250 210 L 260 210" class="arrow"/>
+  <path d="M 245 210 L 270 210" class="arrow"/>
   
   <!-- Forward: Weights FP8 -->
-  <rect x="260" y="185" width="80" height="50" class="fp8" rx="6"/>
-  <text x="300" y="215" class="text">Weights</text>
+  <rect x="270" y="185" width="80" height="50" class="fp8" rx="6"/>
+  <text x="310" y="215" class="text">Weights</text>
   
   <!-- Forward: Arrow -->
-  <path d="M 340 210 L 400 180" class="arrow"/>
+  <path d="M 350 210 L 400 180" class="arrow"/>
   
   <!-- Forward: GEMM -->
   <rect x="400" y="142" width="130" height="50" class="gemm" rx="6"/>
@@ -87,17 +87,23 @@
   <rect x="180" y="441" width="90" height="50" class="quantize" rx="6"/>
   <text x="225" y="471" class="text">Quantize</text>
   
-  <!-- Backward: Arrow -->
-  <path d="M 270 466 L 290 466" class="arrow"/>
+  <!-- Backward: Arrow to Output grad -->
+  <path d="M 270 450 L 290 425" class="arrow"/>
+  <!-- Backward: Arrow to Output grad transpose -->
+  <path d="M 270 482 L 290 505" class="arrow"/>
   
-  <!-- Backward: Output gradient FP8 -->
-  <rect x="290" y="441" width="110" height="50" class="fp8" rx="6"/>
-  <text x="345" y="471" class="text">Output grad.</text>
+  <!-- Backward: Output gradient FP8 (for input gradient) -->
+  <rect x="290" y="400" width="110" height="50" class="fp8" rx="6"/>
+  <text x="345" y="430" class="text">Output grad.</text>
+  
+  <!-- Backward: Output gradient FP8 transpose (for weight gradient) -->
+  <rect x="290" y="480" width="110" height="50" class="fp8" rx="6"/>
+  <text x="345" y="510" class="text">Output grad.ᵀ</text>
   
   <!-- Top GEMM path -->
-  <!-- Backward: Weight columnwise -->
+  <!-- Backward: Weight transpose -->
   <rect x="440" y="330" width="90" height="40" class="fp8" rx="6"/>
-  <text x="485" y="355" class="text">Weight Col.</text>
+  <text x="485" y="355" class="text">Weightᵀ</text>
   
   <!-- Backward: GEMM 1 (for input gradient) -->
   <rect x="420" y="400" width="130" height="50" class="gemm" rx="6"/>
@@ -108,9 +114,9 @@
   <text x="655" y="430" class="text">Input grad.</text>
   
   <!-- Bottom GEMM path -->
-  <!-- Backward: Input columnwise -->
+  <!-- Backward: Input transpose -->
   <rect x="440" y="560" width="90" height="40" class="fp8" rx="6"/>
-  <text x="485" y="585" class="text">Input Col.</text>
+  <text x="485" y="585" class="text">Inputᵀ</text>
   
   <!-- Backward: GEMM 2 (for weight gradient) -->
   <rect x="420" y="480" width="130" height="50" class="gemm" rx="6"/>
@@ -122,15 +128,15 @@
   
   <!-- Backward: Arrows -->
   <!-- Output gradient FP8 to top GEMM -->
-  <path d="M 400 456 L 420 425" class="arrow"/>
-  <!-- Weight columnwise to top GEMM -->
+  <path d="M 400 425 L 420 425" class="arrow"/>
+  <!-- Weight transpose to top GEMM -->
   <path d="M 485 370 L 485 400" class="arrow"/>
   <!-- Top GEMM to input gradient -->
   <path d="M 550 425 L 590 425" class="arrow"/>
   
-  <!-- Output gradient FP8 to bottom GEMM -->
-  <path d="M 400 476 L 420 505" class="arrow"/>
-  <!-- Input columnwise to bottom GEMM -->
+  <!-- Output gradient FP8 transpose to bottom GEMM -->
+  <path d="M 400 505 L 420 505" class="arrow"/>
+  <!-- Input transpose to bottom GEMM -->
   <path d="M 485 560 L 485 530" class="arrow"/>
   <!-- Bottom GEMM to weight gradient -->
   <path d="M 550 505 L 590 505" class="arrow"/>

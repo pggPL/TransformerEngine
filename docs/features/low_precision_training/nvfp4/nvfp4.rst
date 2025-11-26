@@ -8,7 +8,7 @@ NVFP4
 
 NVFP4 is the first 4-bit recipe introduced in Transformer Engine -
 please refer to the `NVFP4 paper <https://arxiv.org/abs/2509.25149>`__ for more details.
-It is more complex recipe than the previous ones - apart of new data format,
+It is a more complex recipe than the previous ones - apart from the new data format,
 it introduces multiple features which help training stability.
 
 Data Format
@@ -148,7 +148,7 @@ Let's see how RHT works for a GEMM with input matrices ``A`` and ``B``.
 
 2. *Definition of matrix* ``S``.
 
-   Define ``S`` as a ``16x16`` matrix with following properties:
+   Define ``S`` as a ``16x16`` matrix with the following properties:
    * ``S`` is a diagonal matrix with entries of ``+1`` or ``-1``.
    * ``S`` is shared across all modules and is changed randomly for each iteration.
 
@@ -161,7 +161,7 @@ Let's see how RHT works for a GEMM with input matrices ``A`` and ``B``.
 
       (u * HS) * (v * HS)^T =  u * H * S * S^T * H^T * v^T = u * v^T = c
 
-   thus if RHT is applied both on ``u`` and ``v``, we will get the same result of the dot product.
+   thus if RHT is applied to both ``u`` and ``v``, we will get the same result of the dot product.
 
    We can generalize this property for tensors `A` and `B`. If we multiply 
    every block of 16 elements in `A` by ``HS`` and every block of 16 elements in `B` by ``HS``,

@@ -6,17 +6,16 @@
 Introduction
 ===================================
 
-The main feature of Transformer Engine is enabling low precision training. 
-While the standard floating-point format on CPUs is FP32, 
-NVIDIA GPUs support lower precision formats designed to accelerate training.
-In this chapter, we introduce the general concepts of low precision training support in Transformer Engine.
+Transformer Engine accelerates deep learning by leveraging low precision formats on NVIDIA GPUs.
+This chapter introduces mixed precision training and FP8 support.
 
 
 Training in BF16/FP16
 ---------------------
 
-NVIDIA GPUs support FP16 format since Pascal generation and BF16 format since Ampere generation.
-Let's compare the differences between these two formats and FP32 format.
+Deep learning traditionally uses 32-bit floating-point (FP32) numbers.
+NVIDIA GPUs support lower precision formats—FP16 since Pascal, BF16 since Ampere—which offer higher throughput and lower memory usage.
+Let's compare these formats.
 
 .. raw:: html
    :file: img/fp_formats_comparison.svg
@@ -34,42 +33,67 @@ making it easier to convert between the two formats without overflow/underflow i
 FP16 offers better precision for smaller values but has a more limited dynamic range,
 which results in the need to perform loss scaling to avoid overflow/underflow—see `this paper on loss scaling <https://arxiv.org/pdf/1710.03740>`__ for more details.
 
+**Mixed precision**
 
-Not all operations can be performed in reduced precision. In practice, modern deep learning frameworks use *mixed precision training*,
-where computationally intensive operations like matrix multiplications run in low precision, 
-while numerically sensitive operations remain in high precision. 
-Transformer Engine also always runs some operations in FP32 precision - like normalization layers.
-Moreover, usually optimizer state is also stored in FP32 precision.
+Not all operations can run in reduced precision.
+Modern deep learning frameworks use *mixed precision training*, where:
 
-Another issue is whether to keep FP32 master weights and cast them between every operation or use lower precision weights.
-The motivation for using master weights in FP32 is that sum of low precision weight with low precision update tensor 
-may lead to numerical instability.
+* *Low precision* is used for matrix multiplications and other compute-heavy operations, which remain numerically stable at lower precision,
+* *High precision (FP32)* must be used for numerically sensitive operations to maintain training stability. These include layer normalization, softmax, and loss computations—operations that involve division or exponentiation, where small rounding errors can amplify and propagate through the network, leading to gradient instability or degraded convergence,
 
-Transformer Engine supports FP32 and FP16/BF16 mixed precision training. It also supports using master weights in FP32 precision
-and using lower precision weights.
+**Master weights**
+
+Mixed precision training also raises the question of how to store model weights.
+Lower precision formats like FP16 and BF16 have limited representational granularity, 
+which becomes problematic during gradient updates. 
+When a small gradient is added to a not so small weight stored in low precision, 
+the result may round back to the original value if the update falls below the format's precision threshold.
+Moreover, some elements of the gradient itself can be too small to be represented in low precision.
+
+The solution is to maintain *master weights* in FP32. 
+During training, weights are cast to lower precision for forward and backward passes, 
+but the gradient updates are applied to the full-precision master copy.
+This ensures that even small gradients accumulate correctly over time.
+
+There are two common software approaches to storing master weights:
+
+* *In the optimizer*: The model holds low-precision weights, while the optimizer maintains FP32 copies alongside momentum and other state. During each step, the optimizer updates its FP32 copy and casts the result back to the model's low-precision weights. This results in smaller model checkpoints and reduced memory usage during inference (when optimizer state is not loaded), but requires an optimizer that explicitly supports mixed-precision master weights.
+
+* *In the model*: The model stores weights directly in FP32, and they are cast to lower precision on-the-fly during forward and backward passes. This approach works with any standard optimizer without special support, but results in larger model checkpoints.
+
+.. raw:: html
+   :file: img/master_weights_approaches.svg
+
+*Figure 2: Three approaches to weight storage—low precision only (no master weights), master weights stored in the model, and master weights stored in the optimizer.*
 
 .. tabs::
 
    .. tab:: PyTorch
 
-      In PyTorch one can set weights precision by using ``params_dtype`` argument in any TE layer constructor.
-      To run computation in lower precision, one can use ``torch.cuda.amp.autocast`` context manager.
+      The PyTorch API of Transformer Engine provides two mechanisms to control precision:
+      
+      * **Weight precision**: Use the ``params_dtype`` argument in any TE layer constructor.
+      * **Computation precision**: Use the ``torch.autocast`` context manager.
+      
       If parameters are set to be in lower precision and no autocast is used, then lower precision is used for computation.
-      Input is casted to lower precision before the computation inside the layer.
+      Input is cast to lower precision before the computation inside the layer.
       Output precision is the same as autocast precision.
 
       .. literalinclude:: bf16_fp16_training_pytorch.py
          :language: python
          :start-after: # START_BF16_FP16_TRAINING
          :end-before: # END_BF16_FP16_TRAINING
-      
+
 
    .. tab:: JAX
 
-      In JAX one can set weights precision by using ``dtype`` argument in any TE layer constructor.
-      Computation is performed in precision of the input tensor.
-      So for training with master weights in FP32 and computation in BF16, 
-      one needs to cast input to BF16.
+      The JAX API of Transformer Engine provides two mechanisms to control precision:
+      
+      * **Weight precision**: Use the ``dtype`` argument in any TE layer constructor.
+      * **Computation precision**: Determined by the dtype of the input tensor.
+      
+      For training with master weights in FP32 and computation in BF16, 
+      cast the input tensor to BF16 before passing it to the layer.
 
       .. literalinclude:: bf16_fp16_training_jax.py
          :language: python
@@ -78,64 +102,127 @@ and using lower precision weights.
       
 
 
-Even lower precisions (FP8 etc.)
-------------------------------------
+Lower precisions
+----------------
 
-BF16/FP16 is not the smallest precision you get used to. Transformer Engine supports training in even lower precisions - like for example FP8.
-The logic of FP8 and other 8- or 4-bit precision is more complicated than BF16/FP16.
-Transformer Engine abstracts this complexity by recipe objects and autocast context manager.
-Let's look how fp8 training works in supported frameworks.
+Transformer Engine's primary feature is supporting even lower precision than BF16/FP16, such as FP8, MXFP8, NVFP4, etc.
+The logic of these precisions is more complicated than the logic of BF16/FP16 - they require scaling factors to
+properly represent the full range of values in the tensor. Sometimes it is one scaling factor per tensor,
+sometimes it is one scaling factor per block of values. A precision format combined with the logic for training
+is called **a recipe**.
+
+In this section we present common logic for all the recipes. Each one of them is described in more detail in a separate section later.
+Let's now see how we can train in lower precisions in supported frameworks.
 
 .. tabs::
 
    .. tab:: PyTorch
 
-      For PyTorch one needs to define recipe object.
-      Then run forward pass inside `autocast` context manager with proper recipe as an argument.
+      The PyTorch API of Transformer Engine provides an ``autocast`` context manager to control precision.
+      It's similar to the ``torch.autocast`` context manager, but tailored for low precision training.
+      The most important argument is the ``recipe`` argument, which accepts objects inheriting from
+      :class:`~transformer_engine.common.recipe.Recipe`.
 
-      .. literalinclude:: fp8_autocast_pytorch.py
+      Forward computations need to be performed inside the ``autocast`` context manager,
+      while the ``.backward()`` call should be outside of it.
+
+      Here is a basic example:
+
+      .. literalinclude:: autocast_pytorch.py
          :language: python
-         :start-after: # START_FP8_AUTOCAST
-         :end-before: # END_FP8_AUTOCAST
+         :start-after: # START_AUTOCAST_BASIC
+         :end-before: # END_AUTOCAST_BASIC
+
+      You can use multiple recipes in the same model in the following ways:
+
+      **Sequential contexts** - apply different recipes to different parts of your model:
+
+      .. literalinclude:: autocast_pytorch.py
+         :language: python
+         :start-after: # START_AUTOCAST_SEQUENTIAL
+         :end-before: # END_AUTOCAST_SEQUENTIAL
+
+      **Nested contexts** - the inner context overrides the outer one for its scope:
+
+      .. literalinclude:: autocast_pytorch.py
+         :language: python
+         :start-after: # START_AUTOCAST_NESTED
+         :end-before: # END_AUTOCAST_NESTED
       
 
    .. tab:: JAX
 
-      For JAX FP8 training:
-      
-      1. Set up ``global_shard_guard(MeshResource())`` context (required even for single GPU)
-      2. Create FP8 recipe using ``get_delayed_scaling_recipe()``
-      3. Wrap model initialization and training in ``te.fp8_autocast(enabled=True, recipe=recipe, mesh_resource=...)``
-      
-      Model initialization must happen inside the autocast context 
-      to properly capture FP8 metadata in the parameter tree.
+      The JAX API of Transformer Engine provides an ``autocast`` context manager similar to PyTorch.
+      The key difference is that in JAX, model initialization must happen inside the ``autocast`` context
+      to properly capture quantization metadata in the parameter tree.
 
-      .. literalinclude:: fp8_autocast_jax.py
+      Additionally, JAX requires a ``global_shard_guard(MeshResource())`` context (even for single GPU)
+      and the ``mesh_resource`` argument in the ``autocast`` call.
+
+      Here is a basic example:
+
+      .. literalinclude:: autocast_jax.py
          :language: python
-         :start-after: # START_FP8_AUTOCAST
-         :end-before: # END_FP8_AUTOCAST
+         :start-after: # START_AUTOCAST_BASIC
+         :end-before: # END_AUTOCAST_BASIC
 
-The diagram below shows which operations in a Transformer layer run in lower precision versus higher precision by default:
+      You can use multiple recipes in the same model in the following ways:
+
+      **Sequential contexts** - apply different recipes to different parts of your model:
+
+      .. literalinclude:: autocast_jax.py
+         :language: python
+         :start-after: # START_AUTOCAST_SEQUENTIAL
+         :end-before: # END_AUTOCAST_SEQUENTIAL
+
+      **Nested contexts** - the inner context overrides the outer one for its scope:
+
+      .. literalinclude:: autocast_jax.py
+         :language: python
+         :start-after: # START_AUTOCAST_NESTED
+         :end-before: # END_AUTOCAST_NESTED
+
+**Mixed precision with 8- or 4-bit precisions**
+
+From now on, we will refer to FP8/MXFP8/NVFP4 etc. as *low precision*
+and to FP32/BF16/FP16 as *high precision*. This terminology will be
+used throughout the rest of the documentation.
+
+Not all operations run in low precision:
+
+- **Non-attention linear operations**: run in low precision.
+- **Attention computations**: run in high precision by default (some recipes allow low precision as an option).
+- **Other operations** (layer normalization, softmax, etc.): run in high precision.
+
+Within high-precision operations, there are two categories:
+
+- **Configurable precision**: most operations run in parameter precision (FP32/BF16/FP16) or the precision specified by ``torch.autocast``.
+- **Fixed FP32 precision**: some operations, or parts of operations—such as the division in layernorm—always run in FP32, regardless of other settings.
 
 .. raw:: html
    :file: img/mixed_precision_operations.svg
 
-*Figure 2: Default single-device forward pass of TransformerLayer operations precision - only GEMMs are in lower precision.*
+*Figure 3: Default single-device forward pass of TransformerLayer operations precision - only linear operations (outside of dot product attention) are in lower precision.*
 
-We can see that mostly linear operations benefit from running in lower precision. Let's see how 
-this layers work internally.
+**Linear layer overview**
+
+Let's see how one linear layer works by default on a single device with low precision:
+
+*Forward pass:*
+
+1. Weights are stored in high precision and cast to low precision before the GEMM.
+2. Inputs are cast to low precision before the GEMM.
+3. Outputs are returned in high precision.
+
+*Backward pass:*
+
+4. Output gradients are cast to low precision and the transpose in low precision is created.
+5. Weights and inputs transposed are also in low precision - more on handling the tranposes in the next section.
+6. Weight and input gradients are returned in high precision.
+
+Note the similarity to the master weights approach in the BF16/FP16 training section.
 
 .. raw:: html
    :file: img/fp8_linear_flow.svg
 
-*Figure 3: Single-device forward pass of Linear layer data flow showing quantization and dequantization steps.*
-
-We can see that:
-
-1. Weights are stored in higher precision and cast to lower precision before the GEMM.
-2. Input is cast to lower precision before the GEMM.
-3. Output is in higher precision.
-4. Output gradient is casted into lower precision.
-5. Weight and input in both rowwise and columnwise usages are in lower precision.
-6. Gradient of weight and input are returned in higher precision.
-
+*Figure 4: Single-device forward pass of Linear layer data flow.*

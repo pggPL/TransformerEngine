@@ -38,7 +38,7 @@ TE will use best possible fusion for given recipe and TE module configuration:
 3. Computation of quantized tensor in rowwise usage in forward pass and transpose to columnwise usage in backward pass. 
    This is not possible for all recipes.
 
-Transformer Engine uses the best possible fusion internally, so user do not need to worry about the details.
+Transformer Engine uses the best possible fusion internally, so users do not need to worry about the details.
 We showcase this issue in the documentation to understand memory consequences of different fusion scenarios.
 
 .. raw:: html
@@ -183,7 +183,7 @@ Fused layers
 
 
 Transformer Engine provides fused layers like ``LayerNormLinear`` and ``LayerNormMLP``, 
-which enables various optimizations. Here, one of such optimizations is presented
+which enable various optimizations. Here, one of such optimizations is presented
 - fusion of layer norm and quantization.
 
 Quantizing the input before the GEMM operation can add noticeable overhead. 
@@ -238,8 +238,8 @@ Let's see how we can use fused layers in different frameworks.
 Distributed training
 --------------------
 
-Transformer Engine supports distirbuted training and some of collective operations are done inside TE modules.
-Since TE does not expose lower precision outside the modules, user usually does not need to be concerned
+Transformer Engine supports distributed training and some collective operations are done inside TE modules.
+Since TE does not expose lower precision outside the modules, users usually do not need to be concerned
 by the interplay of communication and low precision - most of the logic is handled internally.
 
 As we said earlier, in most common scenarios, only GEMMs are affected by low precision. There are 6 tensors related

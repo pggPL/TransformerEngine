@@ -30,7 +30,7 @@ where
 
 **FP8 tensor**
 
-FP8 blockwise repice supports both E4M3 and E5M2 FP8 formats,
+FP8 blockwise recipe supports both E4M3 and E5M2 FP8 formats,
 although unlike FP8 Current/Delayed Scaling,
 both forward and backward pass run with E4M3 format by default.
 Since more scaling factors are used, 
@@ -42,7 +42,7 @@ the bigger dynamic range provided by E5M2 is not necessarily needed.
 Block size is 128. 
 Blocks can be:
 
-* one dimenstional - containing 128 consecutive values,
+* one dimensional - containing 128 consecutive values,
 * two dimensional - containing tiles of 128x128 values. 
 More details when 1d and 2d scaling are used are provided later.
 
@@ -52,7 +52,7 @@ For optimal performance with 1D blockwise scaling, all tensor dimensions should 
 
 Scaling factors are 32-bit floating point numbers.
 By default they are constrained to powers of 2.
-Note that 32-bit floats consists of 8 exponent bits.
+Note that 32-bit floats consist of 8 exponent bits.
 This constraint can be relaxed via ``NVTE_FP8_BLOCK_SCALING_FP32_SCALES=1`` environment variable.
 
 The scaling factor for each block is computed as follows:
@@ -102,24 +102,24 @@ By default TE:
 * uses 2d scaling for weights,
 * uses 1d scaling for gradients.
 
-Activations, like weights, uses non-tranposed version in the forward pass and transposed version in the backward pass.
+Activations, like weights, use the non-transposed version in the forward pass and the transposed version in the backward pass.
 Experiments have shown that 2D scaling for weights is more helpful for numerical stability than for activations,
 so by default 1D scaling is used for activations - as it is more granular - and 2D scaling is used for weights.
 
 
-Note that - unlike in FP8 Current/Delayed Scaling - tranposing 1D qunatized tensor is not supported 
+Note that - unlike in FP8 Current/Delayed Scaling - transposing 1D quantized tensor is not supported 
 - since rowwise tensor has 
 1 scaling factor per 128 rowwise consecutive values and columnwise tensor has 
 1 scaling factor per 128 columnwise consecutive values, which are not the same.
-Computing the rowwise quantized tensor from rowwise quantized one will lead to precision loss.
-Thus qunatized tensor can be only obtained from higher precision data.
+Computing the columnwise quantized tensor from rowwise quantized one will lead to precision loss.
+Thus quantized tensor can only be obtained from higher precision data.
 
 Swizzle of scaling factors
 --------------------------
 
-Here we introcude a new concept of swizzling of data.
+Here we introduce a new concept of swizzling of data.
 Sometimes the data format used for the communication is different 
-from the one require by the GEMM. It was not the case for the previous recipes,
+from the one required by the GEMM. It was not the case for the previous recipes,
 but for FP8 Blockwise Scaling it is.
 
 For FP8 Blockwise Scaling Tensor can have 2 formats:
@@ -138,11 +138,11 @@ For FP8 Blockwise Scaling Tensor can have 2 formats:
   - rowwise scaling factors: transposed, padded to the multiple of 4 along the last dimension, shape: ``[B/128, pad_to_4(A)]``
   - columnwise scaling factors: not transposed, padded to the multiple of 4 along the last dimension, shape: ``[A/128, pad_to_4(B)]``
 
-Note that data in compact format is easy to gather. Every tensor is non-tranposed and no padding is needed.
+Note that data in compact format is easy to gather. Every tensor is non-transposed and no padding is needed.
 This is not the case for gemm ready format.
 
 By the **swizzling** we mean the process of converting the data from compact format to gemm ready format.
-This can be fused into the qunatization if no all-gather is performed, but it can be also done separately.
+This can be fused into the quantization if no all-gather is performed, but it can also be done separately.
 
 .. raw:: html
    :file: img/blockwise_swizzle_flow.svg

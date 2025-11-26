@@ -12,7 +12,7 @@ with potentially higher quantization error.
 
 These recipes both use the same data formats, and the only substantial difference is in quantization process.
 
-Let's remind us how quantization in FP8 Current Scaling works. To quantize a tensor to FP8,
+Let's remind ourselves how quantization in FP8 Current Scaling works. To quantize a tensor to FP8,
 two tensor reads were needed - one to compute the amax, and one to apply the scaling factor and cast to FP8.
 The core idea of delayed scaling is not to compute the amax on the fly,
 but rather try to estimate it from the amax history. This is the origin of the names *current scaling*
@@ -33,8 +33,8 @@ The only substantial difference is in quantization process. In FP8 Delayed Scali
    where ``FP8_MAX`` is the maximum representable value of the FP8 data format, 
    and ``margin`` is a hyperparameter of the recipe - default is 0. Note that this does not need a tensor read.
 3. The quantization is performed using the computed scaling factor. 
-   If some value exceeds fp8 range, it is clipped to FP8_MAX or -FP8_MAX.
-   needs one tensor read.
+   If some value exceeds FP8 range, it is clipped to FP8_MAX or -FP8_MAX.
+   This step needs one tensor read.
 4. The ``amax_history`` tensor is updated with the new amax value.
 
 Note that only one tensor read is needed in the quantization process, 
@@ -49,7 +49,7 @@ where two tensor reads were needed.
 Amax History Management
 -----------------------
 
-Let's look closer how amax history is stored and updated.
+Let's look closer at how amax history is stored and updated.
 
 1. For each module initialization, the two ``amax_history`` tensors are created and initialized to 0 
    (one for tensors used in forward pass, and one for tensors used in backward pass).
@@ -93,8 +93,8 @@ Distributed Training
 --------------------
 
 Since FP8 Delayed Scaling uses the same data formats as FP8 Current Scaling,
-similarly as in the delayed scaling case, the transpose gather
-is not supported. Altough, the amax reduction works slightly differently in different frameworks.
+similarly as in the current scaling case, the transpose gather
+is not supported. Although, the amax reduction works slightly differently in different frameworks.
 
 **Configuration examples:**
 

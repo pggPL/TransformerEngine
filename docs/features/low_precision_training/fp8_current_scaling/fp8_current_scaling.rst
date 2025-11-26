@@ -81,21 +81,21 @@ The Tensor Core performs the matrix multiplication in FP8 precision and produces
 Transpose handling
 ------------------
 
-On Blackwell and later, hardware supports multiple GEMM layouts, so no tranpose of the FP8 tensor is needed.
+On Blackwell and later, hardware supports multiple GEMM layouts, so no transpose of the FP8 tensor is needed.
 So columnwise tensor is in fact the same tensor as rowwise tensor. In this case,
 quantization happens usually only in forward pass and is saved for
 backward pass.
 
 For Hopper and Ada, transpose of the FP8 tensor is needed in backward pass. 
-Making columnwise tensor (tranpose) form rowwise tensor is supported for FP8 tensors.
+Making columnwise tensor (transpose) from rowwise tensor is supported for FP8 tensors.
 So all 3 options from :ref:`introduction Transpose handling section <handling_transposes>` are supported.
 
 Distributed training 
 --------------------
 
 All gather of transposed FP8 tensors is not supported. 
-Thus if gathered tranpose is needed, the non-transposed tensor is gathered and then it is transposed.
-Not that this only applies to Hopper and Ada, since Blackwell and later do not need tranposed tensors.
+Thus if gathered transpose is needed, the non-transposed tensor is gathered and then it is transposed.
+Note that this only applies to Hopper and Ada, since Blackwell and later do not need transposed tensors.
 
 For tensors, which are gathered - input and gradient in sequence parallelism,
 amax reduction is performed before quantization. 

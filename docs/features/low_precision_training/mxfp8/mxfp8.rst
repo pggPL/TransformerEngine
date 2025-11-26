@@ -95,7 +95,7 @@ Let's now look into the MXFP8 swizzling process in more detail.
 Tensor Cores on Blackwell multiply two blocks of elements of size ``128x128``.
 Each of these blocks has corresponding block of ``128x4`` bytes of *E8M0* scaling factors.
 Note that most blocks of scaling factors are not contiguous - Blackwell hardware cannot handle this. 
-Thus swizzling rearranges the elements to make each block contiguous and lie them one after another. This process is illustrated in the following figure:
+Thus swizzling rearranges the elements to make each block contiguous and lay them one after another. This process is illustrated in the following figure:
 
 .. raw:: html
    :file: img/mxfp8_tensor_scaling_layout.svg
@@ -104,7 +104,7 @@ Thus swizzling rearranges the elements to make each block contiguous and lie the
 while the corresponding scaling factors are arranged as short and tall rectangles.*
 
 
-Bytes inside each block needs to be permuted to satisfy the hardware requirements.
+Bytes inside each block need to be permuted to satisfy the hardware requirements.
 Note that each block contains 128 x 4 bytes of scaling factors,
 we will number the consecutive quadruples of bytes as 0, 1, 2, ..., 127. Then after the permutation 
 these quadruples will be in order:

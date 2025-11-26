@@ -40,15 +40,15 @@ We will refer to this recipe as *active recipe* in the following text.
 
 **Quantizer**
 
-Each layer consists of some number of GEMMS. For Linear layer there is 1 GEMM and for LayerNormMLP layer there are 2 GEMMS.
+Each layer consists of some number of GEMMs. For a Linear layer there is 1 GEMM and for a LayerNormMLP layer there are 2 GEMMs.
 Each of the GEMMs is related to 6 tensors: input, weight, output, input gradient, weight gradient and output gradient.
 For each of these tensors - except the weight gradient tensor - in each of the layers, the object of active recipe creates a ``Quantizer``.
-If no recipe is active - the run is in high precision - then ``None`` is used as a Quantizers.
+If no recipe is active - the run is in high precision - then ``None`` is used as Quantizers.
 
 **Quantized Tensor**
 
 Quantizer is responsible for creating low precision tensor from the high precision one.
-For examle, the ``Float8Quantizer`` class is responsible for creating ``Float8Tensor``.
+For example, the ``Float8Quantizer`` class is responsible for creating ``Float8Tensor``.
 Sometimes Quantizer stores the data - like in Delayed Scaling recipe, where it stores the amax tensor and scaling factor.
 
 
@@ -59,7 +59,7 @@ Sometimes Quantizer stores the data - like in Delayed Scaling recipe, where it s
 
 **Optimization**
 
-Transformer Engine can perform many optimizations with the Quantizer objects. The example of two ones:
+Transformer Engine can perform many optimizations with the Quantizer objects. Here are two examples:
 
 * If in LayerNormLinear the GEMM uses a Quantizer, then the layer norm can use fused kernel to return proper ``QuantizedTensor`` object.
 * If ``QuantizedTensor`` object is all-gathered and all gather for the recipe is implemented, then the Quantizer can all-gather the quantized tensor. 
@@ -160,7 +160,7 @@ Custom Recipes API
 **Limitations of Custom Recipes**
 
 Please note that recipes provided by the TE support many optimizations and fusions,
-and are polished for performance. We do not expose possibility of 
+and are polished for performance. We do not expose the possibility of 
 most of the optimizations and fusions with custom recipes. 
 Thus, custom recipes are not expected to be as performant as the ones provided by the TE.
 
