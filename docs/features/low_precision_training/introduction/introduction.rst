@@ -217,7 +217,7 @@ Let's see how one linear layer works by default on a single device with low prec
 *Backward pass:*
 
 4. Output gradients are cast to low precision and the transpose in low precision is created.
-5. Weights and inputs transposed are also in low precision - more on handling the tranposes in the next section.
+5. Weights and inputs transposed are also in low precision - more on handling the transposes in the next section.
 6. Weight and input gradients are returned in high precision.
 
 Note the similarity to the master weights approach in the BF16/FP16 training section.
