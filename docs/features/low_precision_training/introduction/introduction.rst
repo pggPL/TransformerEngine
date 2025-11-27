@@ -24,9 +24,9 @@ Let's compare these formats.
 
 The key differences between these formats are:
 
-* **FP32** (32 bits total): 1 sign bit + 8 exponent bits + 23 mantissa bits - standard single-precision format
-* **BF16** (16 bits total): 1 sign bit + 8 exponent bits + 7 mantissa bits - maintains FP32's exponent range but reduced precision
-* **FP16** (16 bits total): 1 sign bit + 5 exponent bits + 10 mantissa bits - reduced range but higher precision than BF16
+* **FP32** (32 bits total): 1 sign bit + 8 exponent bits + 23 mantissa bits – standard single-precision format
+* **BF16** (16 bits total): 1 sign bit + 8 exponent bits + 7 mantissa bits – maintains FP32's exponent range but reduced precision
+* **FP16** (16 bits total): 1 sign bit + 5 exponent bits + 10 mantissa bits – reduced range but higher precision than BF16
 
 BF16's advantage is that it shares the same exponent range as FP32, 
 making it easier to convert between the two formats without overflow/underflow issues. 
@@ -106,7 +106,7 @@ Lower precisions
 ----------------
 
 Transformer Engine's primary feature is supporting even lower precision than BF16/FP16, such as FP8, MXFP8, NVFP4, etc.
-The logic of these precisions is more complicated than the logic of BF16/FP16 - they require scaling factors to
+The logic of these precisions is more complicated than the logic of BF16/FP16 – they require scaling factors to
 properly represent the full range of values in the tensor. Sometimes it is one scaling factor per tensor,
 sometimes it is one scaling factor per block of values. A precision format combined with the logic for training
 is called **a recipe**.
@@ -135,14 +135,14 @@ Let's now see how we can train in lower precisions in supported frameworks.
 
       You can use multiple recipes in the same model in the following ways:
 
-      **Sequential contexts** - apply different recipes to different parts of your model:
+      **Sequential contexts** – apply different recipes to different parts of your model:
 
       .. literalinclude:: autocast_pytorch.py
          :language: python
          :start-after: # START_AUTOCAST_SEQUENTIAL
          :end-before: # END_AUTOCAST_SEQUENTIAL
 
-      **Nested contexts** - the inner context overrides the outer one for its scope:
+      **Nested contexts** – the inner context overrides the outer one for its scope:
 
       .. literalinclude:: autocast_pytorch.py
          :language: python
@@ -168,14 +168,14 @@ Let's now see how we can train in lower precisions in supported frameworks.
 
       You can use multiple recipes in the same model in the following ways:
 
-      **Sequential contexts** - apply different recipes to different parts of your model:
+      **Sequential contexts** – apply different recipes to different parts of your model:
 
       .. literalinclude:: autocast_jax.py
          :language: python
          :start-after: # START_AUTOCAST_SEQUENTIAL
          :end-before: # END_AUTOCAST_SEQUENTIAL
 
-      **Nested contexts** - the inner context overrides the outer one for its scope:
+      **Nested contexts** – the inner context overrides the outer one for its scope:
 
       .. literalinclude:: autocast_jax.py
          :language: python
@@ -202,27 +202,32 @@ Within high-precision operations, there are two categories:
 .. raw:: html
    :file: img/mixed_precision_operations.svg
 
-*Figure 3: Default single-device forward pass of TransformerLayer operations precision - only linear operations (outside of dot product attention) are in lower precision.*
+*Figure 3: Default single-device forward pass of TransformerLayer operations precision – only linear operations (outside of dot product attention) are in lower precision.*
 
-**Linear layer overview**
+**Linear layer data flow**
 
-Let's see how one linear layer works by default on a single device with low precision:
+Let's see how data flow of a linear layer works by default on a single H100 GPU with FP8 precision:
 
-*Forward pass:*
+H100 (Hopper) architecture natively supports FP8 Matrix Multiplication only in **TN** layout (Transpose-None), 
+so GEMM with tensors ``A`` and ``B`` returns ``B * A^T``.
 
-1. Weights are stored in high precision and cast to low precision before the GEMM.
-2. Inputs are cast to low precision before the GEMM.
-3. Outputs are returned in high precision.
+*Forward pass*
 
-*Backward pass:*
+* Input is quantized to FP8 – both ``input`` and ``input^T`` quantized versions are created.
+* Weights are stored in high precision and quantized to low precision before the GEMM – both ``weight`` and ``weight^T`` quantized versions are created.
+* FP8 GEMM with layout **TN** is run with ``weight`` and ``input`` tensors,
+* Outputs – ``input * weight^T`` tensor – are returned in high precision.
 
-4. Output gradients are cast to low precision and the transpose in low precision is created.
-5. Weights and inputs transposed are also in low precision - more on handling the transposes in the next section.
-6. Weight and input gradients are returned in high precision.
+*Backward pass*
 
-Note the similarity to the master weights approach in the BF16/FP16 training section.
+* Output gradients are quantized to FP8 – both ``output_grad`` and ``output_grad^T`` quantized versions are created.
+* FP8 GEMM with layout **TN** is performed with ``weight^T`` and ``output_grad`` tensors to compute input gradients.
+* FP8 GEMM with layout **TN** is performed with ``input^T`` and ``output_grad^T`` tensors to compute weight gradients.
+* Input gradients – ``output_grad * weight^T`` tensor – are returned in high precision.
+* Weight gradients – ``output_grad^T * input`` tensor – are returned in high precision.
+
 
 .. raw:: html
    :file: img/fp8_linear_flow.svg
 
-*Figure 4: Single-device forward pass of Linear layer data flow.*
+*Figure 4: Forward pass of a Linear layer with low precision data flow.*

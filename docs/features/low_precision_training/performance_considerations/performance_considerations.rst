@@ -28,14 +28,18 @@ allows to perform some fusions, which usually lead to better performance.
 We showcase 3 example scenarios of producing quantized tensors in rowwise and columnwise usages,
 TE will use best possible fusion for given recipe and TE module configuration:
 
-1. Computation of quantized tensor in both rowwise and columnwise usages in a single kernel in forward pass. This is the fastest one,
+1. **Computation of quantized tensor in both rowwise and columnwise usages in a single kernel in forward pass**. 
+
+   This is the fastest one,
    but since the columnwise usage is saved for backward pass, it may lead to increased memory usage, 
    if high precision tensor also needs to be saved for backward - for example if it is attention output which is saved anyways.
-2. Computation of quantized tensor in rowwise usage in forward pass and fused quantization to produce columnwise usage in backward pass. 
+2. **Computation of quantized tensor in rowwise usage in forward pass and fused quantization to produce columnwise usage in backward pass**. 
+
    This is usually slower than the previous one, since high precision tensor needs to be read twice.
    It is used for example when high precision tensor is gathered both in forward and in backward 
    and quantized tensor gather is not implemented for such recipe.
-3. Computation of quantized tensor in rowwise usage in forward pass and transpose to columnwise usage in backward pass. 
+3. **Computation of quantized tensor in rowwise usage in forward pass and transpose to columnwise usage in backward pass**. 
+
    This is not possible for all recipes.
 
 Transformer Engine uses the best possible fusion internally, so users do not need to worry about the details.
