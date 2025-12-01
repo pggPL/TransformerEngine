@@ -26,14 +26,14 @@ with global_shard_guard(MeshResource()):
         key = jax.random.PRNGKey(0)
         x = jax.random.normal(key, (32, 128, 1024), dtype=jnp.bfloat16)
         params = layer.init(key, x)
-        
+
         # Training step
         def loss_fn(params):
             output = layer.apply(params, x)
             return output.sum()
-        
+
         loss, grads = jax.value_and_grad(loss_fn)(params)
-        
+
         # Update parameters
         optimizer = optax.adamw(learning_rate=1e-4)
         opt_state = optimizer.init(params)

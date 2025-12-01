@@ -16,4 +16,3 @@ with te.fp8_autocast(fp8_recipe=recipe, fp8_group=fp8_group):
     output = model(inp)
 
 # END_AMAX_REDUCTION_EXAMPLE
-

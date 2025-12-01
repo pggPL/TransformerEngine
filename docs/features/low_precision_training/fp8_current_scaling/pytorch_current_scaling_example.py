@@ -19,7 +19,7 @@ layer = te.Linear(1024, 1024)
 optimizer = torch.optim.SGD(layer.parameters(), lr=0.01)
 
 # Training with FP8 Current Scaling
-inp = torch.randn(32, 128, 1024, dtype=torch.bfloat16, device='cuda')
+inp = torch.randn(32, 128, 1024, dtype=torch.bfloat16, device="cuda")
 
 with te.fp8_autocast(enabled=True, fp8_recipe=recipe):
     output = layer(inp)
@@ -29,4 +29,3 @@ loss.backward()
 optimizer.step()
 
 # END_CURRENT_SCALING_EXAMPLE
-

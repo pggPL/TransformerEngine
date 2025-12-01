@@ -14,9 +14,9 @@ from transformer_engine.common.recipe import DelayedScaling
 
 # Create FP8 Delayed Scaling recipe
 recipe = DelayedScaling(
-    margin=0,               # Margin for scaling factor computation (default: 0)
+    margin=0,  # Margin for scaling factor computation (default: 0)
     amax_history_len=1024,  # Length of amax history window (default: 1024)
-    amax_compute_algo="max" # How to compute amax from history (default: "max")
+    amax_compute_algo="max",  # How to compute amax from history (default: "max")
 )
 
 with global_shard_guard(MeshResource()):
@@ -26,14 +26,14 @@ with global_shard_guard(MeshResource()):
         key = jax.random.PRNGKey(0)
         x = jax.random.normal(key, (32, 128, 1024), dtype=jnp.bfloat16)
         params = layer.init(key, x)
-        
+
         # Training with FP8 Delayed Scaling
         def loss_fn(params):
             output = layer.apply(params, x)
             return output.sum()
-        
+
         loss, grads = jax.value_and_grad(loss_fn)(params)
-        
+
         # Update parameters
         optimizer = optax.adamw(learning_rate=1e-4)
         opt_state = optimizer.init(params)
@@ -41,5 +41,3 @@ with global_shard_guard(MeshResource()):
         params = optax.apply_updates(params, updates)
 
 # END_DELAYED_SCALING_EXAMPLE
-
-

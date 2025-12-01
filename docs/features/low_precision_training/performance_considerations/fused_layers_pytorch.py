@@ -18,7 +18,7 @@ from transformer_engine.common.recipe import DelayedScaling
 layer_norm = te.LayerNorm(1024)
 linear = te.Linear(1024, 1024)
 
-inp = torch.randn(32, 128, 1024, dtype=torch.bfloat16, device='cuda')
+inp = torch.randn(32, 128, 1024, dtype=torch.bfloat16, device="cuda")
 
 # Two separate operations: LayerNorm produces FP32, then Linear quantizes it
 normalized = layer_norm(inp)
@@ -35,4 +35,3 @@ with te.autocast(enabled=True, recipe=recipe):
 # The fused layer is more efficient as it avoids redundant quantization
 
 # END_FUSED_LAYERS
-

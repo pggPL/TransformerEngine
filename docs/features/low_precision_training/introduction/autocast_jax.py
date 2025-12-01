@@ -6,9 +6,16 @@ import jax
 
 # Requires Ada (SM89) or newer for FP8 support
 cc = jax.devices()[0].device_kind
-assert "RTX 40" in cc or "L40" in cc or "H100" in cc or "H200" in cc or "GH" in cc or \
-    "B100" in cc or "B200" in cc or "GB" in cc, \
-    "This example requires SM89 (Ada) or newer"
+assert (
+    "RTX 40" in cc
+    or "L40" in cc
+    or "H100" in cc
+    or "H200" in cc
+    or "GH" in cc
+    or "B100" in cc
+    or "B200" in cc
+    or "GB" in cc
+), "This example requires SM89 (Ada) or newer"
 
 # START_AUTOCAST_BASIC
 
@@ -80,7 +87,9 @@ with global_shard_guard(MeshResource()):
 
         with te.autocast(enabled=True, recipe=inner_recipe, mesh_resource=MeshResource()):
             # layer2 uses inner_recipe (overrides outer)
-            layer2 = TransformerLayer(hidden_size=1024, mlp_hidden_size=4096, num_attention_heads=16)
+            layer2 = TransformerLayer(
+                hidden_size=1024, mlp_hidden_size=4096, num_attention_heads=16
+            )
             params2 = layer2.init({"params": init_key, "dropout": dropout_key}, hidden)
             hidden = layer2.apply(params2, hidden, rngs={"dropout": dropout_key})
 
@@ -90,7 +99,3 @@ with global_shard_guard(MeshResource()):
         output = layer3.apply(params3, hidden, rngs={"dropout": dropout_key})
 
 # END_AUTOCAST_NESTED
-
-
-
-

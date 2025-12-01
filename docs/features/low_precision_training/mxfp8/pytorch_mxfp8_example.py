@@ -18,7 +18,7 @@ layer = te.Linear(1024, 1024)
 optimizer = torch.optim.AdamW(layer.parameters(), lr=1e-4)
 
 # Training with MXFP8
-inp = torch.randn(32, 128, 1024, dtype=torch.bfloat16, device='cuda')
+inp = torch.randn(32, 128, 1024, dtype=torch.bfloat16, device="cuda")
 
 with te.fp8_autocast(enabled=True, fp8_recipe=recipe):
     output = layer(inp)
@@ -28,6 +28,3 @@ loss.backward()
 optimizer.step()
 
 # END_MXFP8_EXAMPLE
-
-
-

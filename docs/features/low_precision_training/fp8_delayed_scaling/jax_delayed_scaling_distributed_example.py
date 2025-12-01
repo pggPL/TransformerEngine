@@ -13,6 +13,3 @@ with te.fp8_autocast(recipe=recipe, mesh_resource=mesh_resource):
     output = layer.apply(params, inp)
 
 # END_AMAX_REDUCTION_EXAMPLE
-
-
-
