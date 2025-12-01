@@ -6,10 +6,13 @@
 
 import torch
 import transformer_engine.pytorch as te
-from transformer_engine.common.recipe import Float8CurrentScaling
+from transformer_engine.common.recipe import Float8CurrentScaling, Format
 
 # Create FP8 Current Scaling recipe
-recipe = Float8CurrentScaling()
+# Available formats:
+#   - Format.HYBRID (default) -- E4M3 for forward pass, E5M2 for backward pass
+#   - Format.E4M3 -- E4M3 for both forward and backward pass
+recipe = Float8CurrentScaling(fp8_format=Format.HYBRID)
 
 # Create a simple linear layer
 layer = te.Linear(1024, 1024)

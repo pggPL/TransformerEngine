@@ -10,10 +10,13 @@ import optax
 import transformer_engine.jax as te
 from transformer_engine.jax.flax import DenseGeneral
 from transformer_engine.jax.sharding import MeshResource, global_shard_guard
-from transformer_engine.jax.quantize import Float8CurrentScaling
+from transformer_engine.jax.quantize import Float8CurrentScaling, Format
 
 # Create FP8 Current Scaling recipe
-recipe = Float8CurrentScaling()
+# Available formats:
+#   - Format.HYBRID (default) -- E4M3 for forward pass, E5M2 for backward pass
+#   - Format.E4M3 -- E4M3 for both forward and backward pass
+recipe = Float8CurrentScaling(fp8_format=Format.HYBRID)
 
 with global_shard_guard(MeshResource()):
     with te.fp8_autocast(enabled=True, recipe=recipe, mesh_resource=MeshResource()):

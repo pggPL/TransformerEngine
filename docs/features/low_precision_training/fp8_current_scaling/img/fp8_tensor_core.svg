@@ -8,7 +8,7 @@
         stroke: #616161;
         stroke-width: 2;
         fill: none;
-        marker-end: url(#arrowhead);
+        marker-end: url(#arrowhead-tc);
       }
       .input-group {
         fill: none;
@@ -17,7 +17,7 @@
         stroke-dasharray: 5,3;
       }
     </style>
-    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+    <marker id="arrowhead-tc" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
       <polygon points="0 0, 10 3, 0 6" fill="#616161" />
     </marker>
   </defs>

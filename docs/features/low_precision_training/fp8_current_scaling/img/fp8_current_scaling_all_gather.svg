@@ -5,7 +5,7 @@
       @import url("diagram-colors.css");
       
       /* Arrows */
-      .arrow { stroke: #616161; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .arrow { stroke: #616161; stroke-width: 2; fill: none; marker-end: url(#arrowhead-ag); }
       
       /* All-gather operations - fallback if CSS doesn't load */
       .allgather {
@@ -14,7 +14,7 @@
         stroke-width: 2;
       }
     </style>
-    <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="2" orient="auto">
+    <marker id="arrowhead-ag" markerWidth="6" markerHeight="6" refX="5" refY="2" orient="auto">
       <polygon points="0 0, 6 2, 0 4" fill="#616161" />
     </marker>
   </defs>

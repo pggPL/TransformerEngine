@@ -10,9 +10,6 @@
     .range-label { font-size: 14px; fill: #555; font-weight: 500; }
   </style>
 
-  <!-- Title -->
-  <text x="450" y="25" class="title" text-anchor="middle">FP8 quantization process</text>
-
   <!-- Top: Original values (before scaling) -->
   <text x="450" y="55" class="section-title" text-anchor="middle">Original Tensor Values</text>
   
@@ -81,7 +78,7 @@
   <line x1="118" y1="95" x2="240" y2="198" stroke="#e53935" stroke-width="2.5" marker-end="url(#arrowhead-red)" stroke-dasharray="5,3"/>
 
   <!-- Third line: After cast to FP8 (quantized values) -->
-  <text x="450" y="280" class="section-title" text-anchor="middle">Cast to FP8 with RTNE (quantized values)</text>
+  <text x="450" y="280" class="section-title" text-anchor="middle">Cast to FP8 (quantized values)</text>
   
   <!-- Third axis -->
   <line x1="80" y1="310" x2="820" y2="310" class="axis-line"/>
