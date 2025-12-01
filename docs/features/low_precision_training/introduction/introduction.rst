@@ -128,6 +128,12 @@ Let's now see how we can train in lower precisions in supported frameworks.
 
       Here is a basic example:
 
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Needs to be run on SM89+ (Ada or newer)
+         </div>
+
       .. literalinclude:: autocast_pytorch.py
          :language: python
          :start-after: # START_AUTOCAST_BASIC
@@ -137,12 +143,24 @@ Let's now see how we can train in lower precisions in supported frameworks.
 
       **Sequential contexts** – apply different recipes to different parts of your model:
 
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Needs to be run on SM89+ (Ada or newer)
+         </div>
+
       .. literalinclude:: autocast_pytorch.py
          :language: python
          :start-after: # START_AUTOCAST_SEQUENTIAL
          :end-before: # END_AUTOCAST_SEQUENTIAL
 
       **Nested contexts** – the inner context overrides the outer one for its scope:
+
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Needs to be run on SM89+ (Ada or newer)
+         </div>
 
       .. literalinclude:: autocast_pytorch.py
          :language: python
@@ -161,6 +179,12 @@ Let's now see how we can train in lower precisions in supported frameworks.
 
       Here is a basic example:
 
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Needs to be run on SM89+ (Ada or newer)
+         </div>
+
       .. literalinclude:: autocast_jax.py
          :language: python
          :start-after: # START_AUTOCAST_BASIC
@@ -170,12 +194,24 @@ Let's now see how we can train in lower precisions in supported frameworks.
 
       **Sequential contexts** – apply different recipes to different parts of your model:
 
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Needs to be run on SM89+ (Ada or newer)
+         </div>
+
       .. literalinclude:: autocast_jax.py
          :language: python
          :start-after: # START_AUTOCAST_SEQUENTIAL
          :end-before: # END_AUTOCAST_SEQUENTIAL
 
       **Nested contexts** – the inner context overrides the outer one for its scope:
+
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Needs to be run on SM89+ (Ada or newer)
+         </div>
 
       .. literalinclude:: autocast_jax.py
          :language: python
@@ -208,7 +244,7 @@ Within high-precision operations, there are two categories:
 
 Let's see how data flow of a linear layer works by default on a single H100 GPU with FP8 precision:
 
-H100 (Hopper) architecture natively supports FP8 Matrix Multiplication only in **TN** layout (Transpose-None), 
+H100 (Hopper) architecture natively supports FP8 Matrix Multiplication only in **TN** layout (Transpose-NoTranspose), 
 so GEMM with tensors ``A`` and ``B`` returns ``B * A^T``.
 
 *Forward pass*
@@ -223,7 +259,7 @@ so GEMM with tensors ``A`` and ``B`` returns ``B * A^T``.
 * Output gradients are quantized to FP8 – both ``output_grad`` and ``output_grad^T`` quantized versions are created.
 * FP8 GEMM with layout **TN** is performed with ``weight^T`` and ``output_grad`` tensors to compute input gradients.
 * FP8 GEMM with layout **TN** is performed with ``input^T`` and ``output_grad^T`` tensors to compute weight gradients.
-* Input gradients – ``output_grad * weight^T`` tensor – are returned in high precision.
+* Input gradients – ``output_grad * weight`` tensor – are returned in high precision.
 * Weight gradients – ``output_grad^T * input`` tensor – are returned in high precision.
 
 

@@ -2,6 +2,14 @@
 #
 # See LICENSE for license information.
 
+import jax
+
+# Requires Ada (SM89) or Hopper (SM90), different results on Blackwell+
+cc = jax.devices()[0].device_kind
+assert ("RTX 40" in cc or "L40" in cc or "H100" in cc or "H200" in cc or "GH" in cc) \
+    and "B100" not in cc and "B200" not in cc and "GB" not in cc, \
+    "This example requires SM89 (Ada) or SM90 (Hopper)"
+
 # START_FUSED_LAYERS
 
 import jax

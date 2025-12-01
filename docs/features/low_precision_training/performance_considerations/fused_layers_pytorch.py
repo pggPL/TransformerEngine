@@ -2,6 +2,12 @@
 #
 # See LICENSE for license information.
 
+import torch
+
+# Requires Ada (SM89) or Hopper (SM90), different results on Blackwell+
+cc = torch.cuda.get_device_capability()
+assert cc[0] == 8 and cc[1] >= 9 or cc[0] == 9, "This example requires SM89 (Ada) or SM90 (Hopper)"
+
 # START_FUSED_LAYERS
 
 import torch

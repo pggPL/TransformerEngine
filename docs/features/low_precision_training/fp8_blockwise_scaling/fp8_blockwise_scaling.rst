@@ -43,7 +43,8 @@ Block size is 128.
 Blocks can be:
 
 * one dimensional - containing 128 consecutive values,
-* two dimensional - containing tiles of 128x128 values. 
+* two dimensional - containing tiles of 128x128 values.
+
 More details when 1d and 2d scaling are used are provided later.
 
 For optimal performance with 1D blockwise scaling, all tensor dimensions should be divisible by 128.

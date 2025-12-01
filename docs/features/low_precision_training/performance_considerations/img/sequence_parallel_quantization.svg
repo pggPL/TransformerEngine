@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 620" width="850" height="620">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 660" width="850" height="660">
   <defs>
     <style>
       @import url("diagram-colors.css");
@@ -23,122 +23,125 @@
     </marker>
   </defs>
   
+  <!-- Main Title -->
+  <text x="425" y="30" class="title" style="font-size: 18px; font-weight: 700; fill: #1a1a1a;">All-Gather of Quantized Tensors (one scenario)</text>
+  
   <!-- Section 1: Input Tensor -->
-  <text x="425" y="35" class="section-title" style="fill: #212121; font-weight: 600;">Input Tensor quantized all-gather</text>
+  <text x="425" y="70" class="section-title" style="fill: #212121; font-weight: 600;">Input Tensor quantized all-gather</text>
   
   <!-- Forward phase label -->
-  <text x="20" y="93" class="text phase-forward" style="text-anchor: start;">FWD:</text>
+  <text x="20" y="128" class="text phase-forward" style="text-anchor: start;">FWD:</text>
   
   <!-- High Precision Input -->
-  <rect x="90" y="65" width="130" height="55" class="hp" rx="6"/>
-  <text x="155" y="88" class="text">High Precision</text>
-  <text x="155" y="105" class="text">Tensor</text>
+  <rect x="90" y="100" width="130" height="55" class="hp" rx="6"/>
+  <text x="155" y="123" class="text">High Precision</text>
+  <text x="155" y="140" class="text">Tensor</text>
   
   <!-- Arrow -->
-  <path d="M 220 92 L 250 92" class="arrow"/>
+  <path d="M 220 127 L 250 127" class="arrow"/>
   
   <!-- Quantize -->
-  <rect x="250" y="65" width="100" height="55" class="quantize" rx="6"/>
-  <text x="300" y="97" class="text">Quantize</text>
+  <rect x="250" y="100" width="100" height="55" class="quantize" rx="6"/>
+  <text x="300" y="132" class="text">Quantize</text>
   
   <!-- Arrow -->
-  <path d="M 350 92 L 380 92" class="arrow"/>
+  <path d="M 350 127 L 380 127" class="arrow"/>
   
   <!-- Rowwise Quantized Tensor -->
-  <rect x="380" y="65" width="130" height="55" class="fp8" rx="6"/>
-  <text x="445" y="88" class="text">Rowwise</text>
-  <text x="445" y="105" class="text">Quantized</text>
+  <rect x="380" y="100" width="130" height="55" class="fp8" rx="6"/>
+  <text x="445" y="123" class="text">Rowwise</text>
+  <text x="445" y="140" class="text">Quantized</text>
   
   <!-- Arrow -->
-  <path d="M 510 92 L 540 92" class="arrow"/>
+  <path d="M 510 127 L 540 127" class="arrow"/>
   
   <!-- All-Gather -->
-  <rect x="540" y="65" width="110" height="55" class="allgather" rx="6"/>
-  <text x="595" y="97" class="text">All-Gather</text>
+  <rect x="540" y="100" width="110" height="55" class="allgather" rx="6"/>
+  <text x="595" y="132" class="text">All-Gather</text>
   
   <!-- Arrow -->
-  <path d="M 650 92 L 680 92" class="arrow"/>
+  <path d="M 650 127 L 680 127" class="arrow"/>
   
   <!-- Continue indicator -->
-  <text x="705" y="97" class="text">...</text>
+  <text x="705" y="132" class="text">...</text>
   
   <!-- Backward phase label -->
-  <text x="20" y="193" class="text phase-backward" style="text-anchor: start;">BWD:</text>
+  <text x="20" y="228" class="text phase-backward" style="text-anchor: start;">BWD:</text>
   
   <!-- Arrow from Quantize to Columnwise (showing separate quantization) -->
-  <path d="M 300 120 L 300 145 L 380 192" class="arrow"/>
+  <path d="M 300 155 L 300 180 L 380 227" class="arrow"/>
   
   <!-- Columnwise Quantized Tensor -->
-  <rect x="380" y="165" width="130" height="55" class="fp8" rx="6"/>
-  <text x="445" y="188" class="text">Columnwise</text>
-  <text x="445" y="205" class="text">Quantized</text>
+  <rect x="380" y="200" width="130" height="55" class="fp8" rx="6"/>
+  <text x="445" y="223" class="text">Columnwise</text>
+  <text x="445" y="240" class="text">Quantized</text>
   
   <!-- Arrow -->
-  <path d="M 510 192 L 540 192" class="arrow"/>
+  <path d="M 510 227 L 540 227" class="arrow"/>
   
   <!-- All-Gather -->
-  <rect x="540" y="165" width="110" height="55" class="allgather" rx="6"/>
-  <text x="595" y="197" class="text">All-Gather</text>
+  <rect x="540" y="200" width="110" height="55" class="allgather" rx="6"/>
+  <text x="595" y="232" class="text">All-Gather</text>
   
   <!-- Arrow -->
-  <path d="M 650 192 L 680 192" class="arrow"/>
+  <path d="M 650 227 L 680 227" class="arrow"/>
   
   <!-- Continue indicator -->
-  <text x="705" y="197" class="text">...</text>
+  <text x="705" y="232" class="text">...</text>
   
   <!-- Divider Line -->
-  <line x1="30" y1="270" x2="820" y2="270" stroke="#bdbdbd" stroke-width="3"/>
+  <line x1="30" y1="305" x2="820" y2="305" stroke="#bdbdbd" stroke-width="3"/>
   
   <!-- Section 2: Gradient Tensor -->
-  <text x="425" y="305" class="section-title" style="fill: #212121; font-weight: 600;">Gradient Tensor quantized all-gather</text>
+  <text x="425" y="340" class="section-title" style="fill: #212121; font-weight: 600;">Gradient Tensor quantized all-gather</text>
   
   <!-- Backward phase label -->
-  <text x="20" y="378" class="text phase-backward" style="text-anchor: start;">BWD:</text>
+  <text x="20" y="413" class="text phase-backward" style="text-anchor: start;">BWD:</text>
   
   <!-- High Precision Gradient -->
-  <rect x="90" y="350" width="130" height="55" class="hp" rx="6"/>
-  <text x="155" y="373" class="text">High Precision</text>
-  <text x="155" y="390" class="text">Tensor</text>
+  <rect x="90" y="385" width="130" height="55" class="hp" rx="6"/>
+  <text x="155" y="408" class="text">High Precision</text>
+  <text x="155" y="425" class="text">Tensor</text>
   
   <!-- Arrow -->
-  <path d="M 220 377 L 250 377" class="arrow"/>
+  <path d="M 220 412 L 250 412" class="arrow"/>
   
   <!-- Quantize -->
-  <rect x="250" y="350" width="100" height="55" class="quantize" rx="6"/>
-  <text x="300" y="382" class="text">Quantize</text>
+  <rect x="250" y="385" width="100" height="55" class="quantize" rx="6"/>
+  <text x="300" y="417" class="text">Quantize</text>
   
   <!-- Arrow to Columnwise -->
-  <path d="M 350 362 L 380 342" class="arrow"/>
+  <path d="M 350 397 L 380 377" class="arrow"/>
   
   <!-- Columnwise Quantized Tensor -->
-  <rect x="380" y="320" width="130" height="45" class="fp8" rx="6"/>
-  <text x="445" y="347" class="text">Col. Quantized</text>
+  <rect x="380" y="355" width="130" height="45" class="fp8" rx="6"/>
+  <text x="445" y="382" class="text">Col. Quantized</text>
   
   <!-- Arrow to Rowwise -->
-  <path d="M 350 392 L 380 412" class="arrow"/>
+  <path d="M 350 427 L 380 447" class="arrow"/>
   
   <!-- Rowwise Quantized Tensor -->
-  <rect x="380" y="390" width="130" height="45" class="fp8" rx="6"/>
-  <text x="445" y="417" class="text">Row. Quantized</text>
+  <rect x="380" y="425" width="130" height="45" class="fp8" rx="6"/>
+  <text x="445" y="452" class="text">Row. Quantized</text>
   
   <!-- Arrow from Columnwise to All-Gather -->
-  <path d="M 510 342 L 540 377" class="arrow"/>
+  <path d="M 510 377 L 540 412" class="arrow"/>
   
   <!-- Arrow from Rowwise to All-Gather -->
-  <path d="M 510 412 L 540 377" class="arrow"/>
+  <path d="M 510 447 L 540 412" class="arrow"/>
   
   <!-- All-Gather (single, shared) -->
-  <rect x="540" y="355" width="110" height="45" class="allgather" rx="6"/>
-  <text x="595" y="382" class="text">All-Gather</text>
+  <rect x="540" y="390" width="110" height="45" class="allgather" rx="6"/>
+  <text x="595" y="417" class="text">All-Gather</text>
   
   <!-- Arrow -->
-  <path d="M 650 377 L 680 377" class="arrow"/>
+  <path d="M 650 412 L 680 412" class="arrow"/>
   
   <!-- Continue indicator -->
-  <text x="705" y="382" class="text">...</text>
+  <text x="705" y="417" class="text">...</text>
   
   <!-- Legend -->
-  <g transform="translate(100, 475)">
+  <g transform="translate(100, 515)">
     <rect x="0" y="0" width="80" height="40" rx="5" class="hp"/>
     <text x="95" y="23" class="text" style="text-anchor: start;">High Precision (FP32/BF16/FP16)</text>
     

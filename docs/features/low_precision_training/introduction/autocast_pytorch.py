@@ -2,6 +2,13 @@
 #
 # See LICENSE for license information.
 
+import torch
+
+# Requires Ada (SM89) or newer for FP8 support
+assert torch.cuda.get_device_capability()[0] >= 9 or \
+    (torch.cuda.get_device_capability()[0] == 8 and torch.cuda.get_device_capability()[1] >= 9), \
+    "This example requires SM89 (Ada) or newer"
+
 # START_AUTOCAST_BASIC
 
 import torch
