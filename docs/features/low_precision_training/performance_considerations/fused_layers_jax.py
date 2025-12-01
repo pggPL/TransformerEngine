@@ -2,13 +2,7 @@
 #
 # See LICENSE for license information.
 
-import jax
-
 # Requires Ada (SM89) or Hopper (SM90), different results on Blackwell+
-cc = jax.devices()[0].device_kind
-assert ("RTX 40" in cc or "L40" in cc or "H100" in cc or "H200" in cc or "GH" in cc) \
-    and "B100" not in cc and "B200" not in cc and "GB" not in cc, \
-    "This example requires SM89 (Ada) or SM90 (Hopper)"
 
 # START_FUSED_LAYERS
 
@@ -17,7 +11,7 @@ import jax.numpy as jnp
 import transformer_engine.jax as te
 from transformer_engine.jax.flax import LayerNorm, DenseGeneral, LayerNormDenseGeneral
 from transformer_engine.jax.sharding import MeshResource, global_shard_guard
-from transformer_engine.jax.quantize import get_delayed_scaling_recipe
+from transformer_engine.common.recipe import DelayedScaling
 
 with global_shard_guard(MeshResource()):
     key = jax.random.PRNGKey(0)
@@ -39,8 +33,8 @@ with global_shard_guard(MeshResource()):
     fused_layer = LayerNormDenseGeneral(features=1024)
     
     # Initialize and apply with FP8 autocast
-    recipe = get_delayed_scaling_recipe()
-    with te.fp8_autocast(enabled=True, recipe=recipe, mesh_resource=MeshResource()):
+    recipe = DelayedScaling()
+    with te.fp8_autocast(enabled=True, fp8_recipe=recipe, mesh_resource=MeshResource()):
         fused_params = fused_layer.init(key, x)
         output_fused = fused_layer.apply(fused_params, x)
     

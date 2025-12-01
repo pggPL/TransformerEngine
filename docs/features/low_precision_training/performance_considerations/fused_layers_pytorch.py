@@ -25,11 +25,11 @@ normalized = layer_norm(inp)
 output_separate = linear(normalized)
 
 # Example 2: Fused LayerNormLinear layer
-fused_layer = te.LayerNormLinear(1024, 1024)
+fused_layer = te.LayerNormLinear(1024, 1024, params_dtype=torch.bfloat16)
 
 # Single operation: LayerNorm output is directly quantized
 recipe = DelayedScaling()
-with te.fp8_autocast(enabled=True, fp8_recipe=recipe):
+with te.autocast(enabled=True, recipe=recipe):
     output_fused = fused_layer(inp)
 
 # The fused layer is more efficient as it avoids redundant quantization

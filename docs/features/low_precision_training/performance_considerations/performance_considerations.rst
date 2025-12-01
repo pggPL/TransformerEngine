@@ -190,7 +190,7 @@ and columnwise tensors require separate memory layouts.
             Needs to be run on SM89 (Ada) or SM90 (Hopper)
          </div>
 
-      .. literalinclude:: memory_usage_pytorch.py
+      .. literalinclude:: memory_usage_1_pytorch.py
          :language: python
          :start-after: # START_MEMORY_USAGE_1
          :end-before: # END_MEMORY_USAGE_1
@@ -203,7 +203,7 @@ and columnwise tensors require separate memory layouts.
       
       .. container:: program-output
       
-         .. literalinclude:: pytorch_out
+         .. literalinclude:: memory_usage_1_pytorch.out
             :language: text
             :start-after: # START_MEMORY_USAGE_1
             :end-before: # END_MEMORY_USAGE_1
@@ -221,7 +221,7 @@ and columnwise tensors require separate memory layouts.
             Needs to be run on SM89 (Ada) or SM90 (Hopper)
          </div>
       
-      .. literalinclude:: memory_usage_pytorch.py
+      .. literalinclude:: memory_usage_2_pytorch.py
          :language: python
          :start-after: # START_MEMORY_USAGE_2
          :end-before: # END_MEMORY_USAGE_2
@@ -234,7 +234,7 @@ and columnwise tensors require separate memory layouts.
       
       .. container:: program-output
       
-         .. literalinclude:: pytorch_out
+         .. literalinclude:: memory_usage_2_pytorch.out
             :language: text
             :start-after: # START_MEMORY_USAGE_2
             :end-before: # END_MEMORY_USAGE_2
@@ -251,7 +251,7 @@ and columnwise tensors require separate memory layouts.
             Needs to be run on SM89 (Ada) or SM90 (Hopper)
          </div>
 
-      .. literalinclude:: memory_usage_pytorch.py
+      .. literalinclude:: memory_usage_3_pytorch.py
          :language: python
          :start-after: # START_MEMORY_USAGE_3
          :end-before: # END_MEMORY_USAGE_3
@@ -264,7 +264,7 @@ and columnwise tensors require separate memory layouts.
       
       .. container:: program-output
       
-         .. literalinclude:: pytorch_out
+         .. literalinclude:: memory_usage_3_pytorch.out
             :language: text
             :start-after: # START_MEMORY_USAGE_3
             :end-before: # END_MEMORY_USAGE_3
@@ -289,7 +289,7 @@ and columnwise tensors require separate memory layouts.
             Needs to be run on SM89 (Ada) or SM90 (Hopper)
          </div>
 
-      .. literalinclude:: memory_usage_pytorch.py
+      .. literalinclude:: save_original_input_pytorch.py
          :language: python
          :start-after: # START_SAVE_ORIGINAL_INPUT
          :end-before: # END_SAVE_ORIGINAL_INPUT
@@ -302,10 +302,10 @@ and columnwise tensors require separate memory layouts.
       
       .. container:: program-output
 
-         .. code-block:: text
-
-            save_original_input=False: 12.0 MB
-            save_original_input=True: 10.0 MB
+         .. literalinclude:: save_original_input_pytorch.out
+            :language: text
+            :start-after: # START_SAVE_ORIGINAL_INPUT
+            :end-before: # END_SAVE_ORIGINAL_INPUT
 
    .. tab:: JAX
 
@@ -319,7 +319,7 @@ and columnwise tensors require separate memory layouts.
             Needs to be run on SM89 (Ada) or SM90 (Hopper)
          </div>
 
-      .. literalinclude:: memory_usage_jax.py
+      .. literalinclude:: memory_usage_1_jax.py
          :language: python
          :start-after: # START_MEMORY_USAGE_1
          :end-before: # END_MEMORY_USAGE_1
@@ -332,7 +332,7 @@ and columnwise tensors require separate memory layouts.
       
       .. container:: program-output
       
-         .. literalinclude:: jax_out
+         .. literalinclude:: memory_usage_1_jax.out
             :language: text
             :start-after: # START_MEMORY_USAGE_1
             :end-before: # END_MEMORY_USAGE_1
@@ -350,7 +350,7 @@ and columnwise tensors require separate memory layouts.
             Needs to be run on SM89 (Ada) or SM90 (Hopper)
          </div>
       
-      .. literalinclude:: memory_usage_jax.py
+      .. literalinclude:: memory_usage_2_jax.py
          :language: python
          :start-after: # START_MEMORY_USAGE_2
          :end-before: # END_MEMORY_USAGE_2
@@ -363,7 +363,7 @@ and columnwise tensors require separate memory layouts.
       
       .. container:: program-output
       
-         .. literalinclude:: jax_out
+         .. literalinclude:: memory_usage_2_jax.out
             :language: text
             :start-after: # START_MEMORY_USAGE_2
             :end-before: # END_MEMORY_USAGE_2
@@ -380,7 +380,7 @@ and columnwise tensors require separate memory layouts.
             Needs to be run on SM89 (Ada) or SM90 (Hopper)
          </div>
 
-      .. literalinclude:: memory_usage_jax.py
+      .. literalinclude:: memory_usage_3_jax.py
          :language: python
          :start-after: # START_MEMORY_USAGE_3
          :end-before: # END_MEMORY_USAGE_3
@@ -393,7 +393,7 @@ and columnwise tensors require separate memory layouts.
       
       .. container:: program-output
       
-         .. literalinclude:: jax_out
+         .. literalinclude:: memory_usage_3_jax.out
             :language: text
             :start-after: # START_MEMORY_USAGE_3
             :end-before: # END_MEMORY_USAGE_3
