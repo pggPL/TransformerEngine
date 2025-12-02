@@ -150,14 +150,18 @@ Memory usage
 This section discusses memory usage in low precision training. 
 Contrary to intuition, FP8 training does not always reduce memory compared to BF16/FP16.
 
-*Master weights for BF16/FP16*
+*Master weights*
 
-Transformer Engine stores weights in high precision and quantizes them before each GEMM,
-similar to the master weights approach in BF16/FP16 training. This ensures optimizer updates 
-remain accurate. However, storing high precision weights in the model is not always necessary:
+Transformer Engine stores weights in high precision and quantizes them to low precision before each GEMM.
+Moreover, one can specify the precision of the weights stored in the model - if this can be FP32 or 
+BF16/FP16 -- or do not store high precision weights in the model at all. There are multiple scenarios to consider,
+three of them are listed below:
 
-- during inference, where no weight updates occur,
-- when using an optimizer that maintains its own master weights.
+1. model weights are in FP32, quantized to low precision before each GEMM,
+2. model weights are in BF16/FP16, quantized to low precision before each GEMM, master weights in optimizer are in FP32.
+3. model weight are stored directly in low precision, and master weights in optimizer are in FP32.
+
+Note that all these scenarios may have different memory footprints.
 
 *Activations saved for backward*
 
@@ -211,7 +215,7 @@ and columnwise tensors require separate memory layouts.
       Layer size is ``1024 * 1024 * 2 (2 bytes per parameter) = 2MB``.
       Memory after forward pass is ``2 MB (weight) + 2 MB (input) + 2 MB (output) = 6 MB``.
       
-      **2. FP8 training with master weights in BF16**
+      **2. FP8 training with model weights in BF16**
 
       Now let's see the memory usage in FP8 training with high precision weights.
 
@@ -241,9 +245,9 @@ and columnwise tensors require separate memory layouts.
       
       Total memory usage is ``2 MB (weight) + 1 MB (weight in FP8) + 2 MB (input) + 1 MB (input in FP8) + 2 MB (output) = 8 MB``.
       
-      **3. FP8 weights without master weights**
+      **3. FP8 training with model weights stored directly in low precision**
 
-      When master weights are not needed (e.g., inference), weights can be stored directly in FP8.
+      When model weights are stored directly in low precision, master weights are not needed.
 
       .. raw:: html
 

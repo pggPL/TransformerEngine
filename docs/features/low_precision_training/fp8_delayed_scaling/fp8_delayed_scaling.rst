@@ -6,40 +6,37 @@
 FP8 Delayed Scaling
 ===================================
 
-FP8 Delayed Scaling is historically the first recipe provided by Transformer Engine.
-It is the improvement on FP8 Current Scaling recipe, which aims to provide better performance,
-with potentially higher quantization error.
+FP8 Delayed Scaling estimates scaling factors from historical amax values rather than computing them
+for each tensor. This reduces quantization from two tensor reads to one, improving memory bandwidth.
 
-These recipes both use the same data formats, and the only substantial difference is in quantization process.
+Both this recipe and :doc:`FP8 Current Scaling <../fp8_current_scaling/fp8_current_scaling>` use 
+the same FP8 formats (E4M3/E5M2) with one float32 scaling factor per tensor. 
+Reading the FP8 Current Scaling documentation first is recommended.
 
-Let's remind ourselves how quantization in FP8 Current Scaling works. To quantize a tensor to FP8,
-two tensor reads were needed - one to compute the amax, and one to apply the scaling factor and cast to FP8.
-The core idea of delayed scaling is not to compute the amax on the fly,
-but rather try to estimate it from the amax history. This is the origin of the names *current scaling*
-and *delayed scaling*. The first one uses the current amax value, 
-while the second one uses the history of amax values to compute the scaling factor.
+Quantization with delayed scaling factors
+-----------------------------------------
 
-Quantization Process
---------------------
+FP8 Current Scaling requires two tensor reads per quantization: one to compute amax, 
+one to cast. FP8 Delayed Scaling eliminates the first read by predicting the scaling factor 
+from historical amax values - hence *delayed* (using past values) versus *current* (using present values).
 
-The only substantial difference is in quantization process. In FP8 Delayed Scaling the steps are:
+The quantization process works as follows:
 
-1. Each module stores ``amax_history`` tensor for each of the tensors in each of the GEMMs.
-   Size of this tensor is ``amax_history_len``, which is a hyperparameter of the recipe.
-2. The scaling factor is computed from the ``amax_history`` tensor using one of two predefined algorithms:
-   ``max`` (default, uses maximum from entire history) or ``most_recent`` (uses only the most recent value).
-   Alternatively, a custom callable can be provided for custom amax computation logic.
-   The formula is ``new_scaling_factor = (FP8_MAX / amax) / (2 ^ margin)``, 
-   where ``FP8_MAX`` is the maximum representable value of the FP8 data format, 
-   and ``margin`` is a hyperparameter of the recipe - default is 0. Note that this does not need a tensor read.
-3. The quantization is performed using the computed scaling factor. 
-   If some value exceeds FP8 range, it is clipped to FP8_MAX or -FP8_MAX.
-   This step needs one tensor read.
-4. The ``amax_history`` tensor is updated with the new amax value.
+1. **Compute scaling factor from history** (no tensor read needed):
+   The scaling factor is derived from stored ``amax_history`` using the formula:
+   
+   ``scaling_factor = FP8_MAX / amax``
+   
+   where ``amax`` is computed from history using either ``max`` (default) or ``most_recent`` algorithm.
 
-Note that only one tensor read is needed in the quantization process, 
-which is an improvement over FP8 Current Scaling 
-where two tensor reads were needed.
+2. **Quantize the tensor** (one tensor read):
+   Apply the scaling factor and cast to FP8. Values exceeding FP8 range are clipped.
+
+3. **Update history**:
+   Record the actual amax from this quantization for future iterations.
+
+Each module maintains an ``amax_history`` tensor of configurable length (``amax_history_len``) 
+for each quantized tensor.
 
 .. raw:: html
    :file: img/scaling_comparison.svg
@@ -49,26 +46,49 @@ where two tensor reads were needed.
 Amax History Management
 -----------------------
 
-Let's look closer at how amax history is stored and updated.
+The ``amax_history`` buffer acts as a sliding window of recent amax values.
+Position 0 serves as a staging area for the current amax, while positions 1 to N-1 
+store the history from oldest to newest. Each quantization writes the observed amax 
+to position 0, and after the pass completes, the history is rotated:
 
-1. For each module initialization, the two ``amax_history`` tensors are created and initialized to 0 
-   (one for tensors used in forward pass, and one for tensors used in backward pass).
-2. Each quantization updates element 0 of the ``amax_history`` tensor with the new amax value.
-   During the first forward pass in an autocast context, each module registers both its forward 
-   and backward ``amax_history`` tensors to global buffers corresponding to that autocast context 
-   (identified by recipe and distributed group). This registration happens only once - subsequent 
-   forward passes reuse the same registered tensors.
-3. After the exit from the autocast context,
-   amax history tensors related to tensors used in forward pass are rotated by -1: 
-   the first entry shifts to the last, the last entry shifts to the second to last, etc.
-   Then the first element is set to 0.
-   This is done by one custom CUDA kernel - which is called once per autocast context.
-   Here also the reduction of amax between different GPUs is performed, more details in the next section.
-4. In backward pass, each quantization updates element 0 of the ``amax_history`` tensor with the new amax value.
-   The backward ``amax_history`` tensors are already registered in global buffers from step 2.
-5. After the last backward pass for a TE module in the autocast context completes, 
-   the amax history tensors for backward pass are rotated as in step 3.
-  
+.. code-block:: text
+
+   Before rotation: [amax_N, amax_1, amax_2, ..., amax_N-1]   (amax_N = current, amax_1 = oldest)
+   After rotation:  [0,      amax_2, ..., amax_N-1, amax_N]   (amax_1 dropped, amax_N appended)
+
+The effective history length is ``amax_history_len - 1`` since position 0 is reserved 
+for the staging area.
+
+The implementation differs between PyTorch and JAX:
+
+.. tabs::
+
+   .. tab:: PyTorch
+
+      Each module creates two ``amax_history`` tensors, initialized to zero:
+      
+      - Forward: shape ``(amax_history_len, num_gemms * 3)`` — three FP8 tensors per GEMM (input, weight, output)
+      - Backward: shape ``(amax_history_len, num_gemms * 2)`` — two FP8 tensors per GEMM (grad_output, grad_input)
+      
+      During the first forward pass, modules register their ``amax_history`` tensors 
+      to a **global buffer** associated with the autocast context. When the context exits,
+      a single CUDA kernel processes all registered tensors at once - performing both 
+      amax reduction across GPUs and history rotation.
+      
+      This batched approach (one kernel for all tensors instead of one kernel per tensor)
+      minimizes kernel launch overhead.
+
+   .. tab:: JAX
+
+      Each quantizer maintains its own ``amax_history`` as a Flax variable with shape ``(amax_history_len,)``.
+      There is no global buffer - each quantizer updates independently.
+      
+      The rotation is performed per-quantizer using ``jnp.roll``:
+      
+      .. code-block:: python
+      
+         updated_amax_history = jnp.roll(amax_history, -1, -1)
+         amax_history = updated_amax_history.at[0].set(0.0)
 
 Here's how to use FP8 Delayed Scaling in PyTorch and JAX:
 
@@ -93,20 +113,19 @@ Distributed Training
 --------------------
 
 Since FP8 Delayed Scaling uses the same data formats as FP8 Current Scaling,
-similarly as in the current scaling case, the transpose gather
-is not supported. Although, the amax reduction works slightly differently in different frameworks.
-
-**Configuration examples:**
+transpose gather is not supported. However, amax reduction works slightly differently in different frameworks.
 
 .. tabs::
 
    .. tab:: PyTorch
 
-      One can enable or disable amax reduction across all GPUs by setting ``reduce_amax`` parameter in the recipe.
-      Note that sequence parallelism and context parallelism require amax reduction to be enabled.
-
-      Group on which amax reduction is performed is specified in the ``fp8_group`` parameter of ``fp8_autocast``.
-      We advise to reduce amax across all GPUs for which tensor is sharded - across data parallel too.
+      Amax reduction is controlled by two parameters:
+      
+      - ``reduce_amax`` in recipe: enables/disables reduction (required for SP and CP)
+      - ``amax_reduction_group`` in ``autocast``: specifies the process group for reduction
+      
+      We recommend reducing amax across all GPUs where the tensor is sharded, 
+      including data parallel ranks.
 
       .. literalinclude:: pytorch_delayed_scaling_distributed_example.py
          :language: python
@@ -116,9 +135,8 @@ is not supported. Although, the amax reduction works slightly differently in dif
 
    .. tab:: JAX
 
-      For JAX, amax reduction is always enabled in FP8 Delayed Scaling.
-      The scope of this reduction is all parallelism axes except pipeline parallelism (TP, SP, DP/FSDP).
-      This is managed automatically internally.
+      Amax reduction is always enabled and managed automatically.
+      Reduction scope: all parallelism axes except pipeline parallelism (TP, SP, DP/FSDP).
 
       .. literalinclude:: jax_delayed_scaling_distributed_example.py
          :language: python

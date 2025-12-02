@@ -20,7 +20,7 @@ recipe = DelayedScaling(
 )
 
 with global_shard_guard(MeshResource()):
-    with te.fp8_autocast(enabled=True, recipe=recipe, mesh_resource=MeshResource()):
+    with te.autocast(enabled=True, recipe=recipe, mesh_resource=MeshResource()):
         # Initialize layer and data
         layer = DenseGeneral(features=1024)
         key = jax.random.PRNGKey(0)

@@ -57,9 +57,17 @@ This ensures that even small gradients accumulate correctly over time.
 
 There are two common software approaches to storing master weights:
 
-* *In the optimizer*: The model holds low-precision weights, while the optimizer maintains FP32 copies alongside momentum and other state. During each step, the optimizer updates its FP32 copy and casts the result back to the model's low-precision weights. This results in smaller model checkpoints and reduced memory usage during inference (when optimizer state is not loaded), but requires an optimizer that explicitly supports mixed-precision master weights.
+* *In the optimizer*: 
+  The model holds low-precision weights, 
+  while the optimizer maintains FP32 copies alongside momentum and other state. 
+  During each step, 
+  the optimizer updates its FP32 copy and casts the result back to the model's low-precision weights. 
+  This makes it easier to shard master weights together with other optimizer state, for example in ZeRO optimizer.
 
-* *In the model*: The model stores weights directly in FP32, and they are cast to lower precision on-the-fly during forward and backward passes. This approach works with any standard optimizer without special support, but results in larger model checkpoints.
+* *In the model*: 
+  The model stores weights directly in FP32, 
+  and they are cast to lower precision on-the-fly during forward and backward passes. 
+  This approach works seamlessly with any standard optimizer, requiring no special support.
 
 .. raw:: html
    :file: img/master_weights_approaches.svg
