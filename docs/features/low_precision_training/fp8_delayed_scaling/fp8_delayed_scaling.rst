@@ -96,12 +96,24 @@ Here's how to use FP8 Delayed Scaling in PyTorch and JAX:
 
    .. tab:: PyTorch
 
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Requires SM89 (Ada) or later
+         </div>
+
       .. literalinclude:: pytorch_delayed_scaling_example.py
          :language: python
          :start-after: # START_DELAYED_SCALING_EXAMPLE
          :end-before: # END_DELAYED_SCALING_EXAMPLE
 
    .. tab:: JAX
+
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Requires SM89 (Ada) or later
+         </div>
 
       .. literalinclude:: jax_delayed_scaling_example.py
          :language: python

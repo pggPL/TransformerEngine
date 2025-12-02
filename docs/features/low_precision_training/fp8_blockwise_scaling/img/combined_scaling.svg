@@ -1,11 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 750">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 55 900 715">
   <defs>
     <style>
       @import url("../../../_static/css/diagram-colors.css");
       
       .title { font: bold 18px sans-serif; fill: #333; text-anchor: middle; }
-      .label { font: 14px sans-serif; fill: #333; text-anchor: middle; }
-      .small-text { font: 12px sans-serif; fill: #555; }
       .dots-text { font: bold 24px sans-serif; fill: #333; text-anchor: middle; }
       
       /* Tensor colors */
@@ -26,7 +24,7 @@
   <!-- LEFT SIDE: Standard FP8 Scaling -->
   <g id="standard-scaling">
     <text x="225" y="85" class="title">Delayed/Current FP8 Scaling</text>
-    <text x="225" y="108" class="label" style="font-size: 12px;">(Single scaling factor per tensor)</text>
+    <text x="225" y="108" class="label">(Single scaling factor per tensor)</text>
     
     <!-- FP8 Tensor - solid blue with white cross -->
     <g id="left-tensor">
@@ -60,8 +58,8 @@
   
   <!-- RIGHT SIDE: FP8 Blockwise Scaling -->
   <g id="blockwise-scaling">
-    <text x="675" y="85" class="title">Blockwise FP8 Scaling — 1 dimension</text>
-    <text x="675" y="108" class="label" style="font-size: 12px;">(One scaling factor per 128 elements)</text>
+    <text x="675" y="85" class="title">Blockwise FP8 Scaling – 1 dimension</text>
+    <text x="675" y="108" class="label">(One scaling factor per 128 elements)</text>
     
     <!-- FP8 Tensor split into many small blocks (40×10) - EXACT coordinates from Python script -->
     <g id="tensor-blocks">
@@ -213,7 +211,7 @@
 
   <!-- SECOND IMAGE: 2D Blockwise Scaling -->
   <!-- Main Title -->
-  <text x="450" y="470" class="title">Blockwise FP8 Scaling — 2 dimensions</text>
+  <text x="450" y="470" class="title">Blockwise FP8 Scaling – 2 dimensions</text>
   <text x="450" y="495" class="label">(One scaling factor per 128x128 block of elements)</text>
   
   <!-- TOP: DATA TENSOR (20x20 blocks, with 3 extra columns on right) -->
@@ -339,7 +337,6 @@
     <!-- Main outline -->
     <rect x="420" y="675" width="90" height="60" fill="none" stroke="#444" stroke-width="2"/>
 
-    <text x="530" y="707" class="small-text" text-anchor="start">Scaling Factors</text>
-    <text x="530" y="720" class="small-text" text-anchor="start">(1 factor per 2D block)</text>
+    <text x="465" y="755" class="small-text" text-anchor="middle">Scaling factors (1 per 2D block)</text>
   </g>
 </svg>

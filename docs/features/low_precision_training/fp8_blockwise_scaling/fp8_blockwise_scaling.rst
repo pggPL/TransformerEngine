@@ -6,35 +6,40 @@
 FP8 Blockwise Scaling
 ===================================
 
-The FP8 blockwise scaling recipe is inspired by the recipe used to train `DeepSeek-v3 model <https://arxiv.org/abs/2412.19437>`__ –
-first open source large scale LLM trained with FP8 precision.
+FP8 Blockwise Scaling is inspired by the quantization scheme used to train the `DeepSeek-v3 model <https://arxiv.org/abs/2412.19437>`__ –
+the first open-source large-scale LLM trained entirely in FP8 precision.
+Unlike the previous recipes, it assigns a dedicated scaling factor to each block of elements.
 
 
 Data Format
 --------------------------
 
-FP8 Blockwise Scaling supports the same FP8 formats as the two previous recipes, but unlike them
-it uses multiple scaling factors - one for each block of values within the tensor.
-
-The representation of tensor ``A`` in FP8 blockwise precision is given by:
+The representation of an FP8 tensor element ``x`` in blockwise precision is given by:
 
 .. code-block:: python
-    
-    A[i] = A_fp8[i] * s[block(i)]
+
+    x = x_fp8 * s_block
 
 where
 
-* ``A_fp8`` is an FP8 tensor - one of E4M3 or E5M2 formats,
-* ``s`` is an array of 32-bit float scaling factors,
-* ``block(i)`` determines which block index ``i`` belongs to.
+* ``x_fp8`` is the FP8 value (E4M3 or E5M2),
+* ``s_block`` is a local **FP32** scaling factor shared by a block of elements.
 
-**FP8 tensor**
 
-FP8 blockwise recipe supports both E4M3 and E5M2 FP8 formats,
-although unlike FP8 Current/Delayed Scaling,
-both forward and backward pass run with E4M3 format by default.
-Since more scaling factors are used, 
-the bigger dynamic range provided by E5M2 is not necessarily needed.
+.. raw:: html
+   :file: img/combined_scaling.svg
+
+*Figure 1. Top: Comparison of standard FP8 scaling (left) using a single scaling factor per tensor versus 
+FP8 blockwise scaling in 1 dimension (right) using multiple scaling factors, one per block of 128 elements.
+Bottom: FP8 blockwise scaling in 2 dimensions where each 128×128 block in the data tensor has a corresponding
+scaling factor, providing fine-grained spatial control over quantization precision.*
+
+**FP8 format**
+
+Both E4M3 and E5M2 formats are supported, but unlike FP8 Current/Delayed Scaling,
+E4M3 is used by default for both forward and backward passes.
+Previous recipes used E5M2 for gradients due to its higher dynamic range,
+but with multiple scaling factors per tensor, E4M3 is sufficient.
 
 
 **Block size**
@@ -42,12 +47,12 @@ the bigger dynamic range provided by E5M2 is not necessarily needed.
 Block size is 128. 
 Blocks can be:
 
-* one dimensional - containing 128 consecutive values,
-* two dimensional - containing tiles of 128x128 values.
+* one dimensional – containing 128 consecutive values,
+* two dimensional – containing tiles of 128x128 values.
 
 More details when 1d and 2d scaling are used are provided later.
 
-For optimal performance with 1D blockwise scaling, all tensor dimensions should be divisible by 128.
+There are some assumptions on the dimensions of the tensor:
 
 **Scaling factors**
 
@@ -70,13 +75,6 @@ This ensures that the largest value in each block, when multiplied by the scale 
 converted to FP8, will fit within the FP8 range without saturation.
 
 
-.. raw:: html
-   :file: img/combined_scaling.svg
-
-*Figure 1. Top: Comparison of standard FP8 scaling (left) using a single scaling factor per tensor versus 
-FP8 blockwise scaling in 1 dimension (right) using multiple scaling factors, one per block of 128 elements.
-Bottom: FP8 blockwise scaling in 2 dimensions where each 128×128 block in the data tensor has a corresponding
-scaling factor, providing fine-grained spatial control over quantization precision.*
 
 
 
@@ -105,11 +103,11 @@ By default TE:
 
 Activations, like weights, use the non-transposed version in the forward pass and the transposed version in the backward pass.
 Experiments have shown that 2D scaling for weights is more helpful for numerical stability than for activations,
-so by default 1D scaling is used for activations - as it is more granular - and 2D scaling is used for weights.
+so by default 1D scaling is used for activations – as it is more granular – and 2D scaling is used for weights.
 
 
-Note that - unlike in FP8 Current/Delayed Scaling - transposing 1D quantized tensor is not supported 
-- since rowwise tensor has 
+Note that – unlike in FP8 Current/Delayed Scaling – transposing 1D quantized tensor is not supported 
+– since rowwise tensor has 
 1 scaling factor per 128 rowwise consecutive values and columnwise tensor has 
 1 scaling factor per 128 columnwise consecutive values, which are not the same.
 Computing the columnwise quantized tensor from rowwise quantized one will lead to precision loss.
@@ -125,14 +123,14 @@ but for FP8 Blockwise Scaling it is.
 
 For FP8 Blockwise Scaling Tensor can have 2 formats:
 
-- compact format - used for all-gather:
+- compact format – used for all-gather:
   
   - rowwise data: not transposed, shape: ``[A, B]``
   - columnwise data: not transposed, shape: ``[A, B]``
   - rowwise scaling factors: not transposed, not padded, shape: ``[A, B/128]``
   - columnwise scaling factors: not transposed, not padded, shape: ``[A/128, B]``
 
-- gemm ready format - converted from COMPACT format after all-gather and before GEMMs:
+- gemm ready format – converted from COMPACT format after all-gather and before GEMMs:
   
   - rowwise data: not transposed, shape: ``[A, B]``
   - columnwise data: transposed, shape: ``[B, A]``
@@ -148,8 +146,8 @@ This can be fused into the quantization if no all-gather is performed, but it ca
 .. raw:: html
    :file: img/blockwise_swizzle_flow.svg
 
-*Figure 2. FP8 Blockwise Scaling swizzle paths. Top: With all-gather communication - quantization produces 
-compact format, then swizzle is performed separately after communication. Bottom: Without all-gather - 
+*Figure 2. FP8 Blockwise Scaling swizzle paths. Top: With all-gather communication – quantization produces 
+compact format, then swizzle is performed separately after communication. Bottom: Without all-gather – 
 quantize and swizzle are fused into a single operation, directly producing GEMM ready format.*
 
 
@@ -198,4 +196,4 @@ Supported devices
 
 Hopper (SM 9.0)
 
-Blackwell (SM 10.0) - emulates this recipe with MXFP8
+Blackwell (SM 10.0) – emulates this recipe with MXFP8
