@@ -271,7 +271,7 @@ class OffloadableLayerState:
             assert tensor.is_contiguous()
 
             # Wait for the moment the tensor is ready to be offloaded.
-            self.offload_stream.wait_event(self.fwd_gpu_tensor_group.events[tensor_id])  # type: ignore[arg-type]
+            #self.offload_stream.wait_event(self.fwd_gpu_tensor_group.events[tensor_id])  # type: ignore[arg-type]
 
             with torch.cuda.stream(self.offload_stream):
                 if allocate_cpu_buffers:
@@ -307,7 +307,7 @@ class OffloadableLayerState:
         )
         self.state = "offload_finished"
 
-        torch.cuda.current_stream().wait_event(self.finish_offload_event)  # type: ignore[arg-type]
+        #torch.cuda.current_stream().wait_event(self.finish_offload_event)  # type: ignore[arg-type]
 
         # GPU memory can be released safely after the offload.
         # Notice that the memory needs to be kept alive when GPU->CPU copy is performed.
@@ -332,7 +332,7 @@ class OffloadableLayerState:
 
             # empty_like is defined also for QuantizedTensors.
             reloaded_tensor = torch.empty_like(tensor, device=torch.device("cuda"))
-            self.offload_stream.wait_stream(torch.cuda.current_stream())
+            #self.offload_stream.wait_stream(torch.cuda.current_stream())
 
             with torch.cuda.stream(self.offload_stream):
                 reloaded_tensor.copy_(tensor, non_blocking=True)
@@ -389,9 +389,9 @@ class OffloadableLayerState:
         # 3. the layer was offloaded
         assert self.state == "reload_started"
         # wait for the tensor to be reloaded
-        torch.cuda.current_stream().wait_event(
-            self.bwd_gpu_tensor_group.events[tensor_or_tensor_id]
-        )
+        #torch.cuda.current_stream().wait_event(
+        #    self.bwd_gpu_tensor_group.events[tensor_or_tensor_id]
+        #)
         return self.bwd_gpu_tensor_group.tensor_list[tensor_or_tensor_id]
 
     def release_all_memory(self):

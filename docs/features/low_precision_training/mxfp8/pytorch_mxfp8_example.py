@@ -10,7 +10,7 @@ from transformer_engine.common.recipe import MXFP8BlockScaling, Format
 
 # Create MXFP8 recipe
 recipe = MXFP8BlockScaling(
-    fp8_format=Format.E4M3,  # FP8 format (default: E4M3, E5M2 not supported)
+    fp8_format=Format.E4M3,  # E4M3 (default) or HYBRID; pure E5M2 not supported
 )
 
 # Create a linear layer

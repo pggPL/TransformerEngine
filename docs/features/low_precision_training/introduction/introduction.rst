@@ -39,7 +39,7 @@ Not all operations can run in reduced precision.
 Modern deep learning frameworks use *mixed precision training*, where:
 
 * *Low precision* is used for matrix multiplications and other compute-heavy operations, which remain numerically stable at lower precision,
-* *High precision (FP32)* must be used for numerically sensitive operations to maintain training stability. These include layer normalization, softmax, and loss computations—operations that involve division or exponentiation, where small rounding errors can amplify and propagate through the network, leading to gradient instability or degraded convergence,
+* *High precision (FP32)* must be used for numerically sensitive operations to maintain training stability. These include layer normalization, softmax, and loss computations—operations that involve division or exponentiation, where small rounding errors can amplify and propagate through the network, leading to gradient instability or degraded convergence.
 
 **Master weights**
 

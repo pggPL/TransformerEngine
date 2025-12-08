@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" width="100%" style="max-width: 900px;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -15 900 445" width="100%" style="max-width: 900px;">
   <style>
     .scale-fill { fill: #FFA500; stroke: #444; stroke-width: 2; }
     .scale-fill-nostroke { fill: #FFA500; stroke: none; }
@@ -70,35 +70,46 @@
     <text x="90" y="260" class="dots-text">⋮</text>
     <text x="125" y="260" class="dots-text">⋱</text>
     
+    <!-- Arrow pointing to first block with label 128x4 -->
+    <text x="50" y="0" class="label" text-anchor="middle">128x4</text>
+    <path d="M 50 5 L 50 38" class="arrow-line" marker-end="url(#arrowhead)"/>
+    
     <!-- Arrow -->
     <path d="M 200 150 L 300 150" class="arrow-line" marker-end="url(#arrowhead)"/>
     
     <!-- Right: Linearized 1D array -->
     <!-- Main rectangle with white background -->
-    <rect x="340" y="130" width="520" height="40" fill="#FFFFFF" stroke="#444" stroke-width="2"/>
+    <rect x="340" y="140" width="520" height="20" fill="#FFFFFF" stroke="#444" stroke-width="2"/>
     
     <!-- Orange cells -->
-    <rect x="340" y="130" width="70" height="40" fill="#FFA500" stroke="#444" stroke-width="2"/>
+    <rect x="340" y="140" width="70" height="20" fill="#FFA500" stroke="#444" stroke-width="2"/>
     <text x="375" y="150" class="num-text">1</text>
     
-    <rect x="410" y="130" width="70" height="40" fill="#FFA500" stroke="#444" stroke-width="2"/>
+    <rect x="410" y="140" width="70" height="20" fill="#FFA500" stroke="#444" stroke-width="2"/>
     <text x="445" y="150" class="num-text">2</text>
     
-    <rect x="480" y="130" width="70" height="40" fill="#FFA500" stroke="#444" stroke-width="2"/>
+    <rect x="480" y="140" width="70" height="20" fill="#FFA500" stroke="#444" stroke-width="2"/>
     <text x="515" y="150" class="dots-text">…</text>
     
-    <rect x="550" y="130" width="70" height="40" fill="#FFA500" stroke="#444" stroke-width="2"/>
+    <rect x="550" y="140" width="70" height="20" fill="#FFA500" stroke="#444" stroke-width="2"/>
     <text x="585" y="150" class="num-text">K + 1</text>
     
-    <rect x="620" y="130" width="70" height="40" fill="#FFA500" stroke="#444" stroke-width="2"/>
+    <rect x="620" y="140" width="70" height="20" fill="#FFA500" stroke="#444" stroke-width="2"/>
     <text x="655" y="150" class="num-text">K + 2</text>
     
     <!-- White area with dots -->
     <text x="725" y="150" class="dots-text">…</text>
+    
+    <!-- Arrow pointing to first linearized block with label 1x512 -->
+    <text x="375" y="75" class="label" text-anchor="middle">1x512</text>
+    <path d="M 375 80 L 375 138" class="arrow-line" marker-end="url(#arrowhead)"/>
   </g>
   
   <!-- ======== Connection: Arrow from "1" to bottom left block with brace ======== -->
   <g id="connection">
+    <!-- Label above brace -->
+    <text x="250" y="335" class="label">128 4-bit elements</text>
+    
     <!-- Curly brace on top of the bottom left block -->
     <path d="M 115 355 
              Q 115 345, 125 345
@@ -110,7 +121,7 @@
           fill="none" stroke="#444" stroke-width="2"/>
     
     <!-- Arrow from "1" cell down to the center of the brace -->
-    <path d="M 375 175 Q 375 260, 250 330" class="arrow-line" marker-end="url(#arrowhead)"/>
+    <path d="M 375 175 Q 375 260, 250 315" class="arrow-line" marker-end="url(#arrowhead)"/>
   </g>
   
   <!-- ======== PART 2: Swizzling (from mxfp8_swizzle_indices.svg) ======== -->

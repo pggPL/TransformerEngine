@@ -7,7 +7,7 @@ FP8 Delayed Scaling
 ===================================
 
 FP8 Delayed Scaling estimates scaling factors from historical amax values rather than computing them
-for each tensor. This reduces quantization from two tensor reads to one, improving memory bandwidth.
+for each tensor. This reduces tensor reads per quantization from two to one, improving memory efficiency.
 
 Both this recipe and :doc:`FP8 Current Scaling <../fp8_current_scaling/fp8_current_scaling>` use 
 the same FP8 formats (E4M3/E5M2) with one float32 scaling factor per tensor. 
@@ -143,6 +143,17 @@ transpose gather is not supported. However, amax reduction works slightly differ
          :language: python
          :start-after: # START_AMAX_REDUCTION_EXAMPLE
          :end-before: # END_AMAX_REDUCTION_EXAMPLE
+
+      In data parallel training, some modules may not execute on certain ranks 
+      (e.g., MoE experts that receive no tokens). This is handled as follows:
+      
+      - **First iteration**: All modules must execute on all ranks to register 
+        their ``amax_history`` tensors in the global buffer. Mismatched registration
+        causes the ``all_reduce`` to hang due to different tensor sizes across ranks.
+      - **Subsequent iterations**: The ``autocast`` context must be entered and exited
+        on all ranks (this triggers the collective reduction). Individual modules can be
+        skipped - if no rank executes a module, its history is not rotated and scale 
+        remains unchanged.
 
 
    .. tab:: JAX

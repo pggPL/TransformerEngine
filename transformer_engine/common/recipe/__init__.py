@@ -409,8 +409,8 @@ class NVFP4BlockScaling(Recipe):
       where a single scaling factor is shared by a 2D block of 16x16 elements.
     - When quantizing gradients, stochastic rounding is applied to avoid the bias
       introduced by quantization. With this, values are rounded probabilistically
-      to one of their two nearest representable numbers, with probabilities
-      inversely proportional to their distances.
+      to one of their two nearest representable numbers, with probability inversely
+      proportional to the distance.
     - When quantizing inputs and gradients, random Hadamard transforms are applied
       (16x16 Hadamard matrix) to smooth outliers in the tensor distributions
       and make them easier to represent accurately in NVFP4.

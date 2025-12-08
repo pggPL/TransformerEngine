@@ -12,9 +12,14 @@ from transformer_engine.jax.flax import DenseGeneral
 from transformer_engine.jax.sharding import MeshResource, global_shard_guard
 from transformer_engine.common.recipe import Float8BlockScaling
 
+# Check for Hopper or newer GPU
+gpu = jax.devices("gpu")[0]
+major, minor = gpu.compute_capability.split(".")
+assert int(major) >= 9, f"FP8 Blockwise Scaling requires SM90 (Hopper) or later, got SM{major}{minor}"
+
 # Create FP8 Blockwise Scaling recipe
 recipe = Float8BlockScaling(
-    fp8_format=te.common.recipe.Format.E4M3,  # FP8 format (default: E4M3)
+    fp8_format=te.common.recipe.Format.E4M3,  # E4M3 or HYBRID (default: E4M3)
     x_block_scaling_dim=1,  # 1D scaling for activations (default: 1)
     w_block_scaling_dim=2,  # 2D scaling for weights (default: 2)
     grad_block_scaling_dim=1,  # 1D scaling for gradients (default: 1)

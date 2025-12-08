@@ -6,9 +6,9 @@
 NVFP4
 ===================================
 
-NVFP4 is the first 4-bit recipe introduced in Transformer Engine -
+NVFP4 is the first 4-bit recipe introduced in Transformer Engine –
 please refer to the `NVFP4 paper <https://arxiv.org/abs/2509.25149>`__ for more details.
-It is a more complex recipe than the previous ones - apart from the new data format,
+It is a more complex recipe than the previous ones – apart from the new data format,
 it introduces multiple features which help training stability.
 
 Data Format
@@ -44,7 +44,7 @@ The scaling factors are computed as follows:
 
 .. code-block:: python
 
-    s_global = (fp8_max * fp4_max) / global_amax
+    s_global = global_amax / (fp8_max * fp4_max)
     # where:
     # - global_amax: maximum absolute value across the entire tensor
     # - fp8_max: maximum representable value in FP8 E4M3 (448.0)
@@ -54,7 +54,7 @@ The scaling factors are computed as follows:
 
 .. code-block:: python
 
-    s_block = (block_amax / fp4_max) * s_global
+    s_block = (block_amax / fp4_max) / s_global
     # where:
     # - block_amax: maximum absolute value within the block
     # - fp4_max: maximum representable value in NVFP4 E2M1 (6.0)
@@ -78,9 +78,10 @@ NVFP4 can be:
 * 2 dimensional - each block of 16x16 elements shares a scaling factor.
 
 By default, NVFP4 uses 2D scaling for weights and 1D scaling for activations and gradients.
-This can be changed by setting the ``use_2d_quantization`` flag to ``True`` or ``False``.
-The motivation for using 2D scaling for weights is the same as for FP8 blockwise scaling
-- ensure that rowwise and columnwise quantized tensors are numerically equivalent.
+Set ``disable_2d_quantization=True`` in the recipe configuration to force 1D scaling for weights as well (activations and gradients always use 1D).
+The motivation for using 2D scaling for weights is to ensure that rowwise and columnwise 
+quantized tensors are numerically equivalent. 
+Please refer to the `NVFP4 paper <https://arxiv.org/abs/2509.25149>`__ for more details.
 
 
 Stochastic Rounding
@@ -88,8 +89,8 @@ Stochastic Rounding
 
 Stochastic rounding is applied when casting scaled values to NVFP4 format. Instead of deterministic rounding 
 (always rounding to nearest even value), each scaled value is probabilistically rounded to one of the two 
-nearest representable NVFP4 values. The rounding probabilities are inversely proportional to 
-the distance to each representable value, which ensures that the expected value of the quantized 
+nearest representable NVFP4 values. The probability of rounding to a given value is inversely proportional to 
+the distance to that value, which ensures that the expected value of the quantized 
 tensor equals the original value, eliminating systematic quantization bias during training.
 Stochastic rounding is hardware-accelerated using native GPU instructions introduced with the 
 Blackwell architecture.
@@ -100,75 +101,62 @@ Blackwell architecture.
 *Figure 3. Stochastic rounding illustration. Given a value* ``x`` *to be quantized, and the two nearest 
 representable NVFP4 values* ``v1`` *(lower) and* ``v2`` *(higher), deterministic rounding always 
 rounds to the nearest value, while stochastic rounding probabilistically rounds to either value. 
-The rounding probabilities are inversely proportional to the distance: if* ``x`` *is 40% of the way from* 
-``v1`` *to* ``v2``, *there is a 60% chance of rounding to* ``v1`` *and a 40% chance of rounding to* ``v2``.
+If* ``x`` *is 40% of the way from* ``v1`` *to* ``v2``, *there is a 60% chance of rounding to* ``v1`` 
+*and a 40% chance of rounding to* ``v2``.
 
-By default, stochastic rounding is enabled only for gradients. It can be disabled by setting 
+Stochastic rounding is enabled only for gradients. It can be disabled by setting 
 ``disable_stochastic_rounding=True`` in the recipe configuration.
 
 
 Random Hadamard Transform
 --------------------------
 
-Random Hadamard Transform (RHT) is the technique used to smooth outliers 
-in the tensor distributions and make them easier to represent accurately in NVFP4.
-It is used **only for wgrad GEMM**, which - according to the paper mentioned at the top - is particularly sensitive.
+Random Hadamard Transform (RHT) applies an orthogonal rotation to the tensor **before quantization**,
+smoothing outliers in the tensor distributions and making them easier to represent accurately in NVFP4.
+RHT is applied to columnwise quantization of inputs and gradients, which are operands
+for the **wgrad GEMM**. This GEMM – according to the paper – is particularly sensitive
+to quantization errors, hence the additional outlier smoothing.
+RHT is supported only for BF16 inputs/gradients; other dtypes will raise an error.
 
-Let's see how RHT works for a GEMM with input matrices ``A`` and ``B``.
+The transform is defined as:
 
-1. *Definition of matrix* ``H``.
+.. math::
 
-   Let's consider matrix ``H`` of shape ``16 x 16`` that:
+   x' = x H
 
-   * ``H * H^T = I``, where ``I`` is the identity matrix.
-   * ``H`` is a square matrix with entries of ``+1 / sqrt(16) = 0.25`` or ``-1 / sqrt(16) = -0.25``.
+where :math:`H` is the RHT matrix defined below. The quantization scale factor is computed 
+from the rotated tensor :math:`x'`.
 
-   Such matrix exists:
+**Hadamard matrix**
 
-   .. code-block:: python
+The :math:`d \times d` Hadamard matrix has elements :math:`\pm 1` and satisfies :math:`H_d H_d^T = d I`.
+When normalized by :math:`1/\sqrt{d}`, the matrix becomes orthogonal and can be applied 
+to both operands of a matrix multiplication:
 
-      H = 0.25 * [
-         [ 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1],
-         [ 1, -1,  1, -1,  1, -1,  1, -1,  1, -1,  1, -1,  1, -1,  1, -1],
-         [ 1,  1, -1, -1,  1,  1, -1, -1,  1,  1, -1, -1,  1,  1, -1, -1],
-         [ 1, -1, -1,  1,  1, -1, -1,  1,  1, -1, -1,  1,  1, -1, -1,  1],
-         [ 1,  1,  1,  1, -1, -1, -1, -1,  1,  1,  1,  1, -1, -1, -1, -1],
-         [ 1, -1,  1, -1, -1,  1, -1,  1,  1, -1,  1, -1, -1,  1, -1,  1],
-         [ 1,  1, -1, -1, -1, -1,  1,  1,  1,  1, -1, -1, -1, -1,  1,  1],
-         [ 1, -1, -1,  1, -1,  1,  1, -1,  1, -1, -1,  1, -1,  1,  1, -1],
-         [ 1,  1,  1,  1,  1,  1,  1,  1, -1, -1, -1, -1, -1, -1, -1, -1],
-         [ 1, -1,  1, -1,  1, -1,  1, -1, -1,  1, -1,  1, -1,  1, -1,  1],
-         [ 1,  1, -1, -1,  1,  1, -1, -1, -1, -1,  1,  1, -1, -1,  1,  1],
-         [ 1, -1, -1,  1,  1, -1, -1,  1, -1,  1,  1, -1, -1,  1,  1, -1],
-         [ 1,  1,  1,  1, -1, -1, -1, -1, -1, -1, -1, -1,  1,  1,  1,  1],
-         [ 1, -1,  1, -1, -1,  1, -1,  1, -1,  1, -1,  1,  1, -1,  1, -1],
-         [ 1,  1, -1, -1, -1, -1,  1,  1, -1, -1,  1,  1,  1,  1, -1, -1],
-         [ 1, -1, -1,  1, -1,  1,  1, -1, -1,  1,  1, -1,  1, -1, -1,  1],
-      ]
+.. math::
 
-2. *Definition of matrix* ``S``.
+   C = (AH)(H^T B) = AB
 
-   Define ``S`` as a ``16x16`` matrix with the following properties:
-   * ``S`` is a diagonal matrix with entries of ``+1`` or ``-1``.
-   * ``S`` is shared across all modules and is changed randomly for each iteration.
+where the transforms cancel within the dot-product since :math:`H H^T = I`.
 
+**Sign matrix**
 
-3. *Property of* ``HS`` *matrix*.
+In the RHT implementation, a :math:`d`-dimensional diagonal sign matrix :math:`S_d` is applied 
+together with the Hadamard matrix:
 
-   Note that if vectors ``u`` and ``v`` are such that ``u * v^T = c``, then 
+.. math::
 
-   .. code-block:: python
+   H = \frac{1}{\sqrt{d}} S_d H_d
 
-      (u * HS) * (v * HS)^T =  u * H * S * S^T * H^T * v^T = u * v^T = c
+where diagonal entries of :math:`S_d` are :math:`\{-1, 1\}` and flip the signs of different rows of :math:`H_d`.
+As described in the paper, a single random sign vector is shared across all linear layers throughout training.
+In the implementation, this vector is fixed and the RHT matrix is computed once at initialization and cached.
 
-   thus if RHT is applied to both ``u`` and ``v``, we will get the same result of the dot product.
+**Tiled implementation**
 
-   We can generalize this property for tensors `A` and `B`. If we multiply 
-   every block of 16 elements in `A` by ``HS`` and every block of 16 elements in `B` by ``HS``,
-   then result of the ``A * B^T`` will not change.
-
-Random Hadamard Transform is the name of the operation described above - 
-applying linear transformation ``HS`` to blocks of 16 elements in both tensors before GEMM.
+The Hadamard transform is performed in a tiled approach along the last dimension of the tensor.
+For an :math:`m \times k` tensor, the data is reshaped to :math:`(mk/d) \times d` 
+and multiplied by the :math:`d \times d` matrix :math:`H`. In this implementation, :math:`d = 16`.
 
 
 .. raw:: html
@@ -176,25 +164,62 @@ applying linear transformation ``HS`` to blocks of 16 elements in both tensors b
 
 *Figure 4. WGRAD GEMM pipeline comparison: without RHT (left) and with RHT applied (right).*
 
+Handling transposes
+-------------------
+
+Like :doc:`MXFP8 <../mxfp8/mxfp8>`, NVFP4 requires both rowwise and columnwise quantized tensors
+for different GEMM operands. Unlike MXFP8 which supports multiple layouts (TN, NT, NN),
+**NVFP4 GEMM only supports the TN layout**.
+
+NVFP4 stores columnwise data and scaling factors in a **transposed layout**:
+
+- **Rowwise**: data ``[A, B]`` with 1×16 horizontal blocks, ``scales`` shape ``[A, B/16]``
+- **Columnwise**: data ``[B, A]`` (transposed) with 1×16 horizontal blocks, ``scales`` shape ``[B, A/16]``
+
+Scale tensors are padded for hardware alignment: first dimension to a multiple of 128,
+second dimension to a multiple of 4 (e.g. rowwise: ``[roundup(A, 128), roundup(B/16, 4)]``).
+
+.. raw:: html
+   :file: img/nvfp4_row_col.svg
+
+*Figure 5. NVFP4 rowwise vs columnwise quantization layout. Unlike MXFP8, columnwise scales are stored transposed.*
+
+
+Swizzling scaling factors
+-------------------------
+
+NVFP4 requires swizzling of block scaling factors (``s_block``) before GEMM operations,
+similar to :doc:`MXFP8 <../mxfp8/mxfp8>`. Key differences:
+
+- Block size is 16 (vs 32 for MXFP8)
+- Both rowwise and columnwise scaling factors are swizzled, but thanks to the transposed
+  columnwise layout, a single rowwise swizzle kernel handles both cases.
+- Scaling factors are stored as FP8 E4M3 (vs E8M0 for MXFP8)
+
 
 Distributed training
 --------------------
 
-Block scaling factors (``s_block``) do not require synchronization between nodes.
-However, the global scaling factor (``s_global``) requires amax synchronization for gathered tensors.
+**Amax reduction**
 
-For tensors which are gathered - input and gradient in sequence parallelism,
+Block scaling factors (``s_block``) do not require synchronization between nodes,
+as each scaling factor is local to its block of 16 elements.
+However, the global scaling factor (``s_global``) requires amax synchronization for gathered tensors.
+For tensors that are gathered (e.g., input and gradient in sequence parallelism),
 amax reduction is performed before quantization.
 If before synchronization there was ``amax_1`` on node 1,
 ``amax_2`` on node 2, etc., after synchronization there will be ``max(amax_1, amax_2, ...)`` on all nodes.
-To make quantized all-gather possible,
+
+**Quantized all-gather**
+
+All-gather of columnwise tensors is supported. To enable quantized all-gather, 
 all nodes must use the same ``s_global``, which is computed from the synchronized global amax.
 This is automatically enabled for column-parallel and row-parallel linear layers.
 
 .. raw:: html
    :file: img/nvfp4_all_gather.svg
 
-*Figure 5. Quantization and all-gather flow for NVFP4 showing amax synchronization and hierarchical scaling.*
+*Figure 6. Quantization and all-gather flow for NVFP4 showing amax synchronization and hierarchical scaling.*
 
 Examples
 --------
@@ -205,12 +230,24 @@ Here's how to use NVFP4 recipe in PyTorch and JAX. The examples show how to conf
 
    .. tab:: PyTorch
 
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Requires SM100 (Blackwell) or later
+         </div>
+
       .. literalinclude:: pytorch_nvfp4_example.py
          :language: python
          :start-after: # START_NVFP4_EXAMPLE
          :end-before: # END_NVFP4_EXAMPLE
 
    .. tab:: JAX
+
+      .. raw:: html
+
+         <div style="background: #f0f4f8; border-left: 3px solid #5c7cfa; padding: 6px 12px; font-size: 13px; color: #495057; margin-bottom: 0; border-radius: 4px 4px 0 0;">
+            Requires SM100 (Blackwell) or later
+         </div>
 
       .. literalinclude:: jax_nvfp4_example.py
          :language: python
