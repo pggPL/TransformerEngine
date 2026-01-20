@@ -371,10 +371,11 @@ class FusedAdam(torch.optim.Optimizer):
             store_param_remainders (bool): Store only trailing remainder bits.
         """
         dtype = self.name_to_dtype_map[state_name]
+        param_for_empty = param.dequantize() if isinstance(param, QuantizedTensor) else param
         if store_param_remainders:
-            data = torch.zeros_like(param, dtype=torch.int16)
+            data = torch.zeros_like(param_for_empty, dtype=torch.int16)
         else:
-            data = torch.empty_like(param, dtype=dtype)
+            data = torch.empty_like(param_for_empty, dtype=dtype)
         if zero_buffer:
             data.zero_()
 
