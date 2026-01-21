@@ -13,7 +13,6 @@ import warnings
 import torch
 import transformer_engine_torch as tex
 from transformer_engine.pytorch.tensor.float8_tensor import Float8Tensor, Float8Quantizer
-from transformer_engine.pytorch.quantized_tensor import QuantizedTensor
 from .multi_tensor_apply import multi_tensor_applier
 
 
@@ -372,11 +371,10 @@ class FusedAdam(torch.optim.Optimizer):
             store_param_remainders (bool): Store only trailing remainder bits.
         """
         dtype = self.name_to_dtype_map[state_name]
-        param_for_empty = param.dequantize() if isinstance(param, QuantizedTensor) else param
         if store_param_remainders:
-            data = torch.zeros_like(param_for_empty, dtype=torch.int16)
+            data = torch.zeros_like(param, dtype=torch.int16)
         else:
-            data = torch.empty_like(param_for_empty, dtype=dtype)
+            data = torch.empty_like(param, dtype=dtype)
         if zero_buffer:
             data.zero_()
 
