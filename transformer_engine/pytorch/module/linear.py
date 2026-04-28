@@ -33,7 +33,6 @@ from ..utils import (
     clear_tensor_data,
     divide,
     init_method_constant,
-    requires_grad,
     needs_quantized_gemm,
     assert_dim_for_fp8_exec,
     nvtx_range_pop,
@@ -95,6 +94,9 @@ def _linear_forward_impl(
     weight_workspace: Optional[torch.Tensor],
     inp: torch.Tensor,
     bias: Optional[torch.Tensor],
+    input_requires_grad: bool,
+    weight_requires_grad: bool,
+    _bias_requires_grad: bool,
     non_tensor_args: Tuple,
     input_quantizer: Optional[Quantizer],
     weight_quantizer: Optional[Quantizer],
@@ -153,7 +155,7 @@ def _linear_forward_impl(
 
     # Configure tensor-parallel communication
     tp_world_size = get_distributed_world_size(tp_group)
-    backward_needs_input = is_grad_enabled and weight.requires_grad
+    backward_needs_input = is_grad_enabled and weight_requires_grad
     with_input_all_gather_nccl = (
         parallel_mode == "column" and sequence_parallel and not ub_overlap_ag_fprop
     )
@@ -264,7 +266,7 @@ def _linear_forward_impl(
         # No need to set the quantizer states if weight is already quantized
         # for debug mode we create quantizer every iteration, thus we need to set the quantizer states
         if weight_quantizer is not None and (not isinstance(weight, QuantizedTensor) or debug):
-            columnwise_usage = is_grad_enabled and inp.requires_grad and not is_fsdp2
+            columnwise_usage = is_grad_enabled and input_requires_grad and not is_fsdp2
             if backward_override is not None:
                 columnwise_usage = False
             if not columnwise_usage:
@@ -461,6 +463,8 @@ def _linear_setup_ctx(
     inp,
     weight,
     bias,
+    input_requires_grad: bool,
+    weight_requires_grad: bool,
     non_tensor_args,
     input_quantizer,
     grad_input_quantizer,
@@ -507,8 +511,8 @@ def _linear_setup_ctx(
 
     # Values derived from input tensors
     ctx.use_bias = bias is not None
-    ctx.requires_dgrad = inp.requires_grad
-    ctx.requires_wgrad = weight.requires_grad
+    ctx.requires_dgrad = input_requires_grad
+    ctx.requires_wgrad = weight_requires_grad
     ctx.inp_shape = inp.shape
 
     # Quantizers
@@ -546,7 +550,7 @@ def _linear_setup_ctx(
     ctx.custom = custom
 
     # main_grad_func setup
-    if fuse_wgrad_accumulation and weight.requires_grad:
+    if fuse_wgrad_accumulation and weight_requires_grad:
         ctx.origin_weight_ref = weakref.ref(weight)
         ctx.origin_weight_overwrites_main_grad = getattr(weight, "overwrite_main_grad", False)
         if hasattr(weight, "__fsdp_param__"):
@@ -1100,6 +1104,9 @@ def _linear_backward(
         None,
         None,
         None,
+        None,
+        None,
+        None,
     )
 
 
@@ -1115,6 +1122,9 @@ class _Linear(torch.autograd.Function):
         weight_workspace: Optional[torch.Tensor],
         inp: torch.Tensor,
         bias: Optional[torch.Tensor],
+        input_requires_grad: bool,
+        weight_requires_grad: bool,
+        bias_requires_grad: bool,
         non_tensor_args: Tuple,
         input_quantizer: Optional[Quantizer],
         weight_quantizer: Optional[Quantizer],
@@ -1130,6 +1140,9 @@ class _Linear(torch.autograd.Function):
                 weight_workspace,
                 inp,
                 bias,
+                input_requires_grad,
+                weight_requires_grad,
+                bias_requires_grad,
                 non_tensor_args,
                 input_quantizer,
                 weight_quantizer,
@@ -1145,14 +1158,16 @@ class _Linear(torch.autograd.Function):
                 inp,
                 weight,
                 bias,
-                non_tensor_args,
+                input_requires_grad=input_requires_grad,
+                weight_requires_grad=weight_requires_grad,
+                non_tensor_args=non_tensor_args,
                 input_quantizer=input_quantizer,
                 grad_input_quantizer=grad_input_quantizer,
                 grad_weight_quantizer=grad_weight_quantizer,
                 grad_output_quantizer=grad_output_quantizer,
             )
             fp8 = non_tensor_args[1]
-            if fp8 and requires_grad(inp, weight, bias):
+            if fp8 and (input_requires_grad or weight_requires_grad or bias_requires_grad):
                 ctx.reduce_and_update_bwd_fp8_tensors = _check_fp8_reduce_and_update()
             else:
                 ctx.reduce_and_update_bwd_fp8_tensors = False
@@ -1638,8 +1653,18 @@ class Linear(TransformerEngineBaseModule):
             else:
                 backward_override = None
             custom = is_custom(input_quantizer) or is_custom(weight_quantizer)
+            linear_bias_tensor = (
+                bias_tensor if (self.apply_bias and not self.gemm_bias_unfused_add) else None
+            )
+            # Keep requires_grad queries outside custom autograd forward.
+            # torch.compile does not handle querying Tensor.requires_grad there reliably.
+            input_requires_grad = inp.requires_grad
+            weight_requires_grad = weight_tensor.requires_grad
+            bias_requires_grad = (
+                linear_bias_tensor is not None and linear_bias_tensor.requires_grad
+            )
             backward_input_needs_gather = (
-                weight_tensor.requires_grad
+                weight_requires_grad
                 and self.parallel_mode == "column"
                 and self.sequence_parallel
             )
@@ -1697,7 +1722,10 @@ class Linear(TransformerEngineBaseModule):
                 weight_tensor,
                 weight_workspace,
                 inp,
-                bias_tensor if (self.apply_bias and not self.gemm_bias_unfused_add) else None,
+                linear_bias_tensor,
+                input_requires_grad,
+                weight_requires_grad,
+                bias_requires_grad,
                 non_tensor_args,
                 input_quantizer,
                 weight_quantizer,
