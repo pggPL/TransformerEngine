@@ -32,6 +32,14 @@ from .utils import get_device_compute_capability
 from .jit import jit_fuser
 
 
+# Trace-friendly TE DType ids (Python ints). Materialized once at
+# import time so that hot paths (RecipeState init, get_fp8_te_dtype_id)
+# never touch the pybind11 enum, which Dynamo cannot trace.
+_TE_DTYPE_ID_FLOAT8_E4M3 = int(tex.DType.kFloat8E4M3)
+_TE_DTYPE_ID_FLOAT8_E5M2 = int(tex.DType.kFloat8E5M2)
+_TE_DTYPE_ID_FLOAT4_E2M1 = int(tex.DType.kFloat4E2M1)
+
+
 __all__ = [
     "autocast",
     "quantized_model_init",
@@ -190,10 +198,29 @@ def get_fp8_te_dtype(fp8_recipe: Recipe, fprop_tensor: bool = True) -> tex.DType
     return tex.DType.kFloat8E5M2
 
 
+def get_fp8_te_dtype_id(fp8_recipe: Recipe, fprop_tensor: bool = True) -> int:
+    """Trace-friendly variant of :func:`get_fp8_te_dtype` returning the
+    integer id of the TE ``DType`` enum. Use this on any code path that
+    may be traced by ``torch.compile``."""
+    if fp8_recipe.fp8_format == Format.E4M3 or (
+        fp8_recipe.fp8_format == Format.HYBRID and fprop_tensor
+    ):
+        return _TE_DTYPE_ID_FLOAT8_E4M3
+    return _TE_DTYPE_ID_FLOAT8_E5M2
+
+
 def get_fp4_te_dtype(fp4_recipe: Recipe) -> tex.DType:
     """Get fp4 data type according to recipe and tensor"""
     if fp4_recipe.fp4_format == Format.E2M1:
         return tex.DType.kFloat4E2M1
+    raise ValueError(f"Unsupported FP4 format: {fp4_recipe.fp4_format}")
+
+
+def get_fp4_te_dtype_id(fp4_recipe: Recipe) -> int:
+    """Trace-friendly variant of :func:`get_fp4_te_dtype` returning the
+    integer id of the TE ``DType`` enum."""
+    if fp4_recipe.fp4_format == Format.E2M1:
+        return _TE_DTYPE_ID_FLOAT4_E2M1
     raise ValueError(f"Unsupported FP4 format: {fp4_recipe.fp4_format}")
 
 
@@ -1116,7 +1143,7 @@ class DelayedScalingRecipeState(RecipeState):
         self.recipe = recipe
         self.mode = mode
         self.num_quantizers = num_quantizers
-        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
+        self.dtype = get_fp8_te_dtype_id(recipe, mode == "forward")
 
         # Allocate buffers
         if device is None:
@@ -1162,7 +1189,7 @@ class Float8CurrentScalingRecipeState(RecipeState):
         self.recipe = recipe
         self.mode = mode
         self.num_quantizers = num_quantizers
-        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
+        self.dtype = get_fp8_te_dtype_id(recipe, mode == "forward")
 
         # Allocate buffers
         if device is None:
@@ -1202,7 +1229,7 @@ class MXFP8BlockScalingRecipeState(RecipeState):
         self.recipe = recipe
         self.mode = mode
         self.num_quantizers = num_quantizers
-        self.dtype = get_fp8_te_dtype(recipe, mode == "forward")
+        self.dtype = get_fp8_te_dtype_id(recipe, mode == "forward")
 
         # Allocate buffers
         if device is None:
@@ -1239,9 +1266,9 @@ class Float8BlockScalingRecipeState(RecipeState):
         self.recipe = recipe
         self.mode = mode
         self.num_quantizers = num_quantizers
-        self.qx_dtype = get_fp8_te_dtype(recipe, True)
-        self.qw_dtype = get_fp8_te_dtype(recipe, True)
-        self.qgrad_dtype = get_fp8_te_dtype(recipe, False)
+        self.qx_dtype = get_fp8_te_dtype_id(recipe, True)
+        self.qw_dtype = get_fp8_te_dtype_id(recipe, True)
+        self.qgrad_dtype = get_fp8_te_dtype_id(recipe, False)
 
         # Allocate buffers
         if device is None:
@@ -1342,7 +1369,7 @@ class NVFP4BlockScalingRecipeState(RecipeState):
         self.recipe = recipe
         self.mode = mode
         self.num_quantizers = num_quantizers
-        self.dtype = get_fp4_te_dtype(recipe)
+        self.dtype = get_fp4_te_dtype_id(recipe)
 
         # Allocate buffers
         if device is None:

@@ -20,7 +20,7 @@ from ..utils import canonicalize_process_group, devices_match
 from .storage.float8_tensor_storage import Float8TensorStorage, _FromFloat8Func
 from ..quantized_tensor import QuantizedTensor, Quantizer
 from ._quantization_helpers import _IdentityFunc
-from ..constants import dist_group_type
+from ..constants import canonicalize_te_dtype, dist_group_type
 
 aten = torch.ops.aten
 
@@ -68,7 +68,7 @@ class Float8Quantizer(Quantizer):
         super().__init__(rowwise=rowwise, columnwise=columnwise)
         self.scale = scale
         self.amax = amax
-        self.dtype = fp8_dtype
+        self.dtype = canonicalize_te_dtype(fp8_dtype)
 
     def copy(self) -> Float8Quantizer:
         """Create shallow copy"""
@@ -142,12 +142,29 @@ class Float8Quantizer(Quantizer):
                 pin_memory=pin_memory,
             )
 
-        # Construct FP8 tensor
+        scale_inv = torch.empty(1, dtype=torch.float32, device=device, pin_memory=pin_memory)
+
+        # Honor ``internal``: tex.quantize() returns a bare
+        # Float8TensorStorage when the quantizer is marked internal
+        # (lower CPU overhead, no autograd-aware subclass) and so should
+        # make_empty in order to stay shape/type-equivalent on every
+        # path that touches it (eager fast-path, fake-impl under
+        # torch.compile, etc.).
+        if self.internal:
+            return Float8TensorStorage(
+                data=data,
+                fp8_scale_inv=scale_inv,
+                fp8_dtype=self.dtype,
+                fake_dtype=dtype,
+                data_transpose=data_transpose,
+                quantizer=self,
+            )
+
         return Float8Tensor(
             shape=shape,
             dtype=dtype,
             data=data,
-            fp8_scale_inv=torch.empty(1, dtype=torch.float32, device=device, pin_memory=pin_memory),
+            fp8_scale_inv=scale_inv,
             fp8_dtype=self.dtype,
             requires_grad=requires_grad,
             data_transpose=data_transpose,
@@ -223,6 +240,36 @@ class Float8Quantizer(Quantizer):
         """
         return True
 
+    def _flatten(self):
+        from ..dynamo import OpaqueSimpleMetadata
+
+        meta = OpaqueSimpleMetadata(
+            {
+                "_qcls": type(self).__qualname__,
+                "dtype": self.dtype,
+                "rowwise_usage": self.rowwise_usage,
+                "columnwise_usage": self.columnwise_usage,
+                "internal": self.internal,
+                "optimize_for_gemm": self.optimize_for_gemm,
+            }
+        )
+        return meta, None, [self.scale, self.amax]
+
+    @classmethod
+    def _do_unflatten(cls, meta, process_group, tensors):
+        del process_group
+        scale, amax = tensors
+        q = cls(
+            scale=scale,
+            amax=amax,
+            fp8_dtype=meta["dtype"],
+            rowwise=meta["rowwise_usage"],
+            columnwise=meta["columnwise_usage"],
+        )
+        q.internal = meta["internal"]
+        q.optimize_for_gemm = meta["optimize_for_gemm"]
+        return q
+
 
 class Float8CurrentScalingQuantizer(Quantizer):
     """Builder class for FP8 tensors with per-tensor current scaling
@@ -279,7 +326,7 @@ class Float8CurrentScalingQuantizer(Quantizer):
                 stacklevel=2,
             )
         del device, use_existing_amax, scale, amax  # Kept for backward compatibility
-        self.dtype = fp8_dtype
+        self.dtype = canonicalize_te_dtype(fp8_dtype)
         self.with_amax_reduction = with_amax_reduction
         self.amax_reduction_group = amax_reduction_group
         self.force_pow_2_scales = force_pow_2_scales
@@ -366,12 +413,24 @@ class Float8CurrentScalingQuantizer(Quantizer):
                 device=device,
                 pin_memory=pin_memory,
             )
-        # Construct FP8 tensor
+        scale_inv = torch.empty(1, dtype=torch.float32, device=device, pin_memory=pin_memory)
+
+        # See ``Float8Quantizer.make_empty`` for the rationale.
+        if self.internal:
+            return Float8TensorStorage(
+                data=data,
+                fp8_scale_inv=scale_inv,
+                fp8_dtype=self.dtype,
+                fake_dtype=dtype,
+                data_transpose=data_transpose,
+                quantizer=self,
+            )
+
         return Float8Tensor(
             shape=shape,
             dtype=dtype,
             data=data,
-            fp8_scale_inv=torch.empty(1, dtype=torch.float32, device=device, pin_memory=pin_memory),
+            fp8_scale_inv=scale_inv,
             fp8_dtype=self.dtype,
             requires_grad=requires_grad,
             data_transpose=data_transpose,
@@ -460,6 +519,41 @@ class Float8CurrentScalingQuantizer(Quantizer):
         Float8CurrentScalingQuantizer supports only rowwise all-gather
         """
         return True
+
+    def _flatten(self):
+        from ..dynamo import OpaqueSimpleMetadata
+
+        meta = OpaqueSimpleMetadata(
+            {
+                "_qcls": type(self).__qualname__,
+                "dtype": self.dtype,
+                "rowwise_usage": self.rowwise_usage,
+                "columnwise_usage": self.columnwise_usage,
+                "internal": self.internal,
+                "optimize_for_gemm": self.optimize_for_gemm,
+                "with_amax_reduction": self.with_amax_reduction,
+                "force_pow_2_scales": self.force_pow_2_scales,
+                "amax_epsilon": self.amax_epsilon,
+            }
+        )
+        return meta, self.amax_reduction_group, []
+
+    @classmethod
+    def _do_unflatten(cls, meta, process_group, tensors):
+        del tensors
+        q = cls(
+            fp8_dtype=meta["dtype"],
+            device=torch.device("cuda"),
+            rowwise=meta["rowwise_usage"],
+            columnwise=meta["columnwise_usage"],
+            with_amax_reduction=meta["with_amax_reduction"],
+            amax_reduction_group=process_group,
+            force_pow_2_scales=meta["force_pow_2_scales"],
+            amax_epsilon=meta["amax_epsilon"],
+        )
+        q.internal = meta["internal"]
+        q.optimize_for_gemm = meta["optimize_for_gemm"]
+        return q
 
 
 class Float8Tensor(Float8TensorStorage, QuantizedTensor):

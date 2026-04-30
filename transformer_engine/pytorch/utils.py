@@ -471,6 +471,19 @@ def cast_if_needed(tensor: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
         return tensor.to(dtype=dtype)
 
 
+def fake_cast_if_needed(tensor: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+    """Fake counterpart of :func:`cast_if_needed` for shape inference.
+
+    Returns the same tensor if no cast would happen, otherwise an empty
+    tensor of the requested dtype with matching shape and device.
+    """
+    if tensor is None:
+        return None
+    if tensor.dtype == dtype:
+        return tensor
+    return torch.empty_like(tensor, dtype=dtype)
+
+
 def check_dim_for_fp8_exec(tensor: torch.Tensor) -> bool:
     """Check if tensor dimensions are supported for FP8 TN GEMM"""
     return tensor.dim() == 2 and tensor.size(0) % 8 == 0 and tensor.size(1) % 16 == 0
@@ -638,6 +651,8 @@ def get_nvtx_range_context(msg: str):
 
     """
 
+    if torch.compiler.is_compiling():
+        return nullcontext()
     if _nvtx_enabled():
         return torch.cuda.nvtx.range(msg)
     return nullcontext()
@@ -655,6 +670,8 @@ def nvtx_range_push(msg: str) -> None:
         Message to associate with range
 
     """
+    if torch.compiler.is_compiling():
+        return
     if not _nvtx_enabled():
         return
     _nvtx_range_messages.append(msg)
@@ -675,6 +692,8 @@ def nvtx_range_pop(msg: Optional[str] = None) -> None:
     """
 
     # Return immediately if NVTX range profiling is not enabled
+    if torch.compiler.is_compiling():
+        return
     if not _nvtx_enabled():
         return
 
