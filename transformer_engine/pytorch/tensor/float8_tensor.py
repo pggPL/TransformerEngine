@@ -293,6 +293,12 @@ class Float8CurrentScalingQuantizer(Quantizer):
 
     """
 
+    # ``_do_unflatten`` ignores its ``tensors`` arg (``del tensors``):
+    # scale / amax are GPU buffers populated by the quantization
+    # kernels, not by reconstruction. The unpack fast path may
+    # therefore cache the reconstructed instance.
+    _TORCH_COMPILE_UNFLATTEN_USES_TENSORS = False
+
     """FP8 datatype"""
     dtype: TE_DType
     """amax reduction options"""

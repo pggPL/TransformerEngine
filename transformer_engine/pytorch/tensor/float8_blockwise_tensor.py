@@ -31,6 +31,11 @@ class Float8BlockQuantizer(Quantizer):
 
     """
 
+    # ``_do_unflatten`` discards its ``tensors`` arg (``del
+    # process_group, tensors``); the rebuilt quantizer carries no
+    # tensor state so the unpack fast path may cache it.
+    _TORCH_COMPILE_UNFLATTEN_USES_TENSORS = False
+
     dtype: TE_DType
     block_len: int
     amax_epsilon: float

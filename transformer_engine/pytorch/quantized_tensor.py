@@ -5,7 +5,7 @@
 """Pure Python base classes for quantization."""
 
 from __future__ import annotations
-from typing import Optional, Tuple, Iterable, Any, Dict, List, Union
+from typing import ClassVar, Optional, Tuple, Iterable, Any, Dict, List, Union
 import abc
 import warnings
 import math
@@ -274,6 +274,23 @@ class Quantizer(abc.ABC):
     (e.g. in FP32 or BF16) into a quantized tensor (e.g. in FP8).
 
     """
+
+    """Whether ``_do_unflatten`` consumes its ``tensors`` argument.
+
+    Subclasses whose ``_do_unflatten`` ignores the ``tensors`` arg
+    (i.e. the reconstructed quantizer carries no tensor state from
+    the unflatten payload) should override this to ``False``. The
+    torch.compile unpack fast path uses this flag to decide whether
+    the reconstructed quantizer can be cached (keyed on
+    ``(meta._hash, id(pg))``) and reused across iterations, vs. has
+    to be rebuilt every call from a fresh tensor list.
+
+    Default is ``True`` -- the conservative choice that disables
+    caching and matches the legacy per-call behavior. Subclasses that
+    actually depend on tensors (delayed-scaling FP8, NVFP4 with RHT
+    matrix) leave this alone.
+    """
+    _TORCH_COMPILE_UNFLATTEN_USES_TENSORS: ClassVar[bool] = True
 
     """Whether to construct quantized tensors with "row-wise usage"
 

@@ -5,6 +5,7 @@
 """torch.compile (Dynamo) integration for TransformerEngine modules."""
 from __future__ import annotations
 
+import copy
 import dataclasses
 from enum import Enum
 from typing import (
@@ -13,6 +14,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Set,
     Tuple,
     Union,
     get_args,
@@ -37,6 +39,34 @@ __all__ = [
 # ``torch.library.register_autograd``, so the registered backward never
 # attaches a ``grad_fn`` to the op's outputs.
 _NONE_SENTINEL_DTYPE = torch.uint8
+
+
+# Name of the synthetic int slot appended to every TE custom op's
+# schema. :meth:`ArgObject.torch_compile_pack` populates it with
+# ``hash(tuple(<bucket key parts>))`` so :meth:`torch_compile_unpack`
+# can key the skeleton cache off a single dict lookup. Under
+# ``torch.compile`` the value folds to a constant during tracing
+# (every input feeding the hash is either an interned
+# OpaqueSimpleMetadata's ``_hash`` or ``id(pg)`` of a guarded
+# ProcessGroup), so no per-call hashing happens at runtime; under
+# eager pack still runs per call but pays a single ``hash(tuple)`` in
+# place of the bucket-driven tuple-build + dict lookup the unpack side
+# would otherwise do. NOTE: collisions on this single int are
+# *accepted* (Option A of the original interning design): two distinct
+# ``(meta._hash, id(pg))`` configurations that happen to share the
+# same combined hash would be conflated. With well-distributed Python
+# int hashes and a typical handful of distinct configs per process,
+# the probability is well below the noise floor of any other
+# correctness risk in this stack.
+_CACHE_KEY_SLOT = "__te_cache_key__"
+
+
+# Sentinel returned by :meth:`_Bucket.try_bake_skeleton` to flag
+# "this field is fully baked into the cached skeleton; no per-call
+# injector is needed". A unique object instance keeps the hot-path
+# dispatch in :meth:`ArgObject.torch_compile_unpack` to identity
+# comparisons (no hashing / str compares).
+_SKELETON_BAKED: Any = object()
 
 
 def _encode_none(t: Optional[torch.Tensor]) -> torch.Tensor:
@@ -150,15 +180,46 @@ class OpaqueSimpleMetadata:
             return value.__fx_repr__()[0]
         return repr(value)
 
-    def __init__(
-        self,
+    # Process-wide intern cache: ``(cls, _frozen) -> instance``. Hot
+    # callers (e.g. inductor's ``Runner.call`` literally re-constructs
+    # the same ``OpaqueSimpleMetadata({...})`` on every iteration) get
+    # back the same Python object, so:
+    #
+    # * follow-up ``__eq__`` checks (used by torch.compile guard
+    #   verification on every call) short-circuit on tuple-identity
+    #   instead of paying for an O(n) tuple compare;
+    # * the cached instance's ``_data`` / ``_frozen`` allocations are
+    #   amortized across all callers with the same content.
+    #
+    # Keyed on the subclass so a hypothetical subclass with different
+    # behavior won't be accidentally aliased to a base-class entry.
+    _INTERN_CACHE: Dict[
+        Tuple[type, Tuple[Tuple[str, Any], ...]],
+        "OpaqueSimpleMetadata",
+    ] = {}
+
+    # Mirror cache keyed by ``hash(_frozen)`` (cheap ``int -> instance``
+    # lookup) for the FX-codegen fast path: ``__fx_repr__`` emits a call
+    # to :meth:`try_create_from_cache` so Inductor's per-iteration
+    # ``Runner.call`` skips the ``OpaqueSimpleMetadata({...})``
+    # constructor entirely on cache hit.
+    #
+    # Hash collisions between *different*-content ``_frozen``s are
+    # blacklisted -- the bucket is dropped from the cache and never
+    # re-populated, so the FX fallback's full literal reconstructs the
+    # right instance on every call. Collisions are extremely rare for
+    # the small number of distinct metadatas a real workload produces.
+    _HASH_CACHE: Dict[int, "OpaqueSimpleMetadata"] = {}
+    _HASH_BLACKLIST: Set[int] = set()
+
+    def __new__(
+        cls,
         data: Optional[Dict[str, Any]] = None,
         /,
         **kwargs: Any,
-    ) -> None:
+    ) -> "OpaqueSimpleMetadata":
         merged: Dict[str, Any] = dict(data) if data else {}
         merged.update(kwargs)
-        cls = type(self)
         for k, v in merged.items():
             if not cls.is_simple_value(v):
                 raise TypeError(
@@ -168,10 +229,62 @@ class OpaqueSimpleMetadata:
                     f"Enum, torch.Size, registered torch.compile value-"
                     f"opaque types) and tuples/lists thereof are allowed."
                 )
-        self._data: Dict[str, Any] = merged
-        self._frozen: Tuple[Tuple[str, Any], ...] = tuple(
+        frozen: Tuple[Tuple[str, Any], ...] = tuple(
             (k, cls._to_hashable(v)) for k, v in sorted(merged.items())
         )
+        key = (cls, frozen)
+        cached = OpaqueSimpleMetadata._INTERN_CACHE.get(key)
+        if cached is not None:
+            return cached
+        instance = super().__new__(cls)
+        instance._data = merged
+        instance._frozen = frozen
+        instance._hash = hash(frozen)
+        canonical = OpaqueSimpleMetadata._INTERN_CACHE.setdefault(key, instance)
+        # Maintain the hash-mirror only on (effective) miss. On hit the
+        # bucket was already populated when the canonical instance was
+        # first created.
+        h = canonical._hash
+        if h not in OpaqueSimpleMetadata._HASH_BLACKLIST:
+            prior = OpaqueSimpleMetadata._HASH_CACHE.get(h)
+            if prior is None:
+                OpaqueSimpleMetadata._HASH_CACHE[h] = canonical
+            elif prior is not canonical:
+                # Different content with the same Python hash: disable
+                # the hash-only fast path for this bucket so the FX
+                # fallback (full literal) is always used here.
+                OpaqueSimpleMetadata._HASH_CACHE.pop(h, None)
+                OpaqueSimpleMetadata._HASH_BLACKLIST.add(h)
+        return canonical
+
+    def __init__(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        /,
+        **kwargs: Any,
+    ) -> None:
+        # All construction (validation, freezing, interning, hash
+        # precompute) lives in ``__new__``; ``__init__`` must not
+        # re-run on cached instances or it would clobber their state.
+        del data, kwargs
+
+    @classmethod
+    def try_create_from_cache(
+        cls, h: int
+    ) -> Optional["OpaqueSimpleMetadata"]:
+        """Return the canonical interned instance for hash ``h``, or
+        ``None`` if no cache entry exists or the hash bucket has been
+        invalidated by a collision.
+
+        Used by :meth:`__fx_repr__`: Inductor's generated wrapper
+        evaluates ``cls.try_create_from_cache(<h>) or OpaqueSimpleMetadata({...full...})``,
+        so the costly ``{...full...}`` literal is only ever built on a
+        true cache miss (cold start, cross-process hash-randomization
+        change, or collision blacklist).
+        """
+        if h in cls._HASH_BLACKLIST:
+            return None
+        return cls._HASH_CACHE.get(h)
 
     def __getitem__(self, key: str) -> Any:
         return self._data[key]
@@ -203,12 +316,20 @@ class OpaqueSimpleMetadata:
         return dict(self._data)
 
     def __eq__(self, other: object) -> bool:
+        # Fast path leveraging interning (see ``__new__`` /
+        # ``_INTERN_CACHE``): equal-content instances are guaranteed to
+        # be the *same* Python object, so identity is sufficient when
+        # both operands have been allocated via ``__new__``. The
+        # ``_frozen`` tuple compare below stays as a correctness
+        # backstop for callers that bypass interning (tests).
+        if self is other:
+            return True
         if not isinstance(other, OpaqueSimpleMetadata):
             return NotImplemented
         return self._frozen == other._frozen
 
     def __hash__(self) -> int:
-        return hash(self._frozen)
+        return self._hash
 
     def __fx_repr__(self) -> Tuple[str, Dict[str, Any]]:
         cls = type(self)
@@ -247,7 +368,19 @@ class OpaqueSimpleMetadata:
 
         for v in self._data.values():
             _collect(v)
-        return (f"OpaqueSimpleMetadata({{{items}}})", globals_)
+        # Fast path: try the hash-keyed cache before falling back to a
+        # full ``OpaqueSimpleMetadata({...})`` constructor call. Python's
+        # ``or`` short-circuits, so on cache hit (the common case in a
+        # steady-state compiled loop) the costly dict literal isn't
+        # even built, let alone passed through ``__new__``'s validate
+        # + freeze + setattr work. The fallback keeps the source
+        # robust against cold start, hash blacklisting, and
+        # cross-process PYTHONHASHSEED randomization.
+        return (
+            f"(OpaqueSimpleMetadata.try_create_from_cache({self._hash}) "
+            f"or OpaqueSimpleMetadata({{{items}}}))",
+            globals_,
+        )
 
     def __repr__(self) -> str:
         # ``__repr__`` is on hot diagnostic paths (Inductor error
@@ -387,6 +520,70 @@ class _Bucket:
         reconstructed dataclass attribute(s) into ``kwargs``."""
         raise NotImplementedError
 
+    # ------------------------------------------------------------------ #
+    # Hooks for the ``ArgObject._UNPACK_CACHE`` skeleton-cache fast path
+    # ------------------------------------------------------------------ #
+
+    def is_skeleton_stable(self) -> bool:
+        """Whether this bucket's :meth:`unpack` output is fully
+        determined by *opaque inputs* (i.e. the inputs that participate
+        in the unpack cache key) and therefore safe to bake into the
+        cached skeleton.
+
+        Defaults to ``False``: most buckets carry tensors or other
+        per-call references and must run every iteration.
+        :class:`_SimpleBundleBucket` overrides this to ``True`` because
+        its output is fully derived from a single
+        :class:`OpaqueSimpleMetadata` whose identity participates in
+        the cache key.
+        """
+        return False
+
+    def try_bake_skeleton(
+        self,
+        args: Dict[str, Any],
+        skeleton_kwargs: Dict[str, Any],
+    ) -> Any:
+        """Attempt to populate this field on the cached skeleton.
+
+        Called once per ``(cls, cache_key)`` on the cache-miss path.
+        The base implementation honours :meth:`is_skeleton_stable`:
+        stable buckets fully bake; everything else falls back to
+        per-call :meth:`unpack`.
+
+        Return values:
+
+        * :data:`_SKELETON_BAKED` -- field is fully in
+          ``skeleton_kwargs``; no per-call work needed.
+        * ``None`` -- no caching; the caller will run
+          :meth:`unpack` every call (the default for
+          tensor-carrying buckets).
+        * a callable ``f(args, obj_dict) -> None`` -- the bucket
+          baked a partial value (e.g. a storage shell) into
+          ``skeleton_kwargs`` and provided an injector that, given
+          a fresh ``args`` dict and the per-call object's
+          ``__dict__``, finishes reconstruction (e.g. shallow-copies
+          the cached storage and replaces tensor attrs from
+          ``args``).
+        """
+        if self.is_skeleton_stable():
+            self.unpack(args, skeleton_kwargs)
+            return _SKELETON_BAKED
+        return None
+
+    def opaque_cache_key_parts(
+        self, args: Dict[str, Any]
+    ) -> Tuple[int, ...]:
+        """Return ``id``\\ s of any opaque-typed inputs this bucket
+        consumes from ``args``. The aggregate of these (across all
+        buckets) is the cache key used by
+        :meth:`ArgObject.torch_compile_unpack`'s skeleton cache.
+
+        Default: empty tuple (no opaque inputs).
+        """
+        del args
+        return ()
+
 
 class _TensorOrStorageBucket(_Bucket):
     """``Tensor | QuantizedTensorStorage`` -> meta / pg / Tensor[] slots.
@@ -499,6 +696,114 @@ class _TensorOrStorageBucket(_Bucket):
             args[self._slot_pg()],
             tensors,
         )
+
+    def opaque_cache_key_parts(
+        self, args: Dict[str, Any]
+    ) -> Tuple[int, ...]:
+        # ``meta._hash`` is content-deterministic for any
+        # :class:`OpaqueSimpleMetadata` and survives the interning
+        # falling back to a fresh constructor (cold start, blacklisted
+        # hash bucket, ...). ``pg`` is a reference-opaque PG which is
+        # not interned -- identity is the only stable handle.
+        return (args[self._slot_meta()]._hash, id(args.get(self._slot_pg())))
+
+    def try_bake_skeleton(
+        self,
+        args: Dict[str, Any],
+        skeleton_kwargs: Dict[str, Any],
+    ) -> Any:
+        meta = args[self._slot_meta()]
+        kind = meta.get(self.KIND_KEY)
+        if kind == self.KIND_NONE:
+            # Field is just ``None``: bake.
+            skeleton_kwargs[self.name] = None
+            return _SKELETON_BAKED
+        if kind == self.KIND_TENSOR:
+            # Bare ``torch.Tensor`` -- the value is the new tensor on
+            # every call and there is no shell to cache. Fall back to
+            # per-call :meth:`unpack`.
+            return None
+
+        # ``QuantizedTensorStorage`` branch.
+        from transformer_engine.pytorch.quantized_tensor import QuantizedTensorStorage
+
+        pg = args[self._slot_pg()]
+        tensors = args[self._slot_tensors()]
+        storage = QuantizedTensorStorage._torch_compile_unflatten(meta, pg, tensors)
+
+        if not tensors:
+            # Storage carries no tensor state -- bake the whole
+            # instance. Subsequent calls with matching ``meta._hash``
+            # / ``id(pg)`` reuse it via the shallow-copy fast path.
+            skeleton_kwargs[self.name] = storage
+            return _SKELETON_BAKED
+
+        # Storage with tensors. Try to bake the *shell*: stash the
+        # reconstructed instance in the skeleton, build an injector
+        # that on each call shallow-copies the shell and overwrites
+        # the tensor-typed attributes from the per-call ``args``.
+        if isinstance(storage, torch.Tensor):
+            # ``torch.Tensor`` subclass: shallow-copy semantics are
+            # tangled (``cls.__new__(cls)`` does not produce a valid
+            # tensor instance, ``copy.copy`` would call into the
+            # tensor copy paths). Bail out and rebuild per call.
+            return None
+
+        # Identify which top-level ``__dict__`` entries hold one of
+        # ``tensors``. Match by identity: the unflatten just walked
+        # ``tensors`` and assigned slices of it to its own attributes,
+        # so ``id(v)`` for any tensor attr is one of those we passed
+        # in.
+        tensor_ids: Dict[int, int] = {id(t): i for i, t in enumerate(tensors)}
+        storage_dict = storage.__dict__
+        slot_map: List[Tuple[str, int]] = []
+        found: Set[int] = set()
+        for attr, value in storage_dict.items():
+            tid = tensor_ids.get(id(value))
+            if tid is None:
+                continue
+            slot_map.append((attr, tid))
+            found.add(tid)
+
+        if len(found) != len(tensors):
+            # Some tensors are nested deeper (e.g. inside a
+            # tensor-bearing quantizer attached to the storage).
+            # Mutating only top-level attrs would leave stale
+            # tensors elsewhere -- safer to rebuild per call.
+            return None
+
+        skeleton_kwargs[self.name] = storage
+        name = self.name
+        slot_tensors_name = self._slot_tensors()
+
+        def injector(
+            call_args: Dict[str, Any],
+            obj_dict: Dict[str, Any],
+            _slot_map: List[Tuple[str, int]] = slot_map,
+            _name: str = name,
+            _slot_tensors_name: str = slot_tensors_name,
+            _object_new: Callable[..., Any] = object.__new__,
+        ) -> None:
+            # ``obj_dict`` already contains the cached shell (set by
+            # :meth:`copy.copy` of the skeleton). Shallow-copy it so
+            # we don't mutate the cached instance, then overwrite the
+            # tensor attrs with this call's tensors.
+            #
+            # Use ``object.__new__`` rather than ``cls.__new__`` to
+            # bypass custom ``__new__`` signatures that require
+            # constructor kwargs (e.g. ``Float8TensorStorage.__new__``
+            # mandates ``data`` / ``fp8_scale_inv`` / ``fp8_dtype``);
+            # we restore identical state by copying ``__dict__``.
+            baseline = obj_dict[_name]
+            fresh = _object_new(type(baseline))
+            fresh.__dict__.update(baseline.__dict__)
+            new_tensors = call_args[_slot_tensors_name]
+            fresh_dict = fresh.__dict__
+            for attr, idx in _slot_map:
+                fresh_dict[attr] = new_tensors[idx]
+            obj_dict[_name] = fresh
+
+        return injector
 
 
 class _TensorBucket(_Bucket):
@@ -619,6 +924,17 @@ class _ProcessGroupBucket(_Bucket):
     def unpack(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = args[self.name]
 
+    def is_skeleton_stable(self) -> bool:
+        # The PG identity is part of the unpack cache key, so the
+        # field is stable for all calls that hit a given cache slot.
+        return True
+
+    def opaque_cache_key_parts(
+        self, args: Dict[str, Any]
+    ) -> Tuple[int, ...]:
+        # PG is reference-opaque -- the only stable handle is identity.
+        return (id(args.get(self.name)),)
+
 
 def _flattenable_bases() -> Tuple[type, ...]:
     """Return the list of base classes whose subclasses are routed
@@ -735,6 +1051,41 @@ class _FlattenableBucket(_Bucket):
                 meta, args[self._slot_pg()], args[self._slot_tensors()]
             )
 
+    def opaque_cache_key_parts(
+        self, args: Dict[str, Any]
+    ) -> Tuple[int, ...]:
+        # ``meta._hash`` is content-deterministic and survives intern
+        # cache misses; ``pg`` is reference-opaque, identity is the
+        # only stable handle. Tensors are not keyed -- they're injected
+        # per call via the standard :meth:`unpack` path on the copied
+        # skeleton.
+        return (args[self._slot_meta()]._hash, id(args.get(self._slot_pg())))
+
+    def try_bake_skeleton(
+        self,
+        args: Dict[str, Any],
+        skeleton_kwargs: Dict[str, Any],
+    ) -> Any:
+        # Reconstruct the field on the cache-miss path. ``unpack`` may
+        # produce ``None`` (when the field carried the ``NONE_MARKER``)
+        # or a concrete instance.
+        self.unpack(args, skeleton_kwargs)
+        value = skeleton_kwargs.get(self.name)
+        if value is None:
+            return _SKELETON_BAKED
+        # Cacheable iff the *concrete* class declared via
+        # ``_TORCH_COMPILE_UNFLATTEN_USES_TENSORS = False`` that its
+        # ``_unflatten`` ignores the tensors arg. Such instances carry
+        # no tensor state and are safe to share across iterations.
+        if not getattr(
+            type(value), "_TORCH_COMPILE_UNFLATTEN_USES_TENSORS", True
+        ):
+            return _SKELETON_BAKED
+        # Not cacheable -- drop the field and let the caller run
+        # :meth:`unpack` per call.
+        del skeleton_kwargs[self.name]
+        return None
+
 
 class _SimpleBundleBucket(_Bucket):
     """Aggregator: bundles every simple-typed field of the dataclass
@@ -803,6 +1154,21 @@ class _SimpleBundleBucket(_Bucket):
         for n in self.names:
             kwargs[n] = meta[n]
 
+    def is_skeleton_stable(self) -> bool:
+        # Bundle output is fully derived from the single ``OpaqueSimpleMetadata``
+        # whose hash participates in the cache key; safe to bake into
+        # the cached skeleton.
+        return True
+
+    def opaque_cache_key_parts(
+        self, args: Dict[str, Any]
+    ) -> Tuple[int, ...]:
+        meta = args.get(self.SLOT)
+        # ``meta`` is missing only on edge-case dataclasses with zero
+        # simple-typed fields; emit a sentinel so the rest of the key
+        # still matters.
+        return (meta._hash if meta is not None else 0,)
+
 
 class _UnknownBucket(_Bucket):
     """Fallback for fields whose annotation no other bucket claims.
@@ -850,6 +1216,10 @@ class _UnknownBucket(_Bucket):
     def unpack(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = None
 
+    def is_skeleton_stable(self) -> bool:
+        # Always None -- safe to bake into the cached skeleton.
+        return True
+
 
 # Buckets, in priority order, that own ``try_build`` for a single field.
 _FIELD_BUCKETS: Tuple[type, ...] = (
@@ -879,6 +1249,34 @@ class ArgObject:
     :class:`_Bucket` (see module-level docstring); the three methods
     then become trivial iterations over the bucket list.
     """
+
+    # Skeleton cache used by :meth:`torch_compile_unpack`. Maps the
+    # single int :data:`_CACHE_KEY_SLOT` value (computed once in
+    # :meth:`torch_compile_pack` from each bucket's
+    # :meth:`_Bucket.opaque_cache_key_parts`) to a
+    # ``(skeleton, per_call_actions)`` pair. The skeleton is a
+    # partially populated instance: stable buckets, cacheable
+    # quantizer fields, and storage shells whose tensor attrs can be
+    # re-injected via shallow-copy are baked in. ``per_call_actions``
+    # is a flat list of callables ``f(args, obj_dict) -> None``:
+    # either a pre-bound ``bucket.unpack`` method (the common case)
+    # or a custom injector returned by
+    # :meth:`_Bucket.try_bake_skeleton` (e.g. the storage-shell
+    # shallow-copy + tensor-attr swap). The hot path therefore runs
+    # a single tight loop with no branching. Class-level so each
+    # ArgObject subclass has its own bucket of cached skeletons --
+    # different dataclasses naturally have different field sets.
+    _UNPACK_CACHE: Dict[
+        int,
+        Tuple["ArgObject", List[Callable[[Dict[str, Any], Dict[str, Any]], None]]],
+    ] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # Each subclass gets its own ``_UNPACK_CACHE``; sharing the
+        # base class's dict would conflate skeletons of unrelated
+        # ArgObject types whose key tuples could collide.
+        cls._UNPACK_CACHE = {}
 
     @classmethod
     def _resolved_field_annotations(cls) -> List[Tuple[str, Any]]:
@@ -938,9 +1336,14 @@ class ArgObject:
 
         See :class:`_Bucket` subclasses for the per-field-kind layout
         (Tensor, ProcessGroup, Quantizer, and the
-        aggregated ``_simple_meta`` bundle of simple fields).
+        aggregated ``_simple_meta`` bundle of simple fields). A single
+        synthetic ``int`` slot named :data:`_CACHE_KEY_SLOT` is
+        appended unconditionally; see :meth:`torch_compile_pack` /
+        :meth:`torch_compile_unpack` for how it is used.
         """
-        return [slot for b in cls._buckets() for slot in b.schema_slots()]
+        slots = [slot for b in cls._buckets() for slot in b.schema_slots()]
+        slots.append((_CACHE_KEY_SLOT, "int"))
+        return slots
 
     def torch_compile_pack(
         self, buckets: Optional[List[_Bucket]] = None
@@ -953,13 +1356,24 @@ class ArgObject:
         and, critically, to keep Dynamo away from ``cls.__dict__`` while
         tracing. When ``None``, this method recomputes the buckets
         (eager-only fallback intended for ad-hoc / test usage).
+
+        After packing, computes the synthetic
+        :data:`_CACHE_KEY_SLOT` integer by hashing the concatenated
+        per-bucket :meth:`_Bucket.opaque_cache_key_parts` -- this is
+        the cache key consumed by :meth:`torch_compile_unpack`. Under
+        ``torch.compile`` Dynamo folds this entire computation to a
+        constant during tracing because every input is either an
+        interned OSM ``_hash`` or ``id(pg)`` of a guarded ProcessGroup.
         """
         if buckets is None:
             buckets = type(self)._buckets()
         out: Dict[str, Any] = {}
+        key_parts: List[int] = []
         for bucket in buckets:
             for name, value in bucket.pack(self):
                 out[name] = value
+            key_parts.extend(bucket.opaque_cache_key_parts(out))
+        out[_CACHE_KEY_SLOT] = hash(tuple(key_parts))
         return out
 
     @classmethod
@@ -968,22 +1382,77 @@ class ArgObject:
         args: Dict[str, Any],
         buckets: Optional[List[_Bucket]] = None,
     ) -> "ArgObject":
-        """Default: ask each bucket to inject its field(s) into a fresh
-        instance built via ``__new__`` (we bypass the dataclass
-        ``__init__`` so unknown-typed fields can stay as ``None`` even
-        when they have no default).
+        """Default: build a freshly populated dataclass instance from
+        the flat ``{slot_name: slot_value}`` dict torch.library hands
+        us. The hot path is two-tier:
 
-        ``buckets`` semantics match :meth:`torch_compile_pack`: hot paths
-        pass the precomputed list, eager-only callers may omit it.
+        1. **Skeleton cache** (:attr:`_UNPACK_CACHE`). Keyed on a
+           tuple gathered from each bucket's
+           :meth:`_Bucket.opaque_cache_key_parts` -- conceptually
+           ``hash`` of every interned :class:`OpaqueSimpleMetadata`
+           bundle in ``args`` and ``id`` of every reference-opaque
+           input (``ProcessGroup``). On hit, we own a partially
+           populated dataclass with every *stable* field already set:
+           simple-bundle scalars, PGs, ``None``-valued unknowns, and
+           any quantizer whose concrete subclass declared
+           ``_TORCH_COMPILE_UNFLATTEN_USES_TENSORS = False`` (the
+           reconstructed instance is reused identically across
+           iterations because ``_do_unflatten`` ignores its
+           ``tensors`` arg).
+        2. **Per-call buckets** run on a shallow copy of the skeleton
+           and write tensors, tensor-storage payloads, and
+           non-cacheable quantizers directly into the copy's
+           ``__dict__``. The cache stores the precomputed indices of
+           those buckets so the hit path is a flat
+           ``for i in per_call_indices: buckets[i].unpack(args, ...)``.
+
+        ``buckets`` semantics match :meth:`torch_compile_pack`: hot
+        paths pass the precomputed list, eager-only callers may omit
+        it.
         """
         if buckets is None:
             buckets = cls._buckets()
-        kwargs: Dict[str, Any] = {}
-        for bucket in buckets:
-            bucket.unpack(args, kwargs)
-        obj = cls.__new__(cls)
-        for k, v in kwargs.items():
-            object.__setattr__(obj, k, v)
+        # Cache key: a single int precomputed by ``torch_compile_pack``
+        # -- under ``torch.compile`` it folds to a constant in the FX
+        # graph (no runtime hashing); under eager it was just hashed
+        # once on the way in. ``cache.get`` is therefore a single dict
+        # probe with no per-call list/tuple construction.
+        cache_key = args[_CACHE_KEY_SLOT]
+
+        cache = cls._UNPACK_CACHE
+        cached = cache.get(cache_key)
+        if cached is None:
+            skeleton_kwargs: Dict[str, Any] = {}
+            per_call_actions: List[
+                Callable[[Dict[str, Any], Dict[str, Any]], None]
+            ] = []
+            for bucket in buckets:
+                result = bucket.try_bake_skeleton(args, skeleton_kwargs)
+                if result is _SKELETON_BAKED:
+                    continue
+                # ``None`` -> pre-bind the bucket's ``unpack`` method
+                # (saves per-call descriptor lookup).
+                # callable -> per-call custom injector (e.g. a
+                # storage-shell shallow-copy + tensor-attr swap).
+                per_call_actions.append(
+                    bucket.unpack if result is None else result
+                )
+            skeleton = cls.__new__(cls)
+            skeleton.__dict__.update(skeleton_kwargs)
+            cache[cache_key] = (skeleton, per_call_actions)
+        else:
+            skeleton, per_call_actions = cached
+
+        # Shallow copy: ``copy.copy`` on a plain (non-slots) instance
+        # is just ``cls.__new__(cls); new.__dict__.update(old.__dict__)``,
+        # i.e. a single C-level dict copy.
+        obj = copy.copy(skeleton)
+        obj_dict = obj.__dict__
+        for action in per_call_actions:
+            # Either a pre-bound ``bucket.unpack`` (writes straight
+            # into the copy's ``__dict__``) or a custom injector
+            # finalising a cached storage shell.
+            action(args, obj_dict)
         return obj
 
     @classmethod
@@ -1110,6 +1579,10 @@ def _te_register_custom_op(
 
     def _build_schema(buckets: List[_Bucket]) -> Tuple[str, List[str]]:
         spec = [slot for b in buckets for slot in b.schema_slots()]
+        # Synthetic int slot consumed by ``torch_compile_unpack`` to
+        # key the skeleton cache in O(1). Kept in sync with
+        # :meth:`ArgObject.torch_compile_get_schema`.
+        spec.append((_CACHE_KEY_SLOT, "int"))
         names = [name for name, _ in spec]
         schema_str = "(" + ", ".join(f"{type_str} {name}" for name, type_str in spec) + ")"
         return schema_str, names
@@ -1126,6 +1599,9 @@ def _te_register_custom_op(
     for bucket in fwd_buckets:
         for _, type_str in bucket.schema_slots():
             fwd_slot_defaults.append([] if type_str.endswith("[]") else None)
+    # Synthetic ``int`` cache-key slot appended in ``_build_schema``;
+    # ints carry no grad, default is ``None``.
+    fwd_slot_defaults.append(None)
 
     # Validate ``input_tensors_for_grad`` references real forward inputs
     # and precompute the positions where backward grads land in the

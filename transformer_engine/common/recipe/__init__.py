@@ -91,6 +91,16 @@ class Recipe:
     Base recipe class.
     """
 
+    # ``Recipe._unflatten`` reconstructs the recipe entirely from
+    # ``meta`` and ignores its ``_tensors`` arg (see implementation
+    # below; the parameter is named ``_tensors`` precisely because it
+    # is unused). ``Recipe._flatten`` likewise returns an empty tensor
+    # list. The torch.compile unpack fast path therefore caches the
+    # reconstructed recipe instance keyed on
+    # ``(meta._hash, id(pg))`` and reuses it across iterations
+    # instead of rebuilding it on every backward call.
+    _TORCH_COMPILE_UNFLATTEN_USES_TENSORS = False
+
     @classmethod
     def nvfp4(cls):
         """Whether the given recipe is NVFP4 1D block scaling."""
