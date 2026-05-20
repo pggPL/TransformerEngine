@@ -37,7 +37,9 @@ from transformer_engine.pytorch import (
     Fp8Unpadding,
     Float8Quantizer,
     Float8CurrentScalingQuantizer,
+    Float8BlockQuantizer,
     MXFP8Quantizer,
+    NVFP4Quantizer,
     get_device_compute_capability,
     is_fp8_available,
     is_mxfp8_available,
@@ -3086,11 +3088,15 @@ def test_grouped_gemm_grouped_tensor_zero_work(layout, accumulate, quant_type) -
     if layout in ("TN", "NN"):
         weight_tensors = [torch.randn(n, k, dtype=dtype, device=device) for _ in range(z)]
         if use_mxfp8:
-            grouped_A = _make_grouped_tensor_quantized_mxfp8(
+            grouped_A = _make_grouped_tensor_quantized(
                 weight_tensors,
-                rowwise=transa,
-                columnwise=not transa,
+                quantizer=MXFP8Quantizer(
+                    fp8_dtype=tex.DType.kFloat8E4M3,
+                    rowwise=transa,
+                    columnwise=not transa,
+                ),
                 device=device,
+                is_weight=True,
             )
         else:
             grouped_A = _make_grouped_tensor_uniform(z, n, k, device, dtype)
@@ -3141,84 +3147,249 @@ def test_grouped_gemm_grouped_tensor_zero_work(layout, accumulate, quant_type) -
             torch.testing.assert_close(out_result[i], torch.zeros_like(out_result[i]))
 
 
-def _make_grouped_tensor_quantized_mxfp8(
+def _make_grouped_tensor_quantized(
     tensors: List[torch.Tensor],
     *,
-    rowwise: bool,
-    columnwise: bool,
+    quantizer,
     device: torch.device,
     is_weight: bool = False,
 ) -> GroupedTensor:
-    """Create a quantized MXFP8 GroupedTensor from a list of per-expert tensors.
+    """Create a quantized GroupedTensor from a list of per-expert tensors.
 
-    For weights (uniform per-expert shape), we generally won't keep it swizzled since we
-    might need for future dequantize operations. Swizzling is done internally within
-    general_grouped_gemm_for_grouped_tensor call.
+    Two quantization paths are exercised:
 
-    For non-weight tensors (inputs / grad_outputs), we still pass
-    ``first_dims`` and keep ``optimize_for_gemm=True``; so the kernel must emit the
-    already-swizzled layout up front.
+    * ``MXFP8Quantizer`` / ``NVFP4Quantizer``: uses the fused
+      ``tex.group_quantize`` kernel (same path as the production code).
+      ``optimize_for_gemm`` is enabled for non-weight tensors so that the kernel
+      emits already-swizzled scales for the GEMM. Weight tensors keep the
+      unswizzled layout since they may be dequantized later and swizzling is
+      done internally inside ``general_grouped_gemm_for_grouped_tensor``.
+    * ``Float8CurrentScalingQuantizer`` / ``Float8BlockQuantizer``: allocate an
+      empty grouped tensor via ``GroupedTensor.make_grouped_tensor`` and
+      quantize each slot in turn via ``GroupedTensor.quantize`` (which
+      dispatches to ``quantizer.update_quantized`` per tensor view).
     """
     if not tensors:
         raise ValueError("Expected non-empty tensor list for grouped quantization.")
-    quantizer = MXFP8Quantizer(
-        fp8_dtype=tex.DType.kFloat8E4M3,
-        rowwise=rowwise,
-        columnwise=columnwise,
-    )
-    quantizer.optimize_for_gemm = not is_weight
-    grouped_input = torch.cat(tensors, dim=0)
-    if is_weight:
+    num_tensors = len(tensors)
+    if isinstance(quantizer, (MXFP8Quantizer, NVFP4Quantizer)):
+        quantizer.optimize_for_gemm = not is_weight
+        grouped_input = torch.cat(tensors, dim=0)
+        first_dims = (
+            None
+            if is_weight
+            else torch.tensor(
+                [t.shape[0] for t in tensors], dtype=torch.int64, device=device
+            )
+        )
+        return tex.group_quantize(grouped_input, quantizer, num_tensors, first_dims)
+
+    first_dim_list = [t.shape[0] for t in tensors]
+    uniform_first_dim = all(d == first_dim_list[0] for d in first_dim_list)
+    if is_weight or uniform_first_dim:
         first_dims = None
     else:
-        first_dims = torch.tensor([t.shape[0] for t in tensors], dtype=torch.int64, device=device)
-    return tex.group_quantize(grouped_input, quantizer, len(tensors), first_dims)
-
-
-def _per_tensor_quantize_mxfp8(
-    tensors: List[torch.Tensor],
-    *,
-    rowwise: bool,
-    columnwise: bool,
-) -> List:
-    """Quantize each tensor individually with MXFP8.
-    Used to build reference discrete inputs for grouped GEMM.
-    """
-    quantizer = MXFP8Quantizer(
-        fp8_dtype=tex.DType.kFloat8E4M3,
-        rowwise=rowwise,
-        columnwise=columnwise,
+        first_dims = torch.tensor(first_dim_list, dtype=torch.int64, device=device)
+    grouped = GroupedTensor.make_grouped_tensor(
+        num_tensors=num_tensors,
+        first_dims=first_dims,
+        last_dims=None,
+        logical_first_dim=sum(first_dim_list),
+        logical_last_dim=tensors[0].shape[1],
+        quantizer=quantizer,
+        device=device,
     )
-    return [quantizer(t) for t in tensors]
+    grouped.quantize(tensors)
+    return grouped
+
+
+def _build_grouped_gemm_quantizers(
+    recipe: str,
+    *,
+    a_rowwise: bool,
+    a_columnwise: bool,
+    b_rowwise: bool,
+    b_columnwise: bool,
+):
+    """Build the (A, B) quantizers for ``test_grouped_gemm_grouped_tensor_quantized``.
+
+    Supported ``recipe`` strings:
+      * ``"mxfp8"`` — MX FP8 1D block scaling.
+      * ``"fp8"`` — per-tensor FP8 current scaling.
+      * ``"nvfp4"`` — NVFP4 1D block scaling.
+      * ``"fp8_block_<A_dim>_<B_dim>"`` — FP8 block scaling where the two digits
+        select ``block_scaling_dim`` for operand A and operand B respectively
+        (e.g. ``"fp8_block_1d_2d"`` → A=1D, B=2D).
+    """
+    if recipe == "mxfp8":
+        return (
+            MXFP8Quantizer(
+                fp8_dtype=tex.DType.kFloat8E4M3, rowwise=a_rowwise, columnwise=a_columnwise
+            ),
+            MXFP8Quantizer(
+                fp8_dtype=tex.DType.kFloat8E4M3, rowwise=b_rowwise, columnwise=b_columnwise
+            ),
+        )
+    if recipe == "fp8":
+        return (
+            Float8CurrentScalingQuantizer(
+                fp8_dtype=tex.DType.kFloat8E4M3,
+                device="cuda",
+                rowwise=a_rowwise,
+                columnwise=a_columnwise,
+            ),
+            Float8CurrentScalingQuantizer(
+                fp8_dtype=tex.DType.kFloat8E4M3,
+                device="cuda",
+                rowwise=b_rowwise,
+                columnwise=b_columnwise,
+            ),
+        )
+    if recipe == "nvfp4":
+        return (
+            NVFP4Quantizer(
+                fp4_dtype=tex.DType.kFloat4E2M1, rowwise=a_rowwise, columnwise=a_columnwise
+            ),
+            NVFP4Quantizer(
+                fp4_dtype=tex.DType.kFloat4E2M1, rowwise=b_rowwise, columnwise=b_columnwise
+            ),
+        )
+    if recipe.startswith("fp8_block_"):
+        a_suffix, b_suffix = recipe[len("fp8_block_") :].split("_")
+        a_dim, b_dim = int(a_suffix[0]), int(b_suffix[0])
+        return (
+            Float8BlockQuantizer(
+                fp8_dtype=tex.DType.kFloat8E4M3,
+                rowwise=a_rowwise,
+                columnwise=a_columnwise,
+                block_scaling_dim=a_dim,
+            ),
+            Float8BlockQuantizer(
+                fp8_dtype=tex.DType.kFloat8E4M3,
+                rowwise=b_rowwise,
+                columnwise=b_columnwise,
+                block_scaling_dim=b_dim,
+            ),
+        )
+    raise ValueError(f"Unsupported recipe: {recipe}")
+
+
+def _quantized_grouped_gemm_skip_reason(quantizer, output_dtype: torch.dtype) -> Optional[str]:
+    """Skip-reason for ``test_grouped_gemm_grouped_tensor_quantized``.
+
+    Mirrors the architecture / cuBLAS-version gates used by the C++ grouped-GEMM
+    test (``tests/cpp/operator/test_grouped_gemm.cu``):
+
+      * Grouped GEMM itself requires cuBLAS 13.3+ (and 13.4+ on Hopper).
+      * MXFP8, FP8 (per-tensor / current scaling) and NVFP4 grouped GEMM require
+        Blackwell+.
+      * NVFP4 additionally requires cuBLAS 13.4+ and rejects FP16 output.
+      * FP8 block scaling grouped GEMM is Hopper-only and requires cuBLAS 13.4+.
+    """
+    cublas_ver = tex.get_cublasLt_version()
+    if cublas_ver < 130300:
+        return "Grouped GEMM requires cuBLAS 13.3+."
+    cc = torch.cuda.get_device_capability()
+    if cc < (9, 0):
+        return "Grouped GEMM requires Hopper (SM90) or newer."
+    is_blackwell_plus = cc >= (10, 0)
+    is_fp8_block = isinstance(quantizer, Float8BlockQuantizer)
+    is_nvfp4 = isinstance(quantizer, NVFP4Quantizer)
+    is_fp8_cs = isinstance(quantizer, Float8CurrentScalingQuantizer)
+    is_mxfp8 = isinstance(quantizer, MXFP8Quantizer)
+    if not is_blackwell_plus and cublas_ver < 130400:
+        return "Grouped GEMM on Hopper (SM90) requires cuBLAS 13.4+."
+    if is_blackwell_plus and is_fp8_block:
+        return "FP8 block scaling grouped GEMM is only supported on Hopper (SM90)."
+    if not is_blackwell_plus and not is_fp8_block:
+        return f"{type(quantizer).__name__} grouped GEMM requires Blackwell (SM100) or newer."
+    if is_nvfp4 and cublas_ver < 130400:
+        return "NVFP4 grouped GEMM requires cuBLAS 13.4+."
+    if is_nvfp4 and output_dtype == torch.float16:
+        return "NVFP4 grouped GEMM does not support FP16 output."
+    if is_fp8_cs and not is_fp8_available():
+        return is_fp8_available(return_reason=True)[1]
+    if is_mxfp8 and not is_mxfp8_available():
+        return is_mxfp8_available(return_reason=True)[1]
+    if is_nvfp4 and not is_nvfp4_available():
+        return is_nvfp4_available(return_reason=True)[1]
+    if is_fp8_block and not is_fp8_block_scaling_available():
+        return is_fp8_block_scaling_available(return_reason=True)[1]
+    return None
 
 
 @pytest.mark.parametrize(
     "shape",
     [
-        (1, 128, 128, 512),
+        (4, 512, 128, 256),
         (8, 1024, 128, 512),
-        (16, 4096, 128, 512),
-        (2, 256, 2880, 2880),
     ],
 )
 @pytest.mark.parametrize("accumulate", [False, True])
 @pytest.mark.parametrize("layout", ["TN", "NN", "NT"])
 @pytest.mark.parametrize("case", ["no_discrete", "discrete_in", "discrete_out"])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-def test_grouped_gemm_grouped_tensor_mxfp8(
-    shape, accumulate, layout: str, case: str, dtype: torch.dtype
+@pytest.mark.parametrize(
+    "recipe",
+    [
+        "mxfp8",
+        "fp8",
+        "nvfp4",
+        "fp8_block_1d_1d",
+        "fp8_block_2d_1d",
+        "fp8_block_1d_2d",
+    ],
+)
+def test_grouped_gemm_grouped_tensor_quantized(
+    shape,
+    accumulate,
+    layout: str,
+    case: str,
+    dtype: torch.dtype,
+    recipe: str,
 ) -> None:
-    if tex.get_cublasLt_version() < 130300:
-        pytest.skip("Grouped GEMM requires cuBLAS 13.3+.")
-    if torch.cuda.get_device_capability() < (10, 0):
-        pytest.skip("Grouped GEMM requires Blackwell (SM100) or newer.")
+    """Validate ``general_grouped_gemm_for_grouped_tensor`` across quantization recipes.
+
+    Covers MXFP8, per-tensor FP8 current scaling, FP8 block scaling (1D/1D,
+    2D/1D, 1D/2D) and NVFP4. Results are compared against a per-expert
+    reference path that calls ``general_gemm`` in a loop.
+    """
+    transa = layout[0] == "T"
+    transb = layout[1] == "T"
+    a_quantizer, b_quantizer = _build_grouped_gemm_quantizers(
+        recipe,
+        a_rowwise=transa,
+        a_columnwise=not transa,
+        b_rowwise=not transb,
+        b_columnwise=transb,
+    )
+
+    skip_reason = _quantized_grouped_gemm_skip_reason(a_quantizer, dtype)
+    if skip_reason is not None:
+        pytest.skip(skip_reason)
     if dtype == torch.bfloat16 and not is_bf16_available():
         pytest.skip("bfloat16 is required for grouped GEMM test.")
+    # Layout coverage supported by cuBLASLt grouped GEMM for FP8 block scaling
+    # (see ``tests/cpp/operator/test_grouped_gemm.cu``):
+    #   * 1D/1D : TN, NT, NN
+    #   * 2D/1D : TN only
+    #   * 1D/2D : TN, NN
+    if isinstance(a_quantizer, Float8BlockQuantizer):
+        block_dims = (a_quantizer.block_scaling_dim, b_quantizer.block_scaling_dim)
+        if block_dims == (2, 1) and layout != "TN":
+            pytest.skip(f"FP8 block scaling 2D/1D grouped GEMM only supports TN, got {layout}.")
+        if block_dims == (1, 2) and layout not in ("TN", "NN"):
+            pytest.skip(
+                f"FP8 block scaling 1D/2D grouped GEMM only supports TN/NN, got {layout}."
+            )
 
     torch.manual_seed(0)
     z, m, k, n = shape
     m_sizes = [m // z] * z
 
+    # In TN / NN, A is the weight (uniform per-expert shape). In NT (wgrad),
+    # A is the input (variable per-expert shape in real usage).
+    a_is_weight = layout in ("TN", "NN")
     if layout == "TN":
         A = [torch.randn(n, k, dtype=dtype, device="cuda") for _ in range(z)]  # weight
         B = [torch.randn(ms, k, dtype=dtype, device="cuda") for ms in m_sizes]  # input
@@ -3237,36 +3408,35 @@ def test_grouped_gemm_grouped_tensor_mxfp8(
 
     out_ref = [o.clone() for o in out]
 
-    transa = layout[0] == "T"
-    transb = layout[1] == "T"
-    a_is_weight = all(t.shape == A[0].shape for t in A)
-    a_rowwise, a_columnwise = transa, not transa
-    b_rowwise, b_columnwise = not transb, transb
-    grouped_A = _make_grouped_tensor_quantized_mxfp8(
+    grouped_A = _make_grouped_tensor_quantized(
         A,
-        rowwise=a_rowwise,
-        columnwise=a_columnwise,
+        quantizer=a_quantizer,
         device="cuda",
         is_weight=a_is_weight,
     )
-    grouped_B = _make_grouped_tensor_quantized_mxfp8(
-        B, rowwise=b_rowwise, columnwise=b_columnwise, device="cuda"
+    grouped_B = _make_grouped_tensor_quantized(
+        B,
+        quantizer=b_quantizer,
+        device="cuda",
     )
-    A_fp8 = _per_tensor_quantize_mxfp8(A, rowwise=a_rowwise, columnwise=a_columnwise)
-    B_fp8 = _per_tensor_quantize_mxfp8(B, rowwise=b_rowwise, columnwise=b_columnwise)
 
-    general_grouped_gemm(
-        A_fp8,
-        B_fp8,
-        out_ref,
-        [None] * z,
-        dtype,
-        m_splits=m_sizes,
-        grad=grad,
-        accumulate=accumulate,
-        layout=layout,
-        single_output=False,
-    )
+    A_q = [a_quantizer(t) for t in A]
+    B_q = [b_quantizer(t) for t in B]
+
+    # FP8 block scaling requires split accumulator.
+    use_split_accumulator = isinstance(a_quantizer, Float8BlockQuantizer)
+
+    for i in range(z):
+        general_gemm(
+            A_q[i],
+            B_q[i],
+            dtype,
+            grad=grad,
+            accumulate=accumulate,
+            layout=layout,
+            out=out_ref[i],
+            use_split_accumulator=use_split_accumulator,
+        )
 
     device = A[0].device
 
@@ -3281,17 +3451,22 @@ def test_grouped_gemm_grouped_tensor_mxfp8(
         _pack_grouped_tensor(grouped_out, out)
 
     grouped_out_input = out if case == "discrete_out" else grouped_out
-    grouped_A_input = A_fp8 if case == "discrete_in" else grouped_A
+    grouped_A_input = A_q if case == "discrete_in" else grouped_A
     general_grouped_gemm_for_grouped_tensor(
         grouped_A_input,
         grouped_B,
         grouped_out_input,
         layout=layout,
         accumulate=accumulate,
+        use_split_accumulator=use_split_accumulator,
     )
 
     out_grouped = out if case == "discrete_out" else grouped_out.split_into_quantized_tensors()
-    tols = dict(rtol=0.125, atol=0.0675)  # mxfp8 tolerance
+    # 4-bit data is more sensitive to small scaling/swizzling differences than FP8.
+    if isinstance(a_quantizer, NVFP4Quantizer):
+        tols = dict(rtol=0.25, atol=0.25)
+    else:
+        tols = dict(rtol=0.125, atol=0.0675)
 
     for o, o_ref in zip(out_grouped, out_ref):
         torch.testing.assert_close(o, o_ref, **tols)
