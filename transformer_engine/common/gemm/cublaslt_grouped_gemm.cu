@@ -587,17 +587,15 @@ inline MultiTensorGroupGemmInputArgs build_grouped_gemm_multi_inputA_args(
     NVTE_CHECK(data.has_data(), "Grouped GEMM: ", name, "_list tensor ", i,
                " is missing required data.");
     args.data_ptrs[i] = data.dptr;
-    const auto &shape = t->shape();
+    const auto &shape = data.shape;
     NVTE_CHECK(shape.size() == 2, "Grouped GEMM: ", name, "_list tensor ", i, " must be 2D.");
-    const size_t first_dim = shape[0];
-    const size_t last_dim = shape[1];
-    if (storage_transposed) {
-      args.rows[i] = static_cast<int>(first_dim);
-      args.cols[i] = static_cast<int>(last_dim);
-    } else {
-      args.rows[i] = static_cast<int>(last_dim);
-      args.cols[i] = static_cast<int>(first_dim);
-    }
+    // `shape` is the selected storage shape. When the selected storage is physically
+    // transposed relative to the logical tensor, swap first/last so rows/cols and
+    // avg_first/avg_last describe the logical operand cuBLAS will see after op(A).
+    const size_t first_dim = storage_transposed ? shape[1] : shape[0];
+    const size_t last_dim = storage_transposed ? shape[0] : shape[1];
+    args.rows[i] = static_cast<int>(last_dim);
+    args.cols[i] = static_cast<int>(first_dim);
     *avg_first_dim += static_cast<int64_t>(first_dim);
     *avg_last_dim += static_cast<int64_t>(last_dim);
 
@@ -1726,8 +1724,16 @@ void nvte_grouped_gemm_with_discrete_inputA(const NVTETensor *A_list, size_t num
     A_sel.dtype = A_list_info.col_dtype;
   }
   const bool requires_a_scale_inv = is_fp8 || nvfp4 || fp8_block;
+  // GroupedTensor metadata stores the original logical shape, so columnwise
+  // storage usually needs storage_transposed. Discrete NVFP4 A tensors with
+  // logical transa=false expose columnwise data with the transposed logical
+  // shape already, so treating it as storage_transposed would undo the layout
+  // needed by cuBLAS.
+  const bool nvfp4_discrete_a_columnwise = nvfp4 && !static_cast<bool>(transa);
+  const bool a_list_storage_transposed =
+      nvfp4_discrete_a_columnwise ? false : choice.storage_transposed;
   a_multi_tensor_args = build_grouped_gemm_multi_inputA_args(
-      A_list, num_a_tensors, choice.use_rowwise, choice.storage_transposed, requires_a_scale_inv,
+      A_list, num_a_tensors, choice.use_rowwise, a_list_storage_transposed, requires_a_scale_inv,
       &avg_first_dim, &avg_last_dim, "A");
 
   // Discrete A_list: per-tensor pointers come from `a_multi_tensor_args` (data/scale/amax).
