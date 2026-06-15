@@ -107,6 +107,10 @@ class NVFP4TensorStorage(QuantizedTensorStorage):
     _nvfp4_use_4over6: bool
     # Global E4M3 scale bound used by this NVFP4 tensor
     _nvfp4_e4m3_max: int
+    # Amax reduction process group carried on the tensor (e.g. set by FSDP2 in
+    # fsdp_pre_all_gather) and applied to the quantizer when the data is
+    # re-quantized in-place. ``None`` means no amax reduction.
+    amax_reduction_group: Optional[Any]
 
     def __new__(
         cls,
@@ -124,6 +128,7 @@ class NVFP4TensorStorage(QuantizedTensorStorage):
         row_scaled_nvfp4: bool = False,
         nvfp4_use_4over6: bool = False,
         nvfp4_e4m3_max: int = 448,
+        amax_reduction_group: Optional[Any] = None,
         **kwargs,
     ):
         if cls is NVFP4TensorStorage:
@@ -144,6 +149,7 @@ class NVFP4TensorStorage(QuantizedTensorStorage):
         instance._row_scaled_nvfp4 = row_scaled_nvfp4
         instance._nvfp4_use_4over6 = nvfp4_use_4over6
         instance._nvfp4_e4m3_max = nvfp4_e4m3_max if nvfp4_use_4over6 else 448
+        instance.amax_reduction_group = amax_reduction_group
 
         return instance
 
@@ -202,6 +208,7 @@ class NVFP4TensorStorage(QuantizedTensorStorage):
             "nvfp4_use_4over6": self._nvfp4_use_4over6,
             "nvfp4_e4m3_max": self._nvfp4_e4m3_max,
             "fake_dtype": self._dtype,
+            "amax_reduction_group": self.amax_reduction_group,
         }
 
     def prepare_for_saving(self) -> Tuple[list[Optional[torch.Tensor]], NVFP4TensorStorage]:
@@ -337,6 +344,7 @@ class NVFP4TensorStorage(QuantizedTensorStorage):
             nvfp4_use_4over6=self._nvfp4_use_4over6,
             nvfp4_e4m3_max=self._nvfp4_e4m3_max,
             fake_dtype=self._dtype,
+            amax_reduction_group=self.amax_reduction_group,
         )
 
     def __repr__(self):

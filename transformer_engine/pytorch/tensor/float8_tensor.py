@@ -282,6 +282,14 @@ class Float8CurrentScalingQuantizer(Quantizer):
         if not src.is_contiguous():
             src = src.contiguous()
 
+        # Apply the amax reduction group carried on the destination tensor (e.g. set
+        # by FSDP2) so the in-place re-quantization reduces amax across the mesh. The
+        # group rides on the tensor rather than being stored on the quantizer.
+        group = getattr(dst, "amax_reduction_group", None)
+        if group is not None:
+            self.amax_reduction_group = group
+            self.with_amax_reduction = True
+
         # Launch cast kernel
         tex.quantize(src, self, dst, noop_flag)
 
@@ -787,10 +795,9 @@ class Float8Tensor(Float8TensorStorage, QuantizedTensor):
         if isinstance(self._quantizer, Float8CurrentScalingQuantizer) and mesh is not None:
             # When sharded weight is updated after reduce scattering the gradients in FSDP2,
             # we need to do amax reduction across the mesh to make sure all weight shards are
-            # updated with same scale inverse. Setting the state below in the quantizer will make
-            # sure that updated Quantized weight tensor have same scale inverse across all shards.
-            self._quantizer.amax_reduction_group = mesh.get_group()
-            self._quantizer.with_amax_reduction = True
+            # updated with the same scale inverse. The reduction group is stored on the tensor
+            # and applied to the quantizer when the data is re-quantized in ``_set_data``.
+            self.amax_reduction_group = mesh.get_group()
 
         fsdp_state = _get_module_fsdp_state(module)
         param_group = fsdp_state._fsdp_param_group
@@ -995,6 +1002,13 @@ class Float8Tensor(Float8TensorStorage, QuantizedTensor):
         # Quantize to FP8
         assert self._quantizer is not None, "Can't quantize without a quantizer"
         self._quantizer.internal = False
+        # Apply the amax reduction group carried on this tensor (e.g. set by FSDP2 in
+        # fsdp_pre_all_gather) to the quantizer so the re-quantization reduces amax
+        # across the mesh. C++ reads the group from the quantizer state.
+        group = getattr(self, "amax_reduction_group", None)
+        if group is not None and isinstance(self._quantizer, Float8CurrentScalingQuantizer):
+            self._quantizer.amax_reduction_group = group
+            self._quantizer.with_amax_reduction = True
         self.data = self._quantizer.quantize(tensor)
         if self.requires_grad != tensor.requires_grad:
             self.requires_grad_(requires_grad=tensor.requires_grad)

@@ -200,6 +200,14 @@ class NVFP4Quantizer(Quantizer):
         if not src.is_contiguous():
             src = src.contiguous()
 
+        # Apply the amax reduction group carried on the destination tensor (e.g. set
+        # by FSDP2) so the in-place re-quantization reduces amax across the mesh. The
+        # group rides on the tensor rather than being stored on the quantizer.
+        group = getattr(dst, "amax_reduction_group", None)
+        if group is not None:
+            self.amax_reduction_group = group
+            self.with_amax_reduction = True
+
         # Launch cast kernel
         tex.quantize(src, self, dst, noop_flag)
 

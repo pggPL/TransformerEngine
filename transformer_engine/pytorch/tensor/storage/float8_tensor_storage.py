@@ -75,6 +75,11 @@ class Float8TensorStorage(QuantizedTensorStorage):
     _transpose: Optional[torch.Tensor]
     _transpose_invalid: bool
 
+    # Amax reduction process group carried on the tensor (e.g. set by FSDP2 in
+    # fsdp_pre_all_gather) and applied to the quantizer when the data is
+    # re-quantized in-place. ``None`` means no amax reduction.
+    amax_reduction_group: Optional[Any]
+
     def __new__(
         cls,
         *args,
@@ -84,6 +89,7 @@ class Float8TensorStorage(QuantizedTensorStorage):
         fake_dtype: Optional[torch.dtype] = None,
         data_transpose: Optional[torch.Tensor] = None,
         quantizer: Optional[Quantizer] = None,
+        amax_reduction_group: Optional[Any] = None,
         **kwargs,
     ):
         if cls is Float8TensorStorage:
@@ -97,6 +103,7 @@ class Float8TensorStorage(QuantizedTensorStorage):
         instance._scale_inv = fp8_scale_inv
         instance._transpose = data_transpose
         instance._transpose_invalid = instance._transpose is None
+        instance.amax_reduction_group = amax_reduction_group
 
         return instance
 
@@ -139,6 +146,7 @@ class Float8TensorStorage(QuantizedTensorStorage):
             "data_transpose": self._transpose,
             "quantizer": self._quantizer,
             "fake_dtype": self._dtype,
+            "amax_reduction_group": self.amax_reduction_group,
         }
 
     def prepare_for_saving(self) -> Tuple[list[Optional[torch.Tensor]], QuantizedTensorStorage]:
@@ -206,6 +214,7 @@ class Float8TensorStorage(QuantizedTensorStorage):
             fake_dtype=self._dtype,
             data_transpose=out_transpose,
             quantizer=self._quantizer,
+            amax_reduction_group=self.amax_reduction_group,
         )
 
     def __repr__(self):
