@@ -31,6 +31,7 @@ from transformer_engine.pytorch.tensor.float8_tensor import Float8CurrentScaling
 from transformer_engine.pytorch.tensor.nvfp4_tensor import NVFP4Quantizer
 from transformer_engine.pytorch.quantized_tensor import QuantizedTensor, _STORAGE_REGISTRY
 from transformer_engine.pytorch.dynamo import TensorProto, to_tensor_proto
+from transformer_engine.pytorch.quantization import QuantizerRole
 from transformer_engine.pytorch import (
     is_fp8_available,
     is_mxfp8_available,
