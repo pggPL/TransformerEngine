@@ -35,7 +35,6 @@ from ..quantized_tensor import (
 )
 
 _TE_OP_NAMESPACE = "transformer_engine_compile"
-_TE_LIB = torch.library.Library(_TE_OP_NAMESPACE, "FRAGMENT")  # noqa: TOR901
 
 
 # ``None`` entries in an op's flat ``Tensor[]`` return are smuggled through a
@@ -939,7 +938,7 @@ def _resolve_grad_targets(
 def _register_kernel(
     *,
     op_name: str,
-    op_qualname: str,
+    schema_str: str,
     arg_type: type,
     arg_names: List[str],
     buckets: List[_Bucket],
@@ -947,8 +946,9 @@ def _register_kernel(
     impl: Callable[[Any], Any],
     fake_impl: Callable[[Any], Any],
     format_result: Callable[[Any], List[torch.Tensor]],
-) -> None:
-    """Wire the real ``impl`` + the ``fake_impl`` (proto) into the library.
+) -> Any:
+    """Define the op via ``torch.library.custom_op`` with the real ``impl`` + the
+    ``fake_impl`` (proto), returning the ``CustomOpDef``.
 
     The real kernel rebuilds the dataclass and runs ``impl``; the fake kernel
     runs the proto fake impl on the :func:`_proto_view`. Both go through
@@ -966,13 +966,16 @@ def _register_kernel(
         proto_obj = _proto_view(obj, tensor_field_names)
         return format_result(fake_impl(proto_obj))
 
-    _TE_LIB.impl(op_name, _impl, "CompositeExplicitAutograd")
-    torch.library.register_fake(op_qualname, _fake, lib=_TE_LIB)
+    op = torch.library.custom_op(
+        f"{_TE_OP_NAMESPACE}::{op_name}", _impl, mutates_args=(), schema=schema_str
+    )
+    op.register_fake(_fake)
+    return op
 
 
 def _register_autograd_for_op(
     *,
-    fwd_op_name: str,
+    fwd_op: Any,
     bwd_op_name: str,
     fwd_arg_type: type,
     fwd_arg_names: List[str],
@@ -992,7 +995,6 @@ def _register_autograd_for_op(
     templates, reassembles each flat output chunk, and hands the saved tuple +
     ``ctx_attrs`` to the module's ``setup_context``.
     """
-    fwd_qualname = f"{_TE_OP_NAMESPACE}::{fwd_op_name}"
 
     def _setup_context(ctx, inputs, output):
         ctx._te_fwd_tensor_list_lengths = {
@@ -1054,12 +1056,7 @@ def _register_autograd_for_op(
             out[pos] = g
         return tuple(out)
 
-    torch.library.register_autograd(
-        fwd_qualname,
-        _autograd_backward,
-        setup_context=_setup_context,
-        lib=_TE_LIB,
-    )
+    fwd_op.register_autograd(_autograd_backward, setup_context=_setup_context)
 
 
 def _collect_universal_slot_offsets(buckets: List[_Bucket]) -> List[int]:
@@ -1093,12 +1090,14 @@ def _flatten_subclass_into_slots(
 def _register_outer_forwarder(
     *,
     outer_op_name: str,
+    schema_str: str,
     inner_op_name: str,
     buckets: Optional[List[_Bucket]] = None,
     subclass_list: Optional[List[type]] = None,
-) -> None:
-    """Register the outer op's default kernel + fake: forward to the inner op,
-    optionally flattening registered subclass inputs in place first.
+) -> Any:
+    """Define the outer op via ``torch.library.custom_op``: forward to the inner
+    op, optionally flattening registered subclass inputs in place first. Returns
+    the ``CustomOpDef``.
     """
     inner_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), inner_op_name)
     input_flatten_enabled = bool(subclass_list) and buckets is not None
@@ -1112,8 +1111,11 @@ def _register_outer_forwarder(
             _flatten_subclass_into_slots(new_args, slot_offsets, sub)
         return inner_op(*new_args)
 
-    _TE_LIB.impl(outer_op_name, _forward, "CompositeExplicitAutograd")
-    torch.library.register_fake(f"{_TE_OP_NAMESPACE}::{outer_op_name}", _forward, lib=_TE_LIB)
+    op = torch.library.custom_op(
+        f"{_TE_OP_NAMESPACE}::{outer_op_name}", _forward, mutates_args=(), schema=schema_str
+    )
+    op.register_fake(_forward)
+    return op
 
 
 def _all_quantized_tensor_subclasses() -> List[type]:
@@ -1208,19 +1210,14 @@ def _register_custom_op_impl(
         fwd_buckets, fwd_arg_type, input_tensors_for_grad
     )
 
-    _TE_LIB.define(f"{inner_fwd_name}{fwd_schema_args} -> Tensor[]")
-    _TE_LIB.define(f"{inner_bwd_name}{bwd_schema_args} -> Tensor[]")
-    _TE_LIB.define(f"{outer_fwd_name}{fwd_schema_args} -> Tensor[]")
-    _TE_LIB.define(f"{outer_bwd_name}{bwd_schema_args} -> Tensor[]")
+    fwd_schema = f"{fwd_schema_args} -> Tensor[]"
+    bwd_schema = f"{bwd_schema_args} -> Tensor[]"
 
-    inner_fwd_qualname = f"{_TE_OP_NAMESPACE}::{inner_fwd_name}"
     inner_bwd_qualname = f"{_TE_OP_NAMESPACE}::{inner_bwd_name}"
-    outer_fwd_qualname = f"{_TE_OP_NAMESPACE}::{outer_fwd_name}"
-    outer_bwd_qualname = f"{_TE_OP_NAMESPACE}::{outer_bwd_name}"
 
-    _register_kernel(
+    inner_fwd_def = _register_kernel(
         op_name=inner_fwd_name,
-        op_qualname=inner_fwd_qualname,
+        schema_str=fwd_schema,
         arg_type=fwd_arg_type,
         arg_names=fwd_arg_names,
         buckets=fwd_buckets,
@@ -1231,7 +1228,7 @@ def _register_custom_op_impl(
     )
     _register_kernel(
         op_name=inner_bwd_name,
-        op_qualname=inner_bwd_qualname,
+        schema_str=bwd_schema,
         arg_type=backward_arg_type,
         arg_names=bwd_arg_names,
         buckets=bwd_buckets,
@@ -1239,6 +1236,17 @@ def _register_custom_op_impl(
         impl=backward_impl,
         fake_impl=bwd_fake_impl,
         format_result=lambda g: _format_bwd_result(g, num_grad_inputs, inner_bwd_qualname),
+    )
+
+    outer_fwd_def = _register_outer_forwarder(
+        outer_op_name=outer_fwd_name,
+        schema_str=fwd_schema,
+        inner_op_name=inner_fwd_name,
+        buckets=fwd_buckets,
+        subclass_list=list(subclass_list),
+    )
+    outer_bwd_def = _register_outer_forwarder(
+        outer_op_name=outer_bwd_name, schema_str=bwd_schema, inner_op_name=inner_bwd_name
     )
 
     autograd_common = {
@@ -1255,19 +1263,11 @@ def _register_custom_op_impl(
         "fwd_fake_impl": fwd_fake_impl,
     }
     _register_autograd_for_op(
-        fwd_op_name=inner_fwd_name, bwd_op_name=inner_bwd_name, **autograd_common
+        fwd_op=inner_fwd_def, bwd_op_name=inner_bwd_name, **autograd_common
     )
     _register_autograd_for_op(
-        fwd_op_name=outer_fwd_name, bwd_op_name=outer_bwd_name, **autograd_common
+        fwd_op=outer_fwd_def, bwd_op_name=outer_bwd_name, **autograd_common
     )
-
-    _register_outer_forwarder(
-        outer_op_name=outer_fwd_name,
-        inner_op_name=inner_fwd_name,
-        buckets=fwd_buckets,
-        subclass_list=list(subclass_list),
-    )
-    _register_outer_forwarder(outer_op_name=outer_bwd_name, inner_op_name=inner_bwd_name)
 
     inner_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), inner_fwd_name)
     inner_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), inner_bwd_name)
@@ -1292,8 +1292,8 @@ def _register_custom_op_impl(
         return inner_bwd_op(*new_args)
 
     for sub in subclass_list:
-        torch.library.register_torch_dispatch(outer_fwd_qualname, sub, _fwd_rule, lib=_TE_LIB)
-        torch.library.register_torch_dispatch(outer_bwd_qualname, sub, _bwd_rule, lib=_TE_LIB)
+        outer_fwd_def.register_torch_dispatch(sub, _fwd_rule)
+        outer_bwd_def.register_torch_dispatch(sub, _bwd_rule)
 
     _quantized_tensor_passthrough_ops.add(outer_fwd_op.default)
     _quantized_tensor_passthrough_ops.add(outer_bwd_op.default)
