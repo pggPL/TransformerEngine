@@ -68,7 +68,7 @@ from ..quantized_tensor import (
     prepare_for_saving,
     restore_from_func_ctx,
 )
-from ..dynamo import TensorProto
+from ..dynamo.traceable_alloc import make_empty_traceable
 from ..tensor.float8_tensor import Float8CurrentScalingQuantizer, Float8Quantizer
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ..tensor.utils import clear_columnwise_cache, is_custom
@@ -645,10 +645,13 @@ def _linear_forward_impl(
 
 def _linear_forward_impl_fake(
     args: LinearFwdArgs,
-) -> Tuple[TensorProto, Optional[TensorProto], Optional[Tuple[Any, ...]], None, Optional[Dict]]:
-    """Shape/metadata-only twin of :func:`_linear_forward_impl` for torch.compile,
-    returning ``TensorProto`` descriptors for the outputs and saved tensors instead
-    of allocating real data."""
+) -> Tuple[Any, Optional[Any], Optional[Tuple[Any, ...]], None, Optional[Dict]]:
+    """Shape/metadata-only twin of :func:`_linear_forward_impl` for torch.compile.
+
+    Returns tensors (FakeTensors under ``register_fake``) describing the outputs
+    and saved tensors, mirroring the real impl's return contract without running
+    the actual GEMM or quantization kernels.
+    """
     if args.fsdp_group is not None and args.is_grad_enabled:
         raise NotImplementedError(
             "Compile-time Linear forward does not support manual TE FSDP "
@@ -677,7 +680,7 @@ def _linear_forward_impl_fake(
     inputmat_is_storage = False
     inputmat_aliases_inp = False
     if fp8_or_debug:
-        if inp.is_quantized:
+        if isinstance(inp, QuantizedTensorStorage):
             # Primary-quantized input reused as-is.
             inputmat_is_storage = True
             inputmat_aliases_inp = True
@@ -711,7 +714,9 @@ def _linear_forward_impl_fake(
     weightmat_is_storage = False
     weightmat_aliases_weight = False
     if fp8_or_debug:
-        if weight_quantizer is not None and (not weight.is_quantized or debug):
+        if weight_quantizer is not None and (
+            not isinstance(weight, QuantizedTensorStorage) or debug
+        ):
             columnwise_usage = is_grad_enabled and args.input_requires_grad and not args.is_fsdp2
             if args.backward_override is not None:
                 columnwise_usage = False
@@ -721,34 +726,30 @@ def _linear_forward_impl_fake(
                     and not in_fp8_activation_recompute_phase()
                 )
             weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
-        elif weight.is_quantized:
-            weight_quantizer = weight.quantizer
+        elif isinstance(weight, QuantizedTensorStorage):
+            weight_quantizer = weight._quantizer
 
-        if weight.is_quantized:
+        if isinstance(weight, QuantizedTensorStorage):
             # Primary-quantized weight: the impl reuses it as ``weightmat``.
             weightmat = weight
             weightmat_is_storage = True
             weightmat_aliases_weight = True
         else:
-            weightmat = TensorProto(
-                shape=tuple(weight.shape),
-                dtype=activation_dtype,
-                quantizer=weight_quantizer,
-                device=weight.device,
+            weightmat = make_empty_traceable(
+                weight_quantizer, tuple(weight.shape),
+                dtype=activation_dtype, device=weight.device,
             )
             weightmat_is_storage = True
             update_ws = args.is_first_microbatch is None or args.is_first_microbatch
             if args.cache_weight and update_ws and args.weight_workspace is None:
-                new_weight_workspace = TensorProto(
-                    shape=tuple(weight.shape),
-                    dtype=activation_dtype,
-                    quantizer=weight_quantizer,
-                    device=weight.device,
+                new_weight_workspace = make_empty_traceable(
+                    weight_quantizer, tuple(weight.shape),
+                    dtype=activation_dtype, device=weight.device,
                 )
     else:
         weightmat_aliases_weight = weight.dtype == activation_dtype
-        weightmat = TensorProto(
-            shape=tuple(weight.shape), dtype=activation_dtype, device=weight.device
+        weightmat = make_empty_traceable(
+            None, tuple(weight.shape), dtype=activation_dtype, device=weight.device,
         )
 
     if output_quantizer is not None:
@@ -762,14 +763,12 @@ def _linear_forward_impl_fake(
         out_leading = out_leading * args.tp_size
     elif args.parallel_mode == "row" and args.sequence_parallel:
         out_leading = out_leading // args.tp_size
-    out = TensorProto(
-        shape=(out_leading, *tuple(inp.shape[1:-1]), out_features),
-        dtype=activation_dtype,
-        quantizer=output_quantizer,
-        requires_grad=is_grad_enabled
-        and (args.input_requires_grad or args.weight_requires_grad),
-        device=inp.device,
+    out_shape = (out_leading, *tuple(inp.shape[1:-1]), out_features)
+    out = make_empty_traceable(
+        output_quantizer, out_shape, dtype=activation_dtype, device=inp.device,
     )
+    if is_grad_enabled and (args.input_requires_grad or args.weight_requires_grad):
+        out.requires_grad_(True)
 
     # ------------------------------------------------------
     # Backward state -- saved-tensor layout
@@ -785,29 +784,30 @@ def _linear_forward_impl_fake(
             if inputmat_aliases_inp:
                 inputmat_alias = "inp"
             elif inputmat_is_storage:
-                saved_inputmat = TensorProto(
-                    shape=tuple(inp.shape),
-                    dtype=activation_dtype,
-                    quantizer=input_quantizer,
-                    device=inp.device,
-                )
-                # Mirror ``_linear_forward_impl``'s post-quantization
-                # ``inputmat.update_usage(...)`` so the saved input's buffer layout
-                # matches -- driven by the same conditions as the real impl.
+                # Determine post-quantization usage for the saved input.
                 if own_quantized_input and not save_original_input:
+                    q = input_quantizer.copy()
                     if args.backward_override is not None:
-                        saved_inputmat.update_usage(rowwise_usage=True, columnwise_usage=False)
+                        q.set_usage(rowwise=True, columnwise=False)
                     elif (
                         args.backward_input_needs_gather
                         and weight_quantizer is not None
                         and weight_quantizer.supports_only_rowwise_all_gather()
                     ):
-                        saved_inputmat.update_usage(rowwise_usage=True, columnwise_usage=False)
+                        q.set_usage(rowwise=True, columnwise=False)
                     else:
-                        saved_inputmat.update_usage(rowwise_usage=False, columnwise_usage=True)
+                        q.set_usage(rowwise=False, columnwise=True)
+                    saved_inputmat = make_empty_traceable(
+                        q, tuple(inp.shape), dtype=activation_dtype, device=inp.device,
+                    )
+                else:
+                    saved_inputmat = make_empty_traceable(
+                        input_quantizer, tuple(inp.shape),
+                        dtype=activation_dtype, device=inp.device,
+                    )
             else:
-                saved_inputmat = TensorProto(
-                    shape=tuple(inp.shape), dtype=activation_dtype, device=inp.device
+                saved_inputmat = make_empty_traceable(
+                    None, tuple(inp.shape), dtype=activation_dtype, device=inp.device,
                 )
 
         # Slot 1 -- ``wt_save``. Mirror the real impl's alias dedup: the cached
@@ -827,8 +827,8 @@ def _linear_forward_impl_fake(
         elif weightmat_is_storage:
             wt_save = weightmat
         else:
-            wt_save = TensorProto(
-                shape=tuple(weight.shape), dtype=activation_dtype, device=weight.device
+            wt_save = make_empty_traceable(
+                None, tuple(weight.shape), dtype=activation_dtype, device=weight.device,
             )
 
         # Slot 2 -- ``saved_weight`` (always aliased to ``weight``).
@@ -1544,13 +1544,12 @@ def _linear_backward(args: LinearBwdArgs) -> Tuple[Union[torch.Tensor, None], ..
 
 def _linear_backward_impl_fake(
     args: LinearBwdArgs,
-) -> Tuple[Optional[TensorProto], Optional[TensorProto], Optional[TensorProto]]:
-    """Allocation-free fake of :func:`_linear_backward` on ``TensorProto``.
+) -> Tuple[Optional[Any], Optional[Any], Optional[Any]]:
+    """Fake of :func:`_linear_backward` for torch.compile.
 
-    The saved-tensor fields of ``args`` carry
-    :class:`~transformer_engine.pytorch.dynamo.TensorProto` instances. Returns
-    ``(wgrad, dgrad, grad_bias)`` protos describing the nature of the gradients,
-    mirroring the real backward's return contract without allocating storage.
+    Returns ``(wgrad, dgrad, grad_bias)`` tensors (FakeTensors under
+    ``register_fake``) describing the gradients, mirroring the real backward's
+    return contract without running the actual kernels.
 
     Tensor-/sequence-parallel gather/scatter happens inside the eager backward
     custom op and is opaque to ``torch.compile``: ``dgrad`` always carries the
@@ -1574,12 +1573,9 @@ def _linear_backward_impl_fake(
 
     dgrad = None
     if args.requires_dgrad:
-        # dgrad has the logical input shape and may be quantized for the next op.
-        dgrad = TensorProto(
-            shape=tuple(args.inp_shape),
-            dtype=out_dtype,
-            quantizer=args.grad_input_quantizer,
-            device=args.grad_output.device,
+        dgrad = make_empty_traceable(
+            args.grad_input_quantizer, tuple(args.inp_shape),
+            dtype=out_dtype, device=args.grad_output.device,
         )
 
     wgrad = None
@@ -1588,17 +1584,15 @@ def _linear_backward_impl_fake(
         # requested (mirrors ``quantization_params=grad_weight_quantizer``),
         # otherwise high precision. Under fuse_wgrad_accumulation the grad is
         # written into ``main_grad`` in place and no wgrad tensor is returned.
-        wgrad = TensorProto(
-            shape=(out_features, in_features),
-            dtype=out_dtype,
-            quantizer=args.grad_weight_quantizer,
-            device=weight.device,
+        wgrad = make_empty_traceable(
+            args.grad_weight_quantizer, (out_features, in_features),
+            dtype=out_dtype, device=weight.device,
         )
 
     grad_bias = None
     if args.use_bias and args.requires_wgrad:
-        grad_bias = TensorProto(
-            shape=(out_features,), dtype=out_dtype, device=args.grad_output.device
+        grad_bias = make_empty_traceable(
+            None, (out_features,), dtype=out_dtype, device=args.grad_output.device,
         )
 
     return wgrad, dgrad, grad_bias

@@ -5,11 +5,10 @@
 """torch.compile glue for Transformer Engine."""
 
 from .quantizer_opaque import register_value_opaque_quantizer, is_value_opaque_quantizer
-from .tensor_proto import TensorProto, to_tensor_proto
+from .traceable_alloc import make_empty_traceable
 
 __all__ = [
     "register_value_opaque_quantizer",
     "is_value_opaque_quantizer",
-    "TensorProto",
-    "to_tensor_proto",
+    "make_empty_traceable",
 ]
