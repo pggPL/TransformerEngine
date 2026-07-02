@@ -87,7 +87,7 @@ nb::object device_to_py(const ts::Device& device) {
 ts::Tensor stable_empty(const std::vector<int64_t>& shape, ScalarType dtype,
                         const ts::Device& device, bool pin_memory = false) {
   // TODO(stable-abi): needs torch::stable::empty(IntArrayRef, ScalarType, Device, bool pin_memory)
-  return ts::empty(shape, dtype, device, pin_memory);
+  return ts::empty(shape, dtype, std::nullopt, device, pin_memory);
 }
 
 ts::Tensor stable_empty_cuda(const std::vector<int64_t>& shape, ScalarType dtype) {
@@ -902,7 +902,7 @@ Float8CurrentScalingQuantizer::create_unquantized_tensor_with_amax(const std::ve
                                                                    DType dtype,
                                                                    std::optional<ts::Tensor> data) {
   // TODO(stable-abi): needs torch::stable::zeros(IntArrayRef, ScalarType, Device)
-  ts::Tensor amax_buf = ts::zeros({1}, kF32, cuda_device());
+  ts::Tensor amax_buf = ts::zeros({1}, kF32, std::nullopt, cuda_device());
   auto out = data.has_value() ? NoneQuantizer(nb::none()).create_tensor(shape, dtype, data.value())
                               : NoneQuantizer(nb::none()).create_tensor(shape, dtype);
   TensorWrapper out_cpp = std::move(out.first);

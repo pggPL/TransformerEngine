@@ -72,7 +72,10 @@ def setup_pytorch_extension(
     )
     if os.path.isdir(robin_map_include):
         include_dirs.append(Path(robin_map_include))
-    sources.append(Path(nanobind.__file__).parent / "src" / "nb_combined.cpp")
+    # setuptools rejects absolute source paths in the editable-wheel egg_info
+    # step, so reference nanobind's combined source relative to the setup dir.
+    nb_combined = Path(nanobind.__file__).parent / "src" / "nb_combined.cpp"
+    sources.append(Path(os.path.relpath(nb_combined)))
 
     # Compiler flags
     cxx_flags = ["-O3", "-fvisibility=hidden"]

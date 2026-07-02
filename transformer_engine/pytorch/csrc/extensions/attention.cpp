@@ -214,7 +214,7 @@ std::vector<nb::object> fused_attn_fwd(
       if ((h * d) % block_size == 0) {
         // TODO(stable-abi): needs slice/narrow with negative start (was
         // Tensor::index({Slice(-1, None)})).
-        mha_fill(te_O, torch::stable::narrow(cu_seqlens_q, 0, -1, 1));
+        mha_fill(te_O, torch::stable::narrow(const_cast<Tensor&>(cu_seqlens_q), 0, -1, 1));
       } else {
         te_O.zero_(getCurrentCudaStream());
       }
@@ -510,7 +510,7 @@ std::vector<nb::object> fused_attn_bwd(
     if (set_zero) {
       if (dq_format == NVTE_QKV_Format::NVTE_THD) {
         if (((h_q * d_qk) % block_size == 0) && dQ.is_contiguous()) {
-          mha_fill(te_dQ, torch::stable::narrow(cu_seqlens_q, 0, -1, 1));
+          mha_fill(te_dQ, torch::stable::narrow(const_cast<Tensor&>(cu_seqlens_q), 0, -1, 1));
         } else {
           torch::stable::fill_(dQ, 0);
         }
@@ -518,8 +518,8 @@ std::vector<nb::object> fused_attn_bwd(
       if (dkv_format == NVTE_QKV_Format::NVTE_THD) {
         if (((h_kv * d_qk) % block_size == 0) && ((h_kv * d_v) % block_size == 0) &&
             dK.is_contiguous() && dV.is_contiguous()) {
-          mha_fill(te_dK, torch::stable::narrow(cu_seqlens_kv, 0, -1, 1));
-          mha_fill(te_dV, torch::stable::narrow(cu_seqlens_kv, 0, -1, 1));
+          mha_fill(te_dK, torch::stable::narrow(const_cast<Tensor&>(cu_seqlens_kv), 0, -1, 1));
+          mha_fill(te_dV, torch::stable::narrow(const_cast<Tensor&>(cu_seqlens_kv), 0, -1, 1));
         } else {
           torch::stable::fill_(dK, 0);
           torch::stable::fill_(dV, 0);

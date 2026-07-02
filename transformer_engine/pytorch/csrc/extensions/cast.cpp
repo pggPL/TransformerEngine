@@ -1677,7 +1677,7 @@ std::vector<nb::object> split_quantize(const Tensor &tensor,
 
   // Element size derived from the TE dtype (torch::stable::Tensor has no
   // element_size()); NVFP4 sub-byte dtypes never reach this splitting path.
-  const size_t element_size = typeToNumBits(input_dtype) / 8;
+  const size_t element_size = transformer_engine::pytorch::typeToNumBits(input_dtype) / 8;
 
   // Split input tensor along dim 0
   std::vector<TensorWrapper> input_list;

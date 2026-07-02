@@ -609,6 +609,14 @@ cudaStream_t getCurrentCUDAStream();
  */
 int getDeviceMultiProcessorCount();
 
+/*! @brief Compute capability of the current CUDA device as ``major * 10 + minor``.
+ *
+ * Replaces at::cuda::getCurrentDeviceProperties()->major/minor. Wraps the stable
+ * ``torch::stable::cuda::getDeviceComputeCapability`` shim for the currently
+ * active accelerator device.
+ */
+int getDeviceComputeCapability();
+
 std::vector<size_t> convert_shape_back_from_fp4(const std::vector<size_t>& shape, bool transpose);
 
 // Flatten an N-D shape to 2D: {product(shape[:-1]), shape[-1]}.

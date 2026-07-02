@@ -707,9 +707,9 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
   // Data structures
   nb::class_<transformer_engine::pytorch::FP8TensorMeta>(m, "FP8TensorMeta")
       .def(nb::init<>())
-      .def_readwrite("scale", &transformer_engine::pytorch::FP8TensorMeta::scale)
-      .def_readwrite("scale_inv", &transformer_engine::pytorch::FP8TensorMeta::scale_inv)
-      .def_readwrite("amax_history", &transformer_engine::pytorch::FP8TensorMeta::amax_history);
+      .def_rw("scale", &transformer_engine::pytorch::FP8TensorMeta::scale)
+      .def_rw("scale_inv", &transformer_engine::pytorch::FP8TensorMeta::scale_inv)
+      .def_rw("amax_history", &transformer_engine::pytorch::FP8TensorMeta::amax_history);
 
   nb::enum_<transformer_engine::pytorch::FP8FwdTensors>(m, "FP8FwdTensors")
       .value("GEMM1_INPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM1_INPUT)

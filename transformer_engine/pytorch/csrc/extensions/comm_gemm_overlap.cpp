@@ -320,7 +320,7 @@ void cublasmp_capture_warmup(te::CommOverlapCore *core, int tp_size, te::CommOve
   B_tw.set_rowwise_data(b_ptr, te::DType::kBFloat16, b_shape);
   D_tw.set_rowwise_data(d_ptr, te::DType::kBFloat16, d_shape);
 
-  cudaStream_t stream = getCurrentCUDAStream();
+  cudaStream_t stream = transformer_engine::pytorch::getCurrentCUDAStream();
   if (comm_type == te::CommOverlapType::AG) {
     if (core->is_atomic_gemm()) {
       core->atomic_gemm_overlap_ag(
@@ -395,7 +395,7 @@ void CommOverlap::copy_into_buffer(const torch::stable::Tensor &input, bool loca
   }
 
   // Copy data
-  cudaStream_t stream_main = getCurrentCUDAStream();
+  cudaStream_t stream_main = transformer_engine::pytorch::getCurrentCUDAStream();
   NVTE_CHECK_CUDA(cudaEventRecord(_start_d2dcopy, (cudaStream_t)stream_main));
   NVTE_CHECK_CUDA(cudaStreamWaitEvent((cudaStream_t)_stream_comm, _start_d2dcopy, 0));
   NVTE_CHECK_CUDA(cudaMemcpyAsync(dst_ptr, src_ptr, input_size * element_size,
@@ -434,7 +434,7 @@ torch::stable::Tensor CommOverlap::get_buffer(bool local_chunk,
   }
 
   // Construct PyTorch tensor wrapping the raw Userbuffers pointer.
-  const auto dtype = GetATenDType(_ubuf.dtype());
+  const auto dtype = transformer_engine::pytorch::GetATenDType(_ubuf.dtype());
   return from_blob_cuda(ubuf_ptr, *shape, dtype);
 }
 
@@ -509,7 +509,7 @@ void CommOverlapP2P::copy_into_buffer(const torch::stable::Tensor &input, bool l
 
   // Copy data
   NVTE_CHECK_CUDA(cudaMemcpyAsync(dst_ptr, src_ptr, input_size * element_size,
-                                  cudaMemcpyDeviceToDevice, getCurrentCUDAStream()));
+                                  cudaMemcpyDeviceToDevice, transformer_engine::pytorch::getCurrentCUDAStream()));
 }
 
 torch::stable::Tensor CommOverlapP2P::get_buffer(bool local_chunk,
@@ -539,7 +539,7 @@ torch::stable::Tensor CommOverlapP2P::get_buffer(bool local_chunk,
   void *ubuf_ptr = local_chunk ? _ubufs[_tp_id].dptr() : _ubuf.dptr();
 
   // Construct PyTorch tensor wrapping the raw Userbuffers pointer.
-  const auto dtype = GetATenDType(_ubuf.dtype());
+  const auto dtype = transformer_engine::pytorch::GetATenDType(_ubuf.dtype());
   return from_blob_cuda(ubuf_ptr, *shape, dtype);
 }
 
@@ -553,7 +553,7 @@ CommOverlapP2P::get_communication_stream() {
 void transformer_engine::pytorch::bulk_overlap_ag_with_external_gemm(
     CommOverlap &allgather_communicator, torch::stable::accelerator::Stream send_stream,
     torch::stable::accelerator::Stream recv_stream) {
-  cudaStream_t main_stream = getCurrentCUDAStream();
+  cudaStream_t main_stream = transformer_engine::pytorch::getCurrentCUDAStream();
   allgather_communicator.bulk_overlap_external_ag(
       static_cast<cudaStream_t>(send_stream.nativeHandle()),
       static_cast<cudaStream_t>(recv_stream.nativeHandle()), main_stream);

@@ -24,6 +24,12 @@ int getDeviceMultiProcessorCount() {
       torch::stable::accelerator::getCurrentDeviceIndex());
 }
 
+int getDeviceComputeCapability() {
+  auto [major, minor] = torch::stable::cuda::getDeviceComputeCapability(
+      torch::stable::accelerator::getCurrentDeviceIndex());
+  return major * 10 + minor;
+}
+
 /*! convert fp4 data shape back to original shape */
 std::vector<size_t> convert_shape_back_from_fp4(const std::vector<size_t>& shape, bool transpose) {
   std::vector<size_t> ret;
