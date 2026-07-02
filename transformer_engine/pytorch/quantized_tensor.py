@@ -150,7 +150,7 @@ class QuantizedTensorStorage:
             f"{self.__class__.__name__} class does not implement copy_from_storage function"
         )
 
-    # ----- PyTorch subclass flatten protocol (torch.compile / TensorProto) -----
+    # ----- PyTorch subclass flatten protocol (torch.compile / traceable allocation) -----
 
     # Subclasses declare their tensor buffers once, as ``(attribute_name,
     # constructor_kwarg)`` pairs in flatten order; everything else returned by
@@ -427,7 +427,7 @@ class Quantizer(abc.ABC):
             result.requires_grad_(True)
         return result
 
-    # ----- Data-free buffer/metadata primitives backing TensorProto -----
+    # ----- Data-free buffer/metadata primitives backing make_empty_traceable -----
 
     def _describe_buffers(
         self, shape: Tuple[int, ...]
@@ -440,7 +440,7 @@ class Quantizer(abc.ABC):
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} does not implement _describe_buffers; "
-            "it cannot be used with TensorProto / pure-Python allocation"
+            "it cannot be used with traceable allocation"
         )
 
     def _storage_metadata(self, fake_dtype: torch.dtype) -> Dict[str, Any]:
@@ -454,7 +454,7 @@ class Quantizer(abc.ABC):
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} does not implement _storage_metadata; "
-            "it cannot be used with TensorProto / pure-Python allocation"
+            "it cannot be used with traceable allocation"
         )
 
     def alloc_tensors(

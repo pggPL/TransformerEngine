@@ -61,7 +61,7 @@ class MXFP8Quantizer(Quantizer):
     def _value_fields(self) -> Tuple[str, ...]:
         return ("dtype",)
 
-    # ----- TensorProto / pure-Python allocation -----
+    # ----- traceable allocation -----
 
     def _storage_metadata(self, fake_dtype: torch.dtype) -> Dict[str, Any]:
         return {

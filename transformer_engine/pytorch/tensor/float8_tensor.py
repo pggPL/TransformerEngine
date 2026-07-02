@@ -393,7 +393,7 @@ class Float8CurrentScalingQuantizer(Quantizer):
         # raises so it can never be baked into a torch.compile graph.
         return ("dtype", "force_pow_2_scales", "amax_epsilon", "with_amax_reduction")
 
-    # ----- TensorProto / pure-Python allocation -----
+    # ----- traceable allocation -----
 
     def _storage_metadata(self, fake_dtype: torch.dtype) -> Dict[str, Any]:
         return {

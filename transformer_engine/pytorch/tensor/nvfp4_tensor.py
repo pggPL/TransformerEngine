@@ -366,7 +366,7 @@ class NVFP4Quantizer(Quantizer):
             "with_amax_reduction",
         )
 
-    # ----- TensorProto / pure-Python allocation -----
+    # ----- traceable allocation -----
 
     def _storage_metadata(self, fake_dtype: torch.dtype) -> Dict[str, Any]:
         return {
