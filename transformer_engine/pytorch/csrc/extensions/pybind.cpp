@@ -138,7 +138,7 @@ void init_extension() {
 // PYBIND11_MODULE() to keep that function under the cpplint readability/fn_size
 // limit.
 void init_router_bindings(nb::module_ &m) {
-  nb::enum_<NVTERoutingMapFormat>(m, "NVTERoutingMapFormat")
+  nb::enum_<NVTERoutingMapFormat>(m, "NVTERoutingMapFormat", nb::is_arithmetic())
       .value("BYTEMAP", NVTE_ROUTING_MAP_FORMAT_BYTEMAP)
       .value("BITMAP_U8", NVTE_ROUTING_MAP_FORMAT_BITMAP_U8);
   m.def("fused_topk_with_score_function_fwd", &fused_topk_with_score_function_fwd,
@@ -711,7 +711,7 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
       .def_rw("scale_inv", &transformer_engine::pytorch::FP8TensorMeta::scale_inv)
       .def_rw("amax_history", &transformer_engine::pytorch::FP8TensorMeta::amax_history);
 
-  nb::enum_<transformer_engine::pytorch::FP8FwdTensors>(m, "FP8FwdTensors")
+  nb::enum_<transformer_engine::pytorch::FP8FwdTensors>(m, "FP8FwdTensors", nb::is_arithmetic())
       .value("GEMM1_INPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM1_INPUT)
       .value("GEMM1_WEIGHT", transformer_engine::pytorch::FP8FwdTensors::GEMM1_WEIGHT)
       .value("GEMM1_OUTPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM1_OUTPUT)
@@ -722,7 +722,7 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
       .value("GEMM3_WEIGHT", transformer_engine::pytorch::FP8FwdTensors::GEMM3_WEIGHT)
       .value("GEMM3_OUTPUT", transformer_engine::pytorch::FP8FwdTensors::GEMM3_OUTPUT);
 
-  nb::enum_<transformer_engine::pytorch::FP8BwdTensors>(m, "FP8BwdTensors")
+  nb::enum_<transformer_engine::pytorch::FP8BwdTensors>(m, "FP8BwdTensors", nb::is_arithmetic())
       .value("GRAD_OUTPUT1", transformer_engine::pytorch::FP8BwdTensors::GRAD_OUTPUT1)
       .value("GRAD_INPUT1", transformer_engine::pytorch::FP8BwdTensors::GRAD_INPUT1)
       .value("GRAD_OUTPUT2", transformer_engine::pytorch::FP8BwdTensors::GRAD_OUTPUT2)
