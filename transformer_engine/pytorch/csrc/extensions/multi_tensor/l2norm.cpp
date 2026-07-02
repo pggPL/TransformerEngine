@@ -8,17 +8,19 @@
 
 namespace transformer_engine::pytorch {
 
-std::tuple<at::Tensor, at::Tensor> multi_tensor_l2norm_cuda(
-    int chunk_size, at::Tensor noop_flag, std::vector<std::vector<at::Tensor>> tensor_lists,
-    at::optional<bool> per_tensor_python) {
+std::tuple<torch::stable::Tensor, torch::stable::Tensor> multi_tensor_l2norm_cuda(
+    int chunk_size, torch::stable::Tensor noop_flag,
+    std::vector<std::vector<torch::stable::Tensor>> tensor_lists,
+    std::optional<bool> per_tensor_python) {
   bool per_tensor = per_tensor_python.has_value() ? per_tensor_python.value() : false;
 
-  auto float_options = tensor_lists[0][0].options().dtype(at::kFloat);
-  auto output = at::zeros({320}, float_options);
+  // All bookkeeping tensors are float, on the same device as the first input.
+  const auto& ref = tensor_lists[0][0];
+  auto output = torch::stable::new_zeros(ref, {320}, torch::headeronly::ScalarType::Float);
 
-  at::Tensor output_per_tensor;
-  at::Tensor ret_per_tensor;
-  auto ret = at::empty({1}, output.options());
+  torch::stable::Tensor output_per_tensor;
+  torch::stable::Tensor ret_per_tensor;
+  auto ret = torch::stable::new_empty(output, {1});
 
   int ntensors = tensor_lists[0].size();
   int max_chunks_per_tensor = -1;
@@ -29,11 +31,13 @@ std::tuple<at::Tensor, at::Tensor> multi_tensor_l2norm_cuda(
       if (max_chunks_this_tensor > max_chunks_per_tensor)
         max_chunks_per_tensor = max_chunks_this_tensor;
     }
-    output_per_tensor = at::zeros({ntensors * max_chunks_per_tensor}, float_options);
-    ret_per_tensor = at::empty({ntensors}, float_options);
+    output_per_tensor = torch::stable::new_zeros(
+        ref, {static_cast<int64_t>(ntensors) * max_chunks_per_tensor},
+        torch::headeronly::ScalarType::Float);
+    ret_per_tensor = torch::stable::new_empty(ref, {ntensors}, torch::headeronly::ScalarType::Float);
   } else {
-    output_per_tensor = at::empty({0}, float_options);
-    ret_per_tensor = at::empty({0}, float_options);
+    output_per_tensor = torch::stable::new_empty(ref, {0}, torch::headeronly::ScalarType::Float);
+    ret_per_tensor = torch::stable::new_empty(ref, {0}, torch::headeronly::ScalarType::Float);
   }
 
   auto noop_flag_cu = makeTransformerEngineTensor(noop_flag);
@@ -47,21 +51,22 @@ std::tuple<at::Tensor, at::Tensor> multi_tensor_l2norm_cuda(
   nvte_multi_tensor_l2norm_cuda(chunk_size, noop_flag_cu.data(), tensor_lists_ptr.data(), num_lists,
                                 num_tensors, output_cu.data(), output_per_tensor_cu.data(),
                                 ret_cu.data(), ret_per_tensor_cu.data(), per_tensor,
-                                max_chunks_per_tensor, at::cuda::getCurrentCUDAStream());
+                                max_chunks_per_tensor, getCurrentCUDAStream());
 
-  return std::tuple<at::Tensor, at::Tensor>(ret, ret_per_tensor);
+  return std::tuple<torch::stable::Tensor, torch::stable::Tensor>(ret, ret_per_tensor);
 }
 
-std::tuple<at::Tensor, at::Tensor> multi_tensor_unscale_l2norm_cuda(
-    int chunk_size, at::Tensor noop_flag, std::vector<std::vector<at::Tensor>> tensor_lists,
-    at::Tensor inv_scale, at::optional<bool> per_tensor_python) {
+std::tuple<torch::stable::Tensor, torch::stable::Tensor> multi_tensor_unscale_l2norm_cuda(
+    int chunk_size, torch::stable::Tensor noop_flag,
+    std::vector<std::vector<torch::stable::Tensor>> tensor_lists, torch::stable::Tensor inv_scale,
+    std::optional<bool> per_tensor_python) {
   bool per_tensor = per_tensor_python.has_value() ? per_tensor_python.value() : false;
 
-  auto float_options = tensor_lists[0][0].options().dtype(at::kFloat);
-  auto output = at::zeros({320}, float_options);
+  const auto& ref = tensor_lists[0][0];
+  auto output = torch::stable::new_zeros(ref, {320}, torch::headeronly::ScalarType::Float);
 
-  at::Tensor output_per_tensor;
-  at::Tensor ret_per_tensor;
+  torch::stable::Tensor output_per_tensor;
+  torch::stable::Tensor ret_per_tensor;
 
   int ntensors = tensor_lists[0].size();
   int max_chunks_per_tensor = -1;
@@ -73,14 +78,16 @@ std::tuple<at::Tensor, at::Tensor> multi_tensor_unscale_l2norm_cuda(
       if (max_chunks_this_tensor > max_chunks_per_tensor)
         max_chunks_per_tensor = max_chunks_this_tensor;
     }
-    output_per_tensor = at::zeros({ntensors * max_chunks_per_tensor}, float_options);
-    ret_per_tensor = at::empty({ntensors}, float_options);
+    output_per_tensor = torch::stable::new_zeros(
+        ref, {static_cast<int64_t>(ntensors) * max_chunks_per_tensor},
+        torch::headeronly::ScalarType::Float);
+    ret_per_tensor = torch::stable::new_empty(ref, {ntensors}, torch::headeronly::ScalarType::Float);
   } else {
-    output_per_tensor = at::empty({0}, float_options);
-    ret_per_tensor = at::empty({0}, float_options);
+    output_per_tensor = torch::stable::new_empty(ref, {0}, torch::headeronly::ScalarType::Float);
+    ret_per_tensor = torch::stable::new_empty(ref, {0}, torch::headeronly::ScalarType::Float);
   }
 
-  auto ret = at::empty({1}, output.options());
+  auto ret = torch::stable::new_empty(output, {1});
 
   auto noop_flag_cu = makeTransformerEngineTensor(noop_flag);
   auto [_, __, tensor_lists_ptr, num_lists, num_tensors] =
@@ -94,9 +101,9 @@ std::tuple<at::Tensor, at::Tensor> multi_tensor_unscale_l2norm_cuda(
   nvte_multi_tensor_unscale_l2norm_cuda(
       chunk_size, noop_flag_cu.data(), tensor_lists_ptr.data(), num_lists, num_tensors,
       output_cu.data(), output_per_tensor_cu.data(), ret_cu.data(), ret_per_tensor_cu.data(),
-      inv_scale_cu.data(), per_tensor, max_chunks_per_tensor, at::cuda::getCurrentCUDAStream());
+      inv_scale_cu.data(), per_tensor, max_chunks_per_tensor, getCurrentCUDAStream());
 
-  return std::tuple<at::Tensor, at::Tensor>(ret, ret_per_tensor);
+  return std::tuple<torch::stable::Tensor, torch::stable::Tensor>(ret, ret_per_tensor);
 }
 
 }  // namespace transformer_engine::pytorch

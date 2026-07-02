@@ -23,11 +23,6 @@
 // The CommOverlap* wrappers use the stable-ABI c10d ProcessGroup wrapper.
 #include <torch/csrc/stable/c10d.h>
 
-// init_nvshmem_backend (owned by the nvshmem migration) still takes the
-// non-stable c10d ProcessGroup type. common.h no longer pulls in this header,
-// so include it here for that declaration.
-#include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
-
 class CommOverlapHelper;
 class CommOverlap;
 class CommOverlapP2P;
@@ -108,8 +103,9 @@ std::vector<nb::object> fused_attn_fwd(
     const std::optional<torch::stable::Tensor> page_table_k, const std::optional<torch::stable::Tensor> page_table_v,
     nb::handle s_quantizer, nb::handle o_quantizer, const std::optional<torch::stable::Tensor> Bias,
     const std::optional<torch::stable::Tensor> SoftmaxOffset,
-    // TODO(stable-abi): at::Generator (RNG) has no stable-ABI equivalent.
-    const std::optional<at::Generator> rng_gen, size_t rng_elts_per_thread, bool return_max_logit,
+    // The python torch.Generator is passed through as an nb::object and converted
+    // internally (see get_cuda_generator / init_philox_state in the .cpp).
+    const std::optional<nb::object> rng_gen, size_t rng_elts_per_thread, bool return_max_logit,
     bool cuda_graph);
 
 std::vector<nb::object> fused_attn_bwd(

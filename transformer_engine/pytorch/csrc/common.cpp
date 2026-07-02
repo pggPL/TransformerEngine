@@ -370,6 +370,7 @@ nb::object get_cuda_generator(const std::optional<nb::object>& gen) {
       static_cast<int>(device_index))];
 }
 
+#ifdef USE_CUDA
 // extract PhiloxCudaState from a CUDA torch.Generator (Python object)
 torch::stable::PhiloxCudaState init_philox_state(const nb::object& gen, size_t elts_per_thread) {
   // philox_cuda_state_from_pyobject reads gen->philox_cuda_state(increment) under
@@ -395,5 +396,6 @@ void philox_unpack(const torch::stable::PhiloxCudaState& arg, int64_t* rng_state
     }
   });
 }
+#endif  // USE_CUDA
 
 }  // namespace transformer_engine::pytorch

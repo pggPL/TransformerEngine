@@ -615,12 +615,17 @@ inline std::array<size_t, 2> get_2d_dims(const std::vector<T>& shape, bool trans
 // Must be called while holding the GIL.
 nb::object get_cuda_generator(const std::optional<nb::object>& gen);
 
+// torch::stable::PhiloxCudaState is only defined under USE_CUDA (and TORCH 2.14+)
+// in <torch/csrc/stable/python/interop.h>, so guard the philox helpers to compile
+// both with and without CUDA.
+#ifdef USE_CUDA
 // extract the Philox RNG state from a CUDA torch.Generator (Python object),
 // advancing its offset by `elts_per_thread`. Must be called while holding the GIL.
 torch::stable::PhiloxCudaState init_philox_state(const nb::object& gen, size_t elts_per_thread);
 
 // unpack the PhiloxCudaState into a size-2 CUDA int64 tensor (seed, offset)
 void philox_unpack(const torch::stable::PhiloxCudaState& arg, int64_t* rng_state_ptr);
+#endif  // USE_CUDA
 
 }  // namespace transformer_engine::pytorch
 

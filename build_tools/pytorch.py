@@ -64,6 +64,14 @@ def setup_pytorch_extension(
     import nanobind
 
     include_dirs.append(nanobind.include_dir())
+    # nanobind's internals (nb_internals.h) pull in tsl/robin_map.h, which nanobind
+    # bundles under ext/robin_map/include. nanobind's own CMake adds this dir; the
+    # Python package does not expose it via a helper, so compute it explicitly.
+    robin_map_include = os.path.join(
+        os.path.dirname(nanobind.__file__), "ext", "robin_map", "include"
+    )
+    if os.path.isdir(robin_map_include):
+        include_dirs.append(Path(robin_map_include))
     sources.append(Path(nanobind.__file__).parent / "src" / "nb_combined.cpp")
 
     # Compiler flags
