@@ -50,10 +50,11 @@ nb::object tensor_to_py(const Tensor &t) {
 Tensor tensor_from_py(nb::handle h) { return torch::stable::from_pyobject(h.ptr()); }
 
 // Current CUDA stream via the stable accelerator API.
-// TODO(stable-abi): needs a documented native-handle accessor
-//   cudaStream_t torch::stable::accelerator::Stream::stream() const;
 cudaStream_t get_current_stream() {
-  return static_cast<cudaStream_t>(torch::stable::accelerator::getCurrentStream().stream());
+  return static_cast<cudaStream_t>(
+      torch::stable::accelerator::getCurrentStream(
+          torch::stable::accelerator::getCurrentDeviceIndex())
+          .nativeHandle());
 }
 
 std::vector<size_t> tensor_shape(const Tensor &t) {
@@ -208,7 +209,7 @@ void group_quantize_nvfp4_impl(const GroupedTensorWrapper &grouped_input_tensor,
     const size_t rng_elts_per_thread = 1024 * num_tensors;
     // TODO(stable-abi): needs torch::stable::empty(shape, dtype, device) to
     //   allocate a CUDA int64 buffer without a reference tensor.
-    rng_states_tensor = torch::stable::empty({2}, torch::headeronly::ScalarType::Long,
+    rng_states_tensor = torch::stable::empty({2}, torch::headeronly::ScalarType::Long, std::nullopt,
                                              torch::stable::DeviceType::CUDA);
     auto gen = get_cuda_generator(std::nullopt);
     auto philox_args = init_philox_state(gen, rng_elts_per_thread);
@@ -237,7 +238,7 @@ void group_quantize_nvfp4_impl(const GroupedTensorWrapper &grouped_input_tensor,
   // TODO(stable-abi): needs torch::stable::empty(shape, dtype, device) for a
   //   CUDA int32 workspace without a reference tensor.
   auto tile_scheduler_workspace_torch =
-      torch::stable::empty({1}, torch::headeronly::ScalarType::Int, torch::stable::DeviceType::CUDA);
+      torch::stable::empty({1}, torch::headeronly::ScalarType::Int, std::nullopt, torch::stable::DeviceType::CUDA);
   auto nvte_tile_scheduler_workspace = makeTransformerEngineTensor(tile_scheduler_workspace_torch);
 
   auto rht_matrix_nvte = makeTransformerEngineTensor(nvfp4_quantizer_cpp->rht_matrix);
@@ -1253,11 +1254,11 @@ static StochasticRngStateResources setup_stochastic_rounding_rng_states_helper(
   //   allocate CUDA int64 buffers without a reference tensor.
   res.rng_states_tensor =
       torch::stable::empty({static_cast<int64_t>(2 * num_tensors)},
-                           torch::headeronly::ScalarType::Long, torch::stable::DeviceType::CUDA);
+                           torch::headeronly::ScalarType::Long, std::nullopt, torch::stable::DeviceType::CUDA);
   if (need_separate_rng_states) {
     res.rng_states_tensor_colwise =
         torch::stable::empty({static_cast<int64_t>(2 * num_tensors)},
-                             torch::headeronly::ScalarType::Long, torch::stable::DeviceType::CUDA);
+                             torch::headeronly::ScalarType::Long, std::nullopt, torch::stable::DeviceType::CUDA);
   }
 
   res.te_rng_state_list.reserve(num_tensors);
@@ -1407,7 +1408,7 @@ void split_quantize_nvfp4_impl_with_rht_helper(const TensorWrapper &input,
     // TODO(stable-abi): needs torch::stable::empty(shape, dtype, device) for a
     //   CUDA int32 workspace without a reference tensor.
     auto tile_scheduler_workspace_torch = torch::stable::empty(
-        {1}, torch::headeronly::ScalarType::Int, torch::stable::DeviceType::CUDA);
+        {1}, torch::headeronly::ScalarType::Int, std::nullopt, torch::stable::DeviceType::CUDA);
     auto nvte_tile_scheduler_workspace =
         makeTransformerEngineTensor(tile_scheduler_workspace_torch);
     // call the fully-fused grouped kernel for rowwise quantization & colwise RHT quantization transpose

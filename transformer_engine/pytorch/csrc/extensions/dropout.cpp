@@ -31,7 +31,7 @@ inline cudaStream_t current_cuda_stream() {
   return static_cast<cudaStream_t>(
       torch::stable::accelerator::getCurrentStream(
           torch::stable::accelerator::getCurrentDeviceIndex())
-          .stream());
+          .nativeHandle());
 }
 
 // stable Tensor -> Python object.
@@ -59,8 +59,8 @@ std::vector<nb::object> dropout_fwd(const nb::handle& input, float dropout_proba
     }
     const auto shape_uint64 = convertShape(input_nvte.shape());
     const std::vector<int64_t> shape_int64(shape_uint64.begin(), shape_uint64.end());
-    // TODO(stable-abi): needs torch::stable::empty(IntArrayRef, ScalarType, DeviceType).
-    out = torch::stable::empty(shape_int64, dtype, torch::headeronly::DeviceType::CUDA);
+    out = torch::stable::empty(shape_int64, dtype, std::nullopt,
+                               torch::stable::Device(torch::headeronly::DeviceType::CUDA));
   }
   TensorWrapper out_nvte = makeTransformerEngineTensor(*out);
 

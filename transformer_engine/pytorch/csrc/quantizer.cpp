@@ -95,8 +95,8 @@ ts::Tensor stable_empty_cuda(const std::vector<int64_t>& shape, ScalarType dtype
 }
 
 cudaStream_t current_cuda_stream() {
-  // TODO(stable-abi): needs cudaStream_t from torch::stable::accelerator stream
-  return static_cast<cudaStream_t>(ts::accelerator::getCurrentStream().stream());
+  return static_cast<cudaStream_t>(
+      ts::accelerator::getCurrentStream(ts::accelerator::getCurrentDeviceIndex()).nativeHandle());
 }
 
 /*! @brief Resolve an optional device to a concrete CUDA device

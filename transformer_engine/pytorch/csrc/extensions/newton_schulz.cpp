@@ -38,7 +38,7 @@ void newton_schulz(int64_t ctx_ptr, int64_t m, int64_t n, torch::stable::Tensor 
   cudaStream_t caller_stream = static_cast<cudaStream_t>(
       torch::stable::accelerator::getCurrentStream(
           torch::stable::accelerator::getCurrentDeviceIndex())
-          .stream());
+          .nativeHandle());
   nvte_newton_schulz(ctx, m, n, x_tensor.data(), num_iterations, coefficients.data(),
                      static_cast<int64_t>(coefficients.size()), caller_stream);
 }

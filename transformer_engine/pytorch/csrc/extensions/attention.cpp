@@ -32,7 +32,7 @@ inline cudaStream_t getCurrentCudaStream() {
   return static_cast<cudaStream_t>(
       torch::stable::accelerator::getCurrentStream(
           torch::stable::accelerator::getCurrentDeviceIndex())
-          .stream());
+          .nativeHandle());
 }
 
 // stable Tensor -> python object (nb::object).
@@ -47,10 +47,13 @@ inline std::vector<int64_t> sizes_vec(const Tensor &t) {
   return std::vector<int64_t>(t.sizes().begin(), t.sizes().end());
 }
 
-// Element size (in bytes) of a ScalarType.
-// TODO(stable-abi): needs element-size-from-ScalarType (was c10::elementSize).
+// Element size (in bytes) of a ScalarType. There is no header-only
+// elementSize(ScalarType), so route through the TE dtype.
 inline int64_t dtype_element_size(torch::headeronly::ScalarType t) {
-  return torch::stable::elementSize(t);
+  return static_cast<int64_t>(
+      transformer_engine::pytorch::typeToNumBits(
+          transformer_engine::pytorch::GetTransformerEngineDType(t)) /
+      8);
 }
 
 constexpr int block_size = 512;
@@ -276,9 +279,10 @@ std::vector<nb::object> fused_attn_fwd(
   // extract rng seed and offset: use the provided torch.Generator (rng_gen) if
   // given, otherwise the default CUDA generator.
   auto philox_args = init_philox_state(get_cuda_generator(rng_gen), rng_elts_per_thread);
-  // TODO(stable-abi): needs torch::stable::empty(shape, dtype, device_index).
-  auto rng_state = torch::stable::empty({2}, torch::headeronly::ScalarType::Long,
-                                        torch::stable::accelerator::getCurrentDeviceIndex());
+  auto rng_state = torch::stable::empty(
+      {2}, torch::headeronly::ScalarType::Long, std::nullopt,
+      torch::stable::Device(torch::headeronly::DeviceType::CUDA,
+                            torch::stable::accelerator::getCurrentDeviceIndex()));
   philox_unpack(philox_args, static_cast<int64_t *>(rng_state.data_ptr()));
   auto te_rng_state = makeTransformerEngineTensor(rng_state);
 
@@ -426,11 +430,11 @@ std::vector<nb::object> fused_attn_bwd(
   if (detail::IsFloat8Quantizers(dqkv_quantizer.ptr())) {
     out_scalar_type = torch::headeronly::ScalarType::Byte;
   }
-  const auto cuda_device = torch::stable::accelerator::getCurrentDeviceIndex();
-  // TODO(stable-abi): needs torch::stable::empty(shape, dtype, device_index).
+  const auto cuda_device = torch::stable::Device(
+      torch::headeronly::DeviceType::CUDA, torch::stable::accelerator::getCurrentDeviceIndex());
   auto empty_cuda = [&](const std::vector<int64_t> &shape,
                         torch::headeronly::ScalarType dtype) -> Tensor {
-    return torch::stable::empty(shape, dtype, cuda_device);
+    return torch::stable::empty(shape, dtype, std::nullopt, cuda_device);
   };
 
   NVTE_QKV_Layout_Group layout_group = nvte_get_qkv_layout_group(dqkv_layout);

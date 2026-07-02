@@ -34,7 +34,7 @@ inline cudaStream_t getCurrentCudaStream() {
   return static_cast<cudaStream_t>(
       torch::stable::accelerator::getCurrentStream(
           torch::stable::accelerator::getCurrentDeviceIndex())
-          .stream());
+          .nativeHandle());
 }
 
 // stable Tensor -> python object (nb::object).
@@ -43,10 +43,22 @@ inline nb::object tensor_to_py(const Tensor &t) {
 }
 
 // Allocate a CUDA tensor with an explicit dtype.
-// TODO(stable-abi): needs torch::stable::empty(shape, dtype, device_index)
-// (was at::empty with TensorOptions{dtype, kCUDA}).
+// Allocate a CUDA tensor with an explicit dtype (was at::empty with
+// TensorOptions{dtype, kCUDA}).
 inline Tensor empty_cuda(const std::vector<int64_t> &shape, torch::headeronly::ScalarType dtype) {
-  return torch::stable::empty(shape, dtype, torch::stable::accelerator::getCurrentDeviceIndex());
+  return torch::stable::empty(
+      shape, dtype, std::nullopt,
+      torch::stable::Device(torch::headeronly::DeviceType::CUDA,
+                            torch::stable::accelerator::getCurrentDeviceIndex()));
+}
+
+// Contiguous (row-major) strides for a shape.
+inline std::vector<int64_t> contiguous_strides(const std::vector<int64_t> &shape) {
+  std::vector<int64_t> strides(shape.size(), 1);
+  for (int i = static_cast<int>(shape.size()) - 2; i >= 0; --i) {
+    strides[i] = strides[i + 1] * shape[i + 1];
+  }
+  return strides;
 }
 
 void *get_data_ptr(transformer_engine::pytorch::MaybeTensor tensor) {
@@ -546,15 +558,15 @@ std::optional<std::vector<Tensor>> te_general_grouped_gemm(
         // output_data_ptr would point beyond the allocated memory of D. This would cause
         // from_blob to fail as it would reference memory not allocated by CUDA.
         if (!D_numel_is_zero) {
-          // TODO(stable-abi): needs torch::stable::from_blob(ptr, shape, dtype,
-          // device_index) to wrap an existing device allocation.
-          out_tensor = torch::stable::from_blob(output_data_ptr, D_shape, dtype,
-                                                torch::stable::accelerator::getCurrentDeviceIndex());
+          out_tensor = torch::stable::from_blob(
+              output_data_ptr, D_shape, contiguous_strides(D_shape),
+              torch::stable::Device(torch::headeronly::DeviceType::CUDA,
+                                    torch::stable::accelerator::getCurrentDeviceIndex()),
+              dtype);
         }
       }
       char* char_ptr = reinterpret_cast<char*>(output_data_ptr);
-      // TODO(stable-abi): needs Tensor::element_size().
-      char_ptr += D_shape[0] * D_shape[1] * dtype_element_size((*D)[0].scalar_type());
+      char_ptr += D_shape[0] * D_shape[1] * (*D)[0].element_size();
       output_data_ptr = reinterpret_cast<void*>(char_ptr);
       D_vectors.emplace_back(out_tensor);
     } else {

@@ -42,6 +42,13 @@ std::vector<torch::stable::Tensor> bulk_allocate(
   // Return immediately if no tensors are needed
   if (n == 0) return {};
 
+  // Element size in bytes for a stable ScalarType. There is no header-only
+  // elementSize(ScalarType), so route through the TE dtype (rounding sub-byte
+  // types up to one byte for allocation/alignment purposes).
+  auto elem_size = [](torch::headeronly::ScalarType st) -> size_t {
+    return (typeToNumBits(GetTransformerEngineDType(st)) + 7) / 8;
+  };
+
   // Set defaults for optional arguments
   if (!device) {
     device = torch::stable::Device(torch::headeronly::DeviceType::CUDA);
@@ -50,8 +57,7 @@ std::vector<torch::stable::Tensor> bulk_allocate(
     alignments = std::vector<size_t>{};
     alignments->reserve(n);
     for (const auto &dtype : dtypes) {
-      // TODO(stable-abi): needs torch::headeronly::elementSize(ScalarType).
-      alignments->push_back(torch::headeronly::elementSize(dtype));
+      alignments->push_back(elem_size(dtype));
     }
   }
 
@@ -61,7 +67,7 @@ std::vector<torch::stable::Tensor> bulk_allocate(
   size_t base_byte_size = 0;
   size_t base_alignment = 1;
   for (size_t i = 0; i < n; ++i) {
-    byte_sizes[i] = product(shapes[i]) * torch::headeronly::elementSize(dtypes[i]);
+    byte_sizes[i] = product(shapes[i]) * elem_size(dtypes[i]);
     offsets[i] = roundup(base_byte_size, (*alignments)[i]);
     base_byte_size = offsets[i] + byte_sizes[i];
     base_alignment = std::max(base_alignment, (*alignments)[i]);
@@ -72,9 +78,9 @@ std::vector<torch::stable::Tensor> bulk_allocate(
   }
 
   // Allocate base buffer
-  // TODO(stable-abi): needs torch::stable::empty(IntArrayRef, ScalarType, Device).
-  auto base_buffer = std::make_shared<torch::stable::Tensor>(torch::stable::empty(
-      {static_cast<int64_t>(base_byte_size)}, torch::headeronly::ScalarType::Byte, *device));
+  auto base_buffer = std::make_shared<torch::stable::Tensor>(
+      torch::stable::empty({static_cast<int64_t>(base_byte_size)},
+                           torch::headeronly::ScalarType::Byte, std::nullopt, *device));
   uint8_t *base_ptr = static_cast<uint8_t *>(base_buffer->data_ptr());
   base_ptr =
       reinterpret_cast<uint8_t *>(roundup(reinterpret_cast<uintptr_t>(base_ptr), base_alignment));
@@ -83,6 +89,7 @@ std::vector<torch::stable::Tensor> bulk_allocate(
   std::vector<torch::stable::Tensor> out;
   out.reserve(n);
   std::vector<int64_t> shape_int64;
+  std::vector<int64_t> strides_int64;
   for (size_t i = 0; i < n; ++i) {
     shape_int64.assign(shapes[i].begin(), shapes[i].end());
     if (byte_sizes[i] == 0) {
@@ -90,13 +97,16 @@ std::vector<torch::stable::Tensor> bulk_allocate(
       // empty tensor. Passing a null pointer fails because it checks
       // that the pointer is on GPU. Passing a non-null pointer can
       // cause bugs in TE kernels.
-      out.emplace_back(torch::stable::empty(shape_int64, dtypes[i], *device));
+      out.emplace_back(torch::stable::empty(shape_int64, dtypes[i], std::nullopt, *device));
     } else {
-      // Construct tensor with custom deleter to keep base buffer alive
-      // TODO(stable-abi): needs torch::stable::from_blob(void*, IntArrayRef,
-      // deleter, ScalarType, Device) with a custom deleter.
-      out.emplace_back(torch::stable::from_blob(
-          base_ptr + offsets[i], shape_int64, [base_buffer](void *) {}, dtypes[i], *device));
+      // Contiguous strides for this shape.
+      strides_int64.assign(shape_int64.size(), 1);
+      for (int d = static_cast<int>(shape_int64.size()) - 2; d >= 0; --d) {
+        strides_int64[d] = strides_int64[d + 1] * shape_int64[d + 1];
+      }
+      // Construct tensor with custom deleter to keep base buffer alive.
+      out.emplace_back(torch::stable::from_blob(base_ptr + offsets[i], shape_int64, strides_int64,
+                                                *device, dtypes[i], [base_buffer](void *) {}));
     }
   }
   return out;

@@ -19,7 +19,7 @@ inline cudaStream_t current_cuda_stream() {
   return static_cast<cudaStream_t>(
       torch::stable::accelerator::getCurrentStream(
           torch::stable::accelerator::getCurrentDeviceIndex())
-          .stream());
+          .nativeHandle());
 }
 }  // namespace
 
@@ -37,19 +37,19 @@ moe_permute_fwd(torch::stable::Tensor input, const DType dtype, torch::stable::T
   if (workspace.empty()) {
     // TODO(stable-abi): needs torch::stable::empty(IntArrayRef, ScalarType, Device).
     torch::stable::Tensor sorted_indices =
-        torch::stable::empty({max_expanded_token_num}, torch::headeronly::ScalarType::Int, device);
+        torch::stable::empty({max_expanded_token_num}, torch::headeronly::ScalarType::Int, std::nullopt, device);
     // TODO(stable-abi): needs torch::stable::arange(start, end, step, ScalarType, Device)
     // (replacement for torch::range over [0, max_expanded_token_num - 1]).
     torch::stable::Tensor row_id = torch::stable::arange(
-        0, max_expanded_token_num, 1, torch::headeronly::ScalarType::Int, device);
+        0, max_expanded_token_num, 1, torch::headeronly::ScalarType::Int, std::nullopt, device);
     torch::stable::Tensor sorted_row_id =
-        torch::stable::empty({max_expanded_token_num}, torch::headeronly::ScalarType::Int, device);
+        torch::stable::empty({max_expanded_token_num}, torch::headeronly::ScalarType::Int, std::nullopt, device);
 
     size_t temp_storage_bytes = 0;
     nvte_device_radix_sort_pairs(nullptr, &temp_storage_bytes, nullptr, nullptr, nullptr, nullptr,
                                  max_expanded_token_num);
     torch::stable::Tensor temp_storage = torch::stable::empty(
-        {static_cast<int64_t>(temp_storage_bytes)}, torch::headeronly::ScalarType::Char, device);
+        {static_cast<int64_t>(temp_storage_bytes)}, torch::headeronly::ScalarType::Char, std::nullopt, device);
 
     workspace.push_back(sorted_indices);
     workspace.push_back(row_id);
@@ -73,9 +73,9 @@ moe_permute_fwd(torch::stable::Tensor input, const DType dtype, torch::stable::T
   // Output buffer alloc
   num_out_tokens = (num_out_tokens > 0) ? num_out_tokens : num_tokens * topK;
   torch::stable::Tensor permuted_output =
-      torch::stable::empty({num_out_tokens, num_cols}, input.scalar_type(), device);
+      torch::stable::empty({num_out_tokens, num_cols}, input.scalar_type(), std::nullopt, device);
   torch::stable::Tensor row_id_map = torch::stable::empty(
-      {static_cast<int64_t>(num_tokens) * topK}, torch::headeronly::ScalarType::Int, device);
+      {static_cast<int64_t>(num_tokens) * topK}, torch::headeronly::ScalarType::Int, std::nullopt, device);
 
   auto stream = current_cuda_stream();
 
@@ -116,7 +116,7 @@ torch::stable::Tensor moe_unpermute_fwd(torch::stable::Tensor input, const DType
 
   // Output buffer alloc
   torch::stable::Tensor unpermuted_output =
-      torch::stable::empty({num_tokens, num_cols}, input.scalar_type(), device);
+      torch::stable::empty({num_tokens, num_cols}, input.scalar_type(), std::nullopt, device);
 
   auto stream = current_cuda_stream();
 
@@ -149,9 +149,9 @@ std::tuple<torch::stable::Tensor, torch::stable::Tensor> moe_unpermute_bwd(
 
   // Output buffer alloc
   torch::stable::Tensor act_grad =
-      torch::stable::empty({input_fwd.size(0), num_cols}, input_bwd.scalar_type(), device);
+      torch::stable::empty({input_fwd.size(0), num_cols}, input_bwd.scalar_type(), std::nullopt, device);
   torch::stable::Tensor prob_grad = torch::stable::empty(
-      {num_tokens, topK}, torch::headeronly::ScalarType::Float, device);
+      {num_tokens, topK}, torch::headeronly::ScalarType::Float, std::nullopt, device);
 
   auto stream = current_cuda_stream();
 

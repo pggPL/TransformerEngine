@@ -79,6 +79,11 @@ def setup_pytorch_extension(
     # Expose the stable-ABI headers' 2.14 APIs (torch::stable::*). Without this the
     # stable headers gate the newer shims behind TORCH_FEATURE_VERSION checks.
     cxx_flags.append("-DTORCH_TARGET_VERSION=0x020e000000000000")
+    # This is a CUDAExtension: enable the CUDA-gated stable shims
+    # (torch::stable::cuda::*, torch::stable::PhiloxCudaState and the
+    # philox_cuda_state_from_pyobject interop helper), which are all guarded
+    # behind `defined(USE_CUDA)` in the stable headers.
+    cxx_flags.append("-DUSE_CUDA")
     if debug_build_enabled():
         cxx_flags.append("-g")
         cxx_flags.append("-UNDEBUG")

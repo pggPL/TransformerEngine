@@ -29,7 +29,7 @@ inline cudaStream_t current_cuda_stream() {
   return static_cast<cudaStream_t>(
       torch::stable::accelerator::getCurrentStream(
           torch::stable::accelerator::getCurrentDeviceIndex())
-          .stream());
+          .nativeHandle());
 }
 }  // namespace
 
@@ -60,8 +60,8 @@ swizzle_scales_and_pack_ptrs_for_discrete_weights(
   // Trivial case: no tensors. Return empty tensors.
   if (num_tensors == 0) {
     // TODO(stable-abi): needs torch::stable::empty(IntArrayRef, ScalarType, Device).
-    auto empty_ptrs = torch::stable::empty({0}, torch::headeronly::ScalarType::Long, device);
-    auto empty_scales = torch::stable::empty({0}, torch::headeronly::ScalarType::Byte, device);
+    auto empty_ptrs = torch::stable::empty({0}, torch::headeronly::ScalarType::Long, std::nullopt, device);
+    auto empty_scales = torch::stable::empty({0}, torch::headeronly::ScalarType::Byte, std::nullopt, device);
     return {empty_ptrs, torch::stable::clone(empty_ptrs), std::move(empty_scales)};
   }
 
@@ -121,7 +121,7 @@ swizzle_scales_and_pack_ptrs_for_discrete_weights(
   const size_t swizzled_scales_stride = roundup(scale_bytes, 16);  // Align to 16 bytes
   auto swizzled_scales =
       torch::stable::empty({static_cast<int64_t>(swizzled_scales_stride * num_tensors)},
-                           torch::headeronly::ScalarType::Byte, device);
+                           torch::headeronly::ScalarType::Byte, std::nullopt, device);
   uint8_t *swizzled_scales_dptr = reinterpret_cast<uint8_t *>(swizzled_scales.data_ptr());
 
   // Allocate input/output NVTETensors as a single batch. The first
@@ -162,7 +162,7 @@ swizzle_scales_and_pack_ptrs_for_discrete_weights(
   }
   auto packed_ptrs_device =
       torch::stable::empty({static_cast<int64_t>(2 * num_tensors)},
-                           torch::headeronly::ScalarType::Long, device);
+                           torch::headeronly::ScalarType::Long, std::nullopt, device);
   nvte_copy_host_to_device_via_kernel(packed_ptrs_host.data(), packed_ptrs_device.data_ptr(),
                                       2 * num_tensors * sizeof(uint64_t), stream);
 

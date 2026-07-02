@@ -25,7 +25,7 @@ inline cudaStream_t current_cuda_stream() {
   return static_cast<cudaStream_t>(
       torch::stable::accelerator::getCurrentStream(
           torch::stable::accelerator::getCurrentDeviceIndex())
-          .stream());
+          .nativeHandle());
 }
 }  // namespace
 
@@ -99,7 +99,7 @@ std::tuple<torch::stable::Tensor, std::vector<torch::stable::Tensor>> splits_to_
     for (size_t i = 0; i < num_outputs; ++i) {
       const int64_t length = static_cast<int64_t>(num_splits) + (include_leading_zero[i] ? 1 : 0);
       // TODO(stable-abi): needs torch::stable::empty(IntArrayRef, ScalarType, Device).
-      outputs.emplace_back(torch::stable::empty({length}, dtypes[i], device));
+      outputs.emplace_back(torch::stable::empty({length}, dtypes[i], std::nullopt, device));
     }
   }
 
@@ -137,7 +137,7 @@ torch::stable::Tensor copy_data_ptrs_to_device(const std::vector<torch::stable::
   // Allocate device buffer
   // TODO(stable-abi): needs torch::stable::empty(IntArrayRef, ScalarType, Device).
   auto ptrs_device = torch::stable::empty({static_cast<int64_t>(tensors.size())},
-                                          torch::headeronly::ScalarType::Long, device);
+                                          torch::headeronly::ScalarType::Long, std::nullopt, device);
 
   // Load pointers on device
   nvte_copy_host_to_device_via_kernel(ptrs_host.data(), ptrs_device.data_ptr(),

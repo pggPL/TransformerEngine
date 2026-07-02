@@ -194,12 +194,12 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
       [](transformer_engine::DType self, nb::object other) -> nb::object {
         return nb::cast(static_cast<int>(self) == nb::cast<int>(other));
       },
-      nb::is_method(dtype_class));
+      nb::is_method());
   dtype_class.attr("__ne__") = nb::cpp_function(
       [](transformer_engine::DType self, nb::object other) -> nb::object {
         return nb::cast(static_cast<int>(self) != nb::cast<int>(other));
       },
-      nb::is_method(dtype_class));
+      nb::is_method());
 
   // Override pickling so a ``DType`` value encodes as ``(tex.DType, (int,))``.
   // Only the class itself then needs to be allow-listed for safe unpickling
@@ -209,13 +209,13 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
         return nb::make_tuple(nb::type<transformer_engine::DType>(),
                               nb::make_tuple(static_cast<int>(self)));
       },
-      nb::is_method(dtype_class));
+      nb::is_method());
   dtype_class.attr("__reduce_ex__") = nb::cpp_function(
       [](transformer_engine::DType self, nb::object /*protocol*/) {
         return nb::make_tuple(nb::type<transformer_engine::DType>(),
                               nb::make_tuple(static_cast<int>(self)));
       },
-      nb::is_method(dtype_class));
+      nb::is_method());
 
   m.def("quantize", transformer_engine::pytorch::quantize, nb::arg("tensor"), nb::arg("quantizer"),
         nb::arg("output") = nb::none(), nb::arg("noop") = nb::none());

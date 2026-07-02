@@ -19,6 +19,11 @@ cudaStream_t getCurrentCUDAStream() {
   return static_cast<cudaStream_t>(stream.nativeHandle());
 }
 
+int getDeviceMultiProcessorCount() {
+  return torch::stable::cuda::getDeviceMultiProcessorCount(
+      torch::stable::accelerator::getCurrentDeviceIndex());
+}
+
 /*! convert fp4 data shape back to original shape */
 std::vector<size_t> convert_shape_back_from_fp4(const std::vector<size_t>& shape, bool transpose) {
   std::vector<size_t> ret;

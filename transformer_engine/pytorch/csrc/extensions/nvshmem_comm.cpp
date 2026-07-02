@@ -27,7 +27,7 @@ inline cudaStream_t current_cuda_stream() {
   return static_cast<cudaStream_t>(
       torch::stable::accelerator::getCurrentStream(
           torch::stable::accelerator::getCurrentDeviceIndex())
-          .stream());
+          .nativeHandle());
 }
 }  // namespace
 
@@ -115,8 +115,7 @@ torch::stable::Tensor create_nvshmem_tensor(const std::vector<int64_t> &shape,
 #ifdef NVTE_ENABLE_NVSHMEM
   auto device = torch::stable::Device(torch::headeronly::DeviceType::CUDA,
                                       torch::stable::accelerator::getCurrentDeviceIndex());
-  // TODO(stable-abi): needs torch::headeronly::elementSize(ScalarType).
-  auto size = torch::headeronly::elementSize(dtype) *
+  auto size = static_cast<int64_t>(typeToNumBits(GetTransformerEngineDType(dtype)) / 8) *
               std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<>());
   // Contiguous (row-major) strides for the requested shape.
   std::vector<int64_t> strides(shape.size(), 1);

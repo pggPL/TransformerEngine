@@ -18,6 +18,7 @@
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 #include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/cuda.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/python/interop.h>  // from_pyobject / to_pyobject (2.14+)
 #include <torch/csrc/stable/tensor.h>
@@ -62,6 +63,14 @@
 namespace nb = nanobind;
 
 namespace transformer_engine::pytorch {
+
+// Inside this namespace an unqualified ``Tensor`` would otherwise resolve to the
+// core ``transformer_engine::Tensor`` (NVTE) type. The binding layer almost
+// always means the Python/stable tensor when it writes bare ``Tensor``; the core
+// tensor is accessed through ``TensorWrapper``. Alias ``Tensor`` to the stable
+// type so binding code can use it directly. Spots that genuinely need the core
+// type must spell out ``transformer_engine::Tensor`` explicitly.
+using Tensor = torch::stable::Tensor;
 
 // in python we have: dist_group_type = torch.distributed.ProcessGroup
 // Stable-ABI header-only wrapper over c10d::ProcessGroup.
@@ -591,6 +600,14 @@ NVTEShape convertTorchShape(const torch::headeronly::IntHeaderOnlyArrayRef torch
  * its native-handle accessor to recover the raw ``cudaStream_t``.
  */
 cudaStream_t getCurrentCUDAStream();
+
+/*! @brief Number of SMs on the current CUDA device.
+ *
+ * Replaces at::cuda::getCurrentDeviceProperties()->multiProcessorCount. Wraps
+ * the stable ``torch::stable::cuda::getDeviceMultiProcessorCount`` shim for the
+ * currently active accelerator device.
+ */
+int getDeviceMultiProcessorCount();
 
 std::vector<size_t> convert_shape_back_from_fp4(const std::vector<size_t>& shape, bool transpose);
 
