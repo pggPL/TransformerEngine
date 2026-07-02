@@ -273,17 +273,9 @@ std::vector<nb::object> fused_attn_fwd(
                                     DType::kFloat32, nullptr, nullptr, nullptr);
   }
 
-  // extract rng seed and offset
-  // HARD BLOCKER(stable-abi): RNG/generator path reaches ATen internals with no
-  // stable equivalent: at::Generator, at::CUDAGeneratorImpl,
-  // at::get_generator_or_default, at::cuda::detail::getDefaultCUDAGenerator,
-  // at::PhiloxCudaState, and the TE helpers init_philox_state/philox_unpack
-  // (which take at:: types). rng_gen is received as an nb::object (a
-  // torch.Generator) but its device generator state cannot be read via the
-  // stable ABI.
-  auto gen = at::get_generator_or_default<at::CUDAGeneratorImpl>(
-      /*rng_gen (at::Generator)=*/std::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
-  at::PhiloxCudaState philox_args = init_philox_state(gen, rng_elts_per_thread);
+  // extract rng seed and offset: use the provided torch.Generator (rng_gen) if
+  // given, otherwise the default CUDA generator.
+  auto philox_args = init_philox_state(get_cuda_generator(rng_gen), rng_elts_per_thread);
   // TODO(stable-abi): needs torch::stable::empty(shape, dtype, device_index).
   auto rng_state = torch::stable::empty({2}, torch::headeronly::ScalarType::Long,
                                         torch::stable::accelerator::getCurrentDeviceIndex());

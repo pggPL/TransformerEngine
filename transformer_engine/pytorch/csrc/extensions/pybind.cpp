@@ -13,6 +13,9 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
+#include <torch/csrc/stable/c10d.h>
+#include <torch/csrc/stable/cuda.h>
+#include <torch/csrc/stable/python/interop.h>
 
 #include <memory>
 #include <optional>
@@ -180,11 +183,10 @@ void bind_quantize_with_amax_extensions(nb::module_ &m) {
 #include "common/util/pybind_helper.h"
 
 NB_MODULE(TORCH_EXTENSION_NAME, m) {
-  // TODO(stable-abi): NVTE_DECLARE_COMMON_PYBIND11_HANDLES lives in the shared
-  // (JAX+PyTorch) header common/util/pybind_helper.h and is still written against
-  // pybind11 (py::enum_/py::class_/py::module_local). It must be ported to nanobind
-  // (or made framework-agnostic) before this module compiles.
-  NVTE_DECLARE_COMMON_PYBIND11_HANDLES(m)
+  // Registers the common TE enums/handles (DType, attention enums, CommOverlap*
+  // core classes, etc.) on the module. The nanobind flavor of the shared macro
+  // in common/util/pybind_helper.h; the pybind11 flavor is used by JAX.
+  NVTE_DECLARE_COMMON_NANOBIND_HANDLES(m)
 
   // Register __eq__/__ne__ on the pybind ``DType`` enum so it compares by integer.
   nb::object dtype_class = m.attr("DType");
@@ -196,6 +198,22 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
   dtype_class.attr("__ne__") = nb::cpp_function(
       [](transformer_engine::DType self, nb::object other) -> nb::object {
         return nb::cast(static_cast<int>(self) != nb::cast<int>(other));
+      },
+      nb::is_method(dtype_class));
+
+  // Override pickling so a ``DType`` value encodes as ``(tex.DType, (int,))``.
+  // Only the class itself then needs to be allow-listed for safe unpickling
+  // (see transformer_engine/pytorch/__init__.py).
+  dtype_class.attr("__reduce__") = nb::cpp_function(
+      [](transformer_engine::DType self) {
+        return nb::make_tuple(nb::type<transformer_engine::DType>(),
+                              nb::make_tuple(static_cast<int>(self)));
+      },
+      nb::is_method(dtype_class));
+  dtype_class.attr("__reduce_ex__") = nb::cpp_function(
+      [](transformer_engine::DType self, nb::object /*protocol*/) {
+        return nb::make_tuple(nb::type<transformer_engine::DType>(),
+                              nb::make_tuple(static_cast<int>(self)));
       },
       nb::is_method(dtype_class));
 
@@ -657,11 +675,23 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
         nb::call_guard<nb::gil_scoped_release>());
 
   // Comm+GEMM Overlap
-  m.def("bulk_overlap_ag_with_external_gemm",
-        &transformer_engine::pytorch::bulk_overlap_ag_with_external_gemm,
-        "Bulk overlap All-Gather with a GEMM operation launched by another communicator",
-        nb::call_guard<nb::gil_scoped_release>(), nb::arg("allgather_communicator"),
-        nb::arg("send_stream"), nb::arg("recv_stream"));
+  // Accepts torch.cuda.Stream objects; their raw cudaStream_t (``.cuda_stream``)
+  // is adopted through the stable getStreamFromExternal wrapper.
+  m.def(
+      "bulk_overlap_ag_with_external_gemm",
+      [](CommOverlap &allgather_communicator, nb::object send_stream, nb::object recv_stream) {
+        const auto device = torch::stable::accelerator::getCurrentDeviceIndex();
+        auto to_stream = [&](nb::object &stream) {
+          auto ptr = reinterpret_cast<void *>(nb::cast<uintptr_t>(stream.attr("cuda_stream")));
+          return torch::stable::cuda::getStreamFromExternal(ptr, device);
+        };
+        auto send = to_stream(send_stream);
+        auto recv = to_stream(recv_stream);
+        transformer_engine::pytorch::bulk_overlap_ag_with_external_gemm(
+            allgather_communicator, std::move(send), std::move(recv));
+      },
+      "Bulk overlap All-Gather with a GEMM operation launched by another communicator",
+      nb::arg("allgather_communicator"), nb::arg("send_stream"), nb::arg("recv_stream"));
 
   // Experimental fused grouped MLP
   auto grouped_mlp_experimental = m.def_submodule(
@@ -700,11 +730,23 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
       .value("GRAD_OUTPUT3", transformer_engine::pytorch::FP8BwdTensors::GRAD_OUTPUT3)
       .value("GRAD_INPUT3", transformer_engine::pytorch::FP8BwdTensors::GRAD_INPUT3);
 
+  // The process groups arrive as Python torch.distributed.ProcessGroup objects
+  // and are adopted through the stable-ABI processgroup_from_pyobject bridge.
+  // The GIL must be held for that conversion, so this factory does not release it.
   nb::class_<CommOverlapHelper>(m, "CommOverlapHelper")
       .def(nb::init<>(), nb::call_guard<nb::gil_scoped_release>())
-      .def(nb::init<c10d::ProcessGroup *, std::optional<c10d::ProcessGroup *>>(),
-           nb::call_guard<nb::gil_scoped_release>(), nb::arg("world_group"),
-           nb::arg("intra_node_group") = nb::none());
+      .def(
+          "__init__",
+          [](CommOverlapHelper *self, nb::object world_group,
+             std::optional<nb::object> intra_node_group) {
+            auto world = torch::stable::processgroup_from_pyobject(world_group.ptr());
+            std::optional<torch::stable::ProcessGroup> intra;
+            if (intra_node_group.has_value() && !intra_node_group->is_none()) {
+              intra = torch::stable::processgroup_from_pyobject(intra_node_group->ptr());
+            }
+            new (self) CommOverlapHelper(std::move(world), std::move(intra));
+          },
+          nb::arg("world_group"), nb::arg("intra_node_group") = nb::none());
 
   // TODO(stable-abi): nanobind manages shared_ptr automatically (no holder template
   // arg) and supports only a single bound base class, so the CommOverlapCore base is
@@ -741,7 +783,13 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
            nb::arg("input"), nb::arg("local_chunk") = false)
       .def("get_buffer", &CommOverlap::get_buffer, nb::arg("local_chunk") = false,
            nb::arg("shape") = std::nullopt)
-      .def("get_communication_stream", &CommOverlap::get_communication_stream);
+      .def("get_communication_stream", [](CommOverlap &self) {
+        auto streams = self.get_communication_stream();
+        auto external_stream = nb::module_::import_("torch.cuda").attr("ExternalStream");
+        return nb::make_tuple(
+            external_stream(reinterpret_cast<uintptr_t>(streams.first.nativeHandle())),
+            external_stream(reinterpret_cast<uintptr_t>(streams.second.nativeHandle())));
+      });
 
   // TODO(stable-abi): see CommOverlap note above (shared_ptr holder + single base).
   nb::class_<CommOverlapP2P, transformer_engine::CommOverlapP2PBase>(m, "CommOverlapP2P")
@@ -774,5 +822,11 @@ NB_MODULE(TORCH_EXTENSION_NAME, m) {
            nb::arg("input"), nb::arg("local_chunk") = false)
       .def("get_buffer", &CommOverlapP2P::get_buffer, nb::arg("local_chunk") = false,
            nb::arg("shape") = std::nullopt)
-      .def("get_communication_stream", &CommOverlapP2P::get_communication_stream);
+      .def("get_communication_stream", [](CommOverlapP2P &self) {
+        auto streams = self.get_communication_stream();
+        auto external_stream = nb::module_::import_("torch.cuda").attr("ExternalStream");
+        return nb::make_tuple(
+            external_stream(reinterpret_cast<uintptr_t>(streams.first.nativeHandle())),
+            external_stream(reinterpret_cast<uintptr_t>(streams.second.nativeHandle())));
+      });
 }  // NOLINT(readability/fn_size)

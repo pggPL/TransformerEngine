@@ -175,6 +175,15 @@ def found_pybind11() -> bool:
     return False
 
 
+def found_nanobind() -> bool:
+    """Check if nanobind is available (used by the PyTorch extension)."""
+    try:
+        import nanobind  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 @functools.lru_cache(maxsize=None)
 def cuda_toolkit_include_path() -> Tuple[str, str]:
     """Returns root path for cuda toolkit includes.

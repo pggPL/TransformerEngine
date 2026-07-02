@@ -58,8 +58,19 @@ def setup_pytorch_extension(
         ]
     )
 
+    # nanobind is not header-only: its combined source must be compiled into the
+    # module and its include dir added. (pybind11, which this extension used
+    # before the stable-ABI/nanobind migration, was header-only.)
+    import nanobind
+
+    include_dirs.append(nanobind.include_dir())
+    sources.append(Path(nanobind.__file__).parent / "src" / "nb_combined.cpp")
+
     # Compiler flags
     cxx_flags = ["-O3", "-fvisibility=hidden"]
+    # Expose the stable-ABI headers' 2.14 APIs (torch::stable::*). Without this the
+    # stable headers gate the newer shims behind TORCH_FEATURE_VERSION checks.
+    cxx_flags.append("-DTORCH_TARGET_VERSION=0x020e000000000000")
     if debug_build_enabled():
         cxx_flags.append("-g")
         cxx_flags.append("-UNDEBUG")
@@ -95,9 +106,13 @@ def setup_pytorch_extension(
     # Construct PyTorch CUDA extension
     sources = [str(path) for path in sources]
     include_dirs = [str(path) for path in include_dirs]
-    from torch.utils.cpp_extension import CppExtension
+    # CUDAExtension (not CppExtension) so nvcc handles any .cu sources and CUDA
+    # runtime libs are linked. We do NOT pass py_limited_api, so torch_python is
+    # linked by default -- the stable python-interop shims (from_pyobject,
+    # processgroup_from_pyobject, ...) need it.
+    from torch.utils.cpp_extension import CUDAExtension
 
-    return CppExtension(
+    return CUDAExtension(
         name="transformer_engine_torch",
         sources=[str(src) for src in sources],
         include_dirs=[str(inc) for inc in include_dirs],

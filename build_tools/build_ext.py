@@ -69,11 +69,28 @@ class CMakeExtension(setuptools.Extension):
             ]
         configure_command += self.cmake_flags
 
-        import pybind11
-
-        pybind11_dir = Path(pybind11.__file__).resolve().parent
-        pybind11_dir = pybind11_dir / "share" / "cmake" / "pybind11"
-        configure_command.append(f"-Dpybind11_DIR={pybind11_dir}")
+        # Point CMake at the binding library's config. JAX still uses pybind11;
+        # the PyTorch extension was migrated to nanobind. Only require whichever
+        # is actually present so a PyTorch-only environment (no pybind11) still
+        # configures. Each is added independently; the common CMake build ignores
+        # any it does not consume.
+        frameworks = get_frameworks()
+        if "jax" in frameworks:
+            try:
+                import pybind11
+            except ImportError:
+                pass
+            else:
+                pybind11_dir = Path(pybind11.__file__).resolve().parent
+                pybind11_dir = pybind11_dir / "share" / "cmake" / "pybind11"
+                configure_command.append(f"-Dpybind11_DIR={pybind11_dir}")
+        if "pytorch" in frameworks:
+            try:
+                import nanobind
+            except ImportError:
+                pass
+            else:
+                configure_command.append(f"-Dnanobind_DIR={nanobind.cmake_dir()}")
 
         # CMake build and install commands
         build_command = [_cmake_bin, "--build", build_dir, "--verbose"]

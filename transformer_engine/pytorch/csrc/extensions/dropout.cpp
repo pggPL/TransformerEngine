@@ -15,22 +15,6 @@
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/ScalarType.h>
 
-// ================= HARD BLOCKER (RNG) =====================================
-// The RNG-state extraction below relies on ATen CUDA generator internals that
-// have NO stable-ABI equivalent:
-//   at::CUDAGeneratorImpl, at::PhiloxCudaState,
-//   at::get_generator_or_default, at::cuda::detail::getDefaultCUDAGenerator,
-//   at::cuda::CUDAGraphsUtils (philox_cuda_state).
-// These headers are ATen-internal and are intentionally excluded from the
-// stable ABI. Kept here only so the tensor migration is reviewable; this file
-// cannot build against the stable ABI until the RNG path is resolved.
-// Proposed fix (see report): pass seed/offset (int64) down from Python, OR add
-// a stable RNG-state API (e.g. torch::stable::philox_cuda_state(...)).
-#include <ATen/cuda/CUDAGeneratorImpl.h>
-
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
-// ==========================================================================
-
 #include "../common.h"
 #include "../extensions.h"
 #include "../pybind.h"
@@ -84,23 +68,11 @@ std::vector<nb::object> dropout_fwd(const nb::handle& input, float dropout_proba
   auto mask_pyt = allocateTorchTensor(input_nvte.numel() / 8, DType::kByte);
   auto mask_nvte = makeTransformerEngineTensor(mask_pyt);
 
-  // RNG state tensor -- HARD BLOCKER (see banner at top of file).
-  auto gen = at::get_generator_or_default<at::CUDAGeneratorImpl>(
-      std::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
-  at::PhiloxCudaState philox_args;
-  {
-    std::lock_guard<std::mutex> lock(gen->mutex_);
-    constexpr int64_t rng_elts_per_thread = 4;
-    philox_args = gen->philox_cuda_state(rng_elts_per_thread);
-  }
+  // RNG state tensor (default CUDA generator).
+  constexpr int64_t rng_elts_per_thread = 4;
+  auto philox_args = init_philox_state(get_cuda_generator(std::nullopt), rng_elts_per_thread);
   auto rng_state_pyt = allocateTorchTensor(2, DType::kInt64);
-  NVTE_SCOPED_GIL_RELEASE({
-    nvte_extract_seed_and_offset(reinterpret_cast<int64_t*>(rng_state_pyt.data_ptr()),
-                                 philox_args.captured_, philox_args.seed_.ptr,
-                                 philox_args.seed_.val, philox_args.offset_.ptr,
-                                 philox_args.offset_.val, philox_args.offset_intragraph_,
-                                 current_cuda_stream());
-  });
+  philox_unpack(philox_args, reinterpret_cast<int64_t*>(rng_state_pyt.data_ptr()));
   auto rng_state_nvte = makeTransformerEngineTensor(rng_state_pyt);
 
   // Launch kernel

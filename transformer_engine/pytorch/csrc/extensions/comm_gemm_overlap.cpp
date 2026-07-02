@@ -4,24 +4,21 @@
  * See LICENSE for license information.
  ************************************************************************/
 //
-// HARD BLOCKER for the nanobind + torch stable-ABI migration.
-// This file is built on distributed / comm internals that have NO torch
-// stable-ABI equivalent today:
-//   - c10d::ProcessGroup and its collectives (broadcast/allgather/barrier)
-//   - torch::from_blob wrapping a raw (device) pointer into a Tensor
-//   - at::Stream / at::cuda::CUDAStream / at::cuda::getStreamFromExternal
-//   - at::cuda::CUDAStream(...) construction and native cudaStream_t casts
-//   - GetATenDType() (ATen ScalarType) for from_blob
-//   - Tensor methods .cuda()/.cpu()/.chunk()/.copy_() used for NCCL bootstrap
-// The plain-tensor bits below are migrated (stream helper, stable Tensor for
-// the data buffers), but the distributed machinery is left intact and marked
-// with TODO(stable-abi). See the MISSING-API report for the required decls.
+// Comm+GEMM overlap wrappers, migrated to the PyTorch stable ABI:
+//   - Process-group collectives (broadcast/allgather/barrier/rank/size) go
+//     through torch::stable::ProcessGroup (torch/csrc/stable/c10d.h).
+//   - Raw buffers are wrapped with torch::stable::from_blob, device transfers
+//     with torch::stable::to, and slices with torch::stable::narrow.
+//   - External CUDA streams use torch::stable::cuda::getStreamFromExternal.
 #ifdef NVTE_WITH_CUBLASMP
 #include <nccl.h>
 #endif
 
 #include <nanobind/nanobind.h>
 #include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/c10d.h>
+#include <torch/csrc/stable/cuda.h>
+#include <torch/csrc/stable/device.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
 
@@ -33,11 +30,25 @@
 
 namespace nb = nanobind;
 
-// TODO(stable-abi): torch::indexing (at::indexing) has no stable equivalent.
-using namespace torch::indexing;
 using namespace std::placeholders;
 
 namespace te = transformer_engine;
+
+namespace {
+
+// Wrap a raw CUDA pointer as a contiguous stable Tensor on the current device.
+torch::stable::Tensor from_blob_cuda(void *ptr, const std::vector<int64_t> &shape,
+                                     torch::headeronly::ScalarType dtype) {
+  std::vector<int64_t> strides(shape.size(), 1);
+  for (int i = static_cast<int>(shape.size()) - 2; i >= 0; --i) {
+    strides[i] = strides[i + 1] * shape[i + 1];
+  }
+  torch::stable::Device device(torch::stable::DeviceType::CUDA,
+                               torch::stable::accelerator::getCurrentDeviceIndex());
+  return torch::stable::from_blob(ptr, shape, strides, device, dtype);
+}
+
+}  // namespace
 
 /***************************************************************************************************
  * CommOverlapHelper
@@ -49,25 +60,21 @@ CommOverlapHelper::CommOverlapHelper() {
 #endif
 }  // empty constructor for NVTE_UB_WITH_MPI=1
 
-// TODO(stable-abi): HARD BLOCKER — c10d::ProcessGroup (and NCCL bootstrap via torch::from_blob /
-// broadcast) are not exposed through the torch stable ABI.
-CommOverlapHelper::CommOverlapHelper(c10d::ProcessGroup *world_group,
-                                     std::optional<c10d::ProcessGroup *> intra_domain_group) {
+CommOverlapHelper::CommOverlapHelper(torch::stable::ProcessGroup world_group,
+                                     std::optional<torch::stable::ProcessGroup> intra_domain_group) {
 #ifndef NVTE_UB_WITH_MPI
-  torch_pgs.insert({"world", world_group});
-  myrank = torch_pgs["world"]->getRank();
-  numranks = torch_pgs["world"]->getSize();
-  c10d::ProcessGroup::BackendType backend = torch_pgs["world"]->getBackendType();
-  backend_is_nccl = (backend == c10d::ProcessGroup::BackendType::NCCL);
+  myrank = world_group.rank();
+  numranks = world_group.size();
+  backend_is_nccl = world_group.backend_is_nccl();
 
   if (intra_domain_group.has_value()) {
     // Get local rank on node and number of local ranks
-    NVTE_CHECK(intra_domain_group.value()->getBackendType() == backend,
-               "Internal TE error: Intra-node group must be on the same backend (%s) as the world ",
-               "group!", torch_pgs["world"]->getBackendName());
+    NVTE_CHECK(intra_domain_group.value().backend_is_nccl() == backend_is_nccl,
+               "Internal TE error: Intra-node group must be on the same backend as the world ",
+               "group!");
     torch_pgs.insert({"intra", intra_domain_group.value()});
-    mylocal = torch_pgs["intra"]->getRank();
-    numlocal = torch_pgs["intra"]->getSize();
+    mylocal = torch_pgs.at("intra").rank();
+    numlocal = torch_pgs.at("intra").size();
 
     if (numlocal == numranks) {
       // Intra-node group is same as the world group so there can only be 1 node
@@ -92,6 +99,7 @@ CommOverlapHelper::CommOverlapHelper(c10d::ProcessGroup *world_group,
     numnodes = 1;
   }
 
+  torch_pgs.insert({"world", world_group});
   initialized = true;
 
 #ifdef NVTE_WITH_CUBLASMP
@@ -100,19 +108,24 @@ CommOverlapHelper::CommOverlapHelper(c10d::ProcessGroup *world_group,
   if (myrank == 0) {
     NVTE_CHECK_NCCL(ncclGetUniqueId(&nccl_world_id));
   }
+  torch::stable::Device cpu_device(torch::stable::DeviceType::CPU);
+  torch::stable::Device cuda_device(torch::stable::DeviceType::CUDA,
+                                    torch::stable::accelerator::getCurrentDeviceIndex());
+  const std::vector<int64_t> id_shape = {static_cast<int64_t>(sizeof(ncclUniqueId))};
+  const std::vector<int64_t> id_strides = {1};
+  auto nccl_world_id_cpu =
+      torch::stable::from_blob(reinterpret_cast<uint8_t *>(&nccl_world_id), id_shape, id_strides,
+                               cpu_device, torch::headeronly::ScalarType::Byte);
   auto nccl_world_id_tensor =
-      torch::from_blob(reinterpret_cast<uint8_t *>(&nccl_world_id), {sizeof(ncclUniqueId)},
-                       at::device(torch::kCPU).dtype(torch::kUInt8));
-  nccl_world_id_tensor = (backend_is_nccl) ? nccl_world_id_tensor.cuda() : nccl_world_id_tensor;
+      backend_is_nccl ? torch::stable::to(nccl_world_id_cpu, cuda_device) : nccl_world_id_cpu;
   {
-    c10d::BroadcastOptions bcast_opts;
-    bcast_opts.rootRank = 0;
-    std::vector<at::Tensor> bcast_tensors = {nccl_world_id_tensor};
-    auto work = torch_pgs["world"]->broadcast(bcast_tensors, bcast_opts);
-    work->wait();
+    std::vector<torch::stable::Tensor> bcast_tensors = {nccl_world_id_tensor};
+    torch_pgs.at("world").broadcast(bcast_tensors, /*root_rank=*/0).wait();
   }
-  nccl_world_id_tensor = (backend_is_nccl) ? nccl_world_id_tensor.cpu() : nccl_world_id_tensor;
-  nccl_world_id = *reinterpret_cast<ncclUniqueId *>(nccl_world_id_tensor.data_ptr());
+  if (backend_is_nccl) {
+    torch::stable::copy_(nccl_world_id_cpu, nccl_world_id_tensor);
+  }
+  nccl_world_id = *reinterpret_cast<ncclUniqueId *>(nccl_world_id_cpu.data_ptr());
 
   ncclComm_t nccl_world;
   NVTE_CHECK_NCCL(ncclCommInitRank(&nccl_world, numranks, nccl_world_id, myrank));
@@ -126,19 +139,19 @@ CommOverlapHelper::CommOverlapHelper(c10d::ProcessGroup *world_group,
     }
 
     // Broadcast the intra-node unique ID from the local root to all local ranks
+    auto nccl_intra_id_cpu =
+        torch::stable::from_blob(reinterpret_cast<uint8_t *>(&nccl_intra_id), id_shape, id_strides,
+                                 cpu_device, torch::headeronly::ScalarType::Byte);
     auto nccl_intra_id_tensor =
-        torch::from_blob(reinterpret_cast<uint8_t *>(&nccl_intra_id), {sizeof(ncclUniqueId)},
-                         at::device(torch::kCPU).dtype(torch::kUInt8));
-    nccl_intra_id_tensor = (backend_is_nccl) ? nccl_intra_id_tensor.cuda() : nccl_intra_id_tensor;
+        backend_is_nccl ? torch::stable::to(nccl_intra_id_cpu, cuda_device) : nccl_intra_id_cpu;
     {
-      c10d::BroadcastOptions bcast_opts;
-      bcast_opts.rootRank = 0;
-      std::vector<at::Tensor> bcast_tensors = {nccl_intra_id_tensor};
-      auto work = torch_pgs["intra"]->broadcast(bcast_tensors, bcast_opts);
-      work->wait();
+      std::vector<torch::stable::Tensor> bcast_tensors = {nccl_intra_id_tensor};
+      torch_pgs.at("intra").broadcast(bcast_tensors, /*root_rank=*/0).wait();
     }
-    nccl_intra_id_tensor = (backend_is_nccl) ? nccl_intra_id_tensor.cpu() : nccl_intra_id_tensor;
-    nccl_intra_id = *reinterpret_cast<ncclUniqueId *>(nccl_intra_id_tensor.data_ptr());
+    if (backend_is_nccl) {
+      torch::stable::copy_(nccl_intra_id_cpu, nccl_intra_id_tensor);
+    }
+    nccl_intra_id = *reinterpret_cast<ncclUniqueId *>(nccl_intra_id_cpu.data_ptr());
 
     // Initialize intra-node communicator
     ncclComm_t nccl_intra;
@@ -156,9 +169,6 @@ CommOverlapHelper::CommOverlapHelper(c10d::ProcessGroup *world_group,
 
 CommOverlapHelper::~CommOverlapHelper() {
 #ifndef NVTE_UB_WITH_MPI
-  for (auto &pg : torch_pgs) {
-    pg.second = nullptr;
-  }
   torch_pgs.clear();
   backend_is_nccl = false;
   initialized = false;
@@ -171,34 +181,40 @@ CommOverlapHelper::~CommOverlapHelper() {
 #endif
 }
 
-// TODO(stable-abi): HARD BLOCKER — uses c10d::ProcessGroup collectives, torch::from_blob, and
-// Tensor .cuda()/.cpu()/.chunk()/.copy_() (all ATen). No stable-ABI path for process-group
-// collectives exists.
 void CommOverlapHelper::ub_allgather(void *globaldata, size_t globalbytes, void *localdata,
                                      size_t localbytes, ExtComm group) {
 #ifndef NVTE_UB_WITH_MPI
   NVTE_CHECK(initialized, "Internal TE error: tex.CommOverlapHelper() is not initialized ",
              "with valid process groups!");
 
-  auto localtensor =
-      torch::from_blob(localdata, {static_cast<int64_t>(localbytes / sizeof(uint8_t))},
-                       at::device(torch::kCPU).dtype(torch::kUInt8));
-  auto localtmp = (backend_is_nccl) ? localtensor.cuda() : localtensor;
-  auto globaltensor =
-      torch::from_blob(globaldata, {static_cast<int64_t>(globalbytes / sizeof(uint8_t))},
-                       at::device(torch::kCPU).dtype(torch::kUInt8));
-  auto globaltmp = (backend_is_nccl) ? globaltensor.cuda() : globaltensor;
+  auto &pg = torch_pgs.at(group);
+  torch::stable::Device cpu_device(torch::stable::DeviceType::CPU);
+  torch::stable::Device cuda_device(torch::stable::DeviceType::CUDA,
+                                    torch::stable::accelerator::getCurrentDeviceIndex());
 
-  std::vector<std::vector<torch::Tensor>> globalchunks = {
-      globaltmp.chunk(torch_pgs[group]->getSize())};
-  std::vector<torch::Tensor> localchunk = {localtmp};
-  auto work = torch_pgs[group]->allgather(globalchunks, localchunk);
-  work->wait();
+  const std::vector<int64_t> local_shape = {static_cast<int64_t>(localbytes)};
+  const std::vector<int64_t> global_shape = {static_cast<int64_t>(globalbytes)};
+  const std::vector<int64_t> strides = {1};
+  auto localtensor = torch::stable::from_blob(localdata, local_shape, strides, cpu_device,
+                                              torch::headeronly::ScalarType::Byte);
+  auto globaltensor = torch::stable::from_blob(globaldata, global_shape, strides, cpu_device,
+                                               torch::headeronly::ScalarType::Byte);
+  auto localtmp = backend_is_nccl ? torch::stable::to(localtensor, cuda_device) : localtensor;
+  auto globaltmp = backend_is_nccl ? torch::stable::to(globaltensor, cuda_device) : globaltensor;
+
+  // torch::stable::ProcessGroup::allgather expects a flat list of one output
+  // tensor per rank; split the global buffer into contiguous per-rank chunks.
+  const int world = pg.size();
+  const int64_t chunk = globaltmp.numel() / world;
+  std::vector<torch::stable::Tensor> globalchunks;
+  globalchunks.reserve(world);
+  for (int i = 0; i < world; ++i) {
+    globalchunks.push_back(torch::stable::narrow(globaltmp, 0, i * chunk, chunk));
+  }
+  pg.allgather(globalchunks, localtmp).wait();
 
   if (backend_is_nccl) {
-    globaltensor.copy_(globaltmp.cpu());
-    globaltmp = torch::Tensor();
-    localtmp = torch::Tensor();
+    torch::stable::copy_(globaltensor, globaltmp);
   }
 #else
   NVTE_ERROR("Internal TE error: CommOverlapHelper::ub_allgather is a no-op when TE is compiled ",
@@ -210,8 +226,7 @@ void CommOverlapHelper::ub_barrier(ExtComm group) {
 #ifndef NVTE_UB_WITH_MPI
   NVTE_CHECK(initialized, "Internal TE error: tex.CommOverlapHelper() is not initialized ",
              "with valid process groups!");
-  auto work = torch_pgs[group]->barrier();
-  work->wait();
+  torch_pgs.at(group).barrier().wait();
 #else
   NVTE_ERROR("Internal TE error: CommOverlapHelper::ub_barrier is a no-op when TE is compiled ",
              "with NVTE_UB_WITH_MPI=1!");
@@ -239,7 +254,7 @@ CommOverlapHelper::NcclCommSharedPtr CommOverlapHelper::get_nccl_comm(std::strin
  * CommOverlap
  **************************************************************************************************/
 
-CommOverlap::CommOverlap(const std::vector<size_t> &buffer_shape, at::ScalarType buffer_dtype,
+CommOverlap::CommOverlap(const std::vector<size_t> &buffer_shape, torch::headeronly::ScalarType buffer_dtype,
                          CommOverlapHelper *helper, int tp_size, int num_splits,
                          int num_max_streams, int comm_cga_size, int gemm_priority,
                          int comm_priority, int num_comm_sm, bool set_sm_margin, bool atomic_gemm,
@@ -337,7 +352,7 @@ void cublasmp_capture_warmup(te::CommOverlapCore *core, int tp_size, te::CommOve
 
 CommOverlap::CommOverlap(CommOverlapHelper *helper, int tp_rank, int tp_size,
                          te::CommOverlapType comm_type, const std::vector<size_t> &buffer_shape,
-                         at::ScalarType buffer_dtype, int num_comm_sm, bool atomic_gemm)
+                         torch::headeronly::ScalarType buffer_dtype, int num_comm_sm, bool atomic_gemm)
     : te::CommOverlapBase(helper->get_nccl_comm("intra").get(), tp_rank, tp_size, num_comm_sm,
                           atomic_gemm),
       _nccl_comm(helper->get_nccl_comm("intra")) {
@@ -418,29 +433,24 @@ torch::stable::Tensor CommOverlap::get_buffer(bool local_chunk,
                 (ubuf_size / _tp_size) * _tp_id * _ubuf.element_size());
   }
 
-  // Construct PyTorch tensor
-  // TODO(stable-abi): needs torch::stable::from_blob(void*, IntArrayRef, ScalarType, DeviceIndex)
-  // to wrap a raw CUDA pointer, and a TE-DType -> torch::headeronly::ScalarType helper (was
-  // GetATenDType). Both are missing from the stable ABI.
-  const auto dtype = GetStableScalarType(_ubuf.dtype());
-  return torch::stable::from_blob(ubuf_ptr, *shape, dtype,
-                                  torch::stable::accelerator::getCurrentDeviceIndex());
+  // Construct PyTorch tensor wrapping the raw Userbuffers pointer.
+  const auto dtype = GetATenDType(_ubuf.dtype());
+  return from_blob_cuda(ubuf_ptr, *shape, dtype);
 }
 
-// TODO(stable-abi): at::Stream / at::cuda::getStreamFromExternal / at::cuda::current_device have
-// no stable-ABI equivalent. The stable accelerator::Stream cannot be constructed from an external
-// cudaStream_t and does not model separate send/recv streams. HARD BLOCKER.
-std::pair<at::Stream, at::Stream> CommOverlap::get_communication_stream() {
+std::pair<torch::stable::accelerator::Stream, torch::stable::accelerator::Stream>
+CommOverlap::get_communication_stream() {
+  const auto device = torch::stable::accelerator::getCurrentDeviceIndex();
   // Return the same stream for both send and recv
-  return {at::cuda::getStreamFromExternal(_stream_comm, at::cuda::current_device()),
-          at::cuda::getStreamFromExternal(_stream_comm, at::cuda::current_device())};
+  return {torch::stable::cuda::getStreamFromExternal(_stream_comm, device),
+          torch::stable::cuda::getStreamFromExternal(_stream_comm, device)};
 }
 
 /***************************************************************************************************
  * CommOverlapP2P
  **************************************************************************************************/
 
-CommOverlapP2P::CommOverlapP2P(const std::vector<size_t> &buffer_shape, at::ScalarType buffer_dtype,
+CommOverlapP2P::CommOverlapP2P(const std::vector<size_t> &buffer_shape, torch::headeronly::ScalarType buffer_dtype,
                                CommOverlapHelper *helper, int tp_size,
                                te::CommOverlapType comm_type, int num_max_streams,
                                int comm_cga_size, int gemm_priority, int comm_priority,
@@ -456,7 +466,7 @@ CommOverlapP2P::CommOverlapP2P(const std::vector<size_t> &buffer_shape, at::Scal
 
 CommOverlapP2P::CommOverlapP2P(CommOverlapHelper *helper, int tp_rank, int tp_size,
                                te::CommOverlapType comm_type,
-                               const std::vector<size_t> &buffer_shape, at::ScalarType buffer_dtype,
+                               const std::vector<size_t> &buffer_shape, torch::headeronly::ScalarType buffer_dtype,
                                int num_comm_sm, bool atomic_gemm)
     : te::CommOverlapP2PBase(helper->get_nccl_comm("intra").get(), tp_rank, tp_size, num_comm_sm,
                              atomic_gemm),
@@ -528,26 +538,23 @@ torch::stable::Tensor CommOverlapP2P::get_buffer(bool local_chunk,
   // Data pointer
   void *ubuf_ptr = local_chunk ? _ubufs[_tp_id].dptr() : _ubuf.dptr();
 
-  // Construct PyTorch tensor
-  // TODO(stable-abi): see CommOverlap::get_buffer — needs torch::stable::from_blob and a
-  // TE-DType -> torch::headeronly::ScalarType helper (was GetATenDType).
-  const auto dtype = GetStableScalarType(_ubuf.dtype());
-  return torch::stable::from_blob(ubuf_ptr, *shape, dtype,
-                                  torch::stable::accelerator::getCurrentDeviceIndex());
+  // Construct PyTorch tensor wrapping the raw Userbuffers pointer.
+  const auto dtype = GetATenDType(_ubuf.dtype());
+  return from_blob_cuda(ubuf_ptr, *shape, dtype);
 }
 
-// TODO(stable-abi): at::Stream / at::cuda::getStreamFromExternal have no stable equivalent.
-// HARD BLOCKER.
-std::pair<at::Stream, at::Stream> CommOverlapP2P::get_communication_stream() {
-  return {at::cuda::getStreamFromExternal(_stream_send[0], at::cuda::current_device()),
-          at::cuda::getStreamFromExternal(_stream_recv, at::cuda::current_device())};
+std::pair<torch::stable::accelerator::Stream, torch::stable::accelerator::Stream>
+CommOverlapP2P::get_communication_stream() {
+  const auto device = torch::stable::accelerator::getCurrentDeviceIndex();
+  return {torch::stable::cuda::getStreamFromExternal(_stream_send[0], device),
+          torch::stable::cuda::getStreamFromExternal(_stream_recv, device)};
 }
 
-// TODO(stable-abi): at::Stream parameters and at::cuda::CUDAStream construction have no stable
-// equivalent. HARD BLOCKER.
 void transformer_engine::pytorch::bulk_overlap_ag_with_external_gemm(
-    CommOverlap &allgather_communicator, at::Stream send_stream, at::Stream recv_stream) {
-  auto main_stream = at::cuda::getCurrentCUDAStream();
-  allgather_communicator.bulk_overlap_external_ag(at::cuda::CUDAStream(send_stream),
-                                                  at::cuda::CUDAStream(recv_stream), main_stream);
+    CommOverlap &allgather_communicator, torch::stable::accelerator::Stream send_stream,
+    torch::stable::accelerator::Stream recv_stream) {
+  cudaStream_t main_stream = getCurrentCUDAStream();
+  allgather_communicator.bulk_overlap_external_ag(
+      static_cast<cudaStream_t>(send_stream.nativeHandle()),
+      static_cast<cudaStream_t>(recv_stream.nativeHandle()), main_stream);
 }

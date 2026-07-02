@@ -51,12 +51,11 @@
 #include <memory>
 #include <vector>
 
-// TODO(stable-abi): RNG capture (at::PhiloxCudaState / at::CUDAGeneratorImpl) and
-// torch.distributed ProcessGroup have no stable-ABI equivalent yet. These remain
-// dependent on non-stable ATen/c10d headers (see philox_* / dist_group_type below).
-#include <ATen/cuda/CUDAGeneratorImpl.h>
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
-#include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
+// The RNG/Philox path uses torch::stable::philox_cuda_state_from_pyobject (from
+// <torch/csrc/stable/python/interop.h>, included above) instead of ATen CUDA
+// generator internals. torch.distributed ProcessGroup now uses the stable-ABI
+// header-only wrapper (see dist_group_type below).
+#include <torch/csrc/stable/c10d.h>
 
 #include "common/util/logging.h"
 
@@ -65,8 +64,8 @@ namespace nb = nanobind;
 namespace transformer_engine::pytorch {
 
 // in python we have: dist_group_type = torch.distributed.ProcessGroup
-// TODO(stable-abi): ProcessGroup is not part of the PyTorch stable ABI.
-using dist_group_type = c10d::ProcessGroup;
+// Stable-ABI header-only wrapper over c10d::ProcessGroup.
+using dist_group_type = torch::stable::ProcessGroup;
 
 // Each tensor here is shape (N, ) holding all scaling
 // data for a single FP8 block, e.g. LayerNormLinear
@@ -225,7 +224,7 @@ class Float8CurrentScalingQuantizer : public Quantizer {
  public:
   DType dtype;
   bool with_amax_reduction;
-  c10::intrusive_ptr<dist_group_type> amax_reduction_group;
+  std::optional<dist_group_type> amax_reduction_group;
   bool force_pow_2_scales = false;
   float amax_epsilon = 0.0;
 
@@ -353,7 +352,7 @@ class NVFP4Quantizer : public Quantizer {
  public:
   // amax reduction for low precision FP4 AG
   bool with_amax_reduction;
-  c10::intrusive_ptr<dist_group_type> amax_reduction_group;
+  std::optional<dist_group_type> amax_reduction_group;
   // random hadamard transform
   bool with_rht;
   bool with_post_rht_amax;
@@ -610,11 +609,18 @@ inline std::array<size_t, 2> get_2d_dims(const std::vector<T>& shape, bool trans
   return get_2d_dims(s, transpose);
 }
 
-// unpack the PhiloxCudaState into CUDA tensor
-void philox_unpack(at::PhiloxCudaState arg, int64_t* rng_state_ptr);
+// Resolve the CUDA generator to use: returns `gen` if provided, otherwise the
+// default CUDA generator for the current device (torch.cuda.default_generators
+// [current_device]), matching at::cuda::detail::getDefaultCUDAGenerator().
+// Must be called while holding the GIL.
+nb::object get_cuda_generator(const std::optional<nb::object>& gen);
 
-// extract PhiloxCudaState from CUDA random number generator
-at::PhiloxCudaState init_philox_state(at::CUDAGeneratorImpl* gen, size_t elts_per_thread);
+// extract the Philox RNG state from a CUDA torch.Generator (Python object),
+// advancing its offset by `elts_per_thread`. Must be called while holding the GIL.
+torch::stable::PhiloxCudaState init_philox_state(const nb::object& gen, size_t elts_per_thread);
+
+// unpack the PhiloxCudaState into a size-2 CUDA int64 tensor (seed, offset)
+void philox_unpack(const torch::stable::PhiloxCudaState& arg, int64_t* rng_state_ptr);
 
 }  // namespace transformer_engine::pytorch
 

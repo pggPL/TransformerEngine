@@ -20,6 +20,14 @@
 
 #include "common.h"
 
+// The CommOverlap* wrappers use the stable-ABI c10d ProcessGroup wrapper.
+#include <torch/csrc/stable/c10d.h>
+
+// init_nvshmem_backend (owned by the nvshmem migration) still takes the
+// non-stable c10d ProcessGroup type. common.h no longer pulls in this header,
+// so include it here for that declaration.
+#include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
+
 class CommOverlapHelper;
 class CommOverlap;
 class CommOverlapP2P;
@@ -667,8 +675,9 @@ void grouped_swizzle_for_gemm(nb::handle &tensor, bool rowwise, bool columnwise)
  * NVSHMEM APIs
  **************************************************************************************************/
 
-// TODO(stable-abi): c10d::ProcessGroup is not part of the PyTorch stable ABI.
-void init_nvshmem_backend(c10d::ProcessGroup *process_group);
+// Takes the Python torch.distributed.ProcessGroup as an nb::object and converts
+// it to a stable ProcessGroup internally (see nvshmem_comm.cpp).
+void init_nvshmem_backend(nb::object process_group);
 
 torch::stable::Tensor create_nvshmem_tensor(const std::vector<int64_t> &shape, torch::headeronly::ScalarType dtype);
 
@@ -701,14 +710,13 @@ void newton_schulz(int64_t ctx_ptr, int64_t m, int64_t n, torch::stable::Tensor 
 /***************************************************************************************************
  * Comm+GEMM Overlap Wrappers
  *
- * TODO(stable-abi): these wrappers depend on torch::CustomClassHolder and
- * c10d::ProcessGroup, neither of which is part of the PyTorch stable ABI. Tensor
- * arguments/returns are migrated to torch::stable::Tensor and streams to
- * torch::stable::accelerator::Stream, but the holder base and process-group
- * plumbing remain non-stable.
+ * These are bound as plain nanobind classes (nb::class_). They no longer derive
+ * from torch::CustomClassHolder (they are only used as regular Python objects,
+ * never as torchbind IValues). Process groups use the stable-ABI wrapper
+ * torch::stable::ProcessGroup, and streams use torch::stable::accelerator::Stream.
  **************************************************************************************************/
 
-class CommOverlapHelper : torch::CustomClassHolder {
+class CommOverlapHelper {
  public:
   // Shared ownership of an ncclComm_t. The deleter calls ncclCommDestroy when
   // the last reference (held by the helper and/or any CommOverlap consumers)
@@ -719,7 +727,7 @@ class CommOverlapHelper : torch::CustomClassHolder {
  private:
   bool initialized{false};
   bool backend_is_nccl{false};
-  std::map<std::string, c10d::ProcessGroup *> torch_pgs;
+  std::map<std::string, torch::stable::ProcessGroup> torch_pgs;
   std::map<std::string, NcclCommSharedPtr> nccl_comms;
 
  public:
@@ -732,8 +740,8 @@ class CommOverlapHelper : torch::CustomClassHolder {
 
   CommOverlapHelper();
 
-  CommOverlapHelper(c10d::ProcessGroup *world_group,
-                    std::optional<c10d::ProcessGroup *> intra_node_group);
+  CommOverlapHelper(torch::stable::ProcessGroup world_group,
+                    std::optional<torch::stable::ProcessGroup> intra_node_group);
 
   ~CommOverlapHelper();
 
@@ -745,7 +753,7 @@ class CommOverlapHelper : torch::CustomClassHolder {
   NcclCommSharedPtr get_nccl_comm(std::string comm_name);
 };
 
-class CommOverlap : torch::CustomClassHolder, public transformer_engine::CommOverlapBase {
+class CommOverlap : public transformer_engine::CommOverlapBase {
  private:
   // Keeps the cuBLASMp NCCL communicator alive for the lifetime of this
   // instance, independent of the CommOverlapHelper that created it.
@@ -780,7 +788,7 @@ class CommOverlap : torch::CustomClassHolder, public transformer_engine::CommOve
 
 };  // CommOverlap
 
-class CommOverlapP2P : torch::CustomClassHolder, public transformer_engine::CommOverlapP2PBase {
+class CommOverlapP2P : public transformer_engine::CommOverlapP2PBase {
  private:
   // Keeps the cuBLASMp NCCL communicator alive for the lifetime of this
   // instance, independent of the CommOverlapHelper that created it.

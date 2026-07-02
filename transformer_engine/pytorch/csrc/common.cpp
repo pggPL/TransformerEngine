@@ -359,20 +359,41 @@ size_t roundup(size_t value, size_t multiple) {
 
 size_t ceildiv(size_t numer, size_t denom) { return (numer + denom - 1) / denom; }
 
-void philox_unpack(at::PhiloxCudaState arg, int64_t* rng_state_ptr) {
-  NVTE_SCOPED_GIL_RELEASE({
-    nvte_extract_seed_and_offset(rng_state_ptr, arg.captured_, arg.seed_.ptr, arg.seed_.val,
-                                 arg.offset_.ptr, arg.offset_.val, arg.offset_intragraph_,
-                                 getCurrentCUDAStream());
-  });
+nb::object get_cuda_generator(const std::optional<nb::object>& gen) {
+  if (gen.has_value()) {
+    return *gen;
+  }
+  // Default CUDA generator for the current device. This is the Python object
+  // wrapping the same generator as at::cuda::detail::getDefaultCUDAGenerator().
+  const auto device_index = torch::stable::accelerator::getCurrentDeviceIndex();
+  return nb::module_::import_("torch").attr("cuda").attr("default_generators")[nb::int_(
+      static_cast<int>(device_index))];
 }
 
-// extract PhiloxCudaState from CUDA random number generator
-at::PhiloxCudaState init_philox_state(at::CUDAGeneratorImpl* gen, size_t elts_per_thread) {
-  at::PhiloxCudaState philox_args;
-  std::lock_guard<std::mutex> lock(gen->mutex_);
-  philox_args = gen->philox_cuda_state(elts_per_thread);
-  return philox_args;
+// extract PhiloxCudaState from a CUDA torch.Generator (Python object)
+torch::stable::PhiloxCudaState init_philox_state(const nb::object& gen, size_t elts_per_thread) {
+  // philox_cuda_state_from_pyobject reads gen->philox_cuda_state(increment) under
+  // the generator's lock, exactly like the previous ATen path.
+  return torch::stable::philox_cuda_state_from_pyobject(gen.ptr(), elts_per_thread);
+}
+
+void philox_unpack(const torch::stable::PhiloxCudaState& arg, int64_t* rng_state_ptr) {
+  NVTE_SCOPED_GIL_RELEASE({
+    if (arg.captured) {
+      // cudagraph capture: seed/offset hold device int64_t* pointers.
+      nvte_extract_seed_and_offset(
+          rng_state_ptr, /*captured=*/1, reinterpret_cast<int64_t*>(arg.seed), /*seed_val=*/0,
+          reinterpret_cast<int64_t*>(arg.offset), /*offset_val=*/0,
+          static_cast<uint32_t>(arg.offset_intragraph), getCurrentCUDAStream());
+    } else {
+      // eager: seed/offset hold literal values.
+      nvte_extract_seed_and_offset(rng_state_ptr, /*captured=*/0, /*seed_ptr=*/nullptr,
+                                   /*seed_val=*/arg.seed, /*offset_ptr=*/nullptr,
+                                   /*offset_val=*/arg.offset,
+                                   static_cast<uint32_t>(arg.offset_intragraph),
+                                   getCurrentCUDAStream());
+    }
+  });
 }
 
 }  // namespace transformer_engine::pytorch

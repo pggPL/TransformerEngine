@@ -19,15 +19,6 @@
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/ScalarType.h>
 
-// ================= HARD BLOCKER (c10d / torch.distributed) ================
-// init_nvshmem_backend() takes a c10d::ProcessGroup* and calls
-// getRank()/getSize()/getBackendType()/broadcast(). The c10d process-group API
-// is NOT part of the torch stable ABI (no header-only / C-shim equivalent).
-// This function cannot be migrated until a stable distributed handle exists.
-// Proposed fix (see report): drive the bootstrap broadcast from Python and pass
-// the exchanged unique-id bytes down as a plain tensor / byte buffer.
-// ==========================================================================
-
 namespace transformer_engine::pytorch {
 
 namespace {
@@ -40,38 +31,39 @@ inline cudaStream_t current_cuda_stream() {
 }
 }  // namespace
 
-void init_nvshmem_backend(c10d::ProcessGroup *process_group) {
+void init_nvshmem_backend(nb::object process_group_py) {
 #ifdef NVTE_ENABLE_NVSHMEM
+  // Wrap the Python torch.distributed.ProcessGroup as a stable ProcessGroup.
+  // The conversion touches Python objects, so it needs the GIL (this function
+  // is bound with nb::gil_scoped_release, so re-acquire it here).
+  torch::stable::ProcessGroup process_group = [&]() {
+    nb::gil_scoped_acquire gil;
+    return torch::stable::processgroup_from_pyobject(process_group_py.ptr());
+  }();
+
   nvshmemx_init_attr_t attr = {};
   nvshmemx_uniqueid_t id = {};
 
-  int my_rank = process_group->getRank();
-  int num_ranks = process_group->getSize();
+  int my_rank = process_group.rank();
+  int num_ranks = process_group.size();
   if (my_rank == 0) {
     nvshmemx_get_uniqueid(&id);
   }
 
-  auto backend_is_nccl = (process_group->getBackendType() == c10d::ProcessGroup::BackendType::NCCL);
+  auto backend_is_nccl = process_group.backend_is_nccl();
   NVTE_CHECK(backend_is_nccl, "Currently only support NCCL boostrap for NVSHMEM");
-  // TODO(stable-abi): needs torch::stable::from_blob(void*, IntArrayRef,
-  // ScalarType, Device) for a CPU buffer.
   auto datatensor = torch::stable::from_blob(
       reinterpret_cast<void *>(&id),
-      {static_cast<int64_t>(sizeof(nvshmemx_uniqueid_t) / sizeof(uint8_t))},
-      torch::headeronly::ScalarType::Byte, torch::stable::Device(torch::headeronly::DeviceType::CPU));
-  // TODO(stable-abi): needs torch::stable::to(Tensor, Device).
+      {static_cast<int64_t>(sizeof(nvshmemx_uniqueid_t) / sizeof(uint8_t))}, {1},
+      torch::stable::Device(torch::headeronly::DeviceType::CPU),
+      torch::headeronly::ScalarType::Byte);
   auto datatmp = (backend_is_nccl)
                      ? torch::stable::to(datatensor,
                                          torch::stable::Device(torch::headeronly::DeviceType::CUDA))
                      : datatensor;
 
-  // HARD BLOCKER: c10d::BroadcastOptions / ProcessGroup::broadcast / Work are
-  // not in the stable ABI.
-  c10d::BroadcastOptions bcast_opts;
-  bcast_opts.rootRank = 0;
   std::vector<torch::stable::Tensor> datachunk = {datatmp};
-  auto work = process_group->broadcast(datachunk, bcast_opts);
-  work->wait();
+  process_group.broadcast(datachunk, /*root_rank=*/0).wait();
 
   if (backend_is_nccl) {
     torch::stable::copy_(datatensor,
@@ -126,10 +118,14 @@ torch::stable::Tensor create_nvshmem_tensor(const std::vector<int64_t> &shape,
   // TODO(stable-abi): needs torch::headeronly::elementSize(ScalarType).
   auto size = torch::headeronly::elementSize(dtype) *
               std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<>());
-  // TODO(stable-abi): needs torch::stable::from_blob(void*, IntArrayRef, deleter,
-  // ScalarType, Device) with a custom deleter.
+  // Contiguous (row-major) strides for the requested shape.
+  std::vector<int64_t> strides(shape.size(), 1);
+  for (int i = static_cast<int>(shape.size()) - 2; i >= 0; --i) {
+    strides[i] = strides[i + 1] * shape[i + 1];
+  }
   return torch::stable::from_blob(
-      nvshmem_malloc(size), shape, [](void *ptr) { nvshmem_free(ptr); }, dtype, device);
+      nvshmem_malloc(size), shape, strides, device, dtype,
+      [](void *ptr) { nvshmem_free(ptr); });
 #else
   NVTE_ERROR("Internal TE error: create_nvshmem_tensor cannot be initialized with valid PyTorch ",
              "distributed process groups when TE is compiled with NVTE_ENABLE_NVSHMEM=1!");

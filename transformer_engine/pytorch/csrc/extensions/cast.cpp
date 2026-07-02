@@ -76,12 +76,10 @@ void allreduce_nvfp4_amax_tensors(NVFP4Quantizer *nvfp4_quantizer_cpp,
   if (!nvfp4_quantizer_cpp->with_amax_reduction || amax_tensors.empty()) {
     return;
   }
-  // TODO(stable-abi): HARD BLOCKER -- c10d collectives (ProcessGroup /
-  //   AllreduceCoalescedOptions / ReduceOp) have no torch::stable equivalent.
-  c10d::AllreduceCoalescedOptions opts;
-  opts.reduceOp = c10d::ReduceOp::MAX;
   NVTE_SCOPED_GIL_RELEASE({
-    nvfp4_quantizer_cpp->amax_reduction_group->allreduce_coalesced(amax_tensors, opts)->wait();
+    nvfp4_quantizer_cpp->amax_reduction_group->allreduce_coalesced(
+        amax_tensors, torch::stable::ReduceOp::MAX)
+        .wait();
   });
 }
 
@@ -212,12 +210,8 @@ void group_quantize_nvfp4_impl(const GroupedTensorWrapper &grouped_input_tensor,
     //   allocate a CUDA int64 buffer without a reference tensor.
     rng_states_tensor = torch::stable::empty({2}, torch::headeronly::ScalarType::Long,
                                              torch::stable::DeviceType::CUDA);
-    // TODO(stable-abi): HARD BLOCKER -- ATen CUDA generator internals
-    //   (at::get_generator_or_default / at::cuda::detail::getDefaultCUDAGenerator /
-    //   at::PhiloxCudaState) have no torch::stable equivalent.
-    auto gen = at::get_generator_or_default<at::CUDAGeneratorImpl>(
-        std::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
-    at::PhiloxCudaState philox_args = init_philox_state(gen, rng_elts_per_thread);
+    auto gen = get_cuda_generator(std::nullopt);
+    auto philox_args = init_philox_state(gen, rng_elts_per_thread);
     philox_unpack(philox_args, static_cast<int64_t *>(rng_states_tensor.data_ptr()));
 
     te_rng_state = makeTransformerEngineTensor(rng_states_tensor);
@@ -296,17 +290,13 @@ void compute_grouped_fp8_current_scaling_amax_and_scale(
   });
 
   if (quantizer_cpp->with_amax_reduction) {
-    // NCCL collectives require an at::Tensor; the amax buffer lives on the Python
-    // object (same allocation as the grouped tensor's amax), so fetch it only on
-    // this path.
+    // The amax buffer lives on the Python object (same allocation as the grouped
+    // tensor's amax), so fetch it only on this path.
     auto amax = tensor_from_py(grouped_output_py.attr("amax"));
-    // TODO(stable-abi): HARD BLOCKER -- c10d collectives (ProcessGroup /
-    //   AllreduceOptions / ReduceOp) have no torch::stable equivalent.
-    c10d::AllreduceOptions opts;
-    opts.reduceOp = c10d::ReduceOp::MAX;
     std::vector<Tensor> tensors = {amax};
-    NVTE_SCOPED_GIL_RELEASE(
-        { quantizer_cpp->amax_reduction_group->allreduce(tensors, opts)->wait(); });
+    NVTE_SCOPED_GIL_RELEASE({
+      quantizer_cpp->amax_reduction_group->allreduce(tensors, torch::stable::ReduceOp::MAX).wait();
+    });
   }
 
   // Derive per-group scale/scale_inv from the (possibly reduced) amax. The same
@@ -1273,15 +1263,10 @@ static StochasticRngStateResources setup_stochastic_rounding_rng_states_helper(
   res.te_rng_state_list.reserve(num_tensors);
   if (need_separate_rng_states) res.te_rng_state_list_colwise.reserve(num_tensors);
 
+  auto gen = get_cuda_generator(std::nullopt);
   for (size_t i = 0; i < num_tensors; ++i) {
-    // TODO(stable-abi): HARD BLOCKER -- ATen CUDA generator internals
-    //   (at::get_generator_or_default / at::cuda::detail::getDefaultCUDAGenerator /
-    //   at::PhiloxCudaState) have no torch::stable equivalent.
-    auto gen = at::get_generator_or_default<at::CUDAGeneratorImpl>(
-        std::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
-
     // Rowwise RNG state
-    at::PhiloxCudaState philox_args = init_philox_state(gen, rng_elts_per_thread);
+    auto philox_args = init_philox_state(gen, rng_elts_per_thread);
     int64_t *rng_state_ptr = static_cast<int64_t *>(res.rng_states_tensor.data_ptr()) + i * 2;
     philox_unpack(philox_args, rng_state_ptr);
 
@@ -1293,7 +1278,7 @@ static StochasticRngStateResources setup_stochastic_rounding_rng_states_helper(
     // Colwise RNG state (only if you truly need a different sequence)
     if (need_separate_rng_states) {
       // re-initialize philox_args for colwise RNG state
-      at::PhiloxCudaState philox_args_col = init_philox_state(gen, rng_elts_per_thread);
+      auto philox_args_col = init_philox_state(gen, rng_elts_per_thread);
       int64_t *rng_state_ptr_colwise =
           static_cast<int64_t *>(res.rng_states_tensor_colwise.data_ptr()) + i * 2;
 

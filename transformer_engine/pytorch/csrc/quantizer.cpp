@@ -688,16 +688,13 @@ Float8CurrentScalingQuantizer::Float8CurrentScalingQuantizer(const nb::handle& q
 
   // Get amax reduction group if needed
   const bool with_amax_reduction = nb::cast<bool>(quantizer.attr("with_amax_reduction"));
-  c10::intrusive_ptr<dist_group_type> amax_reduction_group;
+  this->with_amax_reduction = with_amax_reduction;
   if (with_amax_reduction) {
     auto group = quantizer.attr("_canonicalized_amax_reduction_group")();
     NVTE_CHECK(!group.is_none(),
                "Float8CurrentScalingQuantizer could not canonicalize amax reduction group");
-    // HARD BLOCKER(stable-abi): ProcessGroup (c10d) has no stable ABI; keep pybind cast.
-    amax_reduction_group = nb::cast<c10::intrusive_ptr<dist_group_type>>(group);
+    this->amax_reduction_group = torch::stable::processgroup_from_pyobject(group.ptr());
   }
-  this->with_amax_reduction = with_amax_reduction;
-  this->amax_reduction_group = amax_reduction_group;
 
   // fp8 current scaling specific quantization params
   this->force_pow_2_scales = nb::cast<bool>(quantizer.attr("force_pow_2_scales"));
@@ -1036,12 +1033,9 @@ void Float8CurrentScalingQuantizer::quantize_impl(const TensorWrapper& input, Te
   // Perform amax reduction if needed
   if (with_amax_reduction) {
     // allreduce amax tensor
-    // HARD BLOCKER(stable-abi): c10d::AllreduceOptions / ReduceOp / ProcessGroup::allreduce
-    //                           have no stable ABI.
-    c10d::AllreduceOptions opts;
-    opts.reduceOp = c10d::ReduceOp::MAX;
-    std::vector<at::Tensor> tensors = {THPVariable_Unpack(tensor_to_py(amax_buf).ptr())};
-    NVTE_SCOPED_GIL_RELEASE({ amax_reduction_group->allreduce(tensors, opts)->wait(); });
+    std::vector<ts::Tensor> tensors = {amax_buf};
+    NVTE_SCOPED_GIL_RELEASE(
+        { amax_reduction_group->allreduce(tensors, ts::ReduceOp::MAX).wait(); });
   }
 
   // Compute scaling factor
@@ -1880,15 +1874,12 @@ NVFP4Quantizer::NVFP4Quantizer(const nb::handle& quantizer) : Quantizer(quantize
 
   // Get amax reduction group if needed for NVFP4 AG
   const bool with_amax_reduction = nb::cast<bool>(quantizer.attr("with_amax_reduction"));
-  c10::intrusive_ptr<dist_group_type> amax_reduction_group;
+  this->with_amax_reduction = with_amax_reduction;
   if (with_amax_reduction) {
     auto group = quantizer.attr("_canonicalized_amax_reduction_group")();
     NVTE_CHECK(!group.is_none(), "NVFP4Quantizer could not canonicalize amax reduction group");
-    // HARD BLOCKER(stable-abi): ProcessGroup (c10d) has no stable ABI; keep pybind cast.
-    amax_reduction_group = nb::cast<c10::intrusive_ptr<dist_group_type>>(group);
+    this->amax_reduction_group = torch::stable::processgroup_from_pyobject(group.ptr());
   }
-  this->with_amax_reduction = with_amax_reduction;
-  this->amax_reduction_group = amax_reduction_group;
 
   this->rht_matrix_random_sign_mask_t =
       nb::cast<int>(quantizer.attr("rht_matrix_random_sign_mask_t"));
@@ -2453,15 +2444,11 @@ void NVFP4Quantizer::quantize_impl(const TensorWrapper& input, TensorWrapper& ou
       return;
     }
 
-    // HARD BLOCKER(stable-abi): at::from_blob + c10d AllreduceCoalesced have no
-    //                           stable ABI. Kept as ATen for now.
-    std::vector<at::Tensor> amax_tensors;
+    std::vector<ts::Tensor> amax_tensors;
     auto make_amax_tensor = [](void* data_ptr) {
       NVTE_CHECK(data_ptr != nullptr, "Could not find amax pointer for NVFP4 amax reduction.");
-      return at::from_blob(
-          data_ptr, std::vector<int64_t>{1},
-          [](void*) {},  // deleter doing nothing since it doesn't own the data
-          at::device(at::kCUDA).dtype(torch::kFloat32));
+      // Non-owning stable Tensor view over the amax scalar (contiguous 1-elem).
+      return ts::from_blob(data_ptr, {1}, {1}, cuda_device(), kF32);
     };
     if (rowwise_usage) {
       amax_tensors.push_back(make_amax_tensor(out.get_amax().data_ptr));
@@ -2473,10 +2460,8 @@ void NVFP4Quantizer::quantize_impl(const TensorWrapper& input, TensorWrapper& ou
       return;
     }
 
-    c10d::AllreduceCoalescedOptions opts;
-    opts.reduceOp = c10d::ReduceOp::MAX;
     NVTE_SCOPED_GIL_RELEASE(
-        { this->amax_reduction_group->allreduce_coalesced(amax_tensors, opts)->wait(); });
+        { this->amax_reduction_group->allreduce_coalesced(amax_tensors, ts::ReduceOp::MAX).wait(); });
   };
 
   // Nothing to be done if input is empty
@@ -2545,14 +2530,10 @@ void NVFP4Quantizer::quantize_impl(const TensorWrapper& input, TensorWrapper& ou
 
   if (this->stochastic_rounding) {
     const size_t rng_elts_per_thread = 1024;  // Wild guess, probably can be tightened
-    // HARD BLOCKER(stable-abi): CUDA generator / PhiloxCudaState internals
-    //                           (at::get_generator_or_default, getDefaultCUDAGenerator,
-    //                           at::PhiloxCudaState) have no stable ABI.
-    auto gen = at::get_generator_or_default<at::CUDAGeneratorImpl>(
-        std::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
+    auto gen = get_cuda_generator(std::nullopt);
 
     // Generate RNG state for rowwise quantization
-    at::PhiloxCudaState philox_args = init_philox_state(gen, rng_elts_per_thread);
+    auto philox_args = init_philox_state(gen, rng_elts_per_thread);
     auto rng_state = stable_empty_cuda({2}, kI64);
     philox_unpack(philox_args, static_cast<int64_t*>(rng_state.data_ptr()));
     te_rng_state = makeTransformerEngineTensor(rng_state);
@@ -2560,7 +2541,7 @@ void NVFP4Quantizer::quantize_impl(const TensorWrapper& input, TensorWrapper& ou
 
     // Generate separate RNG state for columnwise quantization
     if (need_separate_columnwise_rng) {
-      at::PhiloxCudaState philox_args_columnwise = init_philox_state(gen, rng_elts_per_thread);
+      auto philox_args_columnwise = init_philox_state(gen, rng_elts_per_thread);
       auto rng_state_columnwise = stable_empty_cuda({2}, kI64);
       philox_unpack(philox_args_columnwise, static_cast<int64_t*>(rng_state_columnwise.data_ptr()));
       te_rng_state_columnwise = makeTransformerEngineTensor(rng_state_columnwise);
