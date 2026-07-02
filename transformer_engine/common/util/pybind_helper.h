@@ -173,7 +173,7 @@
 // module-local by construction in nanobind so no explicit module_local() tag is
 // needed; shared_ptr ownership is automatic (no holder template argument).
 #define NVTE_DECLARE_COMMON_NANOBIND_HANDLES(m)                                                    \
-  nanobind::enum_<transformer_engine::DType>(m, "DType")                                           \
+  nanobind::enum_<transformer_engine::DType>(m, "DType", nanobind::is_arithmetic())                 \
       .value("kByte", transformer_engine::DType::kByte)                                            \
       .value("kInt32", transformer_engine::DType::kInt32)                                          \
       .value("kFloat32", transformer_engine::DType::kFloat32)                                      \
@@ -182,12 +182,12 @@
       .value("kFloat8E4M3", transformer_engine::DType::kFloat8E4M3)                                \
       .value("kFloat8E5M2", transformer_engine::DType::kFloat8E5M2)                                \
       .value("kFloat4E2M1", transformer_engine::DType::kFloat4E2M1);                               \
-  nanobind::enum_<NVTE_Bias_Type>(m, "NVTE_Bias_Type")                                             \
+  nanobind::enum_<NVTE_Bias_Type>(m, "NVTE_Bias_Type", nanobind::is_arithmetic())                   \
       .value("NVTE_NO_BIAS", NVTE_Bias_Type::NVTE_NO_BIAS)                                         \
       .value("NVTE_PRE_SCALE_BIAS", NVTE_Bias_Type::NVTE_PRE_SCALE_BIAS)                           \
       .value("NVTE_POST_SCALE_BIAS", NVTE_Bias_Type::NVTE_POST_SCALE_BIAS)                         \
       .value("NVTE_ALIBI", NVTE_Bias_Type::NVTE_ALIBI);                                            \
-  nanobind::enum_<NVTE_Mask_Type>(m, "NVTE_Mask_Type")                                             \
+  nanobind::enum_<NVTE_Mask_Type>(m, "NVTE_Mask_Type", nanobind::is_arithmetic())                   \
       .value("NVTE_NO_MASK", NVTE_Mask_Type::NVTE_NO_MASK)                                         \
       .value("NVTE_PADDING_MASK", NVTE_Mask_Type::NVTE_PADDING_MASK)                               \
       .value("NVTE_CAUSAL_MASK", NVTE_Mask_Type::NVTE_CAUSAL_MASK)                                 \
@@ -195,11 +195,11 @@
       .value("NVTE_CAUSAL_BOTTOM_RIGHT_MASK", NVTE_Mask_Type::NVTE_CAUSAL_BOTTOM_RIGHT_MASK)       \
       .value("NVTE_PADDING_CAUSAL_BOTTOM_RIGHT_MASK",                                              \
              NVTE_Mask_Type::NVTE_PADDING_CAUSAL_BOTTOM_RIGHT_MASK);                               \
-  nanobind::enum_<NVTE_Softmax_Type>(m, "NVTE_Softmax_Type")                                       \
+  nanobind::enum_<NVTE_Softmax_Type>(m, "NVTE_Softmax_Type", nanobind::is_arithmetic())             \
       .value("NVTE_VANILLA_SOFTMAX", NVTE_Softmax_Type::NVTE_VANILLA_SOFTMAX)                      \
       .value("NVTE_OFF_BY_ONE_SOFTMAX", NVTE_Softmax_Type::NVTE_OFF_BY_ONE_SOFTMAX)                \
       .value("NVTE_LEARNABLE_SOFTMAX", NVTE_Softmax_Type::NVTE_LEARNABLE_SOFTMAX);                 \
-  nanobind::enum_<NVTE_QKV_Format>(m, "NVTE_QKV_Format")                                           \
+  nanobind::enum_<NVTE_QKV_Format>(m, "NVTE_QKV_Format", nanobind::is_arithmetic())                 \
       .value("NVTE_BSHD", NVTE_QKV_Format::NVTE_BSHD)                                              \
       .value("NVTE_SBHD", NVTE_QKV_Format::NVTE_SBHD)                                              \
       .value("NVTE_THD", NVTE_QKV_Format::NVTE_THD)                                                \
@@ -209,7 +209,7 @@
       .value("NVTE_THD_2SBHD", NVTE_QKV_Format::NVTE_THD_2SBHD)                                    \
       .value("NVTE_BHSD", NVTE_QKV_Format::NVTE_BHSD)                                              \
       .value("NVTE_QKV_Format_NOT_SET", NVTE_QKV_Format::NVTE_QKV_Format_NOT_SET);                 \
-  nanobind::enum_<NVTE_QKV_Layout>(m, "NVTE_QKV_Layout")                                           \
+  nanobind::enum_<NVTE_QKV_Layout>(m, "NVTE_QKV_Layout", nanobind::is_arithmetic())                 \
       .value("NVTE_SB3HD", NVTE_QKV_Layout::NVTE_SB3HD)                                            \
       .value("NVTE_SBH3D", NVTE_QKV_Layout::NVTE_SBH3D)                                            \
       .value("NVTE_SBHD_SB2HD", NVTE_QKV_Layout::NVTE_SBHD_SB2HD)                                  \
@@ -236,19 +236,21 @@
       .value("NVTE_Paged_KV_THD_BSHD_BSHD", NVTE_QKV_Layout::NVTE_Paged_KV_THD_BSHD_BSHD)          \
       .value("NVTE_Paged_KV_THD_SBHD_SBHD", NVTE_QKV_Layout::NVTE_Paged_KV_THD_SBHD_SBHD)          \
       .value("NVTE_BHSD_BHSD_BHSD", NVTE_QKV_Layout::NVTE_BHSD_BHSD_BHSD);                         \
-  nanobind::enum_<NVTE_Fused_Attn_Backend>(m, "NVTE_Fused_Attn_Backend")                           \
+  nanobind::enum_<NVTE_Fused_Attn_Backend>(m, "NVTE_Fused_Attn_Backend", nanobind::is_arithmetic()) \
       .value("NVTE_F16_arbitrary_seqlen", NVTE_Fused_Attn_Backend::NVTE_F16_arbitrary_seqlen)      \
       .value("NVTE_FP8", NVTE_Fused_Attn_Backend::NVTE_FP8)                                        \
       .value("NVTE_No_Backend", NVTE_Fused_Attn_Backend::NVTE_No_Backend);                         \
-  nanobind::enum_<transformer_engine::Float8BlockScaleTensorFormat>(m,                             \
-                                                                    "Float8BlockScaleTensorFormat")\
+  nanobind::enum_<transformer_engine::Float8BlockScaleTensorFormat>(                               \
+      m, "Float8BlockScaleTensorFormat", nanobind::is_arithmetic())                                 \
       .value("GEMM_READY", transformer_engine::Float8BlockScaleTensorFormat::GEMM_READY)           \
       .value("COMPACT", transformer_engine::Float8BlockScaleTensorFormat::COMPACT)                 \
       .value("INVALID", transformer_engine::Float8BlockScaleTensorFormat::INVALID);                \
-  nanobind::enum_<transformer_engine::CommOverlapType>(m, "CommOverlapType")                       \
+  nanobind::enum_<transformer_engine::CommOverlapType>(m, "CommOverlapType",                        \
+                                                       nanobind::is_arithmetic())                   \
       .value("RS", transformer_engine::CommOverlapType::RS)                                        \
       .value("AG", transformer_engine::CommOverlapType::AG);                                       \
-  nanobind::enum_<transformer_engine::CommOverlapAlgo>(m, "CommOverlapAlgo")                       \
+  nanobind::enum_<transformer_engine::CommOverlapAlgo>(m, "CommOverlapAlgo",                        \
+                                                       nanobind::is_arithmetic())                   \
       .value("BULK_OVERLAP_AG", transformer_engine::CommOverlapAlgo::BULK_OVERLAP_AG)              \
       .value("BULK_OVERLAP_RS", transformer_engine::CommOverlapAlgo::BULK_OVERLAP_RS)              \
       .value("SPLIT_PIPELINED_AG_P2P",                                                             \
