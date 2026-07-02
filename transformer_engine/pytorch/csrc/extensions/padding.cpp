@@ -4,12 +4,25 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/tensor.h>
+
 #include "../extensions.h"
 #include "pybind.h"
 
 namespace transformer_engine::pytorch {
 
-void fused_multi_row_padding(at::Tensor input, at::Tensor output,
+namespace {
+// TODO(stable-abi): torch::stable::accelerator lacks a native cudaStream_t handle.
+inline cudaStream_t current_cuda_stream() {
+  return static_cast<cudaStream_t>(
+      torch::stable::accelerator::getCurrentStream(
+          torch::stable::accelerator::getCurrentDeviceIndex())
+          .stream());
+}
+}  // namespace
+
+void fused_multi_row_padding(torch::stable::Tensor input, torch::stable::Tensor output,
                              std::vector<size_t> input_row_list,
                              std::vector<size_t> padded_input_row_list) {
   NVTE_CHECK(input_row_list.size() == padded_input_row_list.size(),
@@ -18,6 +31,9 @@ void fused_multi_row_padding(at::Tensor input, at::Tensor output,
   NVTE_CHECK(output.dim() == 2, "Dimension of output must equal  2.");
 
   const auto num_tensors = input_row_list.size();
+  // TODO(stable-abi): needs torch::stable::Tensor::element_size().
+  const size_t input_elem_size = input.element_size();
+  const size_t output_elem_size = output.element_size();
   // Extract properties from PyTorch tensors
   std::vector<void*> input_dptr_list, output_dptr_list;
   std::vector<std::vector<size_t>> input_shape_list, output_shape_list;
@@ -31,7 +47,7 @@ void fused_multi_row_padding(at::Tensor input, at::Tensor output,
     // Move the input pointer to the next split.
     char* input_char_ptr = reinterpret_cast<char*>(d_input_ptr);
     const size_t input_dptr_offset =
-        input_row_list[tensor_id] * input.size(1) * input.element_size();
+        input_row_list[tensor_id] * input.size(1) * input_elem_size;
     input_char_ptr += input_dptr_offset;
     d_input_ptr = reinterpret_cast<void*>(input_char_ptr);
 
@@ -41,7 +57,7 @@ void fused_multi_row_padding(at::Tensor input, at::Tensor output,
     // Move the output pointer to the next split.
     char* output_char_ptr = reinterpret_cast<char*>(d_output_ptr);
     const size_t output_dptr_offset =
-        padded_input_row_list[tensor_id] * output.size(1) * output.element_size();
+        padded_input_row_list[tensor_id] * output.size(1) * output_elem_size;
     output_char_ptr += output_dptr_offset;
     d_output_ptr = reinterpret_cast<void*>(output_char_ptr);
 
@@ -77,11 +93,11 @@ void fused_multi_row_padding(at::Tensor input, at::Tensor output,
   // Launch TE kernel
   NVTE_SCOPED_GIL_RELEASE({
     nvte_multi_padding(nvte_input_list.size(), nvte_input_list.data(), nvte_output_list.data(),
-                       padded_num_rows_list.data(), at::cuda::getCurrentCUDAStream());
+                       padded_num_rows_list.data(), current_cuda_stream());
   });
 }
 
-void fused_multi_row_unpadding(at::Tensor input, at::Tensor output,
+void fused_multi_row_unpadding(torch::stable::Tensor input, torch::stable::Tensor output,
                                std::vector<size_t> input_row_list,
                                std::vector<size_t> unpadded_input_row_list) {
   using namespace transformer_engine;
@@ -93,6 +109,9 @@ void fused_multi_row_unpadding(at::Tensor input, at::Tensor output,
   NVTE_CHECK(output.dim() == 2, "Dimension of output must equal  2.");
 
   const auto num_tensors = input_row_list.size();
+  // TODO(stable-abi): needs torch::stable::Tensor::element_size().
+  const size_t input_elem_size = input.element_size();
+  const size_t output_elem_size = output.element_size();
   // Extract properties from PyTorch tensors
   std::vector<void*> input_dptr_list, output_dptr_list;
   std::vector<std::vector<size_t>> input_shape_list, output_shape_list;
@@ -106,7 +125,7 @@ void fused_multi_row_unpadding(at::Tensor input, at::Tensor output,
     // Move the input pointer to the next split.
     char* input_char_ptr = reinterpret_cast<char*>(d_input_ptr);
     const size_t input_dptr_offset =
-        input_row_list[tensor_id] * input.size(1) * input.element_size();
+        input_row_list[tensor_id] * input.size(1) * input_elem_size;
     input_char_ptr += input_dptr_offset;
     d_input_ptr = reinterpret_cast<void*>(input_char_ptr);
 
@@ -116,7 +135,7 @@ void fused_multi_row_unpadding(at::Tensor input, at::Tensor output,
     // Move the output pointer to the next split.
     char* output_char_ptr = reinterpret_cast<char*>(d_output_ptr);
     const size_t output_dptr_offset =
-        unpadded_input_row_list[tensor_id] * output.size(1) * output.element_size();
+        unpadded_input_row_list[tensor_id] * output.size(1) * output_elem_size;
     output_char_ptr += output_dptr_offset;
     d_output_ptr = reinterpret_cast<void*>(output_char_ptr);
 
@@ -151,7 +170,7 @@ void fused_multi_row_unpadding(at::Tensor input, at::Tensor output,
 
   // Launch TE kernel
   nvte_multi_unpadding(nvte_input_list.size(), nvte_input_list.data(), nvte_output_list.data(),
-                       unpadded_num_rows_list.data(), at::cuda::getCurrentCUDAStream());
+                       unpadded_num_rows_list.data(), current_cuda_stream());
 }
 
 }  // namespace transformer_engine::pytorch

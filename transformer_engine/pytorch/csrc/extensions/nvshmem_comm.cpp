@@ -14,10 +14,31 @@
 
 #include <cuda.h>
 #include <cuda_fp8.h>
-#include <torch/cuda.h>
-#include <torch/extension.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+
+// ================= HARD BLOCKER (c10d / torch.distributed) ================
+// init_nvshmem_backend() takes a c10d::ProcessGroup* and calls
+// getRank()/getSize()/getBackendType()/broadcast(). The c10d process-group API
+// is NOT part of the torch stable ABI (no header-only / C-shim equivalent).
+// This function cannot be migrated until a stable distributed handle exists.
+// Proposed fix (see report): drive the bootstrap broadcast from Python and pass
+// the exchanged unique-id bytes down as a plain tensor / byte buffer.
+// ==========================================================================
 
 namespace transformer_engine::pytorch {
+
+namespace {
+// TODO(stable-abi): torch::stable::accelerator lacks a native cudaStream_t handle.
+inline cudaStream_t current_cuda_stream() {
+  return static_cast<cudaStream_t>(
+      torch::stable::accelerator::getCurrentStream(
+          torch::stable::accelerator::getCurrentDeviceIndex())
+          .stream());
+}
+}  // namespace
 
 void init_nvshmem_backend(c10d::ProcessGroup *process_group) {
 #ifdef NVTE_ENABLE_NVSHMEM
@@ -32,21 +53,31 @@ void init_nvshmem_backend(c10d::ProcessGroup *process_group) {
 
   auto backend_is_nccl = (process_group->getBackendType() == c10d::ProcessGroup::BackendType::NCCL);
   NVTE_CHECK(backend_is_nccl, "Currently only support NCCL boostrap for NVSHMEM");
-  auto datatensor =
-      torch::from_blob(reinterpret_cast<void *>(&id),
-                       {static_cast<int64_t>(sizeof(nvshmemx_uniqueid_t) / sizeof(uint8_t))},
-                       at::device(torch::kCPU).dtype(torch::kUInt8));
-  auto datatmp = (backend_is_nccl) ? datatensor.cuda() : datatensor;
+  // TODO(stable-abi): needs torch::stable::from_blob(void*, IntArrayRef,
+  // ScalarType, Device) for a CPU buffer.
+  auto datatensor = torch::stable::from_blob(
+      reinterpret_cast<void *>(&id),
+      {static_cast<int64_t>(sizeof(nvshmemx_uniqueid_t) / sizeof(uint8_t))},
+      torch::headeronly::ScalarType::Byte, torch::stable::Device(torch::headeronly::DeviceType::CPU));
+  // TODO(stable-abi): needs torch::stable::to(Tensor, Device).
+  auto datatmp = (backend_is_nccl)
+                     ? torch::stable::to(datatensor,
+                                         torch::stable::Device(torch::headeronly::DeviceType::CUDA))
+                     : datatensor;
 
+  // HARD BLOCKER: c10d::BroadcastOptions / ProcessGroup::broadcast / Work are
+  // not in the stable ABI.
   c10d::BroadcastOptions bcast_opts;
   bcast_opts.rootRank = 0;
-  std::vector<torch::Tensor> datachunk = {datatmp};
+  std::vector<torch::stable::Tensor> datachunk = {datatmp};
   auto work = process_group->broadcast(datachunk, bcast_opts);
   work->wait();
 
   if (backend_is_nccl) {
-    datatensor.copy_(datatmp.cpu());
-    datatmp = torch::Tensor();
+    torch::stable::copy_(datatensor,
+                         torch::stable::to(datatmp, torch::stable::Device(
+                                                        torch::headeronly::DeviceType::CPU)));
+    datatmp = torch::stable::Tensor();
   }
 
   nvshmemx_set_attr_uniqueid_args(my_rank, num_ranks, &id, &attr);
@@ -62,10 +93,10 @@ void init_nvshmem_backend(c10d::ProcessGroup *process_group) {
 #endif
 }
 
-void nvshmem_wait_on_current_stream(torch::Tensor signal, const std::string &wait_kind) {
+void nvshmem_wait_on_current_stream(torch::stable::Tensor signal, const std::string &wait_kind) {
 #ifdef NVTE_ENABLE_NVSHMEM
   uint64_t *sig_addr = reinterpret_cast<uint64_t *>(signal.data_ptr());
-  cudaStream_t cur_stream = (cudaStream_t)at::cuda::getCurrentCUDAStream();
+  cudaStream_t cur_stream = current_cuda_stream();
 
   WaitKind wait_kind_enum = WaitKind::STREAM_WAIT;
 
@@ -87,32 +118,37 @@ void nvshmem_wait_on_current_stream(torch::Tensor signal, const std::string &wai
 #endif
 }
 
-torch::Tensor create_nvshmem_tensor(const std::vector<int64_t> &shape, c10::ScalarType dtype) {
+torch::stable::Tensor create_nvshmem_tensor(const std::vector<int64_t> &shape,
+                                            torch::headeronly::ScalarType dtype) {
 #ifdef NVTE_ENABLE_NVSHMEM
-  auto option_gpu =
-      at::TensorOptions().dtype(dtype).device(at::kCUDA).device_index(c10::cuda::current_device());
-  auto size = torch::elementSize(dtype) *
+  auto device = torch::stable::Device(torch::headeronly::DeviceType::CUDA,
+                                      torch::stable::accelerator::getCurrentDeviceIndex());
+  // TODO(stable-abi): needs torch::headeronly::elementSize(ScalarType).
+  auto size = torch::headeronly::elementSize(dtype) *
               std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<>());
-  return at::from_blob(
-      nvshmem_malloc(size), shape, [](void *ptr) { nvshmem_free(ptr); }, option_gpu);
+  // TODO(stable-abi): needs torch::stable::from_blob(void*, IntArrayRef, deleter,
+  // ScalarType, Device) with a custom deleter.
+  return torch::stable::from_blob(
+      nvshmem_malloc(size), shape, [](void *ptr) { nvshmem_free(ptr); }, dtype, device);
 #else
   NVTE_ERROR("Internal TE error: create_nvshmem_tensor cannot be initialized with valid PyTorch ",
              "distributed process groups when TE is compiled with NVTE_ENABLE_NVSHMEM=1!");
 #endif
 }
 
-void nvshmem_send_on_current_stream(torch::Tensor src, torch::Tensor dst, int peer,
-                                    torch::Tensor signal) {
+void nvshmem_send_on_current_stream(torch::stable::Tensor src, torch::stable::Tensor dst, int peer,
+                                    torch::stable::Tensor signal) {
 #ifdef NVTE_ENABLE_NVSHMEM
   void *src_ptr = reinterpret_cast<void *>(src.data_ptr());
   void *dst_ptr = reinterpret_cast<void *>(dst.data_ptr());
   uint64_t *sig_addr = reinterpret_cast<uint64_t *>(signal.data_ptr());
+  // TODO(stable-abi): needs torch::stable::Tensor::element_size().
   auto nelement = src.numel() * src.element_size();
   uint64_t sigval = 1;
-  at::cuda::CUDAStream cur_stream = at::cuda::getCurrentCUDAStream();
+  cudaStream_t cur_stream = current_cuda_stream();
 
   nvshmemx_putmem_signal_on_stream(dst_ptr, src_ptr, nelement, sig_addr, sigval, NVSHMEM_SIGNAL_SET,
-                                   peer, (cudaStream_t)cur_stream);
+                                   peer, cur_stream);
 #else
   NVTE_ERROR(
       "Internal TE error: nvshmem_send_on_current_stream cannot be initialized with valid PyTorch ",

@@ -4,7 +4,12 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#include <pybind.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/vector.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
 #include <transformer_engine/recipe.h>
 #include <transformer_engine/transpose.h>
 
@@ -14,10 +19,13 @@
 #include "../extensions.h"
 #include "pybind.h"
 
+namespace nb = nanobind;
+
 namespace transformer_engine {
 namespace pytorch {
 
-at::Tensor fp8_transpose(at::Tensor input, DType otype, std::optional<at::Tensor> output) {
+torch::stable::Tensor fp8_transpose(torch::stable::Tensor input, DType otype,
+                                    std::optional<torch::stable::Tensor> output) {
   init_extension();
 
   // Tensor dimensions
@@ -32,12 +40,12 @@ at::Tensor fp8_transpose(at::Tensor input, DType otype, std::optional<at::Tensor
   const auto [M, N] = get_2d_dims(shape);
 
   // Output tensor
-  at::Tensor out;
+  torch::stable::Tensor out;
   if (output.has_value()) {
     out = *output;
   } else {
-    const auto opts = at::TensorOptions().dtype(torch::kUInt8).device(torch::kCUDA);
-    out = at::empty(transpose_shape_int64, opts);
+    out = torch::stable::new_empty(input, transpose_shape_int64,
+                                   torch::headeronly::ScalarType::Byte);
   }
 
   // Return immediately if tensor is empty
@@ -48,12 +56,13 @@ at::Tensor fp8_transpose(at::Tensor input, DType otype, std::optional<at::Tensor
   // Compute transpose
   auto input_cu = makeTransformerEngineTensor(input.data_ptr(), std::vector<size_t>{M, N}, otype);
   auto output_cu = makeTransformerEngineTensor(out.data_ptr(), std::vector<size_t>{N, M}, otype);
-  nvte_transpose(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
+  nvte_transpose(input_cu.data(), output_cu.data(), getCurrentCUDAStream());
 
   return out;
 }
 
-at::Tensor nvfp4_data_transpose(at::Tensor input, std::optional<at::Tensor> output) {
+torch::stable::Tensor nvfp4_data_transpose(torch::stable::Tensor input,
+                                           std::optional<torch::stable::Tensor> output) {
   init_extension();
 
   // Input is packed FP4: logical [M, K] stored as [M, K/2] bytes
@@ -72,15 +81,14 @@ at::Tensor nvfp4_data_transpose(at::Tensor input, std::optional<at::Tensor> outp
   std::vector<int64_t> output_shape = {static_cast<int64_t>(K), static_cast<int64_t>(M_packed)};
 
   // Output tensor
-  at::Tensor out;
+  torch::stable::Tensor out;
   if (output.has_value()) {
     out = *output;
     NVTE_CHECK(
         static_cast<size_t>(out.size(0)) == K && static_cast<size_t>(out.size(1)) == M_packed,
         "Output shape mismatch for NVFP4 transpose.");
   } else {
-    const auto opts = at::TensorOptions().dtype(torch::kUInt8).device(torch::kCUDA);
-    out = at::empty(output_shape, opts);
+    out = torch::stable::new_empty(input, output_shape, torch::headeronly::ScalarType::Byte);
   }
 
   // Return immediately if tensor is empty
@@ -93,13 +101,13 @@ at::Tensor nvfp4_data_transpose(at::Tensor input, std::optional<at::Tensor> outp
       makeTransformerEngineTensor(input.data_ptr(), std::vector<size_t>{M, K_packed}, DType::kByte);
   auto output_cu =
       makeTransformerEngineTensor(out.data_ptr(), std::vector<size_t>{K, M_packed}, DType::kByte);
-  nvte_nvfp4_data_transpose(input_cu.data(), output_cu.data(), at::cuda::getCurrentCUDAStream());
+  nvte_nvfp4_data_transpose(input_cu.data(), output_cu.data(), getCurrentCUDAStream());
 
   return out;
 }
 
-void nvfp4_2d_scale_transpose(at::Tensor input, at::Tensor output, int64_t M_tiles,
-                              int64_t K_tiles) {
+void nvfp4_2d_scale_transpose(torch::stable::Tensor input, torch::stable::Tensor output,
+                              int64_t M_tiles, int64_t K_tiles) {
   init_extension();
 
   // Input: rowwise_scale_inv [M_padded, K_tiles], uint8 (E4M3 stored as bytes)
@@ -108,8 +116,9 @@ void nvfp4_2d_scale_transpose(at::Tensor input, at::Tensor output, int64_t M_til
   const auto out_shape = getTensorShape(output);
   NVTE_CHECK(in_shape.size() == 2, "NVFP4 scale transpose expects 2D input.");
   NVTE_CHECK(out_shape.size() == 2, "NVFP4 scale transpose expects 2D output.");
-  NVTE_CHECK(input.scalar_type() == at::kByte, "NVFP4 scale transpose input must be uint8 (E4M3).");
-  NVTE_CHECK(output.scalar_type() == at::kByte,
+  NVTE_CHECK(input.scalar_type() == torch::headeronly::ScalarType::Byte,
+             "NVFP4 scale transpose input must be uint8 (E4M3).");
+  NVTE_CHECK(output.scalar_type() == torch::headeronly::ScalarType::Byte,
              "NVFP4 scale transpose output must be uint8 (E4M3).");
 
   auto input_cu = makeTransformerEngineTensor(
@@ -118,11 +127,12 @@ void nvfp4_2d_scale_transpose(at::Tensor input, at::Tensor output, int64_t M_til
       output.data_ptr(), std::vector<size_t>{out_shape[0], out_shape[1]}, DType::kByte);
 
   nvte_nvfp4_scale_transpose(input_cu.data(), output_cu.data(), static_cast<size_t>(M_tiles),
-                             static_cast<size_t>(K_tiles), at::cuda::getCurrentCUDAStream());
+                             static_cast<size_t>(K_tiles), getCurrentCUDAStream());
 }
 
-void nvfp4_expand_scale_to_fp8(at::Tensor input, at::Tensor output, int64_t tile_rows,
-                               int64_t tile_cols, int64_t rows_padded, int64_t block_len) {
+void nvfp4_expand_scale_to_fp8(torch::stable::Tensor input, torch::stable::Tensor output,
+                               int64_t tile_rows, int64_t tile_cols, int64_t rows_padded,
+                               int64_t block_len) {
   init_extension();
 
   // Input: per_block_decode_scale [tile_rows, tile_cols], float32
@@ -131,8 +141,10 @@ void nvfp4_expand_scale_to_fp8(at::Tensor input, at::Tensor output, int64_t tile
   const auto out_shape = getTensorShape(output);
   NVTE_CHECK(in_shape.size() == 2, "NVFP4 expand scale expects 2D input.");
   NVTE_CHECK(out_shape.size() == 2, "NVFP4 expand scale expects 2D output.");
-  NVTE_CHECK(input.scalar_type() == at::kFloat, "NVFP4 expand scale input must be float32.");
-  NVTE_CHECK(output.scalar_type() == at::kByte, "NVFP4 expand scale output must be uint8 (E4M3).");
+  NVTE_CHECK(input.scalar_type() == torch::headeronly::ScalarType::Float,
+             "NVFP4 expand scale input must be float32.");
+  NVTE_CHECK(output.scalar_type() == torch::headeronly::ScalarType::Byte,
+             "NVFP4 expand scale output must be uint8 (E4M3).");
 
   auto input_cu = makeTransformerEngineTensor(
       input.data_ptr(), std::vector<size_t>{in_shape[0], in_shape[1]}, DType::kFloat32);
@@ -141,18 +153,20 @@ void nvfp4_expand_scale_to_fp8(at::Tensor input, at::Tensor output, int64_t tile
 
   nvte_nvfp4_expand_scale_to_fp8(input_cu.data(), output_cu.data(), static_cast<size_t>(tile_rows),
                                  static_cast<size_t>(tile_cols), static_cast<size_t>(rows_padded),
-                                 static_cast<size_t>(block_len), at::cuda::getCurrentCUDAStream());
+                                 static_cast<size_t>(block_len), getCurrentCUDAStream());
 }
 
-void nvfp4_compute_per_block_scale(at::Tensor block_amax, at::Tensor scale,
-                                   at::Tensor global_amax) {
+void nvfp4_compute_per_block_scale(torch::stable::Tensor block_amax, torch::stable::Tensor scale,
+                                   torch::stable::Tensor global_amax) {
   init_extension();
 
   // block_amax and scale: [tile_rows, tile_cols], float32
   // global_amax: single element tensor, float32 (avoids D2H transfer)
-  NVTE_CHECK(block_amax.scalar_type() == at::kFloat, "Block amax must be float32.");
-  NVTE_CHECK(scale.scalar_type() == at::kFloat, "Scale must be float32.");
-  NVTE_CHECK(global_amax.scalar_type() == at::kFloat, "Global amax must be float32.");
+  NVTE_CHECK(block_amax.scalar_type() == torch::headeronly::ScalarType::Float,
+             "Block amax must be float32.");
+  NVTE_CHECK(scale.scalar_type() == torch::headeronly::ScalarType::Float, "Scale must be float32.");
+  NVTE_CHECK(global_amax.scalar_type() == torch::headeronly::ScalarType::Float,
+             "Global amax must be float32.");
   NVTE_CHECK(global_amax.numel() == 1, "Global amax must be a single element tensor.");
 
   auto block_amax_cu = makeTransformerEngineTensor(block_amax);
@@ -160,24 +174,25 @@ void nvfp4_compute_per_block_scale(at::Tensor block_amax, at::Tensor scale,
   auto global_amax_cu = makeTransformerEngineTensor(global_amax);
 
   nvte_nvfp4_compute_per_block_scale(block_amax_cu.data(), scale_cu.data(), global_amax_cu.data(),
-                                     at::cuda::getCurrentCUDAStream());
+                                     getCurrentCUDAStream());
 }
 
-void nvfp4_fused_scale(at::Tensor block_amax, at::Tensor global_amax, at::Tensor per_block_scale,
-                       at::Tensor target_scale, at::Tensor target_amax, int64_t tile_rows,
-                       int64_t tile_cols, int64_t rows_padded, int64_t block_len) {
+void nvfp4_fused_scale(torch::stable::Tensor block_amax, torch::stable::Tensor global_amax,
+                       torch::stable::Tensor per_block_scale, torch::stable::Tensor target_scale,
+                       torch::stable::Tensor target_amax, int64_t tile_rows, int64_t tile_cols,
+                       int64_t rows_padded, int64_t block_len) {
   init_extension();
 
-  // block_amax: [tile_rows, tile_cols], float32
-  // global_amax: [1], float32
-  // per_block_scale: [tile_rows, tile_cols], float32 (for partial_cast)
-  // target_scale: [rows_padded, tile_cols], uint8 (E4M3)
-  // target_amax: [1], float32
-  NVTE_CHECK(block_amax.scalar_type() == at::kFloat, "Block amax must be float32.");
-  NVTE_CHECK(global_amax.scalar_type() == at::kFloat, "Global amax must be float32.");
-  NVTE_CHECK(per_block_scale.scalar_type() == at::kFloat, "Per-block scale must be float32.");
-  NVTE_CHECK(target_scale.scalar_type() == at::kByte, "Target scale must be uint8 (E4M3).");
-  NVTE_CHECK(target_amax.scalar_type() == at::kFloat, "Target amax must be float32.");
+  NVTE_CHECK(block_amax.scalar_type() == torch::headeronly::ScalarType::Float,
+             "Block amax must be float32.");
+  NVTE_CHECK(global_amax.scalar_type() == torch::headeronly::ScalarType::Float,
+             "Global amax must be float32.");
+  NVTE_CHECK(per_block_scale.scalar_type() == torch::headeronly::ScalarType::Float,
+             "Per-block scale must be float32.");
+  NVTE_CHECK(target_scale.scalar_type() == torch::headeronly::ScalarType::Byte,
+             "Target scale must be uint8 (E4M3).");
+  NVTE_CHECK(target_amax.scalar_type() == torch::headeronly::ScalarType::Float,
+             "Target amax must be float32.");
   NVTE_CHECK(global_amax.numel() == 1, "Global amax must be a single element tensor.");
   NVTE_CHECK(target_amax.numel() == 1, "Target amax must be a single element tensor.");
 
@@ -191,14 +206,17 @@ void nvfp4_fused_scale(at::Tensor block_amax, at::Tensor global_amax, at::Tensor
                          target_scale_cu.data(), target_amax_cu.data(),
                          static_cast<size_t>(tile_rows), static_cast<size_t>(tile_cols),
                          static_cast<size_t>(rows_padded), static_cast<size_t>(block_len),
-                         at::cuda::getCurrentCUDAStream());
+                         getCurrentCUDAStream());
 }
 
-void nvfp4_multi_tensor_fused_scale(
-    std::vector<at::Tensor> block_amax_list, std::vector<at::Tensor> global_amax_list,
-    std::vector<at::Tensor> per_block_scale_list, std::vector<at::Tensor> target_scale_list,
-    std::vector<at::Tensor> target_amax_list, std::vector<int64_t> tile_rows_list,
-    std::vector<int64_t> tile_cols_list, std::vector<int64_t> rows_padded_list, int64_t block_len) {
+void nvfp4_multi_tensor_fused_scale(std::vector<torch::stable::Tensor> block_amax_list,
+                                    std::vector<torch::stable::Tensor> global_amax_list,
+                                    std::vector<torch::stable::Tensor> per_block_scale_list,
+                                    std::vector<torch::stable::Tensor> target_scale_list,
+                                    std::vector<torch::stable::Tensor> target_amax_list,
+                                    std::vector<int64_t> tile_rows_list,
+                                    std::vector<int64_t> tile_cols_list,
+                                    std::vector<int64_t> rows_padded_list, int64_t block_len) {
   init_extension();
 
   const size_t num_tensors = block_amax_list.size();
@@ -214,23 +232,28 @@ void nvfp4_multi_tensor_fused_scale(
     return;
   }
 
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = getCurrentCUDAStream();
 
   for (size_t i = 0; i < num_tensors; ++i) {
-    const auto& block_amax = block_amax_list[i];
-    const auto& global_amax = global_amax_list[i];
-    auto& per_block_scale = per_block_scale_list[i];
-    auto& target_scale = target_scale_list[i];
-    auto& target_amax = target_amax_list[i];
+    const auto &block_amax = block_amax_list[i];
+    const auto &global_amax = global_amax_list[i];
+    auto &per_block_scale = per_block_scale_list[i];
+    auto &target_scale = target_scale_list[i];
+    auto &target_amax = target_amax_list[i];
     const size_t tile_rows = static_cast<size_t>(tile_rows_list[i]);
     const size_t tile_cols = static_cast<size_t>(tile_cols_list[i]);
     const size_t rows_padded = static_cast<size_t>(rows_padded_list[i]);
 
-    NVTE_CHECK(block_amax.scalar_type() == at::kFloat, "Block amax must be float32.");
-    NVTE_CHECK(global_amax.scalar_type() == at::kFloat, "Global amax must be float32.");
-    NVTE_CHECK(per_block_scale.scalar_type() == at::kFloat, "Per-block scale must be float32.");
-    NVTE_CHECK(target_scale.scalar_type() == at::kByte, "Target scale must be uint8 (E4M3).");
-    NVTE_CHECK(target_amax.scalar_type() == at::kFloat, "Target amax must be float32.");
+    NVTE_CHECK(block_amax.scalar_type() == torch::headeronly::ScalarType::Float,
+               "Block amax must be float32.");
+    NVTE_CHECK(global_amax.scalar_type() == torch::headeronly::ScalarType::Float,
+               "Global amax must be float32.");
+    NVTE_CHECK(per_block_scale.scalar_type() == torch::headeronly::ScalarType::Float,
+               "Per-block scale must be float32.");
+    NVTE_CHECK(target_scale.scalar_type() == torch::headeronly::ScalarType::Byte,
+               "Target scale must be uint8 (E4M3).");
+    NVTE_CHECK(target_amax.scalar_type() == torch::headeronly::ScalarType::Float,
+               "Target amax must be float32.");
     NVTE_CHECK(global_amax.numel() == 1, "Global amax must be a single element tensor.");
     NVTE_CHECK(target_amax.numel() == 1, "Target amax must be a single element tensor.");
 
@@ -246,25 +269,29 @@ void nvfp4_multi_tensor_fused_scale(
   }
 }
 
-void nvfp4_compute_global_scale(at::Tensor global_amax, at::Tensor global_scale) {
+void nvfp4_compute_global_scale(torch::stable::Tensor global_amax,
+                                torch::stable::Tensor global_scale) {
   init_extension();
 
   // global_amax and global_scale: [num_params], float32
-  NVTE_CHECK(global_amax.scalar_type() == at::kFloat, "Global amax must be float32.");
-  NVTE_CHECK(global_scale.scalar_type() == at::kFloat, "Global scale must be float32.");
+  NVTE_CHECK(global_amax.scalar_type() == torch::headeronly::ScalarType::Float,
+             "Global amax must be float32.");
+  NVTE_CHECK(global_scale.scalar_type() == torch::headeronly::ScalarType::Float,
+             "Global scale must be float32.");
 
   auto global_amax_cu = makeTransformerEngineTensor(global_amax);
   auto global_scale_cu = makeTransformerEngineTensor(global_scale);
 
   nvte_nvfp4_compute_global_scale(global_amax_cu.data(), global_scale_cu.data(),
-                                  at::cuda::getCurrentCUDAStream());
+                                  getCurrentCUDAStream());
 }
 
-at::Tensor swap_first_dims(at::Tensor tensor, std::optional<at::Tensor> out) {
+torch::stable::Tensor swap_first_dims(torch::stable::Tensor tensor,
+                                      std::optional<torch::stable::Tensor> out) {
   init_extension();
 
   // Make sure input is contiguous
-  const auto& input = tensor.contiguous();
+  const auto input = torch::stable::contiguous(tensor);
 
   // Allocate output tensor if needed
   if (!out) {
@@ -273,22 +300,21 @@ at::Tensor swap_first_dims(at::Tensor tensor, std::optional<at::Tensor> out) {
     std::vector<int64_t> out_shape_int64(in_shape.begin(), in_shape.end());
     out_shape_int64[0] = static_cast<int64_t>(in_shape[1]);
     out_shape_int64[1] = static_cast<int64_t>(in_shape[0]);
-    auto opts = at::TensorOptions().dtype(input.dtype()).device(input.device());
-    out = at::empty(out_shape_int64, opts);
+    out = torch::stable::new_empty(input, out_shape_int64);
   }
 
   // Launch kernel
   const TensorWrapper te_input = makeTransformerEngineTensor(input);
   TensorWrapper te_output = makeTransformerEngineTensor(*out);
-  nvte_swap_first_dims(te_input.data(), te_output.data(), at::cuda::getCurrentCUDAStream());
+  nvte_swap_first_dims(te_input.data(), te_output.data(), getCurrentCUDAStream());
 
   return std::move(*out);
 }
 
-void nvfp4_2d_multi_tensor_transpose(std::vector<at::Tensor> rowwise_data_list,
-                                     std::vector<at::Tensor> columnwise_data_list,
-                                     std::vector<at::Tensor> rowwise_scale_inv_list,
-                                     std::vector<at::Tensor> columnwise_scale_inv_list,
+void nvfp4_2d_multi_tensor_transpose(std::vector<torch::stable::Tensor> rowwise_data_list,
+                                     std::vector<torch::stable::Tensor> columnwise_data_list,
+                                     std::vector<torch::stable::Tensor> rowwise_scale_inv_list,
+                                     std::vector<torch::stable::Tensor> columnwise_scale_inv_list,
                                      std::vector<int64_t> M_list, std::vector<int64_t> K_list) {
   init_extension();
 
@@ -303,17 +329,15 @@ void nvfp4_2d_multi_tensor_transpose(std::vector<at::Tensor> rowwise_data_list,
     return;
   }
 
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = getCurrentCUDAStream();
 
-  // Process each tensor - the main benefit is reduced Python overhead
-  // by doing the iteration in C++ rather than Python
   constexpr size_t TILE_SIZE = 16;
 
   for (size_t i = 0; i < num_tensors; ++i) {
-    const auto& rowwise_data = rowwise_data_list[i];
-    auto& columnwise_data = columnwise_data_list[i];
-    const auto& rowwise_scale_inv = rowwise_scale_inv_list[i];
-    auto& columnwise_scale_inv = columnwise_scale_inv_list[i];
+    const auto &rowwise_data = rowwise_data_list[i];
+    auto &columnwise_data = columnwise_data_list[i];
+    const auto &rowwise_scale_inv = rowwise_scale_inv_list[i];
+    auto &columnwise_scale_inv = columnwise_scale_inv_list[i];
     const int64_t M = M_list[i];
     const int64_t K = K_list[i];
 

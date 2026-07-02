@@ -3,9 +3,16 @@
  *
  * See LICENSE for license information.
  ************************************************************************/
+#include <nanobind/nanobind.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+
 #include "../extensions.h"
 #include "common.h"
 #include "pybind.h"
+
+namespace nb = nanobind;
 
 namespace transformer_engine {
 namespace pytorch {
@@ -15,12 +22,12 @@ using FuncType = void(const NVTETensor, NVTETensor, cudaStream_t);
 using DFuncType = void(const NVTETensor, const NVTETensor, NVTETensor, cudaStream_t);
 
 template <FuncType* act_func, auto act_func_with_args, typename... Args>
-py::object activation_helper(const at::Tensor& input, py::handle quantizer, int shape_divisor = 1,
-                             Args&&... args) {
+nb::object activation_helper(const torch::stable::Tensor& input, nb::handle quantizer,
+                            int shape_divisor = 1, Args&&... args) {
   init_extension();
 
   // Input tensor
-  auto input_tensor = input.contiguous();
+  auto input_tensor = torch::stable::contiguous(input);
   const TensorWrapper& input_nvte = makeTransformerEngineTensor(input_tensor);
 
   // Construct output tensor
@@ -52,12 +59,12 @@ py::object activation_helper(const at::Tensor& input, py::handle quantizer, int 
   }
 
   // Perform compute
-  auto stream = at::cuda::getCurrentCUDAStream();
+  cudaStream_t stream = getCurrentCUDAStream();
   switch (impl) {
     case Impl::UNFUSED:
       // Compute activation in high precision, then quantize
       {
-        auto [temp_nvte, _] = NoneQuantizer(py::none()).create_tensor(output_shape, fake_dtype);
+        auto [temp_nvte, _] = NoneQuantizer(nb::none()).create_tensor(output_shape, fake_dtype);
         NVTE_SCOPED_GIL_RELEASE({
           if constexpr (act_func == nullptr) {
             act_func_with_args(input_nvte.data(), temp_nvte.data(), std::forward<Args>(args)...,
@@ -126,13 +133,14 @@ py::object activation_helper(const at::Tensor& input, py::handle quantizer, int 
 }
 
 template <DFuncType* dact_func, auto dact_func_with_args, typename... Args>
-py::object dactivation_helper(const at::Tensor& grad_output, const at::Tensor& input,
-                              py::handle quantizer, Args&&... args) {
+nb::object dactivation_helper(const torch::stable::Tensor& grad_output,
+                             const torch::stable::Tensor& input, nb::handle quantizer,
+                             Args&&... args) {
   init_extension();
 
   // Grad output and input tensors
-  auto grad_output_tensor = grad_output.contiguous();
-  auto input_tensor = input.contiguous();
+  auto grad_output_tensor = torch::stable::contiguous(grad_output);
+  auto input_tensor = torch::stable::contiguous(input);
   const TensorWrapper& grad_output_nvte = makeTransformerEngineTensor(grad_output_tensor);
   const TensorWrapper& input_nvte = makeTransformerEngineTensor(input_tensor);
 
@@ -165,12 +173,12 @@ py::object dactivation_helper(const at::Tensor& grad_output, const at::Tensor& i
   }
 
   // Perform compute
-  auto stream = at::cuda::getCurrentCUDAStream();
+  cudaStream_t stream = getCurrentCUDAStream();
   switch (impl) {
     case Impl::UNFUSED:
       // Compute activation backward in high precision, then quantize
       {
-        auto [temp_nvte, _] = NoneQuantizer(py::none()).create_tensor(input_shape, fake_dtype);
+        auto [temp_nvte, _] = NoneQuantizer(nb::none()).create_tensor(input_shape, fake_dtype);
         NVTE_SCOPED_GIL_RELEASE({
           if constexpr (dact_func == nullptr) {
             dact_func_with_args(grad_output_nvte.data(), input_nvte.data(), temp_nvte.data(),
@@ -240,104 +248,115 @@ py::object dactivation_helper(const at::Tensor& grad_output, const at::Tensor& i
 }  // namespace
 
 /* GELU and variants */
-py::object gelu(const at::Tensor& input, py::handle quantizer) {
+nb::object gelu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_gelu, nullptr>(input, quantizer);
 }
 
-py::object dgelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dgelu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                nb::handle quantizer) {
   return dactivation_helper<nvte_dgelu, nullptr>(grad, input, quantizer);
 }
 
-py::object glu(const at::Tensor& input, py::handle quantizer) {
+nb::object glu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_glu, nullptr>(input, quantizer, 2);
 }
 
-py::object dglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dglu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+               nb::handle quantizer) {
   return dactivation_helper<nvte_dglu, nullptr>(grad, input, quantizer);
 }
 
-py::object geglu(const at::Tensor& input, py::handle quantizer) {
+nb::object geglu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_geglu, nullptr>(input, quantizer, 2);
 }
 
-py::object dgeglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dgeglu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                 nb::handle quantizer) {
   return dactivation_helper<nvte_dgeglu, nullptr>(grad, input, quantizer);
 }
 
-py::object qgelu(const at::Tensor& input, py::handle quantizer) {
+nb::object qgelu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_qgelu, nullptr>(input, quantizer);
 }
 
-py::object dqgelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dqgelu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                 nb::handle quantizer) {
   return dactivation_helper<nvte_dqgelu, nullptr>(grad, input, quantizer);
 }
 
-py::object qgeglu(const at::Tensor& input, py::handle quantizer) {
+nb::object qgeglu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_qgeglu, nullptr>(input, quantizer, 2);
 }
 
-py::object dqgeglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dqgeglu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                  nb::handle quantizer) {
   return dactivation_helper<nvte_dqgeglu, nullptr>(grad, input, quantizer);
 }
 
 /* ReLU and variants */
-py::object relu(const at::Tensor& input, py::handle quantizer) {
+nb::object relu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_relu, nullptr>(input, quantizer);
 }
 
-py::object drelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object drelu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                nb::handle quantizer) {
   return dactivation_helper<nvte_drelu, nullptr>(grad, input, quantizer);
 }
 
-py::object reglu(const at::Tensor& input, py::handle quantizer) {
+nb::object reglu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_reglu, nullptr>(input, quantizer, 2);
 }
 
-py::object dreglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dreglu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                 nb::handle quantizer) {
   return dactivation_helper<nvte_dreglu, nullptr>(grad, input, quantizer);
 }
 
-py::object srelu(const at::Tensor& input, py::handle quantizer) {
+nb::object srelu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_srelu, nullptr>(input, quantizer);
 }
 
-py::object dsrelu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dsrelu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                 nb::handle quantizer) {
   return dactivation_helper<nvte_dsrelu, nullptr>(grad, input, quantizer);
 }
 
-py::object sreglu(const at::Tensor& input, py::handle quantizer) {
+nb::object sreglu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_sreglu, nullptr>(input, quantizer, 2);
 }
 
-py::object dsreglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dsreglu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                  nb::handle quantizer) {
   return dactivation_helper<nvte_dsreglu, nullptr>(grad, input, quantizer);
 }
 /* Silu and variants */
-py::object silu(const at::Tensor& input, py::handle quantizer) {
+nb::object silu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_silu, nullptr>(input, quantizer);
 }
 
-py::object dsilu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dsilu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                nb::handle quantizer) {
   return dactivation_helper<nvte_dsilu, nullptr>(grad, input, quantizer);
 }
 
-py::object swiglu(const at::Tensor& input, py::handle quantizer) {
+nb::object swiglu(const torch::stable::Tensor& input, nb::handle quantizer) {
   return activation_helper<nvte_swiglu, nullptr>(input, quantizer, 2);
 }
 
-py::object dswiglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer) {
+nb::object dswiglu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                  nb::handle quantizer) {
   return dactivation_helper<nvte_dswiglu, nullptr>(grad, input, quantizer);
 }
 
 /* clamped functions */
-py::object clamped_swiglu(const at::Tensor& input, py::handle quantizer, float limit, float alpha,
-                          float glu_linear_offset) {
+nb::object clamped_swiglu(const torch::stable::Tensor& input, nb::handle quantizer, float limit,
+                         float alpha, float glu_linear_offset) {
   return activation_helper<nullptr, nvte_clamped_swiglu_v2>(input, quantizer, 2, limit, alpha,
                                                             glu_linear_offset);
 }
 
-py::object clamped_dswiglu(const at::Tensor& grad, const at::Tensor& input, py::handle quantizer,
-                           float limit, float alpha, float glu_linear_offset) {
+nb::object clamped_dswiglu(const torch::stable::Tensor& grad, const torch::stable::Tensor& input,
+                          nb::handle quantizer, float limit, float alpha, float glu_linear_offset) {
   return dactivation_helper<nullptr, nvte_clamped_dswiglu_v2>(grad, input, quantizer, limit, alpha,
                                                               glu_linear_offset);
 }

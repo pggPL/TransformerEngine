@@ -7,22 +7,22 @@
 #ifndef TRANSFORMER_ENGINE_PYTORCH_CSRC_COMMON_H_
 #define TRANSFORMER_ENGINE_PYTORCH_CSRC_COMMON_H_
 
-#include <ATen/ATen.h>
-#include <ATen/Dispatch.h>
-#include <ATen/cuda/CUDAContext.h>
-#include <ATen/cuda/CUDAGeneratorImpl.h>
-#include <ATen/cudnn/Handle.h>
-#include <ATen/native/DispatchStub.h>
-#include <c10/macros/Macros.h>
-#include <c10/util/Float8_e4m3fn.h>
-#include <c10/util/Float8_e5m2.h>
 #include <cublasLt.h>
 #include <cuda.h>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 #include <cudnn.h>
-#include <torch/extension.h>
-#include <torch/torch.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/pair.h>
+#include <nanobind/stl/tuple.h>
+#include <nanobind/stl/vector.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/python/interop.h>  // from_pyobject / to_pyobject (2.14+)
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+#include <torch/headeronly/util/HeaderOnlyArrayRef.h>
 #include <transformer_engine/activation.h>
 #include <transformer_engine/cast.h>
 #include <transformer_engine/cast_transpose_noop.h>
@@ -44,31 +44,37 @@
 #include <transformer_engine/transpose.h>
 #include <transformer_engine/utils.h>
 
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
 #include <array>
 #include <cassert>
 #include <cstring>
 #include <iostream>
 #include <memory>
-#include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
 #include <vector>
 
-#include "c10/util/ArrayRef.h"
+// TODO(stable-abi): RNG capture (at::PhiloxCudaState / at::CUDAGeneratorImpl) and
+// torch.distributed ProcessGroup have no stable-ABI equivalent yet. These remain
+// dependent on non-stable ATen/c10d headers (see philox_* / dist_group_type below).
+#include <ATen/cuda/CUDAGeneratorImpl.h>
+#include <ATen/cuda/CUDAGraphsUtils.cuh>
+#include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
+
 #include "common/util/logging.h"
-#include "extensions/pybind_dtype_caster.h"
+
+namespace nb = nanobind;
 
 namespace transformer_engine::pytorch {
 
 // in python we have: dist_group_type = torch.distributed.ProcessGroup
+// TODO(stable-abi): ProcessGroup is not part of the PyTorch stable ABI.
 using dist_group_type = c10d::ProcessGroup;
 
 // Each tensor here is shape (N, ) holding all scaling
 // data for a single FP8 block, e.g. LayerNormLinear
 class FP8TensorMeta {
  public:
-  at::Tensor scale;
-  at::Tensor scale_inv;
-  at::Tensor amax_history;
+  torch::stable::Tensor scale;
+  torch::stable::Tensor scale_inv;
+  torch::stable::Tensor amax_history;
 };
 
 // Used as named indices on the `scale`, `scale_inv`,
@@ -103,9 +109,10 @@ class Quantizer {
   virtual void set_quantization_params(TensorWrapper* tensor) const = 0;
 
   /*! @brief Construct a tensor with uninitialized data */
-  virtual std::pair<TensorWrapper, py::object> create_tensor(
+  virtual std::pair<TensorWrapper, nb::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
-      std::optional<at::Device> device = std::nullopt, bool pin_memory = false) const = 0;
+      std::optional<torch::stable::Device> device = std::nullopt,
+      bool pin_memory = false) const = 0;
 
   /*! @brief Construct a grouped tensor with uninitialized data
    *
@@ -116,20 +123,20 @@ class Quantizer {
    *   callers that already have the scan (e.g. from
    *   ``tex.splits_to_offsets_multi``) skip the redundant kernel launch.
    */
-  virtual std::pair<GroupedTensorWrapper, py::object> create_grouped_tensor(
+  virtual std::pair<GroupedTensorWrapper, nb::object> create_grouped_tensor(
       size_t num_tensors, const std::vector<size_t>& logical_shape, DType dtype,
-      py::object quantizer, const std::optional<at::Tensor>& first_dims,
-      const std::optional<at::Tensor>& last_dims,
-      const std::optional<at::Tensor>& precomputed_tensor_offsets, size_t logical_first_dim,
-      size_t logical_last_dim) const = 0;
+      nb::object quantizer, const std::optional<torch::stable::Tensor>& first_dims,
+      const std::optional<torch::stable::Tensor>& last_dims,
+      const std::optional<torch::stable::Tensor>& precomputed_tensor_offsets,
+      size_t logical_first_dim, size_t logical_last_dim) const = 0;
 
   /*! @brief Convert a PyTorch tensor into a Transformer Engine C++ tensor
    *
    * The PyTorch tensor's attributes are modified to match the
    * quantizer's configuration.
    */
-  virtual std::pair<TensorWrapper, py::object> convert_and_update_tensor(
-      py::object tensor) const = 0;
+  virtual std::pair<TensorWrapper, nb::object> convert_and_update_tensor(
+      nb::object tensor) const = 0;
 
   /*! @brief Convert to a quantized data format */
   virtual void quantize(const TensorWrapper& input, TensorWrapper& out,
@@ -142,36 +149,37 @@ class Quantizer {
   bool columnwise_usage = true;
   bool internal = false;
   bool optimize_for_gemm = false;
-  py::handle quantizer;
+  nb::handle quantizer;
 
  protected:
-  explicit Quantizer(const py::handle& quantizer);
+  explicit Quantizer(const nb::handle& quantizer);
 };
 
 class NoneQuantizer : public Quantizer {
  public:
-  explicit NoneQuantizer(const py::handle& quantizer) : Quantizer(quantizer) {}
+  explicit NoneQuantizer(const nb::handle& quantizer) : Quantizer(quantizer) {}
 
   NVTEScalingMode get_scaling_mode() const override { return NVTE_DELAYED_TENSOR_SCALING; }
 
   void set_quantization_params(TensorWrapper* tensor) const override {}
 
-  std::pair<TensorWrapper, py::object> create_tensor(
+  std::pair<TensorWrapper, nb::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
-      std::optional<at::Device> device = std::nullopt, bool pin_memory = false) const override;
+      std::optional<torch::stable::Device> device = std::nullopt,
+      bool pin_memory = false) const override;
 
-  std::pair<GroupedTensorWrapper, py::object> create_grouped_tensor(
+  std::pair<GroupedTensorWrapper, nb::object> create_grouped_tensor(
       size_t num_tensors, const std::vector<size_t>& logical_shape, DType dtype,
-      py::object quantizer, const std::optional<at::Tensor>& first_dims,
-      const std::optional<at::Tensor>& last_dims,
-      const std::optional<at::Tensor>& precomputed_tensor_offsets, size_t logical_first_dim,
-      size_t logical_last_dim) const override;
+      nb::object quantizer, const std::optional<torch::stable::Tensor>& first_dims,
+      const std::optional<torch::stable::Tensor>& last_dims,
+      const std::optional<torch::stable::Tensor>& precomputed_tensor_offsets,
+      size_t logical_first_dim, size_t logical_last_dim) const override;
 
   /*! @brief Construct a tensor with pre-initialized data */
-  std::pair<TensorWrapper, py::object> create_tensor(const std::vector<size_t>& shape, DType dtype,
-                                                     at::Tensor data) const;
+  std::pair<TensorWrapper, nb::object> create_tensor(const std::vector<size_t>& shape, DType dtype,
+                                                     torch::stable::Tensor data) const;
 
-  std::pair<TensorWrapper, py::object> convert_and_update_tensor(py::object tensor) const override;
+  std::pair<TensorWrapper, nb::object> convert_and_update_tensor(nb::object tensor) const override;
 
   void quantize(const TensorWrapper& input, TensorWrapper& out,
                 const std::optional<TensorWrapper>& noop_flag = std::nullopt) override;
@@ -179,34 +187,35 @@ class NoneQuantizer : public Quantizer {
 
 class Float8Quantizer : public Quantizer {
  public:
-  at::Tensor scale;
-  at::Tensor scale_inv;
-  at::Tensor amax;
+  torch::stable::Tensor scale;
+  torch::stable::Tensor scale_inv;
+  torch::stable::Tensor amax;
 
-  explicit Float8Quantizer(const py::handle& quantizer);
+  explicit Float8Quantizer(const nb::handle& quantizer);
 
   NVTEScalingMode get_scaling_mode() const override { return NVTE_DELAYED_TENSOR_SCALING; }
 
   void set_quantization_params(TensorWrapper* tensor) const override;
 
-  std::pair<TensorWrapper, py::object> create_tensor(
+  std::pair<TensorWrapper, nb::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
-      std::optional<at::Device> device = std::nullopt, bool pin_memory = false) const override;
+      std::optional<torch::stable::Device> device = std::nullopt,
+      bool pin_memory = false) const override;
 
-  std::pair<GroupedTensorWrapper, py::object> create_grouped_tensor(
+  std::pair<GroupedTensorWrapper, nb::object> create_grouped_tensor(
       size_t num_tensors, const std::vector<size_t>& logical_shape, DType dtype,
-      py::object quantizer, const std::optional<at::Tensor>& first_dims,
-      const std::optional<at::Tensor>& last_dims,
-      const std::optional<at::Tensor>& precomputed_tensor_offsets, size_t logical_first_dim,
-      size_t logical_last_dim) const override;
+      nb::object quantizer, const std::optional<torch::stable::Tensor>& first_dims,
+      const std::optional<torch::stable::Tensor>& last_dims,
+      const std::optional<torch::stable::Tensor>& precomputed_tensor_offsets,
+      size_t logical_first_dim, size_t logical_last_dim) const override;
 
   /*! @brief Construct a tensor with pre-initialized data */
-  std::pair<TensorWrapper, py::object> create_tensor(
-      const std::vector<size_t>& shape, DType dtype, std::optional<at::Tensor> data,
-      std::optional<at::Tensor> transpose, std::optional<at::Tensor> scale_inv,
-      std::optional<at::Device> device = std::nullopt, bool pin_memory = false) const;
+  std::pair<TensorWrapper, nb::object> create_tensor(
+      const std::vector<size_t>& shape, DType dtype, std::optional<torch::stable::Tensor> data,
+      std::optional<torch::stable::Tensor> transpose, std::optional<torch::stable::Tensor> scale_inv,
+      std::optional<torch::stable::Device> device = std::nullopt, bool pin_memory = false) const;
 
-  std::pair<TensorWrapper, py::object> convert_and_update_tensor(py::object shape) const override;
+  std::pair<TensorWrapper, nb::object> convert_and_update_tensor(nb::object shape) const override;
 
   void quantize(const TensorWrapper& input, TensorWrapper& out,
                 const std::optional<TensorWrapper>& noop_flag = std::nullopt) override;
@@ -220,22 +229,23 @@ class Float8CurrentScalingQuantizer : public Quantizer {
   bool force_pow_2_scales = false;
   float amax_epsilon = 0.0;
 
-  explicit Float8CurrentScalingQuantizer(const py::handle& quantizer);
+  explicit Float8CurrentScalingQuantizer(const nb::handle& quantizer);
 
   NVTEScalingMode get_scaling_mode() const override { return NVTE_DELAYED_TENSOR_SCALING; }
 
   void set_quantization_params(TensorWrapper* tensor) const override;
 
-  std::pair<TensorWrapper, py::object> create_tensor(
+  std::pair<TensorWrapper, nb::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
-      std::optional<at::Device> device = std::nullopt, bool pin_memory = false) const override;
+      std::optional<torch::stable::Device> device = std::nullopt,
+      bool pin_memory = false) const override;
 
-  std::pair<GroupedTensorWrapper, py::object> create_grouped_tensor(
+  std::pair<GroupedTensorWrapper, nb::object> create_grouped_tensor(
       size_t num_tensors, const std::vector<size_t>& logical_shape, DType dtype,
-      py::object quantizer, const std::optional<at::Tensor>& first_dims,
-      const std::optional<at::Tensor>& last_dims,
-      const std::optional<at::Tensor>& precomputed_tensor_offsets, size_t logical_first_dim,
-      size_t logical_last_dim) const override;
+      nb::object quantizer, const std::optional<torch::stable::Tensor>& first_dims,
+      const std::optional<torch::stable::Tensor>& last_dims,
+      const std::optional<torch::stable::Tensor>& precomputed_tensor_offsets,
+      size_t logical_first_dim, size_t logical_last_dim) const override;
 
   /*! @brief Construct an unquantized tensor with a freshly allocated amax buffer.
    *
@@ -243,10 +253,10 @@ class Float8CurrentScalingQuantizer : public Quantizer {
    * amax to be initialized to zero. The amax tensor is returned as
    * the third element to keep it alive in the caller's scope.
   */
-  std::tuple<TensorWrapper, py::object, at::Tensor> create_unquantized_tensor_with_amax(
-      const std::vector<size_t>& shape, DType dtype, std::optional<at::Tensor> data = std::nullopt);
+  std::tuple<TensorWrapper, nb::object, torch::stable::Tensor> create_unquantized_tensor_with_amax(
+      const std::vector<size_t>& shape, DType dtype, std::optional<torch::stable::Tensor> data = std::nullopt);
 
-  std::pair<TensorWrapper, py::object> convert_and_update_tensor(py::object shape) const override;
+  std::pair<TensorWrapper, nb::object> convert_and_update_tensor(nb::object shape) const override;
 
   void quantize(const TensorWrapper& input, TensorWrapper& out,
                 const std::optional<TensorWrapper>& noop_flag = std::nullopt) override;
@@ -257,13 +267,13 @@ class Float8CurrentScalingQuantizer : public Quantizer {
    * amax. The amax may still be reduced across the amax reduction
    * group.
    */
-  void quantize_with_amax(TensorWrapper& input, TensorWrapper& out, at::Tensor amax,
+  void quantize_with_amax(TensorWrapper& input, TensorWrapper& out, torch::stable::Tensor amax,
                           const std::optional<TensorWrapper>& noop_flag = std::nullopt);
 
  private:
   void quantize_impl(const TensorWrapper& input, TensorWrapper& out,
                      const std::optional<TensorWrapper>& noop_flag, bool compute_amax,
-                     at::Tensor amax_buf, at::Tensor scale_buf);
+                     torch::stable::Tensor amax_buf, torch::stable::Tensor scale_buf);
 };
 
 class Float8BlockQuantizer : public Quantizer {
@@ -279,7 +289,7 @@ class Float8BlockQuantizer : public Quantizer {
 
  public:
   // Initializes from a python handle to a Float8BlockQuantizer
-  explicit Float8BlockQuantizer(const py::handle& quantizer);
+  explicit Float8BlockQuantizer(const nb::handle& quantizer);
 
   NVTEScalingMode get_scaling_mode() const override {
     return (block_scaling_dim == 2) ? NVTE_BLOCK_SCALING_2D : NVTE_BLOCK_SCALING_1D;
@@ -291,18 +301,19 @@ class Float8BlockQuantizer : public Quantizer {
   // Create a python Float8BlockQuantized tensor and C++ wrapper
   // for the tensor. Should set quantized data, scales for rowwise
   // and optionally columnwise usage.
-  std::pair<TensorWrapper, py::object> create_tensor(
+  std::pair<TensorWrapper, nb::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
-      std::optional<at::Device> device = std::nullopt, bool pin_memory = false) const override;
+      std::optional<torch::stable::Device> device = std::nullopt,
+      bool pin_memory = false) const override;
 
-  std::pair<GroupedTensorWrapper, py::object> create_grouped_tensor(
+  std::pair<GroupedTensorWrapper, nb::object> create_grouped_tensor(
       size_t num_tensors, const std::vector<size_t>& logical_shape, DType dtype,
-      py::object quantizer, const std::optional<at::Tensor>& first_dims,
-      const std::optional<at::Tensor>& last_dims,
-      const std::optional<at::Tensor>& precomputed_tensor_offsets, size_t logical_first_dim,
-      size_t logical_last_dim) const override;
+      nb::object quantizer, const std::optional<torch::stable::Tensor>& first_dims,
+      const std::optional<torch::stable::Tensor>& last_dims,
+      const std::optional<torch::stable::Tensor>& precomputed_tensor_offsets,
+      size_t logical_first_dim, size_t logical_last_dim) const override;
 
-  std::pair<TensorWrapper, py::object> convert_and_update_tensor(py::object shape) const override;
+  std::pair<TensorWrapper, nb::object> convert_and_update_tensor(nb::object shape) const override;
 
   void quantize(const TensorWrapper& input, TensorWrapper& out,
                 const std::optional<TensorWrapper>& noop_flag = std::nullopt) override;
@@ -312,24 +323,25 @@ class Float8BlockQuantizer : public Quantizer {
 
 class MXFP8Quantizer : public Quantizer {
  public:
-  explicit MXFP8Quantizer(const py::handle& quantizer);
+  explicit MXFP8Quantizer(const nb::handle& quantizer);
 
   NVTEScalingMode get_scaling_mode() const override { return NVTE_MXFP8_1D_SCALING; }
 
   void set_quantization_params(TensorWrapper* tensor) const override;
 
-  std::pair<TensorWrapper, py::object> create_tensor(
+  std::pair<TensorWrapper, nb::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
-      std::optional<at::Device> device = std::nullopt, bool pin_memory = false) const override;
+      std::optional<torch::stable::Device> device = std::nullopt,
+      bool pin_memory = false) const override;
 
-  std::pair<GroupedTensorWrapper, py::object> create_grouped_tensor(
+  std::pair<GroupedTensorWrapper, nb::object> create_grouped_tensor(
       size_t num_tensors, const std::vector<size_t>& logical_shape, DType dtype,
-      py::object quantizer, const std::optional<at::Tensor>& first_dims,
-      const std::optional<at::Tensor>& last_dims,
-      const std::optional<at::Tensor>& precomputed_tensor_offsets, size_t logical_first_dim,
-      size_t logical_last_dim) const override;
+      nb::object quantizer, const std::optional<torch::stable::Tensor>& first_dims,
+      const std::optional<torch::stable::Tensor>& last_dims,
+      const std::optional<torch::stable::Tensor>& precomputed_tensor_offsets,
+      size_t logical_first_dim, size_t logical_last_dim) const override;
 
-  std::pair<TensorWrapper, py::object> convert_and_update_tensor(py::object shape) const override;
+  std::pair<TensorWrapper, nb::object> convert_and_update_tensor(nb::object shape) const override;
 
   void quantize(const TensorWrapper& input, TensorWrapper& out,
                 const std::optional<TensorWrapper>& noop_flag = std::nullopt) override;
@@ -356,34 +368,35 @@ class NVFP4Quantizer : public Quantizer {
   bool row_scaled_nvfp4;
 
   int rht_matrix_random_sign_mask_t;
-  at::Tensor rht_matrix;
+  torch::stable::Tensor rht_matrix;
 
-  explicit NVFP4Quantizer(const py::handle& quantizer);
+  explicit NVFP4Quantizer(const nb::handle& quantizer);
 
   NVTEScalingMode get_scaling_mode() const override { return NVTE_NVFP4_1D_SCALING; }
 
   void set_quantization_params(TensorWrapper* tensor) const override;
 
-  std::pair<TensorWrapper, py::object> create_tensor(
+  std::pair<TensorWrapper, nb::object> create_tensor(
       const std::vector<size_t>& shape, DType dtype,
-      std::optional<at::Device> device = std::nullopt, bool pin_memory = false) const override;
+      std::optional<torch::stable::Device> device = std::nullopt,
+      bool pin_memory = false) const override;
 
-  std::pair<GroupedTensorWrapper, py::object> create_grouped_tensor(
+  std::pair<GroupedTensorWrapper, nb::object> create_grouped_tensor(
       size_t num_tensors, const std::vector<size_t>& logical_shape, DType dtype,
-      py::object quantizer, const std::optional<at::Tensor>& first_dims,
-      const std::optional<at::Tensor>& last_dims,
-      const std::optional<at::Tensor>& precomputed_tensor_offsets, size_t logical_first_dim,
-      size_t logical_last_dim) const override;
+      nb::object quantizer, const std::optional<torch::stable::Tensor>& first_dims,
+      const std::optional<torch::stable::Tensor>& last_dims,
+      const std::optional<torch::stable::Tensor>& precomputed_tensor_offsets,
+      size_t logical_first_dim, size_t logical_last_dim) const override;
 
   /*! @brief Construct an unquantized tensor that shares NVFP4 tensor's amax pointer
    *
    * The amax is zeroed out. Most TE kernels that output amax expect
    * amax to be initialized to zero.
    */
-  std::pair<TensorWrapper, py::object> create_unquantized_tensor_with_amax(
+  std::pair<TensorWrapper, nb::object> create_unquantized_tensor_with_amax(
       TensorWrapper& quantized_tensor, DType dtype);
 
-  std::pair<TensorWrapper, py::object> convert_and_update_tensor(py::object shape) const override;
+  std::pair<TensorWrapper, nb::object> convert_and_update_tensor(nb::object shape) const override;
 
   void quantize(const TensorWrapper& input, TensorWrapper& out,
                 const std::optional<TensorWrapper>& noop_flag = std::nullopt) override;
@@ -414,9 +427,9 @@ class NVFP4Quantizer : public Quantizer {
                                         cudaStream_t stream);
 };
 
-std::unique_ptr<Quantizer> convert_quantizer(py::handle quantizer);
+std::unique_ptr<Quantizer> convert_quantizer(nb::handle quantizer);
 
-std::vector<size_t> getTensorShape(const at::Tensor& t);
+std::vector<size_t> getTensorShape(const torch::stable::Tensor& t);
 
 transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
                                                       const std::string& fp8_recipe);
@@ -424,11 +437,11 @@ transformer_engine::DType getTransformerEngineFP8Type(bool e4m3_if_hybrid,
 /*! @brief Wrap a C++ ``transformer_engine::DType`` as the canonical Python
  *         ``transformer_engine.pytorch.DType`` ``IntEnum`` member.
  *
- * The returned object is cached per enum value (one ``py::object`` per
- * ``DType``), py::object corresponds to the python ``DType`` enum member
+ * The returned object is cached per enum value (one ``nb::object`` per
+ * ``DType``), nb::object corresponds to the python ``DType`` enum member
  * defined in transformer_engine.pytorch.
  */
-pybind11::object MakePythonDType(transformer_engine::DType dtype);
+nb::object MakePythonDType(transformer_engine::DType dtype);
 
 inline size_t typeToNumBits(transformer_engine::DType t) {
   switch (t) {
@@ -453,54 +466,56 @@ inline size_t typeToNumBits(transformer_engine::DType t) {
   }
 }
 
-inline at::ScalarType GetATenDType(transformer_engine::DType t) {
+inline torch::headeronly::ScalarType GetATenDType(transformer_engine::DType t) {
+  using torch::headeronly::ScalarType;
   switch (t) {
     case transformer_engine::DType::kInt16:
-      return torch::kInt16;
+      return ScalarType::Short;
     case transformer_engine::DType::kInt32:
-      return torch::kInt32;
+      return ScalarType::Int;
     case transformer_engine::DType::kInt64:
-      return torch::kInt64;
+      return ScalarType::Long;
     case transformer_engine::DType::kFloat32:
-      return at::kFloat;
+      return ScalarType::Float;
     case transformer_engine::DType::kFloat16:
-      return at::kHalf;
+      return ScalarType::Half;
     case transformer_engine::DType::kBFloat16:
-      return at::kBFloat16;
+      return ScalarType::BFloat16;
     case transformer_engine::DType::kByte:
-      return at::kByte;
+      return ScalarType::Byte;
     case transformer_engine::DType::kFloat8E4M3:
-      return at::kFloat8_e4m3fn;
+      return ScalarType::Float8_e4m3fn;
     case transformer_engine::DType::kFloat8E5M2:
-      return at::kFloat8_e5m2;
+      return ScalarType::Float8_e5m2;
     case transformer_engine::DType::kFloat8E8M0:
-      return at::kByte;  // e8m0 dtype requires PyTorch 2.7.0+
+      return ScalarType::Byte;  // e8m0 dtype requires PyTorch 2.7.0+
     default:
       NVTE_ERROR("Invalid type (", static_cast<int>(t), ").");
   }
 }
 
-inline transformer_engine::DType GetTransformerEngineDType(at::ScalarType t) {
+inline transformer_engine::DType GetTransformerEngineDType(torch::headeronly::ScalarType t) {
+  using torch::headeronly::ScalarType;
   switch (t) {
-    case at::kFloat8_e4m3fn:
+    case ScalarType::Float8_e4m3fn:
       return transformer_engine::DType::kFloat8E4M3;
-    case at::kFloat8_e5m2:
+    case ScalarType::Float8_e5m2:
       return transformer_engine::DType::kFloat8E5M2;
-    case at::kHalf:
+    case ScalarType::Half:
       return transformer_engine::DType::kFloat16;
-    case at::kFloat:
+    case ScalarType::Float:
       return transformer_engine::DType::kFloat32;
-    case at::kBFloat16:
+    case ScalarType::BFloat16:
       return transformer_engine::DType::kBFloat16;
-    case at::kBool:
+    case ScalarType::Bool:
       return transformer_engine::DType::kByte;
-    case torch::kByte:
+    case ScalarType::Byte:
       return transformer_engine::DType::kByte;
-    case torch::kInt16:
+    case ScalarType::Short:
       return transformer_engine::DType::kInt16;
-    case torch::kInt32:
+    case ScalarType::Int:
       return transformer_engine::DType::kInt32;
-    case torch::kInt64:
+    case ScalarType::Long:
       return transformer_engine::DType::kInt64;
     default:
       NVTE_ERROR("Invalid type (", static_cast<int>(t), ").");
@@ -532,17 +547,17 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(void* data_ptr,
                                                               const NVTEShape& shape,
                                                               const transformer_engine::DType type);
 
-transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor);
+transformer_engine::TensorWrapper makeTransformerEngineTensor(torch::stable::Tensor tensor);
 
 std::tuple<std::vector<transformer_engine::TensorWrapper>, std::vector<std::vector<NVTETensor>>,
            std::vector<NVTETensor*>, size_t, size_t>
-makeTransformerEngineTensorList(std::vector<std::vector<at::Tensor>> at_tensor_lists);
+makeTransformerEngineTensorList(std::vector<std::vector<torch::stable::Tensor>> at_tensor_lists);
 
-TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantizer);
+TensorWrapper makeTransformerEngineTensor(nb::handle tensor, nb::handle quantizer);
 
 transformer_engine::TensorWrapper makeTransformerEngineTensor(
-    at::Tensor tensor, at::Tensor amax, const at::Tensor scale, at::Tensor scale_inv,
-    NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING);
+    torch::stable::Tensor tensor, torch::stable::Tensor amax, const torch::stable::Tensor scale,
+    torch::stable::Tensor scale_inv, NVTEScalingMode scaling_mode = NVTE_DELAYED_TENSOR_SCALING);
 
 template <typename T>
 T product(const std::vector<T>& shape);
@@ -551,17 +566,17 @@ size_t product(const NVTEShape& shape, size_t begin, size_t end);
 
 std::vector<size_t> nvte_shape_to_vector(const NVTEShape& nvte_shape);
 
-at::Tensor allocateSpace(const std::vector<size_t>& shape, const transformer_engine::DType type,
+torch::stable::Tensor allocateSpace(const std::vector<size_t>& shape, const transformer_engine::DType type,
                          bool init_to_zeros);
 
-at::Tensor allocateSpace(const NVTEShape& shape, const transformer_engine::DType type,
+torch::stable::Tensor allocateSpace(const NVTEShape& shape, const transformer_engine::DType type,
                          bool init_to_zeros = false);
 
-at::Tensor allocateTorchTensor(int M, int N, transformer_engine::DType dtype);
+torch::stable::Tensor allocateTorchTensor(int M, int N, transformer_engine::DType dtype);
 
-at::Tensor allocateTorchTensor(int M, transformer_engine::DType dtype);
+torch::stable::Tensor allocateTorchTensor(int M, transformer_engine::DType dtype);
 
-void* getDataPtr(at::Tensor tensor, int offset = 0);
+void* getDataPtr(torch::stable::Tensor tensor, int offset = 0);
 
 std::vector<size_t> convertShape(const NVTEShape& shape);
 
@@ -569,7 +584,14 @@ size_t roundup(size_t value, size_t multiple);
 
 size_t ceildiv(size_t numer, size_t denom);
 
-NVTEShape convertTorchShape(const c10::IntArrayRef torch_shape);
+NVTEShape convertTorchShape(const torch::headeronly::IntHeaderOnlyArrayRef torch_shape);
+
+/*! @brief Current CUDA stream for the active accelerator device.
+ *
+ * Replaces at::cuda::getCurrentCUDAStream(). Uses the stable accelerator API and
+ * its native-handle accessor to recover the raw ``cudaStream_t``.
+ */
+cudaStream_t getCurrentCUDAStream();
 
 std::vector<size_t> convert_shape_back_from_fp4(const std::vector<size_t>& shape, bool transpose);
 
@@ -613,7 +635,7 @@ string to_string(const vector<T>& vec) {
 
 // Torch shape -> string
 template <typename T>
-string to_string(const c10::ArrayRef<T>& vec) {
+string to_string(const torch::headeronly::HeaderOnlyArrayRef<T>& vec) {
   string ret = "[";
   for (const auto& val : vec) {
     ret += to_string(val) + ",";

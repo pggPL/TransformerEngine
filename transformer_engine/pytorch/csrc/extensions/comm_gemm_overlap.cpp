@@ -3,9 +3,27 @@
  *
  * See LICENSE for license information.
  ************************************************************************/
+//
+// HARD BLOCKER for the nanobind + torch stable-ABI migration.
+// This file is built on distributed / comm internals that have NO torch
+// stable-ABI equivalent today:
+//   - c10d::ProcessGroup and its collectives (broadcast/allgather/barrier)
+//   - torch::from_blob wrapping a raw (device) pointer into a Tensor
+//   - at::Stream / at::cuda::CUDAStream / at::cuda::getStreamFromExternal
+//   - at::cuda::CUDAStream(...) construction and native cudaStream_t casts
+//   - GetATenDType() (ATen ScalarType) for from_blob
+//   - Tensor methods .cuda()/.cpu()/.chunk()/.copy_() used for NCCL bootstrap
+// The plain-tensor bits below are migrated (stream helper, stable Tensor for
+// the data buffers), but the distributed machinery is left intact and marked
+// with TODO(stable-abi). See the MISSING-API report for the required decls.
 #ifdef NVTE_WITH_CUBLASMP
 #include <nccl.h>
 #endif
+
+#include <nanobind/nanobind.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
 
 #include "../extensions.h"
 #include "transformer_engine/transformer_engine.h"
@@ -13,6 +31,9 @@
 #define HALF_BYTES 2
 #define UB_MAX_SM 32
 
+namespace nb = nanobind;
+
+// TODO(stable-abi): torch::indexing (at::indexing) has no stable equivalent.
 using namespace torch::indexing;
 using namespace std::placeholders;
 
@@ -28,6 +49,8 @@ CommOverlapHelper::CommOverlapHelper() {
 #endif
 }  // empty constructor for NVTE_UB_WITH_MPI=1
 
+// TODO(stable-abi): HARD BLOCKER — c10d::ProcessGroup (and NCCL bootstrap via torch::from_blob /
+// broadcast) are not exposed through the torch stable ABI.
 CommOverlapHelper::CommOverlapHelper(c10d::ProcessGroup *world_group,
                                      std::optional<c10d::ProcessGroup *> intra_domain_group) {
 #ifndef NVTE_UB_WITH_MPI
@@ -148,6 +171,9 @@ CommOverlapHelper::~CommOverlapHelper() {
 #endif
 }
 
+// TODO(stable-abi): HARD BLOCKER — uses c10d::ProcessGroup collectives, torch::from_blob, and
+// Tensor .cuda()/.cpu()/.chunk()/.copy_() (all ATen). No stable-ABI path for process-group
+// collectives exists.
 void CommOverlapHelper::ub_allgather(void *globaldata, size_t globalbytes, void *localdata,
                                      size_t localbytes, ExtComm group) {
 #ifndef NVTE_UB_WITH_MPI
@@ -279,7 +305,7 @@ void cublasmp_capture_warmup(te::CommOverlapCore *core, int tp_size, te::CommOve
   B_tw.set_rowwise_data(b_ptr, te::DType::kBFloat16, b_shape);
   D_tw.set_rowwise_data(d_ptr, te::DType::kBFloat16, d_shape);
 
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  cudaStream_t stream = getCurrentCUDAStream();
   if (comm_type == te::CommOverlapType::AG) {
     if (core->is_atomic_gemm()) {
       core->atomic_gemm_overlap_ag(
@@ -324,8 +350,8 @@ CommOverlap::CommOverlap(CommOverlapHelper *helper, int tp_rank, int tp_size,
 /*
 ** Helper function to copy input to _ubuf
 */
-void CommOverlap::copy_into_buffer(const at::Tensor &input, bool local_chunk) {
-  const auto &input_ = input.contiguous();
+void CommOverlap::copy_into_buffer(const torch::stable::Tensor &input, bool local_chunk) {
+  const auto input_ = torch::stable::contiguous(input);
 
   // Check element size
   const size_t element_size = input.element_size();
@@ -354,14 +380,15 @@ void CommOverlap::copy_into_buffer(const at::Tensor &input, bool local_chunk) {
   }
 
   // Copy data
-  auto stream_main = at::cuda::getCurrentCUDAStream();
+  cudaStream_t stream_main = getCurrentCUDAStream();
   NVTE_CHECK_CUDA(cudaEventRecord(_start_d2dcopy, (cudaStream_t)stream_main));
   NVTE_CHECK_CUDA(cudaStreamWaitEvent((cudaStream_t)_stream_comm, _start_d2dcopy, 0));
   NVTE_CHECK_CUDA(cudaMemcpyAsync(dst_ptr, src_ptr, input_size * element_size,
                                   cudaMemcpyDeviceToDevice, (cudaStream_t)_stream_comm));
 }
 
-at::Tensor CommOverlap::get_buffer(bool local_chunk, std::optional<std::vector<int64_t>> shape) {
+torch::stable::Tensor CommOverlap::get_buffer(bool local_chunk,
+                                              std::optional<std::vector<int64_t>> shape) {
   // Check buffer shape
   const size_t ubuf_size = _ubuf.numel();
   if (shape) {
@@ -392,10 +419,17 @@ at::Tensor CommOverlap::get_buffer(bool local_chunk, std::optional<std::vector<i
   }
 
   // Construct PyTorch tensor
-  const auto dtype = transformer_engine::pytorch::GetATenDType(_ubuf.dtype());
-  return torch::from_blob(ubuf_ptr, *shape, at::dtype(dtype).device(torch::kCUDA));
+  // TODO(stable-abi): needs torch::stable::from_blob(void*, IntArrayRef, ScalarType, DeviceIndex)
+  // to wrap a raw CUDA pointer, and a TE-DType -> torch::headeronly::ScalarType helper (was
+  // GetATenDType). Both are missing from the stable ABI.
+  const auto dtype = GetStableScalarType(_ubuf.dtype());
+  return torch::stable::from_blob(ubuf_ptr, *shape, dtype,
+                                  torch::stable::accelerator::getCurrentDeviceIndex());
 }
 
+// TODO(stable-abi): at::Stream / at::cuda::getStreamFromExternal / at::cuda::current_device have
+// no stable-ABI equivalent. The stable accelerator::Stream cannot be constructed from an external
+// cudaStream_t and does not model separate send/recv streams. HARD BLOCKER.
 std::pair<at::Stream, at::Stream> CommOverlap::get_communication_stream() {
   // Return the same stream for both send and recv
   return {at::cuda::getStreamFromExternal(_stream_comm, at::cuda::current_device()),
@@ -435,8 +469,8 @@ CommOverlapP2P::CommOverlapP2P(CommOverlapHelper *helper, int tp_rank, int tp_si
 /*
 ** Copy input to _ubufs[0]
 */
-void CommOverlapP2P::copy_into_buffer(const at::Tensor &input, bool local_chunk) {
-  const auto &input_ = input.contiguous();
+void CommOverlapP2P::copy_into_buffer(const torch::stable::Tensor &input, bool local_chunk) {
+  const auto input_ = torch::stable::contiguous(input);
 
   // Check element size
   const size_t element_size = input.element_size();
@@ -465,11 +499,11 @@ void CommOverlapP2P::copy_into_buffer(const at::Tensor &input, bool local_chunk)
 
   // Copy data
   NVTE_CHECK_CUDA(cudaMemcpyAsync(dst_ptr, src_ptr, input_size * element_size,
-                                  cudaMemcpyDeviceToDevice,
-                                  (cudaStream_t)at::cuda::getCurrentCUDAStream()));
+                                  cudaMemcpyDeviceToDevice, getCurrentCUDAStream()));
 }
 
-at::Tensor CommOverlapP2P::get_buffer(bool local_chunk, std::optional<std::vector<int64_t>> shape) {
+torch::stable::Tensor CommOverlapP2P::get_buffer(bool local_chunk,
+                                                 std::optional<std::vector<int64_t>> shape) {
   // Check buffer shape
   if (shape) {
     const size_t requested_size = transformer_engine::pytorch::product(*shape);
@@ -495,15 +529,22 @@ at::Tensor CommOverlapP2P::get_buffer(bool local_chunk, std::optional<std::vecto
   void *ubuf_ptr = local_chunk ? _ubufs[_tp_id].dptr() : _ubuf.dptr();
 
   // Construct PyTorch tensor
-  const auto dtype = transformer_engine::pytorch::GetATenDType(_ubuf.dtype());
-  return torch::from_blob(ubuf_ptr, *shape, at::dtype(dtype).device(torch::kCUDA));
+  // TODO(stable-abi): see CommOverlap::get_buffer — needs torch::stable::from_blob and a
+  // TE-DType -> torch::headeronly::ScalarType helper (was GetATenDType).
+  const auto dtype = GetStableScalarType(_ubuf.dtype());
+  return torch::stable::from_blob(ubuf_ptr, *shape, dtype,
+                                  torch::stable::accelerator::getCurrentDeviceIndex());
 }
 
+// TODO(stable-abi): at::Stream / at::cuda::getStreamFromExternal have no stable equivalent.
+// HARD BLOCKER.
 std::pair<at::Stream, at::Stream> CommOverlapP2P::get_communication_stream() {
   return {at::cuda::getStreamFromExternal(_stream_send[0], at::cuda::current_device()),
           at::cuda::getStreamFromExternal(_stream_recv, at::cuda::current_device())};
 }
 
+// TODO(stable-abi): at::Stream parameters and at::cuda::CUDAStream construction have no stable
+// equivalent. HARD BLOCKER.
 void transformer_engine::pytorch::bulk_overlap_ag_with_external_gemm(
     CommOverlap &allgather_communicator, at::Stream send_stream, at::Stream recv_stream) {
   auto main_stream = at::cuda::getCurrentCUDAStream();

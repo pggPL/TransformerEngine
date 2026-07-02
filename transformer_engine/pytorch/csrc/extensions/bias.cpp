@@ -4,8 +4,12 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#include <ATen/ATen.h>
-#include <pybind11/pybind11.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/vector.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/python/interop.h>
+#include <torch/csrc/stable/tensor.h>
 
 #include <utility>
 #include <vector>
@@ -16,15 +20,25 @@
 #include "transformer_engine/cast.h"
 #include "transformer_engine/transformer_engine.h"
 
+namespace nb = nanobind;
+
 namespace transformer_engine {
 namespace pytorch {
 
-std::vector<py::object> bgrad_quantize(const at::Tensor &grad_output, py::handle quantizer) {
+namespace {
+// stable Tensor -> Python object (new ref).
+inline nb::object wrap_tensor(const torch::stable::Tensor &t) {
+  return nb::steal<nb::object>(nb::handle(static_cast<PyObject *>(torch::stable::to_pyobject(t))));
+}
+}  // namespace
+
+std::vector<nb::object> bgrad_quantize(const torch::stable::Tensor &grad_output,
+                                       nb::handle quantizer) {
   using namespace transformer_engine::pytorch::detail;
   init_extension();
 
   // Grad output tensor
-  auto grad_output_torch = grad_output.contiguous();
+  auto grad_output_torch = torch::stable::contiguous(grad_output);
   const TensorWrapper &grad_output_nvte = makeTransformerEngineTensor(grad_output_torch);
   const auto shape = getTensorShape(grad_output_torch);
   auto grad_output_dtype = GetTransformerEngineDType(grad_output_torch.scalar_type());
@@ -37,11 +51,13 @@ std::vector<py::object> bgrad_quantize(const at::Tensor &grad_output, py::handle
   // Unquantized impl only requires computing grad bias
   if (quantizer.is_none()) {
     if (product(shape) == 0) {
-      grad_bias_torch.zero_();
+      torch::stable::fill_(grad_bias_torch, 0);
     } else {
-      at::sum_out(grad_bias_torch, grad_output_torch.reshape({-1, bias_size}), {0});
+      torch::stable::sum_out(grad_bias_torch, torch::stable::reshape(grad_output_torch,
+                                                                     {-1, bias_size}),
+                             {0});
     }
-    return {py::cast(std::move(grad_bias_torch)), py::cast(std::move(grad_output_torch))};
+    return {wrap_tensor(grad_bias_torch), wrap_tensor(grad_output_torch)};
   }
 
   // Construct grad input tensor
@@ -50,15 +66,16 @@ std::vector<py::object> bgrad_quantize(const at::Tensor &grad_output, py::handle
 
   // Trivial impl if tensors are empty
   if (product(shape) == 0) {
-    grad_bias_torch.zero_();
-    return {py::cast(std::move(grad_bias_torch)), std::move(grad_input_py)};
+    torch::stable::fill_(grad_bias_torch, 0);
+    return {wrap_tensor(grad_bias_torch), std::move(grad_input_py)};
   }
 
   // Check if fused kernel is supported
   bool with_fused_kernel = false;
   if (detail::IsFloat8Quantizers(quantizer.ptr())) {
-    auto prop = at::cuda::getCurrentDeviceProperties();
-    const size_t sm_arch = 10 * prop->major + prop->minor;
+    // TODO(stable-abi): needs device compute-capability query (was
+    // at::cuda::getCurrentDeviceProperties()->major/minor).
+    const size_t sm_arch = getDeviceComputeCapability();
     if (sm_arch >= 100) {
       // Fused kernel for dbias + FP8 cast on SM arch 10.0+
       with_fused_kernel = true;
@@ -73,15 +90,16 @@ std::vector<py::object> bgrad_quantize(const at::Tensor &grad_output, py::handle
 
   // Apply unfused impl if fused kernel is not supported
   if (!with_fused_kernel) {
-    at::sum_out(grad_bias_torch, grad_output_torch.reshape({-1, bias_size}), {0});
+    torch::stable::sum_out(grad_bias_torch,
+                           torch::stable::reshape(grad_output_torch, {-1, bias_size}), {0});
     quantizer_cpp->quantize(grad_output_nvte, grad_input_nvte);
-    return {py::cast(std::move(grad_bias_torch)), std::move(grad_input_py)};
+    return {wrap_tensor(grad_bias_torch), std::move(grad_input_py)};
   }
 
   // Query workspace size
   TensorWrapper workspace_nvte;
-  at::Tensor workspace_torch;
-  auto stream = at::cuda::getCurrentCUDAStream();
+  torch::stable::Tensor workspace_torch;
+  auto stream = getCurrentCUDAStream();
   NVTE_SCOPED_GIL_RELEASE({
     nvte_quantize_dbias(grad_output_nvte.data(), grad_input_nvte.data(), grad_bias_nvte.data(),
                         workspace_nvte.data(), stream);
@@ -100,25 +118,26 @@ std::vector<py::object> bgrad_quantize(const at::Tensor &grad_output, py::handle
                         workspace_nvte.data(), stream);
   });
 
-  return {py::cast(std::move(grad_bias_torch)), std::move(grad_input_py)};
+  return {wrap_tensor(grad_bias_torch), std::move(grad_input_py)};
 }
 
 namespace {
 
-std::vector<py::object> dact_dbias(
+std::vector<nb::object> dact_dbias(
     void (*dact_dbias_func)(const NVTETensor, const NVTETensor, NVTETensor, NVTETensor, NVTETensor,
                             cudaStream_t),
     void (*dact_func)(const NVTETensor, const NVTETensor, NVTETensor, cudaStream_t),
-    at::Tensor grad_output_torch, at::Tensor act_input_torch, py::handle quantizer_py) {
+    torch::stable::Tensor grad_output_torch, torch::stable::Tensor act_input_torch,
+    nb::handle quantizer_py) {
   using namespace transformer_engine::pytorch::detail;
   init_extension();
 
   // Grad output and activation input tensors
-  grad_output_torch = grad_output_torch.contiguous();
+  grad_output_torch = torch::stable::contiguous(grad_output_torch);
   const TensorWrapper &grad_output_nvte = makeTransformerEngineTensor(grad_output_torch);
   const auto output_shape = getTensorShape(grad_output_torch);
   auto grad_output_dtype = GetTransformerEngineDType(grad_output_torch.scalar_type());
-  act_input_torch = act_input_torch.contiguous();
+  act_input_torch = torch::stable::contiguous(act_input_torch);
   const TensorWrapper &act_input_nvte = makeTransformerEngineTensor(act_input_torch);
   const auto input_shape = getTensorShape(act_input_torch);
 
@@ -132,8 +151,8 @@ std::vector<py::object> dact_dbias(
 
   // Return immediately if tensors are empty
   if (product(output_shape) == 0) {
-    grad_bias_torch.zero_();
-    return {py::cast(std::move(grad_bias_torch)), std::move(grad_input_py)};
+    torch::stable::fill_(grad_bias_torch, 0);
+    return {wrap_tensor(grad_bias_torch), std::move(grad_input_py)};
   }
 
   // Choose implementation
@@ -162,18 +181,19 @@ std::vector<py::object> dact_dbias(
   }
 
   // Perform compute
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = getCurrentCUDAStream();
   switch (impl) {
     case Impl::UNFUSED:
       // Unfused dact, dbias, quantize
       {
         auto [temp_nvte, temp_py] =
-            NoneQuantizer(py::none()).create_tensor(input_shape, grad_output_dtype);
+            NoneQuantizer(nb::none()).create_tensor(input_shape, grad_output_dtype);
         NVTE_SCOPED_GIL_RELEASE({
           dact_func(grad_output_nvte.data(), act_input_nvte.data(), temp_nvte.data(), stream);
         });
-        const auto temp_torch = temp_py.cast<at::Tensor>();
-        at::sum_out(grad_bias_torch, temp_torch.reshape({-1, bias_size}), {0});
+        const auto temp_torch = torch::stable::from_pyobject(temp_py.ptr());
+        torch::stable::sum_out(grad_bias_torch,
+                               torch::stable::reshape(temp_torch, {-1, bias_size}), {0});
         quantizer_cpp->quantize(temp_nvte, grad_input_nvte);
         break;
       }
@@ -188,7 +208,7 @@ std::vector<py::object> dact_dbias(
         });
 
         // Allocate workspace
-        at::Tensor workspace_torch;
+        torch::stable::Tensor workspace_torch;
         if (workspace_nvte.ndim() > 0 && workspace_nvte.numel() > 0) {
           workspace_torch = allocateSpace(workspace_nvte.shape(), workspace_nvte.dtype());
           workspace_nvte = makeTransformerEngineTensor(
@@ -214,8 +234,9 @@ std::vector<py::object> dact_dbias(
         NVTE_SCOPED_GIL_RELEASE({
           dact_func(grad_output_nvte.data(), act_input_nvte.data(), temp_nvte.data(), stream);
         });
-        const auto temp_torch = temp_py.cast<at::Tensor>();
-        at::sum_out(grad_bias_torch, temp_torch.reshape({-1, bias_size}), {0});
+        const auto temp_torch = torch::stable::from_pyobject(temp_py.ptr());
+        torch::stable::sum_out(grad_bias_torch,
+                               torch::stable::reshape(temp_torch, {-1, bias_size}), {0});
         fp8_quantizer_cpp->quantize_with_amax(temp_nvte, grad_input_nvte, amax_buf);
         break;
       }
@@ -231,8 +252,9 @@ std::vector<py::object> dact_dbias(
         NVTE_SCOPED_GIL_RELEASE({
           dact_func(grad_output_nvte.data(), act_input_nvte.data(), temp_nvte.data(), stream);
         });
-        const auto temp_torch = temp_py.cast<at::Tensor>();
-        at::sum_out(grad_bias_torch, temp_torch.reshape({-1, bias_size}), {0});
+        const auto temp_torch = torch::stable::from_pyobject(temp_py.ptr());
+        torch::stable::sum_out(grad_bias_torch,
+                               torch::stable::reshape(temp_torch, {-1, bias_size}), {0});
         nvfp4_quantizer_cpp->quantize_with_amax(temp_nvte, grad_input_nvte);
         break;
       }
@@ -240,33 +262,33 @@ std::vector<py::object> dact_dbias(
       NVTE_ERROR("Invalid implementation");
   }
 
-  return {py::cast(std::move(grad_bias_torch)), std::move(grad_input_py)};
+  return {wrap_tensor(grad_bias_torch), std::move(grad_input_py)};
 }
 
 }  // namespace
 
-std::vector<py::object> dbias_dgelu(const at::Tensor &grad_output, const at::Tensor &act_input,
-                                    py::handle quantizer) {
+std::vector<nb::object> dbias_dgelu(const torch::stable::Tensor &grad_output,
+                                    const torch::stable::Tensor &act_input, nb::handle quantizer) {
   return dact_dbias(nvte_quantize_dbias_dgelu, nvte_dgelu, grad_output, act_input, quantizer);
 }
 
-std::vector<py::object> dbias_dsilu(const at::Tensor &grad_output, const at::Tensor &act_input,
-                                    py::handle quantizer) {
+std::vector<nb::object> dbias_dsilu(const torch::stable::Tensor &grad_output,
+                                    const torch::stable::Tensor &act_input, nb::handle quantizer) {
   return dact_dbias(nvte_quantize_dbias_dsilu, nvte_dsilu, grad_output, act_input, quantizer);
 }
 
-std::vector<py::object> dbias_drelu(const at::Tensor &grad_output, const at::Tensor &act_input,
-                                    py::handle quantizer) {
+std::vector<nb::object> dbias_drelu(const torch::stable::Tensor &grad_output,
+                                    const torch::stable::Tensor &act_input, nb::handle quantizer) {
   return dact_dbias(nvte_quantize_dbias_drelu, nvte_drelu, grad_output, act_input, quantizer);
 }
 
-std::vector<py::object> dbias_dqgelu(const at::Tensor &grad_output, const at::Tensor &act_input,
-                                     py::handle quantizer) {
+std::vector<nb::object> dbias_dqgelu(const torch::stable::Tensor &grad_output,
+                                     const torch::stable::Tensor &act_input, nb::handle quantizer) {
   return dact_dbias(nvte_quantize_dbias_dqgelu, nvte_dqgelu, grad_output, act_input, quantizer);
 }
 
-std::vector<py::object> dbias_dsrelu(const at::Tensor &grad_output, const at::Tensor &act_input,
-                                     py::handle quantizer) {
+std::vector<nb::object> dbias_dsrelu(const torch::stable::Tensor &grad_output,
+                                     const torch::stable::Tensor &act_input, nb::handle quantizer) {
   return dact_dbias(nvte_quantize_dbias_dsrelu, nvte_dsrelu, grad_output, act_input, quantizer);
 }
 

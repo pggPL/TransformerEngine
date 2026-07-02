@@ -7,7 +7,7 @@
 #ifndef TRANSFORMER_ENGINE_PYTORCH_CSRC_UTIL_H_
 #define TRANSFORMER_ENGINE_PYTORCH_CSRC_UTIL_H_
 
-#include <torch/extension.h>
+#include <torch/csrc/stable/tensor.h>
 
 #include <optional>
 #include <tuple>
@@ -22,21 +22,21 @@ namespace pytorch {
  *
  *  The returned swizzled scales should be kept alive during the GEMM.
  */
-std::tuple<std::optional<at::Tensor>, std::optional<at::Tensor>> swizzle_scales_for_gemm(
+std::tuple<std::optional<torch::stable::Tensor>, std::optional<torch::stable::Tensor>> swizzle_scales_for_gemm(
     TensorWrapper& tensor, bool rowwise_usage, bool columnwise_usage);
 
 /*! \brief Convert multiple tensor block scales into GEMM swizzled format.
  *
  *  The returned swizzled scales should be kept alive during the GEMMs.
  */
-std::optional<at::Tensor> multi_tensor_swizzle_scales_for_gemm(std::vector<TensorWrapper>& tensors,
+std::optional<torch::stable::Tensor> multi_tensor_swizzle_scales_for_gemm(std::vector<TensorWrapper>& tensors,
                                                                bool rowwise_usage,
                                                                bool columnwise_usage);
 
-std::optional<at::Tensor> multi_tensor_swizzle_scales_for_gemm_unchecked(
+std::optional<torch::stable::Tensor> multi_tensor_swizzle_scales_for_gemm_unchecked(
     std::vector<TensorWrapper>& tensors, bool rowwise_usage, bool columnwise_usage);
 
-using SwizzledGroupedScales = std::pair<std::optional<at::Tensor>, std::optional<at::Tensor>>;
+using SwizzledGroupedScales = std::pair<std::optional<torch::stable::Tensor>, std::optional<torch::stable::Tensor>>;
 
 /*! \brief Swizzle grouped tensor scales for GEMM if needed.
  * Currently only works for MXFP8 1D scaling with uniform shapes.
@@ -63,7 +63,7 @@ std::optional<SwizzledGroupedScales> maybe_swizzle_grouped_tensor(GroupedTensorW
  *  The returned swizzled scaling factor tensor should be kept alive
  *  during the GEMM.
  */
-at::Tensor convert_block_scaling_to_mxfp8_tensor(TensorWrapper& input, bool rowwise);
+torch::stable::Tensor convert_block_scaling_to_mxfp8_tensor(TensorWrapper& input, bool rowwise);
 
 }  // namespace pytorch
 }  // namespace transformer_engine

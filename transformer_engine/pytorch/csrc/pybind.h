@@ -4,30 +4,25 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#define PYBIND11_DETAILED_ERROR_MESSAGES  // TODO remove
-
 #ifndef TRANSFORMER_ENGINE_PYTORCH_CSRC_EXTENSIONS_PYBIND_H_
 #define TRANSFORMER_ENGINE_PYTORCH_CSRC_EXTENSIONS_PYBIND_H_
 
 #include <Python.h>
-#include <pybind11/detail/common.h>
-#include <pybind11/functional.h>
-#include <pybind11/pybind11.h>
-#include <torch/torch.h>
+#include <nanobind/nanobind.h>
 
 #include "common.h"
 #include "transformer_engine/transformer_engine.h"
 
 namespace transformer_engine::pytorch {
 
-#define NVTE_SCOPED_GIL_RELEASE(code_block)      \
-  do {                                           \
-    if (PyGILState_Check()) {                    \
-      pybind11::gil_scoped_release _gil_release; \
-      code_block                                 \
-    } else {                                     \
-      code_block                                 \
-    }                                            \
+#define NVTE_SCOPED_GIL_RELEASE(code_block) \
+  do {                                      \
+    if (PyGILState_Check()) {               \
+      nb::gil_scoped_release _gil_release;  \
+      code_block                            \
+    } else {                                \
+      code_block                            \
+    }                                       \
   } while (false);
 
 extern PyTypeObject *Float8TensorPythonClass;
@@ -81,26 +76,27 @@ inline bool IsNVFP4Tensor(PyObject *obj) {
   return Py_TYPE(obj) == NVFP4TensorPythonClass || Py_TYPE(obj) == NVFP4TensorStoragePythonClass;
 }
 
-TensorWrapper NVTETensorFromFloat8Tensor(py::handle tensor, Quantizer *quantizer);
+TensorWrapper NVTETensorFromFloat8Tensor(nb::handle tensor, Quantizer *quantizer);
 
 template <typename T>
-std::unique_ptr<Quantizer> CreateQuantizer(const py::handle quantizer) {
+std::unique_ptr<Quantizer> CreateQuantizer(const nb::handle quantizer) {
   return std::make_unique<T>(quantizer);
 }
 
-TensorWrapper NVTETensorFromMXFP8Tensor(py::handle tensor, Quantizer *quantization_params);
+TensorWrapper NVTETensorFromMXFP8Tensor(nb::handle tensor, Quantizer *quantization_params);
 
-std::unique_ptr<Quantizer> CreateMXFP8Params(const py::handle params);
+std::unique_ptr<Quantizer> CreateMXFP8Params(const nb::handle params);
 
-TensorWrapper NVTETensorFromFloat8BlockwiseQTensor(py::handle tensor,
+TensorWrapper NVTETensorFromFloat8BlockwiseQTensor(nb::handle tensor,
                                                    Quantizer *quantization_params);
 
-TensorWrapper NVTETensorFromNVFP4Tensor(py::handle tensor, Quantizer *quantizer);
+TensorWrapper NVTETensorFromNVFP4Tensor(nb::handle tensor, Quantizer *quantizer);
 
-GroupedTensorWrapper GroupedTensorFromPyTorchGroupedTensor(py::handle tensor);
+GroupedTensorWrapper GroupedTensorFromPyTorchGroupedTensor(nb::handle tensor);
 
-inline bool IsFloatingPointType(at::ScalarType type) {
-  return type == at::kFloat || type == at::kHalf || type == at::kBFloat16;
+inline bool IsFloatingPointType(torch::headeronly::ScalarType type) {
+  using torch::headeronly::ScalarType;
+  return type == ScalarType::Float || type == ScalarType::Half || type == ScalarType::BFloat16;
 }
 
 constexpr std::array custom_types_converters = {

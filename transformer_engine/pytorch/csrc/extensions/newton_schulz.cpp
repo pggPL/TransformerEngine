@@ -6,6 +6,9 @@
 
 #include "transformer_engine/newton_schulz.h"
 
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/tensor.h>
+
 #include "../extensions.h"
 
 namespace transformer_engine::pytorch {
@@ -21,18 +24,21 @@ void cusolvermp_ctx_destroy(int64_t ctx_ptr) {
   nvte_cusolvermp_ctx_destroy(ctx);
 }
 
-void newton_schulz(int64_t ctx_ptr, int64_t m, int64_t n, at::Tensor x, int64_t num_iterations,
-                   std::vector<float> coefficients) {
+void newton_schulz(int64_t ctx_ptr, int64_t m, int64_t n, torch::stable::Tensor x,
+                   int64_t num_iterations, std::vector<float> coefficients) {
   auto* ctx = reinterpret_cast<NVTECusolverMpCtx*>(ctx_ptr);
 
   // Build NVTETensor from PyTorch tensor
-  auto x_sizes = x.sizes().vec();
-  std::vector<size_t> shape(x_sizes.begin(), x_sizes.end());
+  std::vector<size_t> shape = getTensorShape(x);
 
   auto te_dtype = GetTransformerEngineDType(x.scalar_type());
   TensorWrapper x_tensor(x.data_ptr(), shape, te_dtype);
 
-  auto caller_stream = at::cuda::getCurrentCUDAStream().stream();
+  // TODO(stable-abi): torch::stable::accelerator lacks a native cudaStream_t handle.
+  cudaStream_t caller_stream = static_cast<cudaStream_t>(
+      torch::stable::accelerator::getCurrentStream(
+          torch::stable::accelerator::getCurrentDeviceIndex())
+          .stream());
   nvte_newton_schulz(ctx, m, n, x_tensor.data(), num_iterations, coefficients.data(),
                      static_cast<int64_t>(coefficients.size()), caller_stream);
 }

@@ -4,6 +4,10 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+
 #include <memory>
 #include <vector>
 
@@ -22,10 +26,13 @@ namespace pytorch {
  * Stream usage is not recorded, so there may be race conditions if
  * compute is performed on multiple streams.
  */
-std::vector<at::Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &shapes,
-                                      const std::vector<at::ScalarType> &dtypes,
-                                      std::optional<c10::Device> device,
-                                      std::optional<std::vector<size_t>> alignments) {
+std::vector<torch::stable::Tensor> bulk_allocate(
+    const std::vector<std::vector<size_t>> &shapes,
+    const std::vector<torch::headeronly::ScalarType> &dtypes,
+    // TODO(stable-abi): needs a stable device type (torch::stable::Device) that
+    // can be produced from a Python torch.device.
+    std::optional<torch::stable::Device> device,
+    std::optional<std::vector<size_t>> alignments) {
   // Check shapes and dtypes
   const size_t n = shapes.size();
   NVTE_CHECK(dtypes.size() == n, "Got ", shapes.size(), " shapes and ", dtypes.size(), " dtypes.");
@@ -37,13 +44,14 @@ std::vector<at::Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &sh
 
   // Set defaults for optional arguments
   if (!device) {
-    device = c10::Device(c10::kCUDA);
+    device = torch::stable::Device(torch::headeronly::DeviceType::CUDA);
   }
   if (!alignments) {
     alignments = std::vector<size_t>{};
     alignments->reserve(n);
     for (const auto &dtype : dtypes) {
-      alignments->push_back(c10::elementSize(dtype));
+      // TODO(stable-abi): needs torch::headeronly::elementSize(ScalarType).
+      alignments->push_back(torch::headeronly::elementSize(dtype));
     }
   }
 
@@ -53,7 +61,7 @@ std::vector<at::Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &sh
   size_t base_byte_size = 0;
   size_t base_alignment = 1;
   for (size_t i = 0; i < n; ++i) {
-    byte_sizes[i] = product(shapes[i]) * at::elementSize(dtypes[i]);
+    byte_sizes[i] = product(shapes[i]) * torch::headeronly::elementSize(dtypes[i]);
     offsets[i] = roundup(base_byte_size, (*alignments)[i]);
     base_byte_size = offsets[i] + byte_sizes[i];
     base_alignment = std::max(base_alignment, (*alignments)[i]);
@@ -64,14 +72,15 @@ std::vector<at::Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &sh
   }
 
   // Allocate base buffer
-  auto base_buffer = std::make_shared<at::Tensor>(
-      at::empty({static_cast<int64_t>(base_byte_size)}, at::device(*device).dtype(torch::kUInt8)));
-  uint8_t *base_ptr = base_buffer->data_ptr<uint8_t>();
+  // TODO(stable-abi): needs torch::stable::empty(IntArrayRef, ScalarType, Device).
+  auto base_buffer = std::make_shared<torch::stable::Tensor>(torch::stable::empty(
+      {static_cast<int64_t>(base_byte_size)}, torch::headeronly::ScalarType::Byte, *device));
+  uint8_t *base_ptr = static_cast<uint8_t *>(base_buffer->data_ptr());
   base_ptr =
       reinterpret_cast<uint8_t *>(roundup(reinterpret_cast<uintptr_t>(base_ptr), base_alignment));
 
   // Create views into base buffer
-  std::vector<at::Tensor> out;
+  std::vector<torch::stable::Tensor> out;
   out.reserve(n);
   std::vector<int64_t> shape_int64;
   for (size_t i = 0; i < n; ++i) {
@@ -81,12 +90,13 @@ std::vector<at::Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &sh
       // empty tensor. Passing a null pointer fails because it checks
       // that the pointer is on GPU. Passing a non-null pointer can
       // cause bugs in TE kernels.
-      out.emplace_back(at::empty(shape_int64, at::device(*device).dtype(dtypes[i])));
+      out.emplace_back(torch::stable::empty(shape_int64, dtypes[i], *device));
     } else {
       // Construct tensor with custom deleter to keep base buffer alive
-      out.emplace_back(at::from_blob(
-          base_ptr + offsets[i], shape_int64, [base_buffer](void *) {},
-          at::device(*device).dtype(dtypes[i])));
+      // TODO(stable-abi): needs torch::stable::from_blob(void*, IntArrayRef,
+      // deleter, ScalarType, Device) with a custom deleter.
+      out.emplace_back(torch::stable::from_blob(
+          base_ptr + offsets[i], shape_int64, [base_buffer](void *) {}, dtypes[i], *device));
     }
   }
   return out;
