@@ -2,34 +2,41 @@
 #
 # See LICENSE for license information.
 
-"""torch.compile coverage for DotProductAttention.
+"""torch.compile coverage for DotProductAttention (FlashAttention backend).
 
-This is a *diagnostic* test suite. Its purpose is to drive
-``DotProductAttention`` through ``torch.compile`` and surface every piece of
-the module that does not trace cleanly (graph breaks).
+Goal: ``DotProductAttention`` must trace cleanly through
+``torch.compile(fullgraph=True)`` on the FlashAttention backend. ``fullgraph=True``
+hard-errors on *any* graph break, so this suite is the target we drive to green
+while removing the constructs Dynamo cannot trace.
 
-We start with the FlashAttention backend, whose underlying ``flash_attn``
-kernels are already registered as custom ops that Dynamo can capture.
+We restrict ourselves to the FlashAttention backend, whose underlying
+``flash_attn`` kernels are already registered as custom ops that Dynamo can
+capture. The suite is parametrized over three axes -- all of which still route to
+FlashAttention:
 
-Current state of the world (see ``test_forward_is_dynamo_disabled``):
-``DotProductAttention.forward`` is wrapped with ``@no_torch_dynamo`` (i.e.
-``torch._dynamo.disable``) in ``transformer_engine/pytorch/jit.py``. As a
-result ``torch.compile`` never traces *into* attention -- it silently runs the
-whole module eagerly. So "get the FlashAttention backend to run under
-torch.compile" has two layers:
+* model config: plain self-attention, causal, GQA/MQA, cross-attention,
+  sliding window, larger head dim, and padding / padding-causal masks;
+* qkv memory format: ``bshd`` and ``sbhd`` for every config, plus ``thd``
+  (packed, variable-length) for the padding configs;
+* dtype: ``bfloat16`` and ``float16``.
 
-1. It already *executes* correctly under torch.compile (as an eager island).
-   ``test_flash_backend_runs_under_compile`` pins this down.
-2. To actually *trace* it we must bypass the dynamo-disable and then chip away
-   at the internal graph breaks. ``test_flash_backend_graph_breaks`` traces the
-   unwrapped forward and prints the full inventory of breaks to attack next.
+``thd`` and padding masks only combine with self-attention configs here
+(``sq == skv``): a padded cross-attention case would need
+``attention_type="cross"`` and a separate KV mask, which is a different code
+path. The backend is *forced* to FlashAttention through the ``NVTE_*_ATTN`` env
+vars, so every combination routes to the same backend.
+
+Historically ``DotProductAttention.forward`` was wrapped with
+``@no_torch_dynamo`` (i.e. ``torch._dynamo.disable``), so ``torch.compile``
+never traced *into* attention -- it ran the whole module as an eager island.
+That decorator has been removed on this branch, so Dynamo now traces the real
+forward.
 """
 
 import os
 
 import pytest
 import torch
-from torch._dynamo.utils import counters
 
 from transformer_engine.pytorch.attention.dot_product_attention import DotProductAttention
 from transformer_engine.pytorch.attention.dot_product_attention.dot_product_attention import (
@@ -47,127 +54,169 @@ pytestmark = [
     pytest.mark.skipif(not fa_utils.is_installed, reason="flash-attn is not installed"),
 ]
 
-# Small, backend-agnostic problem shape used across the suite.
-_BATCH, _SEQLEN, _HEADS, _HEAD_DIM = 2, 128, 8, 64
+
+# ----------------------------------------------------------------------------
+# Configurations (all expected to route to the FlashAttention backend)
+# ----------------------------------------------------------------------------
+# Each entry: kwargs for DotProductAttention plus the problem shape.
+#   b   = batch size
+#   sq  = query sequence length
+#   skv = key/value sequence length
+#   h   = number of attention heads
+#   hg  = number of GQA groups (== h for MHA)
+#   d   = head dim (qk == v)
+_CONFIGS = {
+    #                          b   sq   skv   h   hg    d   mask        window
+    "self_no_mask": dict(b=2, sq=128, skv=128, h=8, hg=8, d=64, mask="no_mask", window=None),
+    "self_causal": dict(b=2, sq=128, skv=128, h=8, hg=8, d=64, mask="causal", window=None),
+    "gqa_causal": dict(b=2, sq=256, skv=256, h=16, hg=4, d=64, mask="causal", window=None),
+    "mqa_causal": dict(b=2, sq=256, skv=256, h=16, hg=1, d=64, mask="causal", window=None),
+    "cross_no_mask": dict(b=2, sq=128, skv=256, h=8, hg=8, d=64, mask="no_mask", window=None),
+    "hdim128_causal": dict(b=2, sq=256, skv=256, h=8, hg=8, d=128, mask="causal", window=None),
+    "sliding_window": dict(b=2, sq=512, skv=512, h=8, hg=8, d=64, mask="causal", window=(64, 0)),
+    # Padding / variable-length (self-attention, sq == skv). These also carry
+    # the thd (packed) format below.
+    "self_padding": dict(b=4, sq=128, skv=128, h=8, hg=8, d=64, mask="padding", window=None),
+    "self_padding_causal": dict(
+        b=4, sq=128, skv=128, h=8, hg=8, d=64, mask="padding_causal", window=None
+    ),
+    "gqa_padding_causal": dict(
+        b=4, sq=256, skv=256, h=16, hg=4, d=64, mask="padding_causal", window=None
+    ),
+}
+
+# dtypes FlashAttention supports.
+_DTYPES = [torch.bfloat16, torch.float16]
+
+
+def _is_padding(cfg):
+    return "padding" in cfg["mask"]
+
+
+def _valid_formats(cfg):
+    """Formats a config is exercised in: thd only makes sense with padding."""
+    if _is_padding(cfg):
+        return ["bshd", "sbhd", "thd"]
+    return ["bshd", "sbhd"]
+
+
+# (config_name, qkv_format) pairs -- only valid combinations.
+_CASES = [
+    (name, fmt) for name, cfg in _CONFIGS.items() for fmt in _valid_formats(cfg)
+]
 
 
 # ----------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------
 def _force_flash_backend():
-    """Pin DotProductAttention to the FlashAttention backend."""
+    """Pin DotProductAttention to the FlashAttention backend via env vars."""
     os.environ["NVTE_FLASH_ATTN"] = "1"
     os.environ["NVTE_FUSED_ATTN"] = "0"
     os.environ["NVTE_UNFUSED_ATTN"] = "0"
-    # Force backend re-selection now that the env vars changed.
     _attention_backends["backend_selection_requires_update"] = True
 
 
-def _make_qkv(dtype, requires_grad=False):
-    """Create a (q, k, v) triple in ``bshd`` layout on CUDA."""
-    shape = (_BATCH, _SEQLEN, _HEADS, _HEAD_DIM)
-    return tuple(
-        torch.randn(shape, dtype=dtype, device="cuda", requires_grad=requires_grad)
-        for _ in range(3)
-    )
+def _seqlens(b, max_s):
+    """Deterministic, varied per-sequence lengths in ``[1, max_s]``."""
+    fractions = [1.0, 0.5, 0.75, 0.25]
+    return [max(1, int(max_s * fractions[i % len(fractions)])) for i in range(b)]
 
 
-def _build_dpa(mask_type="causal"):
+def _cu_seqlens(seqlens):
+    cu = torch.zeros(len(seqlens) + 1, dtype=torch.int32, device="cuda")
+    cu[1:] = torch.cumsum(torch.tensor(seqlens, dtype=torch.int32, device="cuda"), dim=0)
+    return cu
+
+
+def _padding_mask(seqlens, max_s):
+    """Boolean self-attention mask ``[b, 1, 1, max_s]`` (True == masked out)."""
+    mask = torch.ones(len(seqlens), 1, 1, max_s, dtype=torch.bool, device="cuda")
+    for i, s in enumerate(seqlens):
+        mask[i, :, :, :s] = False
+    return mask
+
+
+def _make_inputs(cfg, dtype, qkv_format):
+    """Build (q, k, v, forward_kwargs) for a config in the given layout.
+
+    * non-padding bshd/sbhd: dense tensors, no extra kwargs;
+    * padding bshd/sbhd: dense tensors + a boolean ``attention_mask`` (so the
+      mask -> cu_seqlens conversion path is exercised);
+    * thd: packed variable-length tensors + ``cu_seqlens_*`` / ``max_seqlen_*``.
+    """
+    b, sq, skv, h, hg, d = (cfg["b"], cfg["sq"], cfg["skv"], cfg["h"], cfg["hg"], cfg["d"])
+
+    if qkv_format == "thd":
+        # Packed, variable length. Self-attention only (sq == skv), so q and kv
+        # share the same per-sequence lengths / cu_seqlens.
+        seqlens = _seqlens(b, sq)
+        cu = _cu_seqlens(seqlens)
+        total = int(cu[-1].item())
+        q = torch.randn(total, h, d, dtype=dtype, device="cuda")
+        k = torch.randn(total, hg, d, dtype=dtype, device="cuda")
+        v = torch.randn(total, hg, d, dtype=dtype, device="cuda")
+        kwargs = dict(
+            cu_seqlens_q=cu,
+            cu_seqlens_kv=cu,
+            max_seqlen_q=sq,
+            max_seqlen_kv=skv,
+        )
+        return q, k, v, kwargs
+
+    if qkv_format == "bshd":
+        q_shape, kv_shape = (b, sq, h, d), (b, skv, hg, d)
+    elif qkv_format == "sbhd":
+        q_shape, kv_shape = (sq, b, h, d), (skv, b, hg, d)
+    else:
+        raise ValueError(f"unsupported qkv_format {qkv_format}")
+    q = torch.randn(q_shape, dtype=dtype, device="cuda")
+    k = torch.randn(kv_shape, dtype=dtype, device="cuda")
+    v = torch.randn(kv_shape, dtype=dtype, device="cuda")
+
+    kwargs = {}
+    if _is_padding(cfg):
+        # Self-attention padding mask (sq == skv) over the query seqlen.
+        kwargs["attention_mask"] = _padding_mask(_seqlens(b, sq), sq)
+    return q, k, v, kwargs
+
+
+def _build_dpa(cfg, qkv_format):
     return DotProductAttention(
-        num_attention_heads=_HEADS,
-        kv_channels=_HEAD_DIM,
+        num_attention_heads=cfg["h"],
+        kv_channels=cfg["d"],
+        num_gqa_groups=cfg["hg"],
         attention_dropout=0.0,
-        attn_mask_type=mask_type,
-        qkv_format="bshd",
+        qkv_format=qkv_format,
+        attn_mask_type=cfg["mask"],
+        window_size=cfg["window"],
     ).cuda()
 
 
-def _forward_traceable(dpa):
-    """Return a callable that runs DPA.forward *without* the dynamo-disable.
-
-    ``@no_torch_dynamo`` wraps ``forward`` with ``functools.wraps``, so the raw
-    (undecorated) function is reachable via ``__wrapped__``. Calling it lets
-    ``torch.compile`` trace into attention and expose the internal graph breaks
-    that the decorator otherwise hides.
-    """
-    raw_forward = type(dpa).forward.__wrapped__
-
-    def run(q, k, v):
-        return raw_forward(dpa, q, k, v)
-
-    return run
-
-
 # ----------------------------------------------------------------------------
-# Tests
+# Test
 # ----------------------------------------------------------------------------
-def test_forward_is_dynamo_disabled():
-    """Document the current blocker: DPA.forward is dynamo-disabled.
+@pytest.mark.parametrize("dtype", _DTYPES, ids=lambda d: str(d).rsplit(".", 1)[-1])
+@pytest.mark.parametrize(
+    "config_name,qkv_format", _CASES, ids=[f"{n}-{f}" for n, f in _CASES]
+)
+def test_flash_backend_fullgraph(config_name, qkv_format, dtype):
+    """DotProductAttention (FlashAttention) must trace with fullgraph=True.
 
-    This is what makes torch.compile skip attention entirely today. When the
-    branch removes/loosens that decorator, this test is the canary that tells us
-    the tracing surface changed.
+    ``fullgraph=True`` raises on any graph break, so a passing run means the
+    whole forward was captured into a single graph. We also assert the compiled
+    output matches eager, for every (config, qkv_format, dtype) combination.
     """
-    fwd = DotProductAttention.forward
-    assert hasattr(fwd, "__wrapped__"), "expected @no_torch_dynamo to wrap forward"
+    cfg = _CONFIGS[config_name]
 
-
-@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
-def test_flash_backend_runs_under_compile(dtype):
-    """FlashAttention backend must run under torch.compile and match eager.
-
-    With the dynamo-disable in place this exercises the "eager island" path:
-    the flash kernel is reached and the result is bit-exact against eager.
-    """
     _force_flash_backend()
-    q, k, v = _make_qkv(dtype)
-    dpa = _build_dpa()
+    dpa = _build_dpa(cfg, qkv_format)
+    q, k, v, fwd_kwargs = _make_inputs(cfg, dtype, qkv_format)
 
-    out_eager = dpa(q, k, v)
+    out_eager = dpa(q, k, v, **fwd_kwargs)
 
     torch._dynamo.reset()
-    compiled = torch.compile(dpa, fullgraph=False, dynamic=False)
-    out_compiled = compiled(q, k, v)
+    compiled = torch.compile(dpa, fullgraph=True, dynamic=False)
+    out_compiled = compiled(q, k, v, **fwd_kwargs)
 
     torch.testing.assert_close(out_compiled, out_eager, atol=0.0, rtol=0.0)
-
-
-def test_flash_backend_graph_breaks():
-    """Inventory the graph breaks on the (unwrapped) FlashAttention forward.
-
-    Bypasses the dynamo-disable and traces the real forward so we can see every
-    construct Dynamo cannot handle. Does not assert a specific count yet -- it
-    prints the inventory so the breaks can be attacked one at a time. It only
-    fails if flash attention is never reached under tracing (op_count == 0).
-    """
-    _force_flash_backend()
-    q, k, v = _make_qkv(torch.bfloat16)
-    dpa = _build_dpa()
-
-    torch._dynamo.reset()
-    counters.clear()
-
-    explanation = torch._dynamo.explain(_forward_traceable(dpa))(q, k, v)
-
-    print("\n===== DotProductAttention / FlashAttention torch.compile report =====")
-    print(f"graph count       : {explanation.graph_count}")
-    print(f"graph break count : {explanation.graph_break_count}")
-    print(f"op count          : {explanation.op_count}")
-
-    # `explain().break_reasons` is unreliable when an inner frame is
-    # dynamo-disabled; the counters dict is the authoritative inventory.
-    print("----- graph break inventory (counters) -----")
-    gb = counters.get("graph_break", {})
-    if not gb:
-        print("  (none recorded via counters)")
-    for reason, count in sorted(gb.items(), key=lambda kv: -kv[1]):
-        print(f"  [{count:>3}x] {reason}")
-
-    print("----- break reasons (explain) -----")
-    for i, reason in enumerate(explanation.break_reasons):
-        print(f"[{i}] {getattr(reason, 'reason', reason)}")
-    print("=====================================================================")
-
-    # The whole point of step 1: flash attention must actually be reached while
-    # tracing (i.e. Dynamo captured real ops, not an empty graph).
-    assert explanation.op_count >= 1

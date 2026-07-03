@@ -43,7 +43,6 @@ from transformer_engine.pytorch.distributed import (
     CudaRNGStatesTracker,
     graph_safe_rng_available,
 )
-from transformer_engine.pytorch.jit import no_torch_dynamo
 from transformer_engine.pytorch.graph import is_graph_capturing
 from transformer_engine.pytorch.attention.inference import InferenceParams
 
@@ -628,6 +627,22 @@ class DotProductAttention(TransformerEngineBaseModule):
         Override TransformerEngineBaseModule.init_fp8_metadata to allow for more flexible recipe support.
         Initialize fp8 related metadata and tensors during fprop.
         """
+        # Fast path when FP8 is inactive: there is nothing to initialize, and we
+        # must avoid calling get_fp8_recipe() which constructs a default recipe.
+        # Recipe construction is not traceable under torch.compile (it asserts
+        # not torch.compiler.is_compiling()), so this early-out keeps the common
+        # non-FP8 forward traceable. Mirrors the base-class behaviour.
+        fp8_parameters = FP8GlobalStateManager.with_fp8_parameters()
+        fp8 = FP8GlobalStateManager.is_fp8_enabled()
+        fp8_calibration = FP8GlobalStateManager.is_fp8_calibration()
+        if not (fp8_parameters or fp8 or fp8_calibration):
+            self.fast_setattr("fp8_parameters", fp8_parameters)
+            self.fast_setattr("fp8", fp8)
+            self.fast_setattr("fp8_calibration", fp8_calibration)
+            self.fp8_meta["fp8_checkpoint"] = False
+            self.fast_setattr("fp8_initialized", False)
+            return
+
         _original_recipe = self.fp8_meta.get("recipe", None)
 
         # global recipe set in autocast()
@@ -1005,7 +1020,6 @@ class DotProductAttention(TransformerEngineBaseModule):
             ]
         return base[:num_quantizers]
 
-    @no_torch_dynamo(recursive=False)
     def forward(
         self,
         query_layer: torch.Tensor,
@@ -1379,12 +1393,14 @@ class DotProductAttention(TransformerEngineBaseModule):
                 ), "cu_seqlens_q and cu_seqlens_q must both be in dtype torch.int32!"
                 batch_size = len(cu_seqlens_q) - 1
                 if max_seqlen_q is None:
+                    dpa_utils.warn_max_seqlen_derivation_once()
                     if cu_seqlens_q_padded is not None:
                         seqlens_q = cu_seqlens_q_padded[1:] - cu_seqlens_q_padded[:-1]
                     else:
                         seqlens_q = cu_seqlens_q[1:] - cu_seqlens_q[:-1]
                     max_seqlen_q = int((seqlens_q.max().item() + 63) // 64 * 64)
                 if max_seqlen_kv is None:
+                    dpa_utils.warn_max_seqlen_derivation_once()
                     if cu_seqlens_kv_padded is not None:
                         seqlens_kv = cu_seqlens_kv_padded[1:] - cu_seqlens_kv_padded[:-1]
                     else:

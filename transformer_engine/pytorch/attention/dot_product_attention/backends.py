@@ -978,9 +978,11 @@ class FlashAttention(torch.nn.Module):
                     cu_seqlens_q is not None and cu_seqlens_kv is not None
                 ), "cu_seqlens_q and cu_seqlens_kv can not be None when qkv_format = thd!"
                 if max_seqlen_q is None:
+                    dpa_utils.warn_max_seqlen_derivation_once()
                     seqlens_q = cu_seqlens_q[1:] - cu_seqlens_q[:-1]
                     max_seqlen_q = seqlens_q.max().item()
                 if max_seqlen_kv is None:
+                    dpa_utils.warn_max_seqlen_derivation_once()
                     seqlens_kv = cu_seqlens_kv[1:] - cu_seqlens_kv[:-1]
                     max_seqlen_kv = seqlens_kv.max().item()
         else:
