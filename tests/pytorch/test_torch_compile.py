@@ -499,6 +499,7 @@ def _nvfp4(with_rht=True):
         rowwise=True,
         columnwise=True,
         with_rht=with_rht,
+        with_post_rht_amax=with_rht,
     )
 
 
