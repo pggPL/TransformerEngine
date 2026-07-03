@@ -14,7 +14,6 @@ from typing import (
     Dict,
     List,
     Optional,
-    Sequence,
     Tuple,
     Union,
     get_args,
@@ -24,7 +23,7 @@ from typing import (
 
 import torch
 
-from .tensor_proto import TensorProto, to_tensor_proto, _contiguous_stride
+from .traceable_utils import _contiguous_stride, _slot_count, _maybe_reassemble_tensor_subclass
 from ..quantized_tensor import (
     QuantizedTensor,
     QuantizedTensorStorage,
@@ -723,11 +722,6 @@ def _get_buckets(cls: type) -> List[_Bucket]:
     return buckets
 
 
-def _tensor_field_names(buckets: List[_Bucket]) -> List[str]:
-    """Names of fields carrying tensors (for building the proto view)."""
-    return [b.name for b in buckets if isinstance(b, (_TensorBucket, _UniversalTensorBucket))]
-
-
 def _build_schema(buckets: List[_Bucket]) -> Tuple[str, List[str]]:
     """Return ``(schema_arg_str, slot_names)`` for a bucket list."""
     spec = [slot for b in buckets for slot in b.schema_slots()]
@@ -761,76 +755,25 @@ def _unpack(cls: type, args: Dict[str, Any], buckets: List[_Bucket]) -> Any:
         object.__setattr__(obj, k, v)
     return obj
 
-
-def _proto_view(obj: Any, tensor_field_names: Sequence[str]) -> Any:
-    """Copy of dataclass ``obj`` with each tensor field replaced by a :class:`TensorProto`.
-
-    Only tensor fields have a ``TensorProto`` equivalent, so quantizer / scalar
-    fields are simply carried over unchanged; the fake impl works purely on
-    geometry. Built with :func:`dataclasses.replace` (the only such construction
-    Dynamo can trace).
-    """
-    overrides: Dict[str, Any] = {}
-    for name in tensor_field_names:
-        value = getattr(obj, name, None)
-        if value is not None and not isinstance(value, TensorProto):
-            overrides[name] = to_tensor_proto(value)
-    if not overrides:
-        return obj
-    return dataclasses.replace(obj, **overrides)
-
-
 # --------------------------------------------------------------------------- #
 # Op outputs <-> flat ``Tensor[]`` payload: this is how an op returns / saves
 # quantized tensors (and wrapper subclasses). Outputs are flattened to their
 # inner buffers on the way out and rebuilt via ``__tensor_unflatten__`` on the
-# way back; on the fake side a TensorProto supplies the geometry.
+# way back; the fake impl returns actual tensors whose __tensor_flatten__
+# provides the template for reassembly.
 # --------------------------------------------------------------------------- #
 
 
-def _proto_slot_count(proto: Optional[TensorProto]) -> int:
-    """Flat ``Tensor[]`` slots the value for ``proto`` occupies."""
-    if proto is None:
-        return 1
-    return len(proto.inner_names())
-
-
-def _proto_reassemble(
-    proto: Optional[TensorProto],
-    chunk: List[Optional[torch.Tensor]],
-) -> Optional[Union[torch.Tensor, QuantizedTensorStorage]]:
-    """Rebuild the value described by ``proto`` from its flat tensors ``chunk``.
-
-    ``proto`` describes one output: ``None`` (-> ``None``), a plain tensor
-    (``chunk`` is the single tensor, returned as-is), or a quantized tensor
-    (``chunk`` are its inner tensors, reassembled into the wrapper subclass via
-    ``__tensor_unflatten__``).
-    """
-    if proto is None:
-        return None
-    if proto.quantizer is None:
-        return chunk[0]
-    inner_names = proto.inner_names()
-    meta = proto.create_metadata()
-    shape = tuple(proto.shape)
-    stride = _contiguous_stride(shape)
-    storage_cls = _STORAGE_REGISTRY[meta["cls"]]
-    inner_dict = dict(zip(inner_names, chunk))
-    return storage_cls.__tensor_unflatten__(inner_dict, meta, shape, stride)
-
-
 def _value_to_flat_tensors(
-    value: Optional[Union[torch.Tensor, QuantizedTensorStorage, TensorProto]],
+    value: Optional[Union[torch.Tensor, QuantizedTensorStorage]],
 ) -> List[torch.Tensor]:
     """Return the flat ``Tensor[]`` slots that represent one op output ``value``.
 
-    Inverse of :func:`_proto_reassemble`; the slot count matches
-    :func:`_proto_slot_count`.
+    Inverse of :func:`_maybe_reassemble_tensor_subclass`; the slot count matches
+    :func:`_slot_count`.
     """
     if value is None:
         return [_encode_none(None)]
-    if isinstance(value, TensorProto):
-        return [_encode_none(t) for t in value.create_inner_tensors()]
     if isinstance(value, torch.Tensor):
         if type(value) is not torch.Tensor and hasattr(  # pylint: disable=unidiomatic-typecheck
             value, "__tensor_flatten__"
@@ -843,7 +786,7 @@ def _value_to_flat_tensors(
         return [_encode_none(getattr(value, n)) for n in inner_names]
     raise TypeError(
         f"unsupported value type {type(value).__name__}; expected None / "
-        "torch.Tensor / tensor subclass / bare storage / TensorProto."
+        "torch.Tensor / tensor subclass / bare storage."
     )
 
 
@@ -870,8 +813,7 @@ def _format_fwd_result(result: Any) -> List[torch.Tensor]:
 def _format_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> List[torch.Tensor]:
     """Pack a backward-impl return tuple into the op's ``Tensor[]`` payload.
 
-    Each grad occupies exactly one slot (validated against ``num_grad_inputs``);
-    a :class:`TensorProto` grad is materialized into a single tensor.
+    Each grad occupies exactly one slot (validated against ``num_grad_inputs``).
     """
     grads = list(grads)
     if len(grads) != num_grad_inputs:
@@ -879,13 +821,7 @@ def _format_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> Li
             f"{op_qualname} expected backward_impl to return {num_grad_inputs} grads "
             f"(one per input_tensors_for_grad entry), got {len(grads)}"
         )
-    out: List[torch.Tensor] = []
-    for g in grads:
-        if isinstance(g, TensorProto):
-            out.append(_encode_none(g.create_tensor()))
-        else:
-            out.append(_encode_none(g))
-    return out
+    return [_encode_none(g) for g in grads]
 
 
 def _split_fwd_fake_result(
@@ -946,16 +882,15 @@ def _register_kernel(
     arg_type: type,
     arg_names: List[str],
     buckets: List[_Bucket],
-    tensor_field_names: List[str],
     impl: Callable[[Any], Any],
     fake_impl: Callable[[Any], Any],
     format_result: Callable[[Any], List[torch.Tensor]],
 ) -> Any:
     """Define the op via ``torch.library.custom_op`` with the real ``impl`` + the
-    ``fake_impl`` (proto), returning the ``CustomOpDef``.
+    ``fake_impl``, returning the ``CustomOpDef``.
 
     The real kernel rebuilds the dataclass and runs ``impl``; the fake kernel
-    runs the proto fake impl on the :func:`_proto_view`. Both go through
+    runs the fake impl directly on the unpacked object. Both go through
     ``format_result``.
     """
 
@@ -967,8 +902,7 @@ def _register_kernel(
     def _fake(*flat: Any) -> List[torch.Tensor]:
         kwargs = dict(zip(arg_names, flat))
         obj = _unpack(arg_type, kwargs, buckets)
-        proto_obj = _proto_view(obj, tensor_field_names)
-        return format_result(fake_impl(proto_obj))
+        return format_result(fake_impl(obj))
 
     op = torch.library.custom_op(
         f"{_TE_OP_NAMESPACE}::{op_name}", _impl, mutates_args=(), schema=schema_str
@@ -984,7 +918,6 @@ def _register_autograd_for_op(
     fwd_arg_type: type,
     fwd_arg_names: List[str],
     fwd_buckets: List[_Bucket],
-    fwd_tensor_field_names: List[str],
     bwd_arg_names: List[str],
     bwd_buckets: List[_Bucket],
     fwd_slot_defaults: List[Any],
@@ -995,7 +928,7 @@ def _register_autograd_for_op(
 ) -> None:
     """Wire ``register_autograd`` on a forward op so its backward calls ``bwd_op_name``.
 
-    ``setup_context`` re-runs the proto fwd fake impl to recover output / saved
+    ``setup_context`` re-runs the fwd fake impl to recover output / saved
     templates, reassembles each flat output chunk, and hands the saved tuple +
     ``ctx_attrs`` to the module's ``setup_context``.
     """
@@ -1006,24 +939,23 @@ def _register_autograd_for_op(
         }
         kwargs = dict(zip(fwd_arg_names, inputs))
         fwd_obj = _unpack(fwd_arg_type, kwargs, fwd_buckets)
-        proto_obj = _proto_view(fwd_obj, fwd_tensor_field_names)
 
-        user_fakes, saved_fakes, ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(proto_obj))
+        user_fakes, saved_fakes, ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(fwd_obj))
 
         cursor = 0
         user_outputs: List[Any] = []
-        for proto in user_fakes:
-            n = _proto_slot_count(proto)
+        for template in user_fakes:
+            n = _slot_count(template)
             chunk = [_decode_none(t) for t in output[cursor : cursor + n]]
             cursor += n
-            user_outputs.append(_proto_reassemble(proto, chunk))
+            user_outputs.append(_maybe_reassemble_tensor_subclass(template, chunk))
 
         saved_list: List[Any] = []
-        for proto in saved_fakes:
-            n = _proto_slot_count(proto)
+        for template in saved_fakes:
+            n = _slot_count(template)
             chunk = [_decode_none(t) for t in output[cursor : cursor + n]]
             cursor += n
-            saved_list.append(_proto_reassemble(proto, chunk))
+            saved_list.append(_maybe_reassemble_tensor_subclass(template, chunk))
 
         bwd_obj = backward_obj_type()
         tensors_to_save_from_setup = setup_context_user(
@@ -1203,8 +1135,6 @@ def _register_custom_op_impl(
 
     fwd_buckets = _get_buckets(fwd_arg_type)
     bwd_buckets = _get_buckets(backward_arg_type)
-    fwd_tensor_field_names = _tensor_field_names(fwd_buckets)
-    bwd_tensor_field_names = _tensor_field_names(bwd_buckets)
 
     fwd_schema_args, fwd_arg_names = _build_schema(fwd_buckets)
     bwd_schema_args, bwd_arg_names = _build_schema(bwd_buckets)
@@ -1225,7 +1155,6 @@ def _register_custom_op_impl(
         arg_type=fwd_arg_type,
         arg_names=fwd_arg_names,
         buckets=fwd_buckets,
-        tensor_field_names=fwd_tensor_field_names,
         impl=fwd_impl,
         fake_impl=fwd_fake_impl,
         format_result=_format_fwd_result,
@@ -1236,7 +1165,6 @@ def _register_custom_op_impl(
         arg_type=backward_arg_type,
         arg_names=bwd_arg_names,
         buckets=bwd_buckets,
-        tensor_field_names=bwd_tensor_field_names,
         impl=backward_impl,
         fake_impl=bwd_fake_impl,
         format_result=lambda g: _format_bwd_result(g, num_grad_inputs, inner_bwd_qualname),
@@ -1257,7 +1185,6 @@ def _register_custom_op_impl(
         "fwd_arg_type": fwd_arg_type,
         "fwd_arg_names": fwd_arg_names,
         "fwd_buckets": fwd_buckets,
-        "fwd_tensor_field_names": fwd_tensor_field_names,
         "bwd_arg_names": bwd_arg_names,
         "bwd_buckets": bwd_buckets,
         "fwd_slot_defaults": fwd_slot_defaults,
@@ -1305,19 +1232,18 @@ def _register_custom_op_impl(
     _quantized_tensor_passthrough_ops.add(inner_bwd_op.default)
 
     def forward_fn(fwd_args):
-        proto_obj = _proto_view(fwd_args, fwd_tensor_field_names)
-        user_fakes, _saved_fakes, _ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(proto_obj))
+        user_fakes, _saved_fakes, _ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(fwd_args))
         kwargs = _pack(fwd_args, fwd_buckets)
         flat_in = [kwargs[name] for name in fwd_arg_names]
         result = outer_fwd_op(*flat_in)
 
         cursor = 0
         outputs: List[Any] = []
-        for proto in user_fakes:
-            n = _proto_slot_count(proto)
+        for template in user_fakes:
+            n = _slot_count(template)
             chunk = [_decode_none(t) for t in result[cursor : cursor + n]]
             cursor += n
-            outputs.append(_proto_reassemble(proto, chunk))
+            outputs.append(_maybe_reassemble_tensor_subclass(template, chunk))
 
         if len(outputs) == 1:
             return outputs[0]

@@ -245,8 +245,14 @@ class NVFP4Quantizer(Quantizer):
         )
         quantizer.internal = self.internal
         quantizer.optimize_for_gemm = self.optimize_for_gemm
-        quantizer.rht_matrix = self.rht_matrix
         quantizer.rht_matrix_random_sign_mask_t = self.rht_matrix_random_sign_mask_t
+        if not torch.compiler.is_compiling():
+            # Under Dynamo tracing rht_matrix is a FakeTensor on an opaque script
+            # object; accessing it triggers SourcelessBuilder which cannot wrap
+            # FakeTensor.  The fake impl never runs real quantization so the matrix
+            # is unnecessary -- it will be rebuilt lazily via _rebuild_derived_state
+            # if the quantizer is later used outside tracing.
+            quantizer.rht_matrix = self.rht_matrix
 
         return quantizer
 
@@ -366,7 +372,7 @@ class NVFP4Quantizer(Quantizer):
             "with_amax_reduction",
         )
 
-    # ----- TensorProto / pure-Python allocation -----
+    # ----- traceable allocation -----
 
     def _storage_metadata(self, fake_dtype: torch.dtype) -> Dict[str, Any]:
         return {
