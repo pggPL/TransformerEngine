@@ -1009,10 +1009,11 @@ class DotProductAttention(TransformerEngineBaseModule):
     def forward(
         self,
         query_layer: torch.Tensor,
-        key_layer: torch.Tensor,
-        value_layer: torch.Tensor,
+        key_layer: Optional[torch.Tensor] = None,
+        value_layer: Optional[torch.Tensor] = None,
         attention_mask: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]] = None,
         qkv_format: str = None,
+        qkv_layout: Optional[str] = None,
         cu_seqlens_q: torch.Tensor = None,
         cu_seqlens_kv: torch.Tensor = None,
         cu_seqlens_q_padded: torch.Tensor = None,
@@ -1253,6 +1254,38 @@ class DotProductAttention(TransformerEngineBaseModule):
             allow_non_contiguous=True,
             allow_different_data_and_param_types=self.softmax_type != "vanilla",
         ) as query_layer:
+            # ------------------------------------------------------------------
+            # JAX-style, pointer-free qkv layout signalling.
+            #
+            # Packing is derived from *how many tensors are passed* (argument
+            # presence) plus `qkv_format`, never from storage data pointers.
+            #   - key_layer is None and value_layer is None:
+            #         query_layer is a single qkv-packed tensor [.., 3, h, d]
+            #   - value_layer is None (key_layer given):
+            #         key_layer is a kv-packed tensor [.., 2, h, d], q separate
+            #   - all three given: three separate tensors
+            # The packed tensor(s) are unbound into q, k, v *views* (traceable,
+            # no data_ptr), so the rest of forward is unchanged. `qkv_layout`
+            # (the layout string) may also be passed explicitly to skip
+            # detection entirely.
+            if qkv_format is None:
+                qkv_format = self.qkv_format
+            qkv_packing = None  # one of {None (separate), "qkv", "kv"}
+            if key_layer is None and value_layer is None:
+                qkv_packing = "qkv"
+                query_layer, key_layer, value_layer = query_layer.unbind(dim=-3)
+            elif value_layer is None:
+                qkv_packing = "kv"
+                key_layer, value_layer = key_layer.unbind(dim=-3)
+            # Use the pointer-free layout path when packing is signalled via
+            # argument presence, an explicit layout string is given, or we are
+            # tracing under torch.compile (where data_ptr graph-breaks).
+            pointer_free_layout = (
+                qkv_packing is not None
+                or qkv_layout is not None
+                or torch.compiler.is_compiling()
+            )
+
             # checks for RNG
             if self.rng_states_tracker is not None and is_graph_capturing():
                 assert isinstance(
@@ -1432,8 +1465,55 @@ class DotProductAttention(TransformerEngineBaseModule):
                 cu_seqlens_kv_padded = None
 
             # get qkv's memory layout
-            if all(
-                isinstance(x, Float8TensorStorage) for x in [query_layer, key_layer, value_layer]
+            if pointer_free_layout:
+                # Pointer-free (JAX-style) layout: derive the layout string from
+                # `qkv_format` + packing (or use the explicit `qkv_layout`), with
+                # no data_ptr / storage_offset / stride inspection. For three
+                # separate tensors under torch.compile this yields the separate
+                # layout for the given format, which is functionally correct for
+                # flash/fused attention (it forgoes only the packed-storage
+                # micro-optimization that pointer inspection would detect).
+                is_fp8 = all(
+                    isinstance(x, Float8TensorStorage)
+                    for x in [query_layer, key_layer, value_layer]
+                )
+                if is_fp8:
+                    (
+                        qkv_layout,
+                        query_layer._data,
+                        key_layer._data,
+                        value_layer._data,
+                        q_format,
+                        kv_format,
+                    ) = dpa_utils.get_qkv_layout_pointer_free(
+                        query_layer._data,
+                        key_layer._data,
+                        value_layer._data,
+                        qkv_format=qkv_format,
+                        qkv_packing=qkv_packing,
+                        qkv_layout=qkv_layout,
+                        inference_params=inference_params,
+                    )
+                else:
+                    (
+                        qkv_layout,
+                        query_layer,
+                        key_layer,
+                        value_layer,
+                        q_format,
+                        kv_format,
+                    ) = dpa_utils.get_qkv_layout_pointer_free(
+                        query_layer,
+                        key_layer,
+                        value_layer,
+                        qkv_format=qkv_format,
+                        qkv_packing=qkv_packing,
+                        qkv_layout=qkv_layout,
+                        inference_params=inference_params,
+                    )
+            elif all(
+                isinstance(x, Float8TensorStorage)
+                for x in [query_layer, key_layer, value_layer]
             ):
                 (
                     qkv_layout,
