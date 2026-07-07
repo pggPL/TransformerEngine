@@ -6,6 +6,8 @@
 
 #include "transformer_engine/fused_attn.h"
 
+#include <algorithm>
+
 #include "../common.h"
 #include "../cudnn_utils.h"
 #include "../util/cuda_runtime.h"
@@ -94,7 +96,42 @@ std::string to_string(NVTE_QKV_Format format) {
   }
 }
 
+namespace fused_attn {
+
+RealStrideOverride &GetRealStrideOverride() {
+  static thread_local RealStrideOverride instance;
+  return instance;
+}
+
+}  // namespace fused_attn
+
 }  // namespace transformer_engine
+
+// Prototype: set/clear the thread-local real-stride override for Q/K/V (+dO)
+void nvte_fused_attn_set_strides(const int64_t *q_strides, const int64_t *k_strides,
+                                 const int64_t *v_strides, const int64_t *do_strides) {
+  NVTE_API_CALL(nvte_fused_attn_set_strides);
+  using namespace transformer_engine::fused_attn;
+  auto &override = GetRealStrideOverride();
+  if (q_strides != nullptr && k_strides != nullptr && v_strides != nullptr) {
+    std::copy(q_strides, q_strides + 4, override.q.begin());
+    std::copy(k_strides, k_strides + 4, override.k.begin());
+    std::copy(v_strides, v_strides + 4, override.v.begin());
+    override.has_qkv = true;
+  } else {
+    override.has_qkv = false;
+    override.q.fill(0);
+    override.k.fill(0);
+    override.v.fill(0);
+  }
+  if (do_strides != nullptr) {
+    std::copy(do_strides, do_strides + 4, override.dO.begin());
+    override.has_do = true;
+  } else {
+    override.has_do = false;
+    override.dO.fill(0);
+  }
+}
 
 // map NVTE_QKV_Layout to NVTE_QKV_Layout_Group
 NVTE_QKV_Layout_Group nvte_get_qkv_layout_group(NVTE_QKV_Layout qkv_layout) {

@@ -388,6 +388,28 @@ void nvte_populate_rng_state_async(NVTETensor rng_state_dst, const NVTETensor se
                                    size_t q_max_seqlen, size_t kv_max_seqlen,
                                    NVTE_Fused_Attn_Backend backend, cudaStream_t stream);
 
+/*!  \brief Provide real tensor strides for Q/K/V (and optionally dO) to subsequent
+ *          nvte_fused_attn_fwd / nvte_fused_attn_bwd calls on the calling thread.
+ *
+ * \warning   This API is **experimental** and subject to change.
+ *
+ *  Prototype side channel: when set, the F16 arbitrary-seqlen backend uses these strides
+ *  for the cuDNN graph tensors Q/K/V (and dO in backward) instead of reconstructing
+ *  strides from the NVTE_QKV_Layout enum. Only applies to dense (non-THD, non-paged)
+ *  layouts; ignored otherwise. The override stays active for the calling thread until
+ *  cleared by passing NULL pointers.
+ *
+ *  \param[in]     q_strides    Q strides, 4 elements in cuDNN dim order [b, h, s, d],
+ *                              in units of elements. NULL (together with k/v) clears the
+ *                              Q/K/V override.
+ *  \param[in]     k_strides    K strides, same convention as q_strides.
+ *  \param[in]     v_strides    V strides, same convention as q_strides.
+ *  \param[in]     do_strides   dO strides (backward only), same convention. NULL clears
+ *                              the dO override.
+ */
+void nvte_fused_attn_set_strides(const int64_t *q_strides, const int64_t *k_strides,
+                                 const int64_t *v_strides, const int64_t *do_strides);
+
 /*!  \brief Get KV format for a given QKV layout.
  *
  * \warning   This API is **experimental** and subject to change.

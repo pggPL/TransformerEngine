@@ -4,6 +4,8 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#include <cstdlib>
+
 #include "../extensions.h"
 #include "common.h"
 #include "pybind.h"
@@ -11,6 +13,54 @@
 namespace {
 
 constexpr int block_size = 512;
+
+// Prototype (opt-in via NVTE_FUSED_ATTN_REAL_STRIDES=1): pass the real torch strides of
+// Q/K/V (and dO in backward) down to the cuDNN fused-attention graph instead of relying
+// on strides reconstructed from the NVTE_QKV_Layout enum.
+bool real_strides_enabled() {
+  const char *env = std::getenv("NVTE_FUSED_ATTN_REAL_STRIDES");
+  return env != nullptr && env[0] == '1';
+}
+
+// Cast a py::handle to at::Tensor if it wraps a plain torch tensor.
+bool get_plain_torch_tensor(pybind11::handle handle, at::Tensor &out) {
+  try {
+    out = handle.cast<at::Tensor>();
+    return true;
+  } catch (const pybind11::cast_error &) {
+    return false;
+  }
+}
+
+// Map a 4-D torch tensor's strides to cuDNN dim order [b, h, s, d] given its format.
+// Returns false for unsupported formats (e.g. THD) or non-4D tensors.
+bool to_bhsd_strides(const at::Tensor &t, NVTE_QKV_Format format, int64_t *out) {
+  if (t.dim() != 4) {
+    return false;
+  }
+  switch (format) {
+    case NVTE_QKV_Format::NVTE_BSHD:  // torch [b, s, h, d]
+      out[0] = t.stride(0);
+      out[1] = t.stride(2);
+      out[2] = t.stride(1);
+      out[3] = t.stride(3);
+      return true;
+    case NVTE_QKV_Format::NVTE_SBHD:  // torch [s, b, h, d]
+      out[0] = t.stride(1);
+      out[1] = t.stride(2);
+      out[2] = t.stride(0);
+      out[3] = t.stride(3);
+      return true;
+    case NVTE_QKV_Format::NVTE_BHSD:  // torch [b, h, s, d]
+      out[0] = t.stride(0);
+      out[1] = t.stride(1);
+      out[2] = t.stride(2);
+      out[3] = t.stride(3);
+      return true;
+    default:
+      return false;
+  }
+}
 
 // fast zero-fills of tensors
 void mha_fill(const transformer_engine::TensorWrapper &self, const at::Tensor &start_index) {
@@ -243,6 +293,23 @@ std::vector<py::object> fused_attn_fwd(
   // create workspace
   TensorWrapper workspace;
 
+  // Prototype: pass real torch strides of Q/K/V through to the cuDNN graph
+  bool real_strides_set = false;
+  if (real_strides_enabled()) {
+    at::Tensor q_torch, k_torch, v_torch;
+    if (get_plain_torch_tensor(Q, q_torch) && get_plain_torch_tensor(K, k_torch) &&
+        get_plain_torch_tensor(V, v_torch)) {
+      NVTE_QKV_Format kv_format = nvte_get_kv_format(qkv_layout);
+      int64_t q_strides[4], k_strides[4], v_strides[4];
+      if (to_bhsd_strides(q_torch, q_format, q_strides) &&
+          to_bhsd_strides(k_torch, kv_format, k_strides) &&
+          to_bhsd_strides(v_torch, kv_format, v_strides)) {
+        nvte_fused_attn_set_strides(q_strides, k_strides, v_strides, nullptr);
+        real_strides_set = true;
+      }
+    }
+  }
+
   // populate tensors with appropriate shapes and dtypes
   NVTE_SCOPED_GIL_RELEASE({
     nvte_fused_attn_fwd(
@@ -311,6 +378,11 @@ std::vector<py::object> fused_attn_fwd(
         qkv_scale_inv_format, bias_type, attn_mask_type, softmax_type, window_size[0],
         window_size[1], bottom_right_diagonal, workspace.data(), at::cuda::getCurrentCUDAStream());
   });
+
+  // clear the real-stride override
+  if (real_strides_set) {
+    nvte_fused_attn_set_strides(nullptr, nullptr, nullptr, nullptr);
+  }
 
   // destroy tensor wrappers, but not allocated memory
   nvte_tensor_pack_destroy(&nvte_aux_tensor_pack);
@@ -571,6 +643,25 @@ std::vector<py::object> fused_attn_bwd(
   // create workspace
   TensorWrapper workspace;
 
+  // Prototype: pass real torch strides of Q/K/V (and dO) through to the cuDNN graph
+  bool real_strides_set = false;
+  if (real_strides_enabled()) {
+    at::Tensor q_torch, k_torch, v_torch, do_torch;
+    if (get_plain_torch_tensor(Q, q_torch) && get_plain_torch_tensor(K, k_torch) &&
+        get_plain_torch_tensor(V, v_torch)) {
+      int64_t q_strides[4], k_strides[4], v_strides[4], do_strides[4];
+      if (to_bhsd_strides(q_torch, q_format, q_strides) &&
+          to_bhsd_strides(k_torch, kv_format, k_strides) &&
+          to_bhsd_strides(v_torch, kv_format, v_strides)) {
+        const bool have_do_strides = get_plain_torch_tensor(dO, do_torch) &&
+                                     to_bhsd_strides(do_torch, do_format, do_strides);
+        nvte_fused_attn_set_strides(q_strides, k_strides, v_strides,
+                                    have_do_strides ? do_strides : nullptr);
+        real_strides_set = true;
+      }
+    }
+  }
+
   // populate tensors with appropriate shapes and dtypes
   NVTE_SCOPED_GIL_RELEASE({
     nvte_fused_attn_bwd(
@@ -601,6 +692,11 @@ std::vector<py::object> fused_attn_bwd(
         window_size[1], bottom_right_diagonal, deterministic, cuda_graph, workspace.data(),
         at::cuda::getCurrentCUDAStream());
   });
+
+  // clear the real-stride override
+  if (real_strides_set) {
+    nvte_fused_attn_set_strides(nullptr, nullptr, nullptr, nullptr);
+  }
 
   // destroy tensor wrappers
   nvte_tensor_pack_destroy(&nvte_aux_tensor_pack);

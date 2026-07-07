@@ -94,6 +94,11 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
     NVTE_CHECK(is_padding, "Paged attention requires padding mask!");
   }
 
+  // Prototype: real-stride override for dense (non-THD, non-paged) Q/K/V
+  const auto &stride_override = GetRealStrideOverride();
+  const bool use_real_strides =
+      stride_override.has_qkv && !is_paged_kv && !is_ragged_q && !is_ragged_kv;
+
   // keep original batch size because cu_seqlens are created with [b+1] shape
   int64_t actual_b = b;
   if ((is_ragged_q || is_ragged_kv) && cudnn_runtime_version >= 90600) {
@@ -153,6 +158,13 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
         cudnn_frontend::DataType_t::NOT_SET,
         return_max_logit,
     };
+    if (use_real_strides) {
+      for (int i = 0; i < 4; ++i) {
+        descriptor.real_strides[i] = stride_override.q[i];
+        descriptor.real_strides[4 + i] = stride_override.k[i];
+        descriptor.real_strides[8 + i] = stride_override.v[i];
+      }
+    }
 
     namespace fe = cudnn_frontend;
     using graph_and_tensors =
@@ -218,6 +230,12 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
                               NVTE_QKV_Matrix::NVTE_K_Matrix);
         generateMatrixStrides(b, hg, s_q, s_kv, d_v, v_stride.data(), qkv_layout,
                               NVTE_QKV_Matrix::NVTE_V_Matrix);
+      }
+      if (use_real_strides) {
+        // use the real tensor strides instead of the enum-derived ones
+        q_stride.assign(stride_override.q.begin(), stride_override.q.end());
+        k_stride.assign(stride_override.k.begin(), stride_override.k.end());
+        v_stride.assign(stride_override.v.begin(), stride_override.v.end());
       }
 
       Q = mha_graph->tensor(fe::graph::Tensor_attributes()
@@ -598,6 +616,13 @@ void fused_attn_arbitrary_seqlen_bwd_impl(
     NVTE_CHECK(is_padding, "Paged attention requires padding mask!");
   }
 
+  // Prototype: real-stride override for dense (non-THD, non-paged) Q/K/V inputs and dO.
+  // Outputs dQ/dK/dV keep the enum-derived strides (TE allocates them).
+  const auto &stride_override = GetRealStrideOverride();
+  const bool is_dense = !is_paged_kv && !is_ragged_q && !is_ragged_kv;
+  const bool use_real_strides = stride_override.has_qkv && is_dense;
+  const bool use_real_do_strides = stride_override.has_do && is_dense;
+
   // keep original batch size because cu_seqlens are created with [b+1] shape
   int64_t actual_b = b;
   if ((is_ragged_q || is_ragged_kv) && cudnn_runtime_version >= 90600) {
@@ -656,6 +681,18 @@ void fused_attn_arbitrary_seqlen_bwd_impl(
         cudnn_frontend::DataType_t::NOT_SET,
         false,
     };
+    if (use_real_strides) {
+      for (int i = 0; i < 4; ++i) {
+        descriptor.real_strides[i] = stride_override.q[i];
+        descriptor.real_strides[4 + i] = stride_override.k[i];
+        descriptor.real_strides[8 + i] = stride_override.v[i];
+      }
+    }
+    if (use_real_do_strides) {
+      for (int i = 0; i < 4; ++i) {
+        descriptor.real_strides[12 + i] = stride_override.dO[i];
+      }
+    }
 
     namespace fe = cudnn_frontend;
     using graph_and_tensors =
@@ -722,6 +759,21 @@ void fused_attn_arbitrary_seqlen_bwd_impl(
       generateMatrixStrides(b, h, s_q, s_kv, d_v, o_stride.data(), qkv_layout,
                             NVTE_QKV_Matrix::NVTE_O_Matrix);
 
+      // dQ/dK/dV outputs and O keep the enum-derived strides; the real-stride override
+      // only applies to the Q/K/V and dO inputs.
+      std::vector<int64_t> dq_stride(q_stride);
+      std::vector<int64_t> dk_stride(k_stride);
+      std::vector<int64_t> dv_stride(v_stride);
+      std::vector<int64_t> do_stride(o_stride);
+      if (use_real_strides) {
+        q_stride.assign(stride_override.q.begin(), stride_override.q.end());
+        k_stride.assign(stride_override.k.begin(), stride_override.k.end());
+        v_stride.assign(stride_override.v.begin(), stride_override.v.end());
+      }
+      if (use_real_do_strides) {
+        do_stride.assign(stride_override.dO.begin(), stride_override.dO.end());
+      }
+
       q = mha_graph->tensor(fe::graph::Tensor_attributes()
                                 .set_name("Q")
                                 .set_dim({b, h, s_q, d_qk})
@@ -741,7 +793,7 @@ void fused_attn_arbitrary_seqlen_bwd_impl(
       dO = mha_graph->tensor(fe::graph::Tensor_attributes()
                                  .set_name("dO")
                                  .set_dim({b, h, s_q, d_v})
-                                 .set_stride(o_stride));
+                                 .set_stride(do_stride));
       if (is_ragged_q) {
         offset_q = mha_graph->tensor(fe::graph::Tensor_attributes()
                                          .set_name("offset_q")
@@ -893,9 +945,9 @@ void fused_attn_arbitrary_seqlen_bwd_impl(
 
       auto [dQ, dK, dV] = mha_graph->sdpa_backward(q, k, v, o, dO, stats, sdpa_backward_options);
 
-      dQ->set_output(true).set_dim({b, h, s_q, d_qk}).set_stride(q_stride);
-      dK->set_output(true).set_dim({b, hg, s_kv, d_qk}).set_stride(k_stride);
-      dV->set_output(true).set_dim({b, hg, s_kv, d_v}).set_stride(v_stride);
+      dQ->set_output(true).set_dim({b, h, s_q, d_qk}).set_stride(dq_stride);
+      dK->set_output(true).set_dim({b, hg, s_kv, d_qk}).set_stride(dk_stride);
+      dV->set_output(true).set_dim({b, hg, s_kv, d_v}).set_stride(dv_stride);
       if (is_ragged_q) {
         dQ->set_ragged_offset(offset_q);
       }

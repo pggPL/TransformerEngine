@@ -11,6 +11,7 @@
 #include <cudnn_frontend.h>
 #include <cudnn_frontend_utils.h>
 
+#include <array>
 #include <cstdint>
 #include <mutex>
 
@@ -312,6 +313,10 @@ struct FADescriptor_v1 {
   cudnn_frontend::DataType_t do_tensor_type;
   cudnn_frontend::DataType_t dqkv_tensor_type;
   bool return_max_logit;
+  // Real (torch) strides for Q, K, V, dO in cuDNN dim order [b, h, s, d], concatenated
+  // ([0:4]=Q, [4:8]=K, [8:12]=V, [12:16]=dO). All zeros when the enum-derived strides
+  // are used. Part of the cache key so plans built for different strides are not reused.
+  std::array<std::int64_t, 16> real_strides = {};
 
   bool operator<(const FADescriptor_v1 &rhs) const {
     return std::tie(b, h, hg, s_q, s_kv, d_qk, d_v, num_pages_k, num_pages_v, page_size_k,
@@ -320,7 +325,7 @@ struct FADescriptor_v1 {
                     do_format, dqkv_layout, qkv_scale_inv_format, do_scale_inv_format, mask_type,
                     softmax_type, window_size_left, window_size_right, bottom_right_diagonal,
                     deterministic, bias_type, qkv_tensor_type, o_tensor_type, do_tensor_type,
-                    dqkv_tensor_type, return_max_logit) <
+                    dqkv_tensor_type, return_max_logit, real_strides) <
            std::tie(rhs.b, rhs.h, rhs.hg, rhs.s_q, rhs.s_kv, rhs.d_qk, rhs.d_v, rhs.num_pages_k,
                     rhs.num_pages_v, rhs.page_size_k, rhs.page_size_v, rhs.max_pages_per_seq_k,
                     rhs.max_pages_per_seq_v, rhs.bias_b, rhs.bias_h, rhs.bias_sq, rhs.bias_skv,
@@ -329,9 +334,23 @@ struct FADescriptor_v1 {
                     rhs.do_scale_inv_format, rhs.mask_type, rhs.softmax_type, rhs.window_size_left,
                     rhs.window_size_right, rhs.bottom_right_diagonal, rhs.deterministic,
                     rhs.bias_type, rhs.qkv_tensor_type, rhs.o_tensor_type, rhs.do_tensor_type,
-                    rhs.dqkv_tensor_type, rhs.return_max_logit);
+                    rhs.dqkv_tensor_type, rhs.return_max_logit, rhs.real_strides);
   }
 };
+
+// Prototype: thread-local override of Q/K/V (+dO) strides for the F16 arbitrary-seqlen
+// backend, set via nvte_fused_attn_set_strides. Strides are in cuDNN dim order
+// [b, h, s, d], in units of elements.
+struct RealStrideOverride {
+  bool has_qkv = false;
+  bool has_do = false;
+  std::array<std::int64_t, 4> q{};
+  std::array<std::int64_t, 4> k{};
+  std::array<std::int64_t, 4> v{};
+  std::array<std::int64_t, 4> dO{};
+};
+
+RealStrideOverride &GetRealStrideOverride();
 
 __global__ void cu_seqlens_to_actual_seqlens(int64_t actual_b, int64_t max_b,
                                              int32_t const *const q_cu_seqlens,
