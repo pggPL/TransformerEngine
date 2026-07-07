@@ -2308,6 +2308,18 @@ def get_qkv_layout(
         Format of the key and value tensors, {`bshd`, `sbhd`, `thd`}.
     """
 
+    # Under torch.compile, pointer inspection (untyped_storage().data_ptr(),
+    # storage_offset()) graph-breaks. The gate in DotProductAttention.forward
+    # normally routes compiled calls to the pointer-free path, but if an
+    # earlier graph break makes Dynamo skip the forward frame, this function
+    # is compiled as its own frame and the forward-level gate never fired.
+    # Checking here folds to a constant during tracing, so a traced call
+    # always takes the pointer-free (separate-layout) path.
+    if torch.compiler.is_compiling():
+        return get_qkv_layout_pointer_free(
+            q, k, v, qkv_format=qkv_format, inference_params=inference_params
+        )
+
     check_last_dim_contiguous = all(x.stride(-1) == 1 for x in [q, k, v])
     assert check_last_dim_contiguous, "q, k and v must have stride 1 in their last dimension!"
     if "_2" in qkv_format:
