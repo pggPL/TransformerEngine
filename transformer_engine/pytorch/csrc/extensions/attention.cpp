@@ -4,8 +4,6 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#include <cstdlib>
-
 #include "../extensions.h"
 #include "common.h"
 #include "pybind.h"
@@ -13,14 +11,6 @@
 namespace {
 
 constexpr int block_size = 512;
-
-// Opt-in via NVTE_FUSED_ATTN_REAL_STRIDES=1: pass the real torch strides of Q/K/V (and
-// dO in backward) down to the cuDNN fused-attention graph via nvte_fused_attn_fwd/bwd_v2
-// instead of relying on strides reconstructed from the NVTE_QKV_Layout enum.
-bool real_strides_enabled() {
-  const char *env = std::getenv("NVTE_FUSED_ATTN_REAL_STRIDES");
-  return env != nullptr && env[0] == '1';
-}
 
 // Cast a py::handle to at::Tensor if it wraps a plain torch tensor.
 bool get_plain_torch_tensor(pybind11::handle handle, at::Tensor &out) {
@@ -293,11 +283,11 @@ std::vector<py::object> fused_attn_fwd(
   // create workspace
   TensorWrapper workspace;
 
-  // Real torch strides of Q/K/V for the cuDNN graph (opt-in); NULL members fall back to
-  // the enum-derived strides.
+  // Real torch strides of Q/K/V for the cuDNN graph; NULL members fall back to
+  // the enum-derived strides (quantized tensors, THD, non-4D tensors).
   int64_t q_strides[4], k_strides[4], v_strides[4];
   NVTEQKVStrides qkv_strides{nullptr, nullptr, nullptr, nullptr};
-  if (real_strides_enabled()) {
+  {
     at::Tensor q_torch, k_torch, v_torch;
     if (get_plain_torch_tensor(Q, q_torch) && get_plain_torch_tensor(K, k_torch) &&
         get_plain_torch_tensor(V, v_torch)) {
@@ -640,11 +630,11 @@ std::vector<py::object> fused_attn_bwd(
   // create workspace
   TensorWrapper workspace;
 
-  // Real torch strides of Q/K/V and dO for the cuDNN graph (opt-in); NULL members fall
-  // back to the enum-derived strides.
+  // Real torch strides of Q/K/V and dO for the cuDNN graph; NULL members fall
+  // back to the enum-derived strides (quantized tensors, THD, non-4D tensors).
   int64_t q_strides[4], k_strides[4], v_strides[4], do_strides[4];
   NVTEQKVStrides qkv_strides{nullptr, nullptr, nullptr, nullptr};
-  if (real_strides_enabled()) {
+  {
     at::Tensor q_torch, k_torch, v_torch, do_torch;
     if (get_plain_torch_tensor(Q, q_torch) && get_plain_torch_tensor(K, k_torch) &&
         get_plain_torch_tensor(V, v_torch)) {
