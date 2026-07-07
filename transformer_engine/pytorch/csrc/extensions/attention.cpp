@@ -14,9 +14,9 @@ namespace {
 
 constexpr int block_size = 512;
 
-// Prototype (opt-in via NVTE_FUSED_ATTN_REAL_STRIDES=1): pass the real torch strides of
-// Q/K/V (and dO in backward) down to the cuDNN fused-attention graph instead of relying
-// on strides reconstructed from the NVTE_QKV_Layout enum.
+// Opt-in via NVTE_FUSED_ATTN_REAL_STRIDES=1: pass the real torch strides of Q/K/V (and
+// dO in backward) down to the cuDNN fused-attention graph via nvte_fused_attn_fwd/bwd_v2
+// instead of relying on strides reconstructed from the NVTE_QKV_Layout enum.
 bool real_strides_enabled() {
   const char *env = std::getenv("NVTE_FUSED_ATTN_REAL_STRIDES");
   return env != nullptr && env[0] == '1';
@@ -293,33 +293,34 @@ std::vector<py::object> fused_attn_fwd(
   // create workspace
   TensorWrapper workspace;
 
-  // Prototype: pass real torch strides of Q/K/V through to the cuDNN graph
-  bool real_strides_set = false;
+  // Real torch strides of Q/K/V for the cuDNN graph (opt-in); NULL members fall back to
+  // the enum-derived strides.
+  int64_t q_strides[4], k_strides[4], v_strides[4];
+  NVTEQKVStrides qkv_strides{nullptr, nullptr, nullptr, nullptr};
   if (real_strides_enabled()) {
     at::Tensor q_torch, k_torch, v_torch;
     if (get_plain_torch_tensor(Q, q_torch) && get_plain_torch_tensor(K, k_torch) &&
         get_plain_torch_tensor(V, v_torch)) {
       NVTE_QKV_Format kv_format = nvte_get_kv_format(qkv_layout);
-      int64_t q_strides[4], k_strides[4], v_strides[4];
       if (to_bhsd_strides(q_torch, q_format, q_strides) &&
           to_bhsd_strides(k_torch, kv_format, k_strides) &&
           to_bhsd_strides(v_torch, kv_format, v_strides)) {
-        nvte_fused_attn_set_strides(q_strides, k_strides, v_strides, nullptr);
-        real_strides_set = true;
+        qkv_strides = NVTEQKVStrides{q_strides, k_strides, v_strides, nullptr};
       }
     }
   }
 
   // populate tensors with appropriate shapes and dtypes
   NVTE_SCOPED_GIL_RELEASE({
-    nvte_fused_attn_fwd(
+    nvte_fused_attn_fwd_v2(
         te_Q.data(), te_K.data(), te_V.data(), te_Bias.data(), te_SoftmaxOffset.data(), te_S.data(),
         te_O.data(), &nvte_aux_tensor_pack, te_cu_seqlens_q.data(), te_cu_seqlens_kv.data(),
         te_cu_seqlens_q_padded.data(), te_cu_seqlens_kv_padded.data(), te_page_table_k.data(),
         te_page_table_v.data(), te_rng_state.data(), max_seqlen_q, max_seqlen_kv, is_training,
         return_max_logit, cuda_graph, attn_scale, p_dropout, qkv_layout, o_format,
         qkv_scale_inv_format, bias_type, attn_mask_type, softmax_type, window_size[0],
-        window_size[1], bottom_right_diagonal, workspace.data(), at::cuda::getCurrentCUDAStream());
+        window_size[1], bottom_right_diagonal, qkv_strides, workspace.data(),
+        at::cuda::getCurrentCUDAStream());
   });
 
   // allocate memory for workspace and auxiliary output tensors
@@ -369,20 +370,16 @@ std::vector<py::object> fused_attn_fwd(
 
   // execute the kernel
   NVTE_SCOPED_GIL_RELEASE({
-    nvte_fused_attn_fwd(
+    nvte_fused_attn_fwd_v2(
         te_Q.data(), te_K.data(), te_V.data(), te_Bias.data(), te_SoftmaxOffset.data(), te_S.data(),
         te_O.data(), &nvte_aux_tensor_pack, te_cu_seqlens_q.data(), te_cu_seqlens_kv.data(),
         te_cu_seqlens_q_padded.data(), te_cu_seqlens_kv_padded.data(), te_page_table_k.data(),
         te_page_table_v.data(), te_rng_state.data(), max_seqlen_q, max_seqlen_kv, is_training,
         return_max_logit, cuda_graph, attn_scale, p_dropout, qkv_layout, o_format,
         qkv_scale_inv_format, bias_type, attn_mask_type, softmax_type, window_size[0],
-        window_size[1], bottom_right_diagonal, workspace.data(), at::cuda::getCurrentCUDAStream());
+        window_size[1], bottom_right_diagonal, qkv_strides, workspace.data(),
+        at::cuda::getCurrentCUDAStream());
   });
-
-  // clear the real-stride override
-  if (real_strides_set) {
-    nvte_fused_attn_set_strides(nullptr, nullptr, nullptr, nullptr);
-  }
 
   // destroy tensor wrappers, but not allocated memory
   nvte_tensor_pack_destroy(&nvte_aux_tensor_pack);
@@ -643,36 +640,36 @@ std::vector<py::object> fused_attn_bwd(
   // create workspace
   TensorWrapper workspace;
 
-  // Prototype: pass real torch strides of Q/K/V (and dO) through to the cuDNN graph
-  bool real_strides_set = false;
+  // Real torch strides of Q/K/V and dO for the cuDNN graph (opt-in); NULL members fall
+  // back to the enum-derived strides.
+  int64_t q_strides[4], k_strides[4], v_strides[4], do_strides[4];
+  NVTEQKVStrides qkv_strides{nullptr, nullptr, nullptr, nullptr};
   if (real_strides_enabled()) {
     at::Tensor q_torch, k_torch, v_torch, do_torch;
     if (get_plain_torch_tensor(Q, q_torch) && get_plain_torch_tensor(K, k_torch) &&
         get_plain_torch_tensor(V, v_torch)) {
-      int64_t q_strides[4], k_strides[4], v_strides[4], do_strides[4];
       if (to_bhsd_strides(q_torch, q_format, q_strides) &&
           to_bhsd_strides(k_torch, kv_format, k_strides) &&
           to_bhsd_strides(v_torch, kv_format, v_strides)) {
         const bool have_do_strides = get_plain_torch_tensor(dO, do_torch) &&
                                      to_bhsd_strides(do_torch, do_format, do_strides);
-        nvte_fused_attn_set_strides(q_strides, k_strides, v_strides,
-                                    have_do_strides ? do_strides : nullptr);
-        real_strides_set = true;
+        qkv_strides =
+            NVTEQKVStrides{q_strides, k_strides, v_strides, have_do_strides ? do_strides : nullptr};
       }
     }
   }
 
   // populate tensors with appropriate shapes and dtypes
   NVTE_SCOPED_GIL_RELEASE({
-    nvte_fused_attn_bwd(
+    nvte_fused_attn_bwd_v2(
         te_Q.data(), te_K.data(), te_V.data(), te_O.data(), te_dO.data(), te_S.data(), te_dP.data(),
         &nvte_aux_tensor_pack, te_dQ.data(), te_dK.data(), te_dV.data(), te_dBias.data(),
         te_dSoftmaxOffset.data(), te_cu_seqlens_q.data(), te_cu_seqlens_kv.data(),
         te_cu_seqlens_q_padded.data(), te_cu_seqlens_kv_padded.data(), max_seqlen_q, max_seqlen_kv,
         attn_scale, p_dropout, qkv_layout, o_format, do_format, dqkv_layout, qkv_scale_inv_format,
         do_scale_inv_format, bias_type, attn_mask_type, softmax_type, window_size[0],
-        window_size[1], bottom_right_diagonal, deterministic, cuda_graph, workspace.data(),
-        at::cuda::getCurrentCUDAStream());
+        window_size[1], bottom_right_diagonal, deterministic, cuda_graph, qkv_strides,
+        workspace.data(), at::cuda::getCurrentCUDAStream());
   });
 
   // allocate memory for workspace
@@ -682,21 +679,16 @@ std::vector<py::object> fused_attn_bwd(
 
   // execute kernel
   NVTE_SCOPED_GIL_RELEASE({
-    nvte_fused_attn_bwd(
+    nvte_fused_attn_bwd_v2(
         te_Q.data(), te_K.data(), te_V.data(), te_O.data(), te_dO.data(), te_S.data(), te_dP.data(),
         &nvte_aux_tensor_pack, te_dQ.data(), te_dK.data(), te_dV.data(), te_dBias.data(),
         te_dSoftmaxOffset.data(), te_cu_seqlens_q.data(), te_cu_seqlens_kv.data(),
         te_cu_seqlens_q_padded.data(), te_cu_seqlens_kv_padded.data(), max_seqlen_q, max_seqlen_kv,
         attn_scale, p_dropout, qkv_layout, o_format, do_format, dqkv_layout, qkv_scale_inv_format,
         do_scale_inv_format, bias_type, attn_mask_type, softmax_type, window_size[0],
-        window_size[1], bottom_right_diagonal, deterministic, cuda_graph, workspace.data(),
-        at::cuda::getCurrentCUDAStream());
+        window_size[1], bottom_right_diagonal, deterministic, cuda_graph, qkv_strides,
+        workspace.data(), at::cuda::getCurrentCUDAStream());
   });
-
-  // clear the real-stride override
-  if (real_strides_set) {
-    nvte_fused_attn_set_strides(nullptr, nullptr, nullptr, nullptr);
-  }
 
   // destroy tensor wrappers
   nvte_tensor_pack_destroy(&nvte_aux_tensor_pack);

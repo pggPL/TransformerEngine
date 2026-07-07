@@ -338,20 +338,6 @@ struct FADescriptor_v1 {
   }
 };
 
-// Prototype: thread-local override of Q/K/V (+dO) strides for the F16 arbitrary-seqlen
-// backend, set via nvte_fused_attn_set_strides. Strides are in cuDNN dim order
-// [b, h, s, d], in units of elements.
-struct RealStrideOverride {
-  bool has_qkv = false;
-  bool has_do = false;
-  std::array<std::int64_t, 4> q{};
-  std::array<std::int64_t, 4> k{};
-  std::array<std::int64_t, 4> v{};
-  std::array<std::int64_t, 4> dO{};
-};
-
-RealStrideOverride &GetRealStrideOverride();
-
 __global__ void cu_seqlens_to_actual_seqlens(int64_t actual_b, int64_t max_b,
                                              int32_t const *const q_cu_seqlens,
                                              int32_t const *const kv_cu_seqlens, int32_t *q_seqlens,

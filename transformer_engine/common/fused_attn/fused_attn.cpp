@@ -6,8 +6,6 @@
 
 #include "transformer_engine/fused_attn.h"
 
-#include <algorithm>
-
 #include "../common.h"
 #include "../cudnn_utils.h"
 #include "../util/cuda_runtime.h"
@@ -96,42 +94,7 @@ std::string to_string(NVTE_QKV_Format format) {
   }
 }
 
-namespace fused_attn {
-
-RealStrideOverride &GetRealStrideOverride() {
-  static thread_local RealStrideOverride instance;
-  return instance;
-}
-
-}  // namespace fused_attn
-
 }  // namespace transformer_engine
-
-// Prototype: set/clear the thread-local real-stride override for Q/K/V (+dO)
-void nvte_fused_attn_set_strides(const int64_t *q_strides, const int64_t *k_strides,
-                                 const int64_t *v_strides, const int64_t *do_strides) {
-  NVTE_API_CALL(nvte_fused_attn_set_strides);
-  using namespace transformer_engine::fused_attn;
-  auto &override = GetRealStrideOverride();
-  if (q_strides != nullptr && k_strides != nullptr && v_strides != nullptr) {
-    std::copy(q_strides, q_strides + 4, override.q.begin());
-    std::copy(k_strides, k_strides + 4, override.k.begin());
-    std::copy(v_strides, v_strides + 4, override.v.begin());
-    override.has_qkv = true;
-  } else {
-    override.has_qkv = false;
-    override.q.fill(0);
-    override.k.fill(0);
-    override.v.fill(0);
-  }
-  if (do_strides != nullptr) {
-    std::copy(do_strides, do_strides + 4, override.dO.begin());
-    override.has_do = true;
-  } else {
-    override.has_do = false;
-    override.dO.fill(0);
-  }
-}
 
 // map NVTE_QKV_Layout to NVTE_QKV_Layout_Group
 NVTE_QKV_Layout_Group nvte_get_qkv_layout_group(NVTE_QKV_Layout qkv_layout) {
@@ -566,22 +529,20 @@ NVTE_Fused_Attn_Backend nvte_get_fused_attn_backend(
   return backend;
 }
 
-// NVTE fused attention FWD with separate Q, K and V
-void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETensor V,
-                         const NVTETensor Bias, const NVTETensor SoftmaxOffset, NVTETensor S,
-                         NVTETensor O, NVTETensorPack *Aux_CTX_Tensors,
-                         const NVTETensor cu_seqlens_q, const NVTETensor cu_seqlens_kv,
-                         const NVTETensor cu_seqlens_q_padded,
-                         const NVTETensor cu_seqlens_kv_padded, const NVTETensor page_table_k,
-                         const NVTETensor page_table_v, const NVTETensor rng_state,
-                         size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training,
-                         bool return_max_logit, bool cuda_graph, float attn_scale, float dropout,
-                         NVTE_QKV_Layout qkv_layout, NVTE_QKV_Format o_format,
-                         NVTE_QKV_Format qkv_scale_inv_format, NVTE_Bias_Type bias_type,
-                         NVTE_Mask_Type attn_mask_type, NVTE_Softmax_Type softmax_type,
-                         int64_t window_size_left, int64_t window_size_right,
-                         bool bottom_right_diagonal, NVTETensor workspace, cudaStream_t stream) {
-  NVTE_API_CALL(nvte_flash_attn_fwd);
+// NVTE fused attention FWD with separate Q, K and V and explicit strides
+void nvte_fused_attn_fwd_v2(
+    const NVTETensor Q, const NVTETensor K, const NVTETensor V, const NVTETensor Bias,
+    const NVTETensor SoftmaxOffset, NVTETensor S, NVTETensor O, NVTETensorPack *Aux_CTX_Tensors,
+    const NVTETensor cu_seqlens_q, const NVTETensor cu_seqlens_kv,
+    const NVTETensor cu_seqlens_q_padded, const NVTETensor cu_seqlens_kv_padded,
+    const NVTETensor page_table_k, const NVTETensor page_table_v, const NVTETensor rng_state,
+    size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, bool return_max_logit,
+    bool cuda_graph, float attn_scale, float dropout, NVTE_QKV_Layout qkv_layout,
+    NVTE_QKV_Format o_format, NVTE_QKV_Format qkv_scale_inv_format, NVTE_Bias_Type bias_type,
+    NVTE_Mask_Type attn_mask_type, NVTE_Softmax_Type softmax_type, int64_t window_size_left,
+    int64_t window_size_right, bool bottom_right_diagonal, NVTEQKVStrides qkv_strides,
+    NVTETensor workspace, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_fused_attn_fwd_v2);
   using namespace transformer_engine;
   const Tensor *input_cu_seqlens_q = convertNVTETensorCheck(cu_seqlens_q);
   const Tensor *input_cu_seqlens_kv = convertNVTETensorCheck(cu_seqlens_kv);
@@ -659,10 +620,11 @@ void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
         b, h_q, h_kv, max_seqlen_q, max_seqlen_kv, d_qk, d_v, t_q, t_kv, num_pages_k, num_pages_v,
         page_size_k, page_size_v, max_pages_per_seq_k, max_pages_per_seq_v, is_training,
         return_max_logit, attn_scale, dropout, qkv_layout, o_format, bias_type, attn_mask_type,
-        softmax_type, window_size_left, window_size_right, bottom_right_diagonal, input_Q, input_K,
-        input_V, input_Bias, input_SoftmaxOffset, output_O, Aux_CTX_Tensors, input_cu_seqlens_q,
-        input_cu_seqlens_kv, input_cu_seqlens_q_padded, input_cu_seqlens_kv_padded,
-        input_page_table_k, input_page_table_v, input_rng_state, wkspace, stream, handle);
+        softmax_type, window_size_left, window_size_right, bottom_right_diagonal, qkv_strides,
+        input_Q, input_K, input_V, input_Bias, input_SoftmaxOffset, output_O, Aux_CTX_Tensors,
+        input_cu_seqlens_q, input_cu_seqlens_kv, input_cu_seqlens_q_padded,
+        input_cu_seqlens_kv_padded, input_page_table_k, input_page_table_v, input_rng_state,
+        wkspace, stream, handle);
   } else if (fused_attention_backend == NVTE_Fused_Attn_Backend::NVTE_FP8) {
     fused_attn_fp8_fwd(b, h_q, h_kv, max_seqlen_q, max_seqlen_kv, d_qk, d_v, is_training,
                        attn_scale, dropout, qkv_layout, o_format, qkv_scale_inv_format, bias_type,
@@ -674,23 +636,47 @@ void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
     NVTE_ERROR("Invalid combination of data type and sequence length for fused attention. \n");
   }
 }
-// NVTE fused attention BWD with separate Q, K and V
-void nvte_fused_attn_bwd(const NVTETensor Q, const NVTETensor K, const NVTETensor V,
-                         const NVTETensor O, const NVTETensor dO, const NVTETensor S, NVTETensor dP,
-                         const NVTETensorPack *Aux_CTX_Tensors, NVTETensor dQ, NVTETensor dK,
-                         NVTETensor dV, NVTETensor dBias, NVTETensor dSoftmaxOffset,
+
+// NVTE fused attention FWD with separate Q, K and V
+void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETensor V,
+                         const NVTETensor Bias, const NVTETensor SoftmaxOffset, NVTETensor S,
+                         NVTETensor O, NVTETensorPack *Aux_CTX_Tensors,
                          const NVTETensor cu_seqlens_q, const NVTETensor cu_seqlens_kv,
                          const NVTETensor cu_seqlens_q_padded,
-                         const NVTETensor cu_seqlens_kv_padded, size_t max_seqlen_q,
-                         size_t max_seqlen_kv, float attn_scale, float dropout,
+                         const NVTETensor cu_seqlens_kv_padded, const NVTETensor page_table_k,
+                         const NVTETensor page_table_v, const NVTETensor rng_state,
+                         size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training,
+                         bool return_max_logit, bool cuda_graph, float attn_scale, float dropout,
                          NVTE_QKV_Layout qkv_layout, NVTE_QKV_Format o_format,
-                         NVTE_QKV_Format do_format, NVTE_QKV_Layout dqkv_layout,
-                         NVTE_QKV_Format qkv_scale_inv_format, NVTE_QKV_Format do_scale_inv_format,
-                         NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
-                         NVTE_Softmax_Type softmax_type, int64_t window_size_left,
-                         int64_t window_size_right, bool bottom_right_diagonal, bool deterministic,
-                         bool cuda_graph, NVTETensor workspace, cudaStream_t stream) {
-  NVTE_API_CALL(nvte_flash_attn_bwd);
+                         NVTE_QKV_Format qkv_scale_inv_format, NVTE_Bias_Type bias_type,
+                         NVTE_Mask_Type attn_mask_type, NVTE_Softmax_Type softmax_type,
+                         int64_t window_size_left, int64_t window_size_right,
+                         bool bottom_right_diagonal, NVTETensor workspace, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_flash_attn_fwd);
+  nvte_fused_attn_fwd_v2(Q, K, V, Bias, SoftmaxOffset, S, O, Aux_CTX_Tensors, cu_seqlens_q,
+                         cu_seqlens_kv, cu_seqlens_q_padded, cu_seqlens_kv_padded, page_table_k,
+                         page_table_v, rng_state, max_seqlen_q, max_seqlen_kv, is_training,
+                         return_max_logit, cuda_graph, attn_scale, dropout, qkv_layout, o_format,
+                         qkv_scale_inv_format, bias_type, attn_mask_type, softmax_type,
+                         window_size_left, window_size_right, bottom_right_diagonal,
+                         NVTEQKVStrides{nullptr, nullptr, nullptr, nullptr}, workspace, stream);
+}
+
+// NVTE fused attention BWD with separate Q, K and V and explicit strides
+void nvte_fused_attn_bwd_v2(
+    const NVTETensor Q, const NVTETensor K, const NVTETensor V, const NVTETensor O,
+    const NVTETensor dO, const NVTETensor S, NVTETensor dP, const NVTETensorPack *Aux_CTX_Tensors,
+    NVTETensor dQ, NVTETensor dK, NVTETensor dV, NVTETensor dBias, NVTETensor dSoftmaxOffset,
+    const NVTETensor cu_seqlens_q, const NVTETensor cu_seqlens_kv,
+    const NVTETensor cu_seqlens_q_padded, const NVTETensor cu_seqlens_kv_padded,
+    size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float dropout,
+    NVTE_QKV_Layout qkv_layout, NVTE_QKV_Format o_format, NVTE_QKV_Format do_format,
+    NVTE_QKV_Layout dqkv_layout, NVTE_QKV_Format qkv_scale_inv_format,
+    NVTE_QKV_Format do_scale_inv_format, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
+    NVTE_Softmax_Type softmax_type, int64_t window_size_left, int64_t window_size_right,
+    bool bottom_right_diagonal, bool deterministic, bool cuda_graph, NVTEQKVStrides qkv_strides,
+    NVTETensor workspace, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_fused_attn_bwd_v2);
   using namespace transformer_engine;
   const Tensor *input_cu_seqlens_q = convertNVTETensorCheck(cu_seqlens_q);
   const Tensor *input_cu_seqlens_kv = convertNVTETensorCheck(cu_seqlens_kv);
@@ -749,11 +735,11 @@ void nvte_fused_attn_bwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
     fused_attn_arbitrary_seqlen_bwd(
         b, h_q, h_kv, max_seqlen_q, max_seqlen_kv, d_qk, d_v, t_q, t_kv, attn_scale, dropout,
         qkv_layout, o_format, do_format, dqkv_layout, bias_type, attn_mask_type, softmax_type,
-        window_size_left, window_size_right, bottom_right_diagonal, deterministic, input_Q, input_K,
-        input_V, input_O, input_dO, input_Bias, input_SoftmaxOffset, output_S, output_dQ, output_dK,
-        output_dV, output_dBias, output_dSoftmaxOffset, input_cu_seqlens_q, input_cu_seqlens_kv,
-        input_cu_seqlens_q_padded, input_cu_seqlens_kv_padded, input_rng_state, wkspace, stream,
-        handle);
+        window_size_left, window_size_right, bottom_right_diagonal, deterministic, qkv_strides,
+        input_Q, input_K, input_V, input_O, input_dO, input_Bias, input_SoftmaxOffset, output_S,
+        output_dQ, output_dK, output_dV, output_dBias, output_dSoftmaxOffset, input_cu_seqlens_q,
+        input_cu_seqlens_kv, input_cu_seqlens_q_padded, input_cu_seqlens_kv_padded, input_rng_state,
+        wkspace, stream, handle);
   } else if (fused_attention_backend == NVTE_Fused_Attn_Backend::NVTE_FP8) {
     size_t i = 0;
     const Tensor *input_M = convertNVTETensorCheck(Aux_CTX_Tensors->tensors[i++]);
@@ -777,6 +763,32 @@ void nvte_fused_attn_bwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
   } else {
     NVTE_ERROR("Invalid combination of data type and sequence length for fused attention. \n");
   }
+}
+
+// NVTE fused attention BWD with separate Q, K and V
+void nvte_fused_attn_bwd(const NVTETensor Q, const NVTETensor K, const NVTETensor V,
+                         const NVTETensor O, const NVTETensor dO, const NVTETensor S, NVTETensor dP,
+                         const NVTETensorPack *Aux_CTX_Tensors, NVTETensor dQ, NVTETensor dK,
+                         NVTETensor dV, NVTETensor dBias, NVTETensor dSoftmaxOffset,
+                         const NVTETensor cu_seqlens_q, const NVTETensor cu_seqlens_kv,
+                         const NVTETensor cu_seqlens_q_padded,
+                         const NVTETensor cu_seqlens_kv_padded, size_t max_seqlen_q,
+                         size_t max_seqlen_kv, float attn_scale, float dropout,
+                         NVTE_QKV_Layout qkv_layout, NVTE_QKV_Format o_format,
+                         NVTE_QKV_Format do_format, NVTE_QKV_Layout dqkv_layout,
+                         NVTE_QKV_Format qkv_scale_inv_format, NVTE_QKV_Format do_scale_inv_format,
+                         NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
+                         NVTE_Softmax_Type softmax_type, int64_t window_size_left,
+                         int64_t window_size_right, bool bottom_right_diagonal, bool deterministic,
+                         bool cuda_graph, NVTETensor workspace, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_flash_attn_bwd);
+  nvte_fused_attn_bwd_v2(Q, K, V, O, dO, S, dP, Aux_CTX_Tensors, dQ, dK, dV, dBias, dSoftmaxOffset,
+                         cu_seqlens_q, cu_seqlens_kv, cu_seqlens_q_padded, cu_seqlens_kv_padded,
+                         max_seqlen_q, max_seqlen_kv, attn_scale, dropout, qkv_layout, o_format,
+                         do_format, dqkv_layout, qkv_scale_inv_format, do_scale_inv_format,
+                         bias_type, attn_mask_type, softmax_type, window_size_left,
+                         window_size_right, bottom_right_diagonal, deterministic, cuda_graph,
+                         NVTEQKVStrides{nullptr, nullptr, nullptr, nullptr}, workspace, stream);
 }
 
 uint32_t nvte_get_runtime_num_segments(NVTETensor cu_seqlen, NVTETensor workspace, size_t len,

@@ -55,12 +55,13 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
     bool is_training, bool return_max_logit, float scaling_factor, float dropout_probability,
     NVTE_QKV_Layout qkv_layout, NVTE_QKV_Format o_format, NVTE_Bias_Type bias_type,
     NVTE_Mask_Type mask_type, NVTE_Softmax_Type softmax_type, int64_t window_size_left,
-    int64_t window_size_right, bool bottom_right_diagonal, void *devPtrQ, void *devPtrK,
-    void *devPtrV, void *devPtrBias, void *devPtrSoftmaxOffset, void *devPtrS1, void *devPtrS2,
-    void *devPtrO, void *devPtrDropoutSeed, void *devPtrDropoutOffset, void *devPtrCuSeqlensQ,
-    void *devPtrCuSeqlensKV, void *devPtrPageTableK, void *devPtrPageTableV,
-    void *devPtrSeqOffsetsQ, void *devPtrSeqOffsetsKV, cudnn_frontend::DataType_t tensorType,
-    void *workspace, size_t *workspace_size, cudaStream_t stream, cudnnHandle_t handle) {
+    int64_t window_size_right, bool bottom_right_diagonal, NVTEQKVStrides qkv_strides,
+    void *devPtrQ, void *devPtrK, void *devPtrV, void *devPtrBias, void *devPtrSoftmaxOffset,
+    void *devPtrS1, void *devPtrS2, void *devPtrO, void *devPtrDropoutSeed,
+    void *devPtrDropoutOffset, void *devPtrCuSeqlensQ, void *devPtrCuSeqlensKV,
+    void *devPtrPageTableK, void *devPtrPageTableV, void *devPtrSeqOffsetsQ,
+    void *devPtrSeqOffsetsKV, cudnn_frontend::DataType_t tensorType, void *workspace,
+    size_t *workspace_size, cudaStream_t stream, cudnnHandle_t handle) {
   using namespace transformer_engine;
 
   bool is_bias = (bias_type == NVTE_Bias_Type::NVTE_POST_SCALE_BIAS);
@@ -94,10 +95,12 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
     NVTE_CHECK(is_padding, "Paged attention requires padding mask!");
   }
 
-  // Prototype: real-stride override for dense (non-THD, non-paged) Q/K/V
-  const auto &stride_override = GetRealStrideOverride();
+  // Real strides provided by the caller replace the enum-derived Q/K/V strides for
+  // dense (non-THD, non-paged) layouts.
+  const bool has_real_qkv_strides =
+      qkv_strides.q != nullptr && qkv_strides.k != nullptr && qkv_strides.v != nullptr;
   const bool use_real_strides =
-      stride_override.has_qkv && !is_paged_kv && !is_ragged_q && !is_ragged_kv;
+      has_real_qkv_strides && !is_paged_kv && !is_ragged_q && !is_ragged_kv;
 
   // keep original batch size because cu_seqlens are created with [b+1] shape
   int64_t actual_b = b;
@@ -160,9 +163,9 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
     };
     if (use_real_strides) {
       for (int i = 0; i < 4; ++i) {
-        descriptor.real_strides[i] = stride_override.q[i];
-        descriptor.real_strides[4 + i] = stride_override.k[i];
-        descriptor.real_strides[8 + i] = stride_override.v[i];
+        descriptor.real_strides[i] = qkv_strides.q[i];
+        descriptor.real_strides[4 + i] = qkv_strides.k[i];
+        descriptor.real_strides[8 + i] = qkv_strides.v[i];
       }
     }
 
@@ -233,9 +236,9 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
       }
       if (use_real_strides) {
         // use the real tensor strides instead of the enum-derived ones
-        q_stride.assign(stride_override.q.begin(), stride_override.q.end());
-        k_stride.assign(stride_override.k.begin(), stride_override.k.end());
-        v_stride.assign(stride_override.v.begin(), stride_override.v.end());
+        q_stride.assign(qkv_strides.q, qkv_strides.q + 4);
+        k_stride.assign(qkv_strides.k, qkv_strides.k + 4);
+        v_stride.assign(qkv_strides.v, qkv_strides.v + 4);
       }
 
       Q = mha_graph->tensor(fe::graph::Tensor_attributes()
@@ -576,10 +579,10 @@ void fused_attn_arbitrary_seqlen_bwd_impl(
     NVTE_QKV_Layout qkv_layout, NVTE_QKV_Format o_format, NVTE_QKV_Format do_format,
     NVTE_QKV_Layout dqkv_layout, NVTE_Bias_Type bias_type, NVTE_Mask_Type mask_type,
     NVTE_Softmax_Type softmax_type, int64_t window_size_left, int64_t window_size_right,
-    bool bottom_right_diagonal, bool deterministic, void *devPtrQ, void *devPtrKTranspose,
-    void *devPtrVTranspose, void *devPtrO, void *devPtrSoftmaxStats, void *devPtrBias,
-    void *devPtrSoftmaxOffset, void *devPtrdQ, void *devPtrdK, void *devPtrdV, void *devPtrdO,
-    void *devPtrdBias, void *devPtrdSoftmaxOffset, void *devPtrDropoutSeed,
+    bool bottom_right_diagonal, bool deterministic, NVTEQKVStrides qkv_strides, void *devPtrQ,
+    void *devPtrKTranspose, void *devPtrVTranspose, void *devPtrO, void *devPtrSoftmaxStats,
+    void *devPtrBias, void *devPtrSoftmaxOffset, void *devPtrdQ, void *devPtrdK, void *devPtrdV,
+    void *devPtrdO, void *devPtrdBias, void *devPtrdSoftmaxOffset, void *devPtrDropoutSeed,
     void *devPtrDropoutOffset, void *devPtrCuSeqlensQ, void *devPtrCuSeqlensKV,
     void *devPtrSeqOffsetsQ, void *devPtrSeqOffsetsKV, cudnn_frontend::DataType_t tensorType,
     void *workspace, size_t *workspace_size, cudaStream_t stream, cudnnHandle_t handle) {
@@ -616,12 +619,13 @@ void fused_attn_arbitrary_seqlen_bwd_impl(
     NVTE_CHECK(is_padding, "Paged attention requires padding mask!");
   }
 
-  // Prototype: real-stride override for dense (non-THD, non-paged) Q/K/V inputs and dO.
-  // Outputs dQ/dK/dV keep the enum-derived strides (TE allocates them).
-  const auto &stride_override = GetRealStrideOverride();
+  // Real strides provided by the caller replace the enum-derived strides of the Q/K/V and
+  // dO inputs for dense (non-THD, non-paged) layouts. Outputs dQ/dK/dV keep the
+  // enum-derived strides (TE allocates them).
   const bool is_dense = !is_paged_kv && !is_ragged_q && !is_ragged_kv;
-  const bool use_real_strides = stride_override.has_qkv && is_dense;
-  const bool use_real_do_strides = stride_override.has_do && is_dense;
+  const bool use_real_strides =
+      qkv_strides.q != nullptr && qkv_strides.k != nullptr && qkv_strides.v != nullptr && is_dense;
+  const bool use_real_do_strides = qkv_strides.d_o != nullptr && is_dense;
 
   // keep original batch size because cu_seqlens are created with [b+1] shape
   int64_t actual_b = b;
@@ -683,14 +687,14 @@ void fused_attn_arbitrary_seqlen_bwd_impl(
     };
     if (use_real_strides) {
       for (int i = 0; i < 4; ++i) {
-        descriptor.real_strides[i] = stride_override.q[i];
-        descriptor.real_strides[4 + i] = stride_override.k[i];
-        descriptor.real_strides[8 + i] = stride_override.v[i];
+        descriptor.real_strides[i] = qkv_strides.q[i];
+        descriptor.real_strides[4 + i] = qkv_strides.k[i];
+        descriptor.real_strides[8 + i] = qkv_strides.v[i];
       }
     }
     if (use_real_do_strides) {
       for (int i = 0; i < 4; ++i) {
-        descriptor.real_strides[12 + i] = stride_override.dO[i];
+        descriptor.real_strides[12 + i] = qkv_strides.d_o[i];
       }
     }
 
@@ -766,12 +770,12 @@ void fused_attn_arbitrary_seqlen_bwd_impl(
       std::vector<int64_t> dv_stride(v_stride);
       std::vector<int64_t> do_stride(o_stride);
       if (use_real_strides) {
-        q_stride.assign(stride_override.q.begin(), stride_override.q.end());
-        k_stride.assign(stride_override.k.begin(), stride_override.k.end());
-        v_stride.assign(stride_override.v.begin(), stride_override.v.end());
+        q_stride.assign(qkv_strides.q, qkv_strides.q + 4);
+        k_stride.assign(qkv_strides.k, qkv_strides.k + 4);
+        v_stride.assign(qkv_strides.v, qkv_strides.v + 4);
       }
       if (use_real_do_strides) {
-        do_stride.assign(stride_override.dO.begin(), stride_override.dO.end());
+        do_stride.assign(qkv_strides.d_o, qkv_strides.d_o + 4);
       }
 
       q = mha_graph->tensor(fe::graph::Tensor_attributes()
@@ -1131,12 +1135,12 @@ void fused_attn_arbitrary_seqlen_fwd(
     bool return_max_logit, float attn_scale, float p_dropout, NVTE_QKV_Layout qkv_layout,
     NVTE_QKV_Format o_format, NVTE_Bias_Type bias_type, NVTE_Mask_Type mask_type,
     NVTE_Softmax_Type softmax_type, int64_t window_size_left, int64_t window_size_right,
-    bool bottom_right_diagonal, const Tensor *input_Q, const Tensor *input_K, const Tensor *input_V,
-    const Tensor *input_Bias, const Tensor *input_SoftmaxOffset, Tensor *output_O,
-    NVTETensorPack *Aux_CTX_Tensors, const Tensor *cu_seqlens_q, const Tensor *cu_seqlens_kv,
-    const Tensor *cu_seqlens_q_padded, const Tensor *cu_seqlens_kv_padded,
-    const Tensor *page_table_k, const Tensor *page_table_v, const Tensor *rng_state,
-    Tensor *workspace, cudaStream_t stream, cudnnHandle_t handle) {
+    bool bottom_right_diagonal, NVTEQKVStrides qkv_strides, const Tensor *input_Q,
+    const Tensor *input_K, const Tensor *input_V, const Tensor *input_Bias,
+    const Tensor *input_SoftmaxOffset, Tensor *output_O, NVTETensorPack *Aux_CTX_Tensors,
+    const Tensor *cu_seqlens_q, const Tensor *cu_seqlens_kv, const Tensor *cu_seqlens_q_padded,
+    const Tensor *cu_seqlens_kv_padded, const Tensor *page_table_k, const Tensor *page_table_v,
+    const Tensor *rng_state, Tensor *workspace, cudaStream_t stream, cudnnHandle_t handle) {
   using namespace transformer_engine;
 
   const auto QKV_type = input_Q->data.dtype;
@@ -1266,11 +1270,11 @@ void fused_attn_arbitrary_seqlen_fwd(
       max_batch_size, max_tokens_q, max_tokens_kv, num_pages_k, num_pages_v, page_size_k,
       page_size_v, max_pages_per_seq_k, max_pages_per_seq_v, bias_b, bias_h, bias_sq, bias_skv,
       is_training, return_max_logit, attn_scale, p_dropout, qkv_layout, o_format, bias_type,
-      mask_type, softmax_type, window_size_left, window_size_right, bottom_right_diagonal, devPtrQ,
-      devPtrK, devPtrV, devPtrBias, devPtrSoftmaxOffset, devPtrS1, devPtrS2, devPtrO,
-      devPtrDropoutSeed, devPtrDropoutOffset, devPtrCuSeqlensQ, devPtrCuSeqlensKV, devPtrPageTableK,
-      devPtrPageTableV, devPtrSeqOffsetsQ, devPtrSeqOffsetsKV, get_cudnn_fe_dtype(QKV_type),
-      workspace->data.dptr, &workspace_size, stream, handle);
+      mask_type, softmax_type, window_size_left, window_size_right, bottom_right_diagonal,
+      qkv_strides, devPtrQ, devPtrK, devPtrV, devPtrBias, devPtrSoftmaxOffset, devPtrS1, devPtrS2,
+      devPtrO, devPtrDropoutSeed, devPtrDropoutOffset, devPtrCuSeqlensQ, devPtrCuSeqlensKV,
+      devPtrPageTableK, devPtrPageTableV, devPtrSeqOffsetsQ, devPtrSeqOffsetsKV,
+      get_cudnn_fe_dtype(QKV_type), workspace->data.dptr, &workspace_size, stream, handle);
 
   if (workspace_size > 0) {
     if (workspace->data.dptr == nullptr) {
@@ -1294,8 +1298,8 @@ void fused_attn_arbitrary_seqlen_bwd(
     NVTE_QKV_Format o_format, NVTE_QKV_Format do_format, NVTE_QKV_Layout dqkv_layout,
     NVTE_Bias_Type bias_type, NVTE_Mask_Type mask_type, NVTE_Softmax_Type softmax_type,
     int64_t window_size_left, int64_t window_size_right, bool bottom_right_diagonal,
-    bool deterministic, const Tensor *input_Q, const Tensor *input_K, const Tensor *input_V,
-    const Tensor *input_O, const Tensor *input_dO, const Tensor *input_Bias,
+    bool deterministic, NVTEQKVStrides qkv_strides, const Tensor *input_Q, const Tensor *input_K,
+    const Tensor *input_V, const Tensor *input_O, const Tensor *input_dO, const Tensor *input_Bias,
     const Tensor *input_SoftmaxOffset, Tensor *output_S, Tensor *output_dQ, Tensor *output_dK,
     Tensor *output_dV, Tensor *output_dBias, Tensor *output_dSoftmaxOffset,
     const Tensor *cu_seqlens_q, const Tensor *cu_seqlens_kv, const Tensor *cu_seqlens_q_padded,
@@ -1365,11 +1369,12 @@ void fused_attn_arbitrary_seqlen_bwd(
       batch, num_attn_heads, num_gqa_groups, max_seqlen_q, max_seqlen_kv, head_dim_qk, head_dim_v,
       max_batch_size, max_tokens_q, max_tokens_kv, bias_b, bias_h, bias_sq, bias_skv, attn_scale,
       p_dropout, qkv_layout, o_format, do_format, dqkv_layout, bias_type, mask_type, softmax_type,
-      window_size_left, window_size_right, bottom_right_diagonal, deterministic, devPtrQ, devPtrK,
-      devPtrV, devPtrO, devPtrSoftmaxStats, devPtrBias, devPtrSoftmaxOffset, devPtrdQ, devPtrdK,
-      devPtrdV, devPtrdO, devPtrdBias, devPtrdSoftmaxOffset, devPtrDropoutSeed, devPtrDropoutOffset,
-      devPtrCuSeqlensQ, devPtrCuSeqlensKV, devPtrSeqOffsetsQ, devPtrSeqOffsetsKV,
-      get_cudnn_fe_dtype(QKV_type), workspace->data.dptr, &workspace_size, stream, handle);
+      window_size_left, window_size_right, bottom_right_diagonal, deterministic, qkv_strides,
+      devPtrQ, devPtrK, devPtrV, devPtrO, devPtrSoftmaxStats, devPtrBias, devPtrSoftmaxOffset,
+      devPtrdQ, devPtrdK, devPtrdV, devPtrdO, devPtrdBias, devPtrdSoftmaxOffset, devPtrDropoutSeed,
+      devPtrDropoutOffset, devPtrCuSeqlensQ, devPtrCuSeqlensKV, devPtrSeqOffsetsQ,
+      devPtrSeqOffsetsKV, get_cudnn_fe_dtype(QKV_type), workspace->data.dptr, &workspace_size,
+      stream, handle);
 
   if (workspace_size > 0) {
     if (workspace->data.dptr == nullptr) {

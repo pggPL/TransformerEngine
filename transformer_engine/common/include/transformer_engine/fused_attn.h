@@ -388,27 +388,84 @@ void nvte_populate_rng_state_async(NVTETensor rng_state_dst, const NVTETensor se
                                    size_t q_max_seqlen, size_t kv_max_seqlen,
                                    NVTE_Fused_Attn_Backend backend, cudaStream_t stream);
 
-/*!  \brief Provide real tensor strides for Q/K/V (and optionally dO) to subsequent
- *          nvte_fused_attn_fwd / nvte_fused_attn_bwd calls on the calling thread.
+/*! \struct NVTEQKVStrides
+ *  \brief Real memory strides of the Q, K, V (and dO in backward) tensors.
  *
  * \warning   This API is **experimental** and subject to change.
  *
- *  Prototype side channel: when set, the F16 arbitrary-seqlen backend uses these strides
- *  for the cuDNN graph tensors Q/K/V (and dO in backward) instead of reconstructing
- *  strides from the NVTE_QKV_Layout enum. Only applies to dense (non-THD, non-paged)
- *  layouts; ignored otherwise. The override stays active for the calling thread until
- *  cleared by passing NULL pointers.
+ *  Each member points to 4 int64 strides in cuDNN dimension order [b, h, s, d], in units
+ *  of elements, or is NULL, in which case the strides of the corresponding tensor are
+ *  derived from the NVTE_QKV_Layout enum (the historical behavior). `q`, `k` and `v` must
+ *  either all be provided or all be NULL. `d_o` is only consulted by the backward pass.
  *
- *  \param[in]     q_strides    Q strides, 4 elements in cuDNN dim order [b, h, s, d],
- *                              in units of elements. NULL (together with k/v) clears the
- *                              Q/K/V override.
- *  \param[in]     k_strides    K strides, same convention as q_strides.
- *  \param[in]     v_strides    V strides, same convention as q_strides.
- *  \param[in]     do_strides   dO strides (backward only), same convention. NULL clears
- *                              the dO override.
+ *  Only the F16 arbitrary-seqlen backend consumes these strides, and only for dense
+ *  (non-THD, non-paged) layouts; the FP8 and max-512 backends, as well as THD/paged
+ *  layouts, ignore them and always use the enum-derived strides. Output tensors
+ *  (O, dQ/dK/dV) always keep the enum-derived strides since Transformer Engine
+ *  allocates them.
  */
-void nvte_fused_attn_set_strides(const int64_t *q_strides, const int64_t *k_strides,
-                                 const int64_t *v_strides, const int64_t *do_strides);
+typedef struct NVTEQKVStrides {
+  const int64_t *q;   /*!< Q strides [b, h, s, d] or NULL */
+  const int64_t *k;   /*!< K strides [b, h, s, d] or NULL */
+  const int64_t *v;   /*!< V strides [b, h, s, d] or NULL */
+  const int64_t *d_o; /*!< dO strides [b, h, s, d] or NULL (backward only) */
+} NVTEQKVStrides;
+
+/*! \brief Compute dot product attention with separate Q, K and V, with explicit strides.
+ *
+ * \warning   This API is **experimental** and subject to change.
+ *
+ *  Identical to nvte_fused_attn_fwd(), with an additional `qkv_strides` parameter that
+ *  provides the real memory strides of Q/K/V to the cuDNN graph instead of strides
+ *  reconstructed from `qkv_layout` (see NVTEQKVStrides for the exact semantics).
+ *  nvte_fused_attn_fwd() is equivalent to calling this function with all-NULL strides.
+ *
+ *  \param[in]     qkv_strides               Real strides of Q/K/V; NULL members fall back
+ *                                           to the enum-derived strides.
+ *
+ *  All other parameters are as in nvte_fused_attn_fwd().
+ */
+void nvte_fused_attn_fwd_v2(
+    const NVTETensor Q, const NVTETensor K, const NVTETensor V, const NVTETensor Bias,
+    const NVTETensor SoftmaxOffset, NVTETensor S, NVTETensor O, NVTETensorPack *Aux_CTX_Tensors,
+    const NVTETensor cu_seqlens_q, const NVTETensor cu_seqlens_kv,
+    const NVTETensor cu_seqlens_q_padded, const NVTETensor cu_seqlens_kv_padded,
+    const NVTETensor page_table_k, const NVTETensor page_table_v, const NVTETensor rng_state,
+    size_t max_seqlen_q, size_t max_seqlen_kv, bool is_training, bool return_max_logit,
+    bool cuda_graph, float attn_scale, float dropout, NVTE_QKV_Layout qkv_layout,
+    NVTE_QKV_Format o_format, NVTE_QKV_Format qkv_scale_inv_format, NVTE_Bias_Type bias_type,
+    NVTE_Mask_Type attn_mask_type, NVTE_Softmax_Type softmax_type, int64_t window_size_left,
+    int64_t window_size_right, bool bottom_right_diagonal, NVTEQKVStrides qkv_strides,
+    NVTETensor workspace, cudaStream_t stream);
+
+/*! \brief Compute the backward of the dot product attention with separate Q, K and V,
+ *         with explicit strides.
+ *
+ * \warning   This API is **experimental** and subject to change.
+ *
+ *  Identical to nvte_fused_attn_bwd(), with an additional `qkv_strides` parameter that
+ *  provides the real memory strides of Q/K/V and dO to the cuDNN graph instead of strides
+ *  reconstructed from `qkv_layout` (see NVTEQKVStrides for the exact semantics).
+ *  nvte_fused_attn_bwd() is equivalent to calling this function with all-NULL strides.
+ *
+ *  \param[in]     qkv_strides               Real strides of Q/K/V and dO; NULL members fall
+ *                                           back to the enum-derived strides.
+ *
+ *  All other parameters are as in nvte_fused_attn_bwd().
+ */
+void nvte_fused_attn_bwd_v2(
+    const NVTETensor Q, const NVTETensor K, const NVTETensor V, const NVTETensor O,
+    const NVTETensor dO, const NVTETensor S, NVTETensor dP, const NVTETensorPack *Aux_CTX_Tensors,
+    NVTETensor dQ, NVTETensor dK, NVTETensor dV, NVTETensor dBias, NVTETensor dSoftmaxOffset,
+    const NVTETensor cu_seqlens_q, const NVTETensor cu_seqlens_kv,
+    const NVTETensor cu_seqlens_q_padded, const NVTETensor cu_seqlens_kv_padded,
+    size_t max_seqlen_q, size_t max_seqlen_kv, float attn_scale, float dropout,
+    NVTE_QKV_Layout qkv_layout, NVTE_QKV_Format o_format, NVTE_QKV_Format do_format,
+    NVTE_QKV_Layout dqkv_layout, NVTE_QKV_Format qkv_scale_inv_format,
+    NVTE_QKV_Format do_scale_inv_format, NVTE_Bias_Type bias_type, NVTE_Mask_Type attn_mask_type,
+    NVTE_Softmax_Type softmax_type, int64_t window_size_left, int64_t window_size_right,
+    bool bottom_right_diagonal, bool deterministic, bool cuda_graph, NVTEQKVStrides qkv_strides,
+    NVTETensor workspace, cudaStream_t stream);
 
 /*!  \brief Get KV format for a given QKV layout.
  *
