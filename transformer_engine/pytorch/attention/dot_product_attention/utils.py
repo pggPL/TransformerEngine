@@ -2312,6 +2312,18 @@ def get_qkv_layout(
         Format of the key and value tensors, {`bshd`, `sbhd`, `thd`}.
     """
 
+    # Under torch.compile, pointer inspection (untyped_storage().data_ptr(),
+    # storage_offset()) graph-breaks. The gate in DotProductAttention.forward
+    # normally routes compiled calls to the pointer-free path, but if an
+    # earlier graph break makes Dynamo skip the forward frame, this function
+    # is compiled as its own frame and the forward-level gate never fired.
+    # Checking here folds to a constant during tracing, so a traced call
+    # always takes the pointer-free (separate-layout) path.
+    if torch.compiler.is_compiling():
+        return get_qkv_layout_pointer_free(
+            q, k, v, qkv_format=qkv_format, inference_params=inference_params
+        )
+
     check_last_dim_contiguous = all(x.stride(-1) == 1 for x in [q, k, v])
     assert check_last_dim_contiguous, "q, k and v must have stride 1 in their last dimension!"
     if "_2" in qkv_format:
@@ -2434,6 +2446,91 @@ def get_qkv_layout(
 
     if inference_params is not None and inference_params.is_paged:
         qkv_layout = "paged_kv_" + qkv_layout
+
+    return qkv_layout, q, k, v, q_format, kv_format
+
+
+def get_qkv_layout_pointer_free(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    qkv_format: str = "sbhd",
+    qkv_packing: Optional[str] = None,
+    qkv_layout: Optional[str] = None,
+    inference_params: InferenceParams = None,
+) -> str:
+    """Get qkv layout WITHOUT inspecting storage (JAX-style, torch.compile-safe).
+
+    Unlike :func:`get_qkv_layout`, this never calls ``data_ptr``,
+    ``storage_offset`` or ``stride`` (all of which graph-break under
+    ``torch.compile``). Instead the layout is derived from ``qkv_format`` plus
+    how the tensors were packed (``qkv_packing``), or taken directly from an
+    explicit ``qkv_layout`` string.
+
+    Parameters
+    ----------
+    q, k, v : torch.Tensor
+        Query/key/value tensors. When ``qkv_packing`` is ``"qkv"`` or ``"kv"``,
+        these are already the unbound *views* of the packed tensor(s).
+    qkv_format : str, default = "sbhd"
+        Dimension format, one of {``sbhd``, ``bshd``, ``thd``} (or a
+        ``q_2kv``-style format for cross attention with KV caching).
+    qkv_packing : Optional[str], default = None
+        How the inputs were packed, derived from argument presence in
+        ``DotProductAttention.forward``:
+          ``None``  -> q, k, v are three separate tensors.
+          ``"qkv"`` -> a single qkv-packed tensor ``[.., 3, h, d]``.
+          ``"kv"``  -> q separate, k/v from a kv-packed tensor ``[.., 2, h, d]``.
+        The ``3``/``2`` are assumed to sit at dim ``-3`` (i.e. the ``3hd``/``2hd``
+        interleaving, matching the JAX convention). The ``h3d``/``h2d`` variants
+        cannot be signalled this way and require an explicit ``qkv_layout``.
+    qkv_layout : Optional[str], default = None
+        Explicit layout string. When provided it is used verbatim and packing
+        detection is skipped.
+    inference_params : InferenceParams, default = None
+        InferenceParams related to KV caching (used only to add the
+        ``paged_kv_`` prefix).
+
+    Returns
+    ----------
+    qkv_layout : str
+        Memory layout string (same vocabulary as :func:`get_qkv_layout`).
+    q, k, v : torch.Tensor
+        Returned unchanged (kept for a matching return contract).
+    q_format, kv_format : str
+        Formats of q and of k/v, in {``bshd``, ``sbhd``, ``thd``}.
+    """
+    check_last_dim_contiguous = all(x.stride(-1) == 1 for x in [q, k, v])
+    assert (
+        check_last_dim_contiguous
+    ), "q, k and v must have stride 1 in their last dimension!"
+
+    if "_2" in qkv_format:
+        q_format, kv_format = qkv_format.split("_2")
+        is_same_q_kv_format = False
+    else:
+        q_format = qkv_format
+        kv_format = qkv_format
+        is_same_q_kv_format = True
+
+    if qkv_layout is None:
+        if qkv_packing == "qkv":
+            # sb3hd, bs3hd, t3hd -- one chunk, q/k/v interleaved at dim=-3.
+            assert is_same_q_kv_format, "qkv-packing requires q_format == kv_format!"
+            qkv_layout = q_format[:-2] + "3" + q_format[-2:]
+        elif qkv_packing == "kv":
+            # sbhd_sb2hd, bshd_bs2hd, thd_t2hd -- q separate, k/v interleaved at dim=-3.
+            qkv_layout = q_format + "_" + kv_format[:-2] + "2" + kv_format[-2:]
+        else:
+            # sbhd_sbhd_sbhd, bshd_bshd_bshd, thd_thd_thd (or the mixed q_2kv forms).
+            if is_same_q_kv_format:
+                qkv_layout = "_".join([qkv_format] * 3)
+            else:
+                qkv_layout = q_format + "_" + kv_format + "_" + kv_format
+
+    if inference_params is not None and inference_params.is_paged:
+        if not qkv_layout.startswith("paged_kv_"):
+            qkv_layout = "paged_kv_" + qkv_layout
 
     return qkv_layout, q, k, v, q_format, kv_format
 
