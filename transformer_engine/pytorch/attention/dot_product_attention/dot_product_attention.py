@@ -189,6 +189,33 @@ def _pad_qkv_head_dim(query_layer, key_layer, value_layer):
     return query_layer, key_layer, value_layer, orig_head_dim_qk, orig_head_dim_v
 
 
+def _skip_pointer_layout_detection(qkv_format, fp8_dpa, inference_params) -> bool:
+    """Decide whether pointer-based qkv layout detection can be skipped.
+
+    ``get_qkv_layout`` inspects ``untyped_storage().data_ptr()`` and
+    ``storage_offset()`` of q/k/v on every forward to detect packed layouts
+    (e.g. ``bs3hd``). This is torch.compile-hostile (data_ptr access causes
+    graph breaks) and adds per-step CPU overhead. For dense f16 layouts the
+    detection is redundant for memory correctness: the cuDNN fused-attention
+    backend receives the live tensor strides via the v2 C API,
+    flash-attention consumes real strides natively, and the unfused backend
+    uses plain torch ops. The format-derived separate layout string is then
+    always safe to declare.
+
+    Excluded cases (detection must still run):
+    - ``thd``: the C++ side ignores strides for ragged layouts, so a packed
+      ``t3hd``/``th3d`` input declared as ``thd_thd_thd`` would silently
+      compute on wrong memory.
+    - FP8 DPA: the FP8 fused backend does not consume the real-strides
+      parameter, and ``combine_and_quantize`` relies on detected packedness.
+    - KV caching (``inference_params``): layouts may need the ``paged_kv_``
+      prefix and mixed q/kv formats that only detection derives.
+    """
+    if inference_params is not None or fp8_dpa:
+        return False
+    return qkv_format in ("bshd", "sbhd")
+
+
 def _trim_output(attn_out, num_attention_heads, padded_head_dim_v, orig_head_dim_v):
     """Trim FlashAttention output after padding V to a larger head dimension."""
     out_shape = attn_out.shape[:-1]
@@ -1430,6 +1457,24 @@ class DotProductAttention(TransformerEngineBaseModule):
                     qkv_format=qkv_format,
                     inference_params=inference_params,
                 )
+            elif _skip_pointer_layout_detection(
+                qkv_format,
+                self.fp8 and self.fp8_meta["recipe"].fp8_dpa,
+                inference_params,
+            ):
+                # The backends consume the live tensor strides for dense
+                # layouts, so the layout enum no longer needs to encode the
+                # memory geometry: declare the format-derived separate layout
+                # and pass q/k/v through as-is. Only the last (head) dimension
+                # must be packed; normalize it if needed (stride(-1) is plain
+                # tensor metadata, so this stays torch.compile-traceable).
+                query_layer, key_layer, value_layer = [
+                    x if x.stride(-1) == 1 else x.contiguous()
+                    for x in [query_layer, key_layer, value_layer]
+                ]
+                qkv_layout = f"{qkv_format}_{qkv_format}_{qkv_format}"
+                q_format = qkv_format
+                kv_format = qkv_format
             else:
                 (
                     qkv_layout,
