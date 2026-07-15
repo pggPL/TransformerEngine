@@ -1140,7 +1140,7 @@ def _register_wrapper_op(
     *,
     wrapper_op_name: str,
     schema_str: str,
-    base_op_name: str,
+    base_op: Any,
     buckets: Optional[List[_Bucket]] = None,
     subclass_list: Optional[List[type]] = None,
 ) -> Any:
@@ -1148,7 +1148,6 @@ def _register_wrapper_op(
     op, optionally flattening registered subclass inputs in place first. Returns
     the ``CustomOpDef``.
     """
-    base_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), base_op_name)
     input_flatten_enabled = bool(subclass_list) and buckets is not None
     slot_offsets = _collect_tensor_or_quantized_slot_offsets(buckets) if input_flatten_enabled else []
 
@@ -1336,15 +1335,18 @@ def _register_custom_op_impl(
         format_result=lambda g: _format_bwd_result(g, num_grad_inputs, base_bwd_qualname),
     )
 
+    base_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), base_fwd_name)
+    base_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), base_bwd_name)
+
     wrapper_fwd_def = _register_wrapper_op(
         wrapper_op_name=wrapper_fwd_name,
         schema_str=fwd_schema,
-        base_op_name=base_fwd_name,
+        base_op=base_fwd_op,
         buckets=fwd_buckets,
         subclass_list=list(subclass_list),
     )
     wrapper_bwd_def = _register_wrapper_op(
-        wrapper_op_name=wrapper_bwd_name, schema_str=bwd_schema, base_op_name=base_bwd_name
+        wrapper_op_name=wrapper_bwd_name, schema_str=bwd_schema, base_op=base_bwd_op
     )
 
     autograd_common = {
@@ -1360,8 +1362,6 @@ def _register_custom_op_impl(
         "backward_obj_type": backward_arg_type,
         "fwd_fake_impl": fwd_fake_impl,
     }
-    base_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), base_fwd_name)
-    base_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), base_bwd_name)
     wrapper_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), wrapper_fwd_name)
     wrapper_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), wrapper_bwd_name)
 
