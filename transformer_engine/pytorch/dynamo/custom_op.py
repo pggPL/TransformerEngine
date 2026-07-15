@@ -301,7 +301,7 @@ def _storage_flatten(
     and -- for a wrapper subclass -- the outer geometry are stashed in the bundle
     so :func:`_storage_unflatten` can rebuild without PyTorch's ``outer_size``.
     ``extra_meta`` is merged in before the bundle is built (so its ``_frozen``
-    hash key stays consistent) -- used to tag the universal-slot ``__kind__``.
+    hash key stays consistent) -- used to tag the tensor-or-quantized slot ``__kind__``.
     """
     inner_names, ctx = value.__tensor_flatten__()
     meta = dict(ctx)
@@ -408,22 +408,22 @@ class _Bucket:
         return None
 
 
-class _UniversalKind(Enum):
-    """What a universal-tensor slot group carries, tagged in its ``__meta``."""
+class _TensorOrQuantizedKind(Enum):
+    """What a tensor-or-quantized slot group carries, tagged in its ``__meta``."""
 
     NONE = "none"
     TENSOR = "tensor"
     STORAGE = "storage"
 
 
-class _UniversalTensorBucket(_Bucket):
+class _TensorOrQuantizedBucket(_Bucket):
     """``Tensor | QuantizedTensorStorage | None`` (also subclass tensor) field.
 
     Three slots regardless of value: ``<name>`` (``Tensor?`` -- plain / subclass
     tensor passes through, ``None`` for bare storage), ``<name>__tensors``
     (``Tensor[]`` flat inner tensors when flattened), ``<name>__meta``
     (``OpaqueValueBundle`` flatten metadata + a ``__kind__`` marker). A ``None``
-    field is tagged ``_UniversalKind.NONE`` with the other two slots empty.
+    field is tagged ``_TensorOrQuantizedKind.NONE`` with the other two slots empty.
     """
 
     KIND_KEY = "__kind__"
@@ -453,7 +453,7 @@ class _UniversalTensorBucket(_Bucket):
     # Canonical "plain tensor or quantized tensor" field annotation (the
     # ``TensorOrQuantized`` alias in module code). Matched by exact member set,
     # so a bare quantized annotation or an accidental extra union member is
-    # rejected rather than silently taken as a universal-tensor field.
+    # rejected rather than silently taken as a tensor-or-quantized field.
     _MEMBERS = frozenset({torch.Tensor, QuantizedTensorStorage})
 
     @classmethod
@@ -464,7 +464,7 @@ class _UniversalTensorBucket(_Bucket):
         return members == cls._MEMBERS
 
     @classmethod
-    def try_build(cls, name: str, annot: Any) -> Optional["_UniversalTensorBucket"]:
+    def try_build(cls, name: str, annot: Any) -> Optional["_TensorOrQuantizedBucket"]:
         if cls._is_tensor_storage_union(annot):
             return cls(name)
         return None
@@ -475,7 +475,7 @@ class _UniversalTensorBucket(_Bucket):
             return [
                 (self.slot_name(), None),
                 (self.slot_tensors(), []),
-                (self.slot_meta(), OpaqueValueBundle({self.KIND_KEY: _UniversalKind.NONE})),
+                (self.slot_meta(), OpaqueValueBundle({self.KIND_KEY: _TensorOrQuantizedKind.NONE})),
             ]
         if isinstance(value, torch.Tensor):
             # Plain tensor *and* subclass (e.g. Float8Tensor) pass through the
@@ -484,10 +484,10 @@ class _UniversalTensorBucket(_Bucket):
             return [
                 (self.slot_name(), value),
                 (self.slot_tensors(), []),
-                (self.slot_meta(), OpaqueValueBundle({self.KIND_KEY: _UniversalKind.TENSOR})),
+                (self.slot_meta(), OpaqueValueBundle({self.KIND_KEY: _TensorOrQuantizedKind.TENSOR})),
             ]
         if isinstance(value, QuantizedTensorStorage):
-            meta, tensors = _storage_flatten(value, {self.KIND_KEY: _UniversalKind.STORAGE})
+            meta, tensors = _storage_flatten(value, {self.KIND_KEY: _TensorOrQuantizedKind.STORAGE})
             return [
                 (self.slot_name(), None),
                 (self.slot_tensors(), list(tensors)),
@@ -501,9 +501,9 @@ class _UniversalTensorBucket(_Bucket):
     def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         meta = args[self.slot_meta()]
         kind = meta.get(self.KIND_KEY)
-        if kind == _UniversalKind.NONE:
+        if kind == _TensorOrQuantizedKind.NONE:
             kwargs[self.name] = None
-        elif kind == _UniversalKind.TENSOR:
+        elif kind == _TensorOrQuantizedKind.TENSOR:
             kwargs[self.name] = args[self.slot_name()]
         else:
             kwargs[self.name] = _storage_unflatten(meta, args[self.slot_tensors()])
@@ -694,8 +694,12 @@ class _UnknownBucket(_Bucket):
 
 
 # Buckets, in priority order, owning ``try_build`` for a single field.
+# These buckets are mutually exclusive on annotations (a plain ``torch.Tensor``
+# matches only ``_TensorBucket``; the ``TensorOrQuantized`` union only
+# ``_TensorOrQuantizedBucket``; etc.), so the order is just iteration, not a
+# priority ranking -- no annotation can be claimed by more than one.
 _FIELD_BUCKETS: Tuple[type, ...] = (
-    _UniversalTensorBucket,
+    _TensorOrQuantizedBucket,
     _TensorBucket,
     _ReferenceOpaqueBucket,
     _QuantizerBucket,
@@ -742,7 +746,7 @@ def _get_buckets(cls: type) -> List[_Bucket]:
 
 def _tensor_field_names(buckets: List[_Bucket]) -> List[str]:
     """Names of fields carrying tensors (for building the proto view)."""
-    return [b.name for b in buckets if isinstance(b, (_TensorBucket, _UniversalTensorBucket))]
+    return [b.name for b in buckets if isinstance(b, (_TensorBucket, _TensorOrQuantizedBucket))]
 
 
 def _build_schema(buckets: List[_Bucket]) -> Tuple[str, List[str]]:
@@ -1080,12 +1084,12 @@ def _register_autograd_for_op(
     fwd_op.register_autograd(_autograd_backward, setup_context=_setup_context)
 
 
-def _collect_universal_slot_offsets(buckets: List[_Bucket]) -> List[int]:
-    """Start index of each ``_UniversalTensorBucket`` group in the flat args."""
+def _collect_tensor_or_quantized_slot_offsets(buckets: List[_Bucket]) -> List[int]:
+    """Start index of each ``_TensorOrQuantizedBucket`` group in the flat args."""
     offsets: List[int] = []
     pos = 0
     for bucket in buckets:
-        if isinstance(bucket, _UniversalTensorBucket):
+        if isinstance(bucket, _TensorOrQuantizedBucket):
             offsets.append(pos)
         pos += len(bucket.schema_slots())
     return offsets
@@ -1094,7 +1098,7 @@ def _collect_universal_slot_offsets(buckets: List[_Bucket]) -> List[int]:
 def _flatten_subclass_into_slots(
     new_args: List[Any], slot_offsets: List[int], subclass: type
 ) -> None:
-    """Rewrite each universal-bucket group whose ``Tensor?`` slot holds an
+    """Rewrite each tensor-or-quantized-bucket group whose ``Tensor?`` slot holds an
     instance of ``subclass`` into the storage layout (3 slots: name / tensors / meta).
     """
     for offset in slot_offsets:
@@ -1102,7 +1106,7 @@ def _flatten_subclass_into_slots(
         if val is None or not isinstance(val, subclass):
             continue
         meta, tensors = _storage_flatten(
-            val, {_UniversalTensorBucket.KIND_KEY: _UniversalKind.STORAGE}
+            val, {_TensorOrQuantizedBucket.KIND_KEY: _TensorOrQuantizedKind.STORAGE}
         )
         new_args[offset] = None
         new_args[offset + 1] = list(tensors)
@@ -1123,7 +1127,7 @@ def _register_outer_forwarder(
     """
     inner_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), inner_op_name)
     input_flatten_enabled = bool(subclass_list) and buckets is not None
-    slot_offsets = _collect_universal_slot_offsets(buckets) if input_flatten_enabled else []
+    slot_offsets = _collect_tensor_or_quantized_slot_offsets(buckets) if input_flatten_enabled else []
 
     def _forward(*flat: Any) -> List[torch.Tensor]:
         if not input_flatten_enabled:
@@ -1296,8 +1300,8 @@ def _register_custom_op_impl(
     outer_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), outer_fwd_name)
     outer_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), outer_bwd_name)
 
-    fwd_slot_offsets = _collect_universal_slot_offsets(fwd_buckets)
-    bwd_slot_offsets = _collect_universal_slot_offsets(bwd_buckets)
+    fwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(fwd_buckets)
+    bwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(bwd_buckets)
 
     def _fwd_rule(mode, func, types, args, kwargs):
         del mode, func, types, kwargs
