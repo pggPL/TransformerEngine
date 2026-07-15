@@ -770,10 +770,10 @@ def _build_schema(buckets: List[_Bucket]) -> Tuple[str, List[str]]:
     return schema_str, names
 
 
-def _pack(obj: Any, buckets: List[_Bucket]) -> Dict[str, Any]:
+def _args_to_slots(obj: Any, buckets: List[_Bucket]) -> Dict[str, Any]:
     """Build the op's flat ``{slot_name: value}`` argument dict from an args
     dataclass ``obj`` (e.g. ``LinearFwdArgs``), by collecting every bucket's
-    packed slot(s). Inverse of :func:`_unpack`.
+    packed slot(s). Inverse of :func:`_args_from_slots`.
     """
     out: Dict[str, Any] = {}
     for bucket in buckets:
@@ -781,10 +781,10 @@ def _pack(obj: Any, buckets: List[_Bucket]) -> Dict[str, Any]:
     return out
 
 
-def _unpack(cls: type, args: Dict[str, Any], buckets: List[_Bucket]) -> Any:
+def _args_from_slots(cls: type, args: Dict[str, Any], buckets: List[_Bucket]) -> Any:
     """Rebuild a fresh args dataclass ``cls`` (e.g. ``LinearFwdArgs``) from the
     op's flat slot ``args`` dict, by letting every bucket restore its field(s).
-    Inverse of :func:`_pack`.
+    Inverse of :func:`_args_to_slots`.
     """
     kwargs: Dict[str, Any] = {}
     for bucket in buckets:
@@ -1004,12 +1004,12 @@ def _register_kernel(
 
     def _impl(*flat: Any) -> List[torch.Tensor]:
         kwargs = dict(zip(arg_names, flat))
-        obj = _unpack(arg_type, kwargs, buckets)
+        obj = _args_from_slots(arg_type, kwargs, buckets)
         return format_result(impl(obj))
 
     def _fake(*flat: Any) -> List[torch.Tensor]:
         kwargs = dict(zip(arg_names, flat))
-        obj = _unpack(arg_type, kwargs, buckets)
+        obj = _args_from_slots(arg_type, kwargs, buckets)
         proto_obj = _proto_view(obj, tensor_field_names)
         return format_result(fake_impl(proto_obj))
 
@@ -1048,7 +1048,7 @@ def _register_autograd_for_op(
             i: len(value) for i, value in enumerate(inputs) if isinstance(value, list)
         }
         kwargs = dict(zip(fwd_arg_names, inputs))
-        fwd_obj = _unpack(fwd_arg_type, kwargs, fwd_buckets)
+        fwd_obj = _args_from_slots(fwd_arg_type, kwargs, fwd_buckets)
         proto_obj = _proto_view(fwd_obj, fwd_tensor_field_names)
 
         user_fakes, saved_fakes, ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(proto_obj))
@@ -1090,7 +1090,7 @@ def _register_autograd_for_op(
         ctx.tensor_objects = None
         per_output_grads = grad_outputs[0]
         bwd_obj.grad_output = _decode_none(per_output_grads[0])
-        kwargs = _pack(bwd_obj, bwd_buckets)
+        kwargs = _args_to_slots(bwd_obj, bwd_buckets)
         bwd_args_flat = [kwargs[name] for name in bwd_arg_names]
         bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), bwd_op_name)
         grads = [_decode_none(g) for g in bwd_op(*bwd_args_flat)]
@@ -1404,7 +1404,7 @@ def _register_custom_op_impl(
     def forward_fn(fwd_args):
         proto_obj = _proto_view(fwd_args, fwd_tensor_field_names)
         user_fakes, _saved_fakes, _ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(proto_obj))
-        kwargs = _pack(fwd_args, fwd_buckets)
+        kwargs = _args_to_slots(fwd_args, fwd_buckets)
         flat_in = [kwargs[name] for name in fwd_arg_names]
         result = outer_fwd_op(*flat_in)
 
