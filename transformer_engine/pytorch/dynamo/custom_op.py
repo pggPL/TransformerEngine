@@ -292,18 +292,24 @@ _ensure_distributed_opaque_types()
 # --------------------------------------------------------------------------- #
 
 
-def _storage_flatten(value: Any) -> Tuple["OpaqueValueBundle", List[torch.Tensor]]:
+def _storage_flatten(
+    value: Any, extra_meta: Optional[Dict[str, Any]] = None
+) -> Tuple["OpaqueValueBundle", List[torch.Tensor]]:
     """Split a ``QuantizedTensor`` / bare storage into ``(meta, Tensor[])``.
 
     The flatten context (embedding the value-opaque quantizer) plus inner names
     and -- for a wrapper subclass -- the outer geometry are stashed in the bundle
     so :func:`_storage_unflatten` can rebuild without PyTorch's ``outer_size``.
+    ``extra_meta`` is merged in before the bundle is built (so its ``_frozen``
+    hash key stays consistent) -- used to tag the universal-slot ``__kind__``.
     """
     inner_names, ctx = value.__tensor_flatten__()
     meta = dict(ctx)
     meta["_inner_names"] = list(inner_names)
     if isinstance(value, torch.Tensor):
         meta["_outer_shape"] = torch.Size(value.shape)
+    if extra_meta:
+        meta.update(extra_meta)
     tensors = [getattr(value, name) for name in inner_names]
     return OpaqueValueBundle(meta), tensors
 
@@ -481,8 +487,7 @@ class _UniversalTensorBucket(_Bucket):
                 (self.slot_meta(), OpaqueValueBundle({self.KIND_KEY: _UniversalKind.TENSOR})),
             ]
         if isinstance(value, QuantizedTensorStorage):
-            meta, tensors = _storage_flatten(value)
-            meta._data[self.KIND_KEY] = _UniversalKind.STORAGE
+            meta, tensors = _storage_flatten(value, {self.KIND_KEY: _UniversalKind.STORAGE})
             return [
                 (self.slot_name(), None),
                 (self.slot_tensors(), list(tensors)),
@@ -1098,8 +1103,9 @@ def _flatten_subclass_into_slots(
         val = new_args[offset]
         if val is None or not isinstance(val, subclass):
             continue
-        meta, tensors = _storage_flatten(val)
-        meta._data[_UniversalTensorBucket.KIND_KEY] = _UniversalKind.STORAGE
+        meta, tensors = _storage_flatten(
+            val, {_UniversalTensorBucket.KIND_KEY: _UniversalKind.STORAGE}
+        )
         new_args[offset] = None
         new_args[offset + 1] = list(tensors)
         new_args[offset + 2] = meta
