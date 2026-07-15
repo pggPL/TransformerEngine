@@ -1685,7 +1685,6 @@ _linear_op = register_custom_op(
     fwd_fake_impl=_linear_forward_impl_fake,
     setup_context=_linear_setup_ctx,
     backward_arg_type=LinearBwdArgs,
-    backward_obj=LinearBwdArgs,
     backward_impl=_linear_backward,
     bwd_fake_impl=_linear_backward_impl_fake,
 )

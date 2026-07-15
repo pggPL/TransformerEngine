@@ -1182,7 +1182,6 @@ def register_custom_op(
     fwd_impl: Callable[[Any], Any],
     setup_context: Callable[..., Any],
     backward_arg_type: type,
-    backward_obj: type,
     backward_impl: Callable[[Any], Any],
     fwd_fake_impl: Callable[[Any], Tuple[Any, ...]],
     bwd_fake_impl: Callable[[Any], Tuple[Any, ...]],
@@ -1234,12 +1233,13 @@ def register_custom_op(
       non-differentiable input).
     * ``bwd_fake_impl(bwd_args)`` -- data-free twin of ``backward_impl`` returning
       :class:`TensorProto` grads.
-    * ``backward_obj.setup_saved_tensors(ctx)`` -- optional hook on the backward
+    * ``backward_arg_type.setup_saved_tensors(ctx)`` -- optional hook on the backward
       container (see above); skipped if absent.
 
     ``input_tensors_for_grad`` lists the ``fwd_arg_type`` fields that receive
-    gradients (this fixes the backward grad order). ``backward_obj`` is the type
-    instantiated to hold the backward args (usually == ``backward_arg_type``).
+    gradients (this fixes the backward grad order). ``backward_arg_type`` is both
+    the schema source and the type instantiated (``backward_arg_type()``) to hold
+    the backward args, so it must be constructible with no arguments.
 
     Registration touches experimental ``torch.library`` / opaque-object APIs
     that may be missing on older PyTorch. If it fails, this warns once and
@@ -1254,7 +1254,6 @@ def register_custom_op(
             fwd_impl=fwd_impl,
             setup_context=setup_context,
             backward_arg_type=backward_arg_type,
-            backward_obj=backward_obj,
             backward_impl=backward_impl,
             fwd_fake_impl=fwd_fake_impl,
             bwd_fake_impl=bwd_fake_impl,
@@ -1277,7 +1276,6 @@ def _register_custom_op_impl(
     fwd_impl: Callable[[Any], Any],
     setup_context: Callable[..., Any],
     backward_arg_type: type,
-    backward_obj: type,
     backward_impl: Callable[[Any], Any],
     fwd_fake_impl: Callable[[Any], Tuple[Any, ...]],
     bwd_fake_impl: Callable[[Any], Tuple[Any, ...]],
@@ -1360,7 +1358,7 @@ def _register_custom_op_impl(
         "slot_count": slot_count,
         "grad_targets": grad_targets,
         "setup_context_user": setup_context,
-        "backward_obj_type": backward_obj,
+        "backward_obj_type": backward_arg_type,
         "fwd_fake_impl": fwd_fake_impl,
     }
     _register_autograd_for_op(
