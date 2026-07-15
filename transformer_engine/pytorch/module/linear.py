@@ -1722,7 +1722,6 @@ class _Linear(torch.autograd.Function):
             out,
             new_weight_workspace,
             tensors_to_save_from_forward,
-            _,
             ctx_attrs,
         ) = _linear_forward_impl(fwd_args)
         if ctx is not None:
