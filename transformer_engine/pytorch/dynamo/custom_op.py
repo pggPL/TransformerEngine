@@ -880,9 +880,10 @@ def _format_fwd_result(result: Any) -> List[torch.Tensor]:
     flat: List[torch.Tensor] = []
     for value in result[:num_outputs]:
         flat.extend(_value_to_flat_tensors(value))
-    saved = result[num_outputs] or ()
-    for value in saved:
-        flat.extend(_value_to_flat_tensors(value))
+    saved = result[num_outputs]
+    if saved is not None:
+        for value in saved:
+            flat.extend(_value_to_flat_tensors(value))
     return flat
 
 
