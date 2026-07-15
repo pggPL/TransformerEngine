@@ -561,9 +561,7 @@ class _QuantizerBucket(_Bucket):
     @classmethod
     def try_build(cls, name: str, annot: Any) -> Optional["_QuantizerBucket"]:
         stripped, _ = _strip_optional(annot)
-        if not isinstance(stripped, type):
-            return None
-        if issubclass(stripped, Quantizer):
+        if isinstance(stripped, type) and issubclass(stripped, Quantizer):
             return cls(name)
         return None
 
