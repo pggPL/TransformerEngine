@@ -307,13 +307,13 @@ def _check_fp8_reduce_and_update():
 
 def _linear_forward_impl(
     args: LinearFwdArgs,
-) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple], None, Optional[Dict]]:
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple], Optional[Dict]]:
     """Forward implementation for the linear layer.
 
-    Returns ``(out, new_weight_workspace, tensors_to_save_from_forward, None,
+    Returns ``(out, new_weight_workspace, tensors_to_save_from_forward,
     ctx_attrs)``. ``new_weight_workspace`` is the freshly produced FP8 weight
     workspace (returned alongside ``out`` so the caller can refresh its
-    cache). The last three are ``None`` when gradients are disabled.
+    cache). The last two are ``None`` when gradients are disabled.
     """
 
     weight = args.weight
@@ -688,12 +688,12 @@ def _linear_forward_impl(
             "saved_tensor_aliases": saved_tensor_aliases,
         }
 
-    return out, new_weight_workspace, tensors_to_save_from_forward, None, ctx_attrs
+    return out, new_weight_workspace, tensors_to_save_from_forward, ctx_attrs
 
 
 def _linear_forward_impl_fake(
     args: LinearFwdArgs,
-) -> Tuple[TensorProto, Optional[TensorProto], Optional[Tuple[Any, ...]], None, Optional[Dict]]:
+) -> Tuple[TensorProto, Optional[TensorProto], Optional[Tuple[Any, ...]], Optional[Dict]]:
     """Shape/metadata-only twin of :func:`_linear_forward_impl` for torch.compile,
     returning ``TensorProto`` descriptors for the outputs and saved tensors instead
     of allocating real data."""
@@ -892,7 +892,7 @@ def _linear_forward_impl_fake(
             "saved_tensor_aliases": saved_tensor_aliases,
         }
 
-    return out, new_weight_workspace, tensors_to_save_from_forward, None, ctx_attrs
+    return out, new_weight_workspace, tensors_to_save_from_forward, ctx_attrs
 
 
 def _linear_setup_ctx(

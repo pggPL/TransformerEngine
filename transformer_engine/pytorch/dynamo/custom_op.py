@@ -866,9 +866,9 @@ def _value_to_flat_tensors(
     )
 
 
-# Trailing slots in every fwd-impl return: ``tensors_to_save, tensor_objects,
-# ctx_attrs``. User-output count is ``len(result) - this``.
-_FWD_TRAILING_SLOTS = 3
+# Trailing slots in every fwd-impl return: ``tensors_to_save, ctx_attrs``.
+# User-output count is ``len(result) - this``.
+_FWD_TRAILING_SLOTS = 2
 
 
 def _format_fwd_result(result: Any) -> List[torch.Tensor]:
@@ -914,7 +914,7 @@ def _split_fwd_fake_result(
     """Slice a fwd fake-impl return into ``(user_fakes, saved_fakes, ctx_attrs)``."""
     num_outputs = len(result) - _FWD_TRAILING_SLOTS
     saved = result[num_outputs]
-    ctx_attrs = result[num_outputs + 2]
+    ctx_attrs = result[num_outputs + 1]
     user_fakes = list(result[:num_outputs])
     saved_fakes = list(saved) if saved is not None else []
     ctx_attrs = dict(ctx_attrs) if ctx_attrs else {}
