@@ -1126,7 +1126,7 @@ def _flatten_subclass_into_slots(
     """
     for offset in slot_offsets:
         val = new_args[offset]
-        if val is None or not isinstance(val, subclass):
+        if not isinstance(val, subclass):
             continue
         meta, tensors = _storage_flatten(
             val, {_TensorOrQuantizedBucket.KIND_KEY: _TensorOrQuantizedKind.STORAGE}
