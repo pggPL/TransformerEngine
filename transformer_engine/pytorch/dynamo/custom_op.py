@@ -955,20 +955,17 @@ def _resolve_grad_targets(
     fwd_buckets: List[_Bucket],
     fwd_arg_type: type,
     input_tensors_for_grad: List[str],
-) -> Tuple[List[Any], List[int]]:
+) -> Tuple[int, List[int]]:
     """Validate ``input_tensors_for_grad`` and resolve the grad-output layout.
 
-    Returns ``(fwd_slot_defaults, grad_targets)``: the per-slot no-grad template
-    (``[]`` for ``Tensor[]`` slots, ``None`` otherwise) and, for each requested
-    input name, the schema-slot index its gradient maps to.
+    Returns ``(slot_count, grad_targets)``: the total number of input schema
+    slots and, for each requested input name, the schema-slot index its gradient
+    maps to.
     """
-    fwd_slot_defaults: List[Any] = []
     name_to_slot: Dict[str, int] = {}
     slot_offset = 0
     for bucket in fwd_buckets:
         slots = bucket.schema_slots()
-        for _, type_str in slots:
-            fwd_slot_defaults.append([] if type_str.endswith("[]") else None)
         grad_slot = bucket.grad_slot()
         if grad_slot is not None:
             name_to_slot[bucket.name] = slot_offset + grad_slot
@@ -981,7 +978,7 @@ def _resolve_grad_targets(
             f"schema: {unknown}"
         )
     grad_targets = [name_to_slot[n] for n in input_tensors_for_grad]
-    return fwd_slot_defaults, grad_targets
+    return slot_offset, grad_targets
 
 
 def _register_kernel(
@@ -1032,7 +1029,7 @@ def _register_autograd_for_op(
     fwd_tensor_field_names: List[str],
     bwd_arg_names: List[str],
     bwd_buckets: List[_Bucket],
-    fwd_slot_defaults: List[Any],
+    slot_count: int,
     grad_targets: List[int],
     setup_context_user: Callable[..., Any],
     backward_obj_type: type,
@@ -1096,11 +1093,13 @@ def _register_autograd_for_op(
         bwd_args_flat = [kwargs[name] for name in bwd_arg_names]
         bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), bwd_op_name)
         grads = [_decode_none(g) for g in bwd_op(*bwd_args_flat)]
-        out: List[Any] = list(fwd_slot_defaults)
+        # One grad per input schema slot: default None, but a ``Tensor[]`` slot
+        # (always recorded in ``_te_fwd_tensor_list_lengths``) needs a
+        # list-shaped no-grad of matching length.
+        out: List[Any] = [None] * slot_count
         tensor_list_lengths = getattr(ctx, "_te_fwd_tensor_list_lengths", {})
         for pos, length in tensor_list_lengths.items():
-            if isinstance(out[pos], list):
-                out[pos] = [None] * length
+            out[pos] = [None] * length
         for pos, g in zip(grad_targets, grads):
             out[pos] = g
         return tuple(out)
@@ -1298,7 +1297,7 @@ def _register_custom_op_impl(
     bwd_schema_args, bwd_arg_names = _build_schema(bwd_buckets)
 
     num_grad_inputs = len(input_tensors_for_grad)
-    fwd_slot_defaults, grad_targets = _resolve_grad_targets(
+    slot_count, grad_targets = _resolve_grad_targets(
         fwd_buckets, fwd_arg_type, input_tensors_for_grad
     )
 
@@ -1348,7 +1347,7 @@ def _register_custom_op_impl(
         "fwd_tensor_field_names": fwd_tensor_field_names,
         "bwd_arg_names": bwd_arg_names,
         "bwd_buckets": bwd_buckets,
-        "fwd_slot_defaults": fwd_slot_defaults,
+        "slot_count": slot_count,
         "grad_targets": grad_targets,
         "setup_context_user": setup_context,
         "backward_obj_type": backward_obj,
