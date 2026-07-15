@@ -1093,8 +1093,7 @@ def _linear_backward(args: LinearBwdArgs) -> Tuple[Union[torch.Tensor, None], ..
 
         # Reconstruct inp_shape when not stored (compiled mode with dynamic shapes).
         if bwd_args.inp_shape is None:
-            _w = saved_weight if saved_weight is not None else weight_fp8
-            in_features = _w.shape[-1]
+            in_features = saved_weight.shape[-1]
             go_leading = grad_output.shape[0]
             if bwd_args.parallel_mode == "column" and bwd_args.sequence_parallel:
                 inp_leading = go_leading // bwd_args.tp_size
@@ -1631,7 +1630,7 @@ def _linear_backward_impl_fake(
             "(fsdp_group is not None); use FSDP2 or MCore FSDP."
         )
 
-    weight = args.saved_weight if args.saved_weight is not None else args.weight_fp8
+    weight = args.saved_weight
     out_dtype = args.activation_dtype
     out_features, in_features = weight.shape
 
