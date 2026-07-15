@@ -340,8 +340,8 @@ class _Bucket:
     A custom op only takes flat, simply-typed arguments, but a TE op takes a
     single ``@dataclass`` of mixed fields. Each bucket knows how to translate
     its kind of field both ways. ``try_build`` and ``schema_slots`` run once at
-    registration (to build the op's schema); ``pack`` and ``unpack`` run on each
-    call and must agree on the slot layout that ``schema_slots`` declares.
+    registration (to build the op's schema); ``to_slots`` and ``from_slots`` run
+    on each call and must agree on the slot layout that ``schema_slots`` declares.
     """
 
     @classmethod
@@ -363,21 +363,21 @@ class _Bucket:
         """
         raise NotImplementedError
 
-    def pack(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
         """Read this field from the dataclass ``owner`` and produce the concrete
         value for each of its schema slots, as ``(slot_name, value)`` pairs.
 
         Composite values are flattened to fit the (tensor-only) slots: e.g. a
         quantized tensor is split into its plain inner buffers plus a metadata
-        bundle. Inverse of :meth:`unpack`.
+        bundle. Inverse of :meth:`from_slots`.
         """
         raise NotImplementedError
 
-    def unpack(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         """Read this field's slots back from the op arguments ``args`` and write
         the reconstructed field value into ``kwargs`` (rebuilding any flattened
         composite). The filled ``kwargs`` are then used to rebuild the original
-        dataclass for the eager implementation. Inverse of :meth:`pack`.
+        dataclass for the eager implementation. Inverse of :meth:`to_slots`.
         """
         raise NotImplementedError
 
@@ -449,7 +449,7 @@ class _UniversalTensorBucket(_Bucket):
             return cls(name)
         return None
 
-    def pack(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
         value = getattr(owner, self.name)
         if value is None:
             return [
@@ -479,7 +479,7 @@ class _UniversalTensorBucket(_Bucket):
             f"QuantizedTensorStorage, got {type(value).__name__}"
         )
 
-    def unpack(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         meta = args[self.slot_meta()]
         kind = meta.get(self.KIND_KEY)
         if kind == _UniversalKind.NONE:
@@ -512,10 +512,10 @@ class _TensorBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return [(self.name, self.type_str)]
 
-    def pack(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
         return [(self.name, getattr(owner, self.name))]
 
-    def unpack(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = args[self.name]
 
     def grad_slot(self) -> Optional[int]:
@@ -551,10 +551,10 @@ class _QuantizerBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return [(self.slot(), _OPAQUE_VALUE_BUNDLE_TYPE_NAME)]
 
-    def pack(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
         return [(self.slot(), OpaqueValueBundle({self.KEY: getattr(owner, self.name)}))]
 
-    def unpack(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = args[self.slot()][self.KEY]
 
 
@@ -591,10 +591,10 @@ class _ReferenceOpaqueBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return [(self.name, self.type_str)]
 
-    def pack(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
         return [(self.name, getattr(owner, self.name))]
 
-    def unpack(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = args[self.name]
 
 
@@ -628,10 +628,10 @@ class _SimpleBundleBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return [(self.SLOT, _OPAQUE_VALUE_BUNDLE_TYPE_NAME)]
 
-    def pack(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
         return [(self.SLOT, OpaqueValueBundle({n: getattr(owner, n) for n in self.names}))]
 
-    def unpack(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         if self.SLOT not in args:
             return
         meta = args[self.SLOT]
@@ -642,8 +642,8 @@ class _SimpleBundleBucket(_Bucket):
 class _UnknownBucket(_Bucket):
     """Fallback for fields no other bucket claims.
 
-    Emits no slot; pack rejects non-trivial values (anything other than
-    ``None`` / all-``None`` sequence); unpack restores the field as ``None``.
+    Emits no slot; ``to_slots`` rejects non-trivial values (anything other
+    than ``None`` / all-``None`` sequence); ``from_slots`` restores the field as ``None``.
     """
 
     def __init__(self, name: str, owner_cls_name: str) -> None:
@@ -661,7 +661,7 @@ class _UnknownBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return []
 
-    def pack(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
         value = getattr(owner, self.name, None)
         if not self._is_trivial(value):
             raise TypeError(
@@ -672,7 +672,7 @@ class _UnknownBucket(_Bucket):
             )
         return []
 
-    def unpack(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = None
 
 
@@ -743,7 +743,7 @@ def _pack(obj: Any, buckets: List[_Bucket]) -> Dict[str, Any]:
     """
     out: Dict[str, Any] = {}
     for bucket in buckets:
-        for name, value in bucket.pack(obj):
+        for name, value in bucket.to_slots(obj):
             out[name] = value
     return out
 
@@ -755,7 +755,7 @@ def _unpack(cls: type, args: Dict[str, Any], buckets: List[_Bucket]) -> Any:
     """
     kwargs: Dict[str, Any] = {}
     for bucket in buckets:
-        bucket.unpack(args, kwargs)
+        bucket.from_slots(args, kwargs)
     obj = cls.__new__(cls)
     for k, v in kwargs.items():
         object.__setattr__(obj, k, v)
