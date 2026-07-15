@@ -876,6 +876,11 @@ def _check_fwd_result(result: Any) -> None:
     ``(*user_outputs, tensors_to_save, ctx_attrs)`` contract, with a clear
     message for op authors (user-output *types* are checked later, by
     :func:`_value_to_flat_tensors`).
+
+    Only called on the fake path (:func:`_split_fwd_fake_result`), which runs at
+    trace/compile time -- so this is a compile-time check with no per-call cost.
+    The real impl must return the same shape as the fake, so validating the fake
+    covers both.
     """
     if not isinstance(result, tuple) or len(result) < _FWD_TRAILING_SLOTS:
         raise TypeError(
@@ -895,7 +900,6 @@ def _format_fwd_result(result: Any) -> List[torch.Tensor]:
 
     User outputs first, then saved-for-backward tensors in declaration order.
     """
-    _check_fwd_result(result)
     num_outputs = len(result) - _FWD_TRAILING_SLOTS
     flat: List[torch.Tensor] = []
     for value in result[:num_outputs]:
