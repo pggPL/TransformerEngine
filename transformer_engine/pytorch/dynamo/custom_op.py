@@ -666,10 +666,10 @@ class _UnsupportedBucket(_Bucket):
 
     Such a field cannot cross the op boundary, so it emits no slot and is
     tolerated only when its runtime value carries nothing: ``to_slots`` accepts
-    ``None`` / an all-``None`` sequence (e.g. an unset ``Optional[Any]`` field
-    like ``fsdp_group`` or an empty ``fsdp_shapes`` on the compiled path) and
-    ``from_slots`` restores it as ``None``. A non-trivial value means the config
-    is genuinely unsupported under torch.compile, and ``to_slots`` raises.
+    ``None`` / an all-``None`` sequence (e.g. an unset ``Optional[Any]`` field,
+    or an empty list, on the compiled path) and ``from_slots`` restores it as
+    ``None``. A non-trivial value means the config is genuinely unsupported
+    under torch.compile, and ``to_slots`` raises.
 
     The check must run at call time (not in ``_get_buckets``): the annotation
     alone -- e.g. ``Optional[Any]`` -- is valid when the value is ``None``, so
