@@ -2328,19 +2328,22 @@ class Linear(TransformerEngineBaseModule):
             )
             wgrad_store = self.wgrad_store if self.wgrad_store.delay_wgrad_compute() else None
 
-            # Pin the lazily-cached cuBLAS (and NVFP4-RHT) workspaces as op inputs so
-            # they are materialized at trace time (external to the cudagraph pool)
-            # rather than inside the op during capture. See LinearFwdArgs for details.
+            # Pin the lazily-cached cuBLAS workspace as an op input so it is
+            # materialized at trace time (external to the cudagraph pool) rather
+            # than inside the op during capture. See LinearFwdArgs for details.
+            #
+            # NVFP4's RHT matrix is intentionally NOT pinned here: it is produced
+            # by the ``@lru_cache``d ``get_rht_matrix``, and calling it from the
+            # traced forward makes Dynamo ignore the cache wrapper and trace the
+            # construction (eye + mul + mm) straight into the graph. Inductor does
+            # not constant-fold that subgraph, so the 16x16 RHT matrix gets rebuilt
+            # on every compiled invocation. The reconstructed quantizer that crosses
+            # the op boundary already fetches the same cached global by address
+            # inside the op, so pinning it here is redundant as well as harmful.
             cublas_workspace = None
             rht_matrix = None
             if use_compiled_op:
                 cublas_workspace = get_cublas_workspace(inp.device.index, False, False)
-                from ..tensor.nvfp4_tensor import NVFP4Quantizer, get_rht_matrix
-
-                if isinstance(input_quantizer, NVFP4Quantizer):
-                    rht_matrix = get_rht_matrix(
-                        input_quantizer._with_random_sign_mask, inp.device.index
-                    )
 
             fwd_args = LinearFwdArgs(
                 # tensors
