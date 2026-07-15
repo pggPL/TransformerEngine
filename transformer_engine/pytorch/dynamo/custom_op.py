@@ -973,11 +973,10 @@ def _resolve_grad_targets(
             name_to_slot[bucket.name] = slot_offset + grad_slot
         slot_offset += len(slots)
 
-    unknown = [n for n in input_tensors_for_grad if n not in name_to_slot]
-    if unknown:
+    non_differentiable = [n for n in input_tensors_for_grad if n not in name_to_slot]
+    if non_differentiable:
         raise ValueError(
-            f"input_tensors_for_grad {unknown} are not differentiable input slots; "
-            f"differentiable fields are {sorted(name_to_slot)}"
+            f"input_tensors_for_grad contains non-differentiable fields: {non_differentiable}"
         )
     grad_targets = [name_to_slot[n] for n in input_tensors_for_grad]
     return slot_offset, grad_targets
@@ -1284,6 +1283,17 @@ def _register_custom_op_impl(
     bwd_fake_impl: Callable[[Any], Tuple[Any, ...]],
 ) -> Callable[..., Any]:
     """Body of :func:`register_custom_op`; see it for semantics."""
+    # Existence check at the API boundary: every ``input_tensors_for_grad`` name
+    # must be an actual field of ``fwd_arg_type`` (differentiability -- whether
+    # that field can carry a gradient -- is checked later in
+    # :func:`_resolve_grad_targets`).
+    fwd_field_names = {f.name for f in dataclasses.fields(fwd_arg_type)}
+    missing = [n for n in input_tensors_for_grad if n not in fwd_field_names]
+    if missing:
+        raise ValueError(
+            f"input_tensors_for_grad names not in {fwd_arg_type.__name__}: {missing}"
+        )
+
     outer_fwd_name = op_name
     outer_bwd_name = f"{op_name}_backward"
     inner_fwd_name = f"{op_name}_base"
