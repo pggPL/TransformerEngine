@@ -106,16 +106,11 @@ class LinearFwdArgs:
     # across the torch.compile custom-op boundary.
     weight_workspace: Optional[TensorOrQuantized]
 
-    # --- CUDA-graph workspace pinning (torch.compile / reduce-overhead) ---
-    # Fetched in the *traced* module forward and threaded in as op inputs purely so
-    # the process-global, lru_cached cuBLAS / NVFP4-RHT workspaces become graph
-    # inputs: they are then allocated at trace time in the normal allocator (external
-    # to the cudagraph private pool) instead of being created inside the op during
-    # capture, where a persistent allocation trips check_memory_pool ("tensor not
-    # tracked as outputs"). The op body never reads these; general_gemm / the
-    # quantizer fetch the same lru_cached globals by address. Pinning the workspace
-    # in the forward also covers the backward GEMM, which reuses the same cached
-    # global. None on eager / non-compiled paths.
+    # Workspace pinning (torch.compile). The process-global, lru_cached cuBLAS /
+    # NVFP4-RHT workspaces are fetched in the traced forward and threaded in as op
+    # inputs so they are allocated at trace time rather than lazily inside the op.
+    # The op body never reads them (general_gemm / the quantizer fetch the same
+    # globals by address). None on eager / non-compiled paths.
     cublas_workspace: Optional[torch.Tensor]
     rht_matrix: Optional[torch.Tensor]
 
