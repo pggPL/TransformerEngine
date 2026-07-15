@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 import dataclasses
+import types
 import warnings
 from enum import Enum
 from typing import (
@@ -322,9 +323,19 @@ def _storage_unflatten(meta: Any, tensors: List[torch.Tensor]) -> Any:
 # --------------------------------------------------------------------------- #
 
 
+def _is_union(annot: Any) -> bool:
+    """True for both ``typing.Union[...]`` / ``Optional[...]`` and PEP 604 ``X | Y``.
+
+    ``get_origin`` returns ``typing.Union`` for the former but ``types.UnionType``
+    for the latter, so the two syntaxes must be checked separately.
+    """
+    origin = get_origin(annot)
+    return origin is Union or origin is getattr(types, "UnionType", ())
+
+
 def _strip_optional(annot: Any) -> Tuple[Any, bool]:
     """If ``annot`` is ``Optional[X]`` return ``(X, True)``; else ``(annot, False)``."""
-    if get_origin(annot) is Union:
+    if _is_union(annot):
         args = get_args(annot)
         if type(None) in args:
             non_none = [a for a in args if a is not type(None)]
@@ -434,7 +445,7 @@ class _UniversalTensorBucket(_Bucket):
 
     @staticmethod
     def _is_tensor_storage_union(annot: Any) -> bool:
-        if get_origin(annot) is not Union:
+        if not _is_union(annot):
             return False
         members = [a for a in get_args(annot) if a is not type(None)]
         if torch.Tensor not in members:
