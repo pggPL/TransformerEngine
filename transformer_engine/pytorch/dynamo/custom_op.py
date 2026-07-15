@@ -834,22 +834,13 @@ def _proto_reassemble(
 ) -> Optional[Union[torch.Tensor, QuantizedTensorStorage]]:
     """Rebuild the value described by ``proto`` from its flat tensors ``chunk``.
 
-    ``proto`` describes one output: ``None`` (-> ``None``), a plain tensor
-    (``chunk`` is the single tensor, returned as-is), or a quantized tensor
-    (``chunk`` are its inner tensors, reassembled into the wrapper subclass via
-    ``__tensor_unflatten__``).
+    ``proto is None`` -> ``None`` (op-boundary sentinel for an absent output);
+    otherwise delegates to :meth:`TensorProto.assemble`, which returns a plain
+    tensor as-is or reassembles a quantized tensor from its inner buffers.
     """
     if proto is None:
         return None
-    if proto.quantizer is None:
-        return chunk[0]
-    inner_names = proto.inner_names()
-    meta = proto.create_metadata()
-    shape = tuple(proto.shape)
-    stride = _contiguous_stride(shape)
-    storage_cls = _STORAGE_REGISTRY[meta["cls"]]
-    inner_dict = dict(zip(inner_names, chunk))
-    return storage_cls.__tensor_unflatten__(inner_dict, meta, shape, stride)
+    return proto.assemble(chunk)
 
 
 def _value_to_flat_tensors(
