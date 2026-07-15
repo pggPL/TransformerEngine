@@ -953,10 +953,12 @@ def _split_fwd_fake_result(
 
 def _resolve_grad_targets(
     fwd_buckets: List[_Bucket],
-    fwd_arg_type: type,
     input_tensors_for_grad: List[str],
 ) -> Tuple[int, List[int]]:
     """Validate ``input_tensors_for_grad`` and resolve the grad-output layout.
+
+    ``fwd_buckets`` already encode the arg dataclass's fields (they are built
+    from it), so the type itself is not needed here.
 
     Returns ``(slot_count, grad_targets)``: the total number of input schema
     slots and, for each requested input name, the schema-slot index its gradient
@@ -974,8 +976,8 @@ def _resolve_grad_targets(
     unknown = [n for n in input_tensors_for_grad if n not in name_to_slot]
     if unknown:
         raise ValueError(
-            f"input_tensors_for_grad contains names not in {fwd_arg_type.__name__} "
-            f"schema: {unknown}"
+            f"input_tensors_for_grad {unknown} are not differentiable input slots; "
+            f"differentiable fields are {sorted(name_to_slot)}"
         )
     grad_targets = [name_to_slot[n] for n in input_tensors_for_grad]
     return slot_offset, grad_targets
@@ -1297,9 +1299,7 @@ def _register_custom_op_impl(
     bwd_schema_args, bwd_arg_names = _build_schema(bwd_buckets)
 
     num_grad_inputs = len(input_tensors_for_grad)
-    slot_count, grad_targets = _resolve_grad_targets(
-        fwd_buckets, fwd_arg_type, input_tensors_for_grad
-    )
+    slot_count, grad_targets = _resolve_grad_targets(fwd_buckets, input_tensors_for_grad)
 
     fwd_schema = f"{fwd_schema_args} -> Tensor[]"
     bwd_schema = f"{bwd_schema_args} -> Tensor[]"
