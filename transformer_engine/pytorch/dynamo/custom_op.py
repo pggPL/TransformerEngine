@@ -1023,7 +1023,7 @@ def _register_kernel(
 def _register_autograd_for_op(
     *,
     fwd_op: Any,
-    bwd_op_name: str,
+    bwd_op: Any,
     fwd_arg_type: type,
     fwd_arg_names: List[str],
     fwd_buckets: List[_Bucket],
@@ -1036,7 +1036,7 @@ def _register_autograd_for_op(
     backward_obj_type: type,
     fwd_fake_impl: Callable[[Any], Tuple[Any, ...]],
 ) -> None:
-    """Wire ``register_autograd`` on a forward op so its backward calls ``bwd_op_name``.
+    """Wire ``register_autograd`` on a forward op so its backward calls ``bwd_op``.
 
     ``setup_context`` re-runs the proto fwd fake impl to recover output / saved
     templates, reassembles each flat output chunk, and hands the saved tuple +
@@ -1092,7 +1092,6 @@ def _register_autograd_for_op(
         bwd_obj.grad_output = _decode_none(per_output_grads[0])
         kwargs = _args_to_slots(bwd_obj, bwd_buckets)
         bwd_args_flat = [kwargs[name] for name in bwd_arg_names]
-        bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), bwd_op_name)
         grads = [_decode_none(g) for g in bwd_op(*bwd_args_flat)]
         # One grad per input schema slot: default None, but a ``Tensor[]`` slot
         # (always recorded in ``_te_fwd_tensor_list_lengths``) needs a
@@ -1361,17 +1360,13 @@ def _register_custom_op_impl(
         "backward_obj_type": backward_arg_type,
         "fwd_fake_impl": fwd_fake_impl,
     }
-    _register_autograd_for_op(
-        fwd_op=inner_fwd_def, bwd_op_name=inner_bwd_name, **autograd_common
-    )
-    _register_autograd_for_op(
-        fwd_op=outer_fwd_def, bwd_op_name=outer_bwd_name, **autograd_common
-    )
-
     inner_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), inner_fwd_name)
     inner_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), inner_bwd_name)
     outer_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), outer_fwd_name)
     outer_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), outer_bwd_name)
+
+    _register_autograd_for_op(fwd_op=inner_fwd_def, bwd_op=inner_bwd_op, **autograd_common)
+    _register_autograd_for_op(fwd_op=outer_fwd_def, bwd_op=outer_bwd_op, **autograd_common)
 
     fwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(fwd_buckets)
     bwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(bwd_buckets)
