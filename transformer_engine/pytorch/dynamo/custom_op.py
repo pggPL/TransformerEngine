@@ -411,12 +411,13 @@ class _UniversalKind(Enum):
 
 
 class _UniversalTensorBucket(_Bucket):
-    """``Tensor | QuantizedTensorStorage`` (also subclass tensor) field.
+    """``Tensor | QuantizedTensorStorage | None`` (also subclass tensor) field.
 
     Three slots regardless of value: ``<name>`` (``Tensor?`` -- plain / subclass
     tensor passes through, ``None`` for bare storage), ``<name>__tensors``
     (``Tensor[]`` flat inner tensors when flattened), ``<name>__meta``
-    (``OpaqueValueBundle`` flatten metadata + a ``__kind__`` marker).
+    (``OpaqueValueBundle`` flatten metadata + a ``__kind__`` marker). A ``None``
+    field is tagged ``_UniversalKind.NONE`` with the other two slots empty.
     """
 
     KIND_KEY = "__kind__"
