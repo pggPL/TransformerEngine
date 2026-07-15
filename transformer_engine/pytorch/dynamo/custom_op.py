@@ -661,11 +661,19 @@ class _SimpleBundleBucket(_Bucket):
             kwargs[n] = meta[n]
 
 
-class _UnknownBucket(_Bucket):
-    """Fallback for fields no other bucket claims.
+class _UnsupportedBucket(_Bucket):
+    """Fallback for fields whose type no other bucket can encode.
 
-    Emits no slot; ``to_slots`` rejects non-trivial values (anything other
-    than ``None`` / all-``None`` sequence); ``from_slots`` restores the field as ``None``.
+    Such a field cannot cross the op boundary, so it emits no slot and is
+    tolerated only when its runtime value carries nothing: ``to_slots`` accepts
+    ``None`` / an all-``None`` sequence (e.g. an unset ``Optional[Any]`` field
+    like ``fsdp_group`` or an empty ``fsdp_shapes`` on the compiled path) and
+    ``from_slots`` restores it as ``None``. A non-trivial value means the config
+    is genuinely unsupported under torch.compile, and ``to_slots`` raises.
+
+    The check must run at call time (not in ``_get_buckets``): the annotation
+    alone -- e.g. ``Optional[Any]`` -- is valid when the value is ``None``, so
+    only the runtime value can decide.
     """
 
     def __init__(self, name: str, owner_cls_name: str) -> None:
@@ -743,7 +751,7 @@ def _get_buckets(cls: type) -> List[_Bucket]:
         elif _SimpleBundleBucket.matches_field(annot):
             simple_names.append(name)
         else:
-            buckets.append(_UnknownBucket(name, cls.__name__))
+            buckets.append(_UnsupportedBucket(name, cls.__name__))
     if simple_names:
         buckets.append(_SimpleBundleBucket(simple_names))
     return buckets
