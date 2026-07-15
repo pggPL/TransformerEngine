@@ -1645,16 +1645,15 @@ def _linear_backward_impl_fake(
         # Derive shape from grad_output + weight + SP config instead of args.inp_shape:
         # inp_shape is not stored in the value bundle under dynamic shapes (SymInt is
         # not hashable in OpaqueValueBundle), so we reconstruct it here.
-        _in_features = weight.shape[-1]
-        _go_leading = args.grad_output.shape[0]
+        go_leading = args.grad_output.shape[0]
         if args.parallel_mode == "column" and args.sequence_parallel:
-            _dgrad_leading = _go_leading // args.tp_size
+            dgrad_leading = go_leading // args.tp_size
         elif args.parallel_mode == "row" and args.sequence_parallel:
-            _dgrad_leading = _go_leading * args.tp_size
+            dgrad_leading = go_leading * args.tp_size
         else:
-            _dgrad_leading = _go_leading
+            dgrad_leading = go_leading
         dgrad = TensorProto(
-            shape=(_dgrad_leading, *args.grad_output.shape[1:-1], _in_features),
+            shape=(dgrad_leading, *args.grad_output.shape[1:-1], in_features),
             dtype=out_dtype,
             quantizer=args.grad_input_quantizer,
             device=args.grad_output.device,
