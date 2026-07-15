@@ -490,7 +490,7 @@ class _TensorOrQuantizedBucket(_Bucket):
             meta, tensors = _storage_flatten(value, {self.KIND_KEY: _TensorOrQuantizedKind.STORAGE})
             return {
                 self.slot_name(): None,
-                self.slot_tensors(): list(tensors),
+                self.slot_tensors(): tensors,
                 self.slot_meta(): meta,
             }
         raise TypeError(
@@ -1132,7 +1132,7 @@ def _flatten_subclass_into_slots(
             val, {_TensorOrQuantizedBucket.KIND_KEY: _TensorOrQuantizedKind.STORAGE}
         )
         new_args[offset] = None
-        new_args[offset + 1] = list(tensors)
+        new_args[offset + 1] = tensors
         new_args[offset + 2] = meta
 
 
