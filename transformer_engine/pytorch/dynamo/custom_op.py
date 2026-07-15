@@ -380,9 +380,9 @@ class _Bucket:
         """
         raise NotImplementedError
 
-    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
         """Read this field from the dataclass ``owner`` and produce the concrete
-        value for each of its schema slots, as ``(slot_name, value)`` pairs.
+        value for each of its schema slots, as a ``{slot_name: value}`` dict.
 
         Composite values are flattened to fit the (tensor-only) slots: e.g. a
         quantized tensor is split into its plain inner buffers plus a metadata
@@ -469,30 +469,30 @@ class _TensorOrQuantizedBucket(_Bucket):
             return cls(name)
         return None
 
-    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
         value = getattr(owner, self.name)
         if value is None:
-            return [
-                (self.slot_name(), None),
-                (self.slot_tensors(), []),
-                (self.slot_meta(), OpaqueValueBundle({self.KIND_KEY: _TensorOrQuantizedKind.NONE})),
-            ]
+            return {
+                self.slot_name(): None,
+                self.slot_tensors(): [],
+                self.slot_meta(): OpaqueValueBundle({self.KIND_KEY: _TensorOrQuantizedKind.NONE}),
+            }
         if isinstance(value, torch.Tensor):
             # Plain tensor *and* subclass (e.g. Float8Tensor) pass through the
             # ``Tensor?`` slot; subclass flattening (if any) is done by the
             # outer op's ``register_torch_dispatch`` rule.
-            return [
-                (self.slot_name(), value),
-                (self.slot_tensors(), []),
-                (self.slot_meta(), OpaqueValueBundle({self.KIND_KEY: _TensorOrQuantizedKind.TENSOR})),
-            ]
+            return {
+                self.slot_name(): value,
+                self.slot_tensors(): [],
+                self.slot_meta(): OpaqueValueBundle({self.KIND_KEY: _TensorOrQuantizedKind.TENSOR}),
+            }
         if isinstance(value, QuantizedTensorStorage):
             meta, tensors = _storage_flatten(value, {self.KIND_KEY: _TensorOrQuantizedKind.STORAGE})
-            return [
-                (self.slot_name(), None),
-                (self.slot_tensors(), list(tensors)),
-                (self.slot_meta(), meta),
-            ]
+            return {
+                self.slot_name(): None,
+                self.slot_tensors(): list(tensors),
+                self.slot_meta(): meta,
+            }
         raise TypeError(
             f"field {self.name!r} expected None, torch.Tensor, or "
             f"QuantizedTensorStorage, got {type(value).__name__}"
@@ -531,8 +531,8 @@ class _TensorBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return [(self.name, self.type_str)]
 
-    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
-        return [(self.name, getattr(owner, self.name))]
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
+        return {self.name: getattr(owner, self.name)}
 
     def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = args[self.name]
@@ -568,8 +568,8 @@ class _QuantizerBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return [(self.slot(), _OPAQUE_VALUE_BUNDLE_TYPE_NAME)]
 
-    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
-        return [(self.slot(), OpaqueValueBundle({self.KEY: getattr(owner, self.name)}))]
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
+        return {self.slot(): OpaqueValueBundle({self.KEY: getattr(owner, self.name)})}
 
     def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = args[self.slot()][self.KEY]
@@ -608,8 +608,8 @@ class _ReferenceOpaqueBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return [(self.name, self.type_str)]
 
-    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
-        return [(self.name, getattr(owner, self.name))]
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
+        return {self.name: getattr(owner, self.name)}
 
     def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = args[self.name]
@@ -650,8 +650,8 @@ class _SimpleBundleBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return [(self.SLOT, _OPAQUE_VALUE_BUNDLE_TYPE_NAME)]
 
-    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
-        return [(self.SLOT, OpaqueValueBundle({n: getattr(owner, n) for n in self.names}))]
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
+        return {self.SLOT: OpaqueValueBundle({n: getattr(owner, n) for n in self.names})}
 
     def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         if self.SLOT not in args:
@@ -691,7 +691,7 @@ class _UnsupportedBucket(_Bucket):
     def schema_slots(self) -> List[Tuple[str, str]]:
         return []
 
-    def to_slots(self, owner: Any) -> List[Tuple[str, Any]]:
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
         value = getattr(owner, self.name, None)
         if not self._is_trivial(value):
             raise TypeError(
@@ -700,7 +700,7 @@ class _UnsupportedBucket(_Bucket):
                 "and carries a non-trivial value; add a matching bucket in "
                 "dynamo.py to handle it."
             )
-        return []
+        return {}
 
     def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = None
@@ -777,8 +777,7 @@ def _pack(obj: Any, buckets: List[_Bucket]) -> Dict[str, Any]:
     """
     out: Dict[str, Any] = {}
     for bucket in buckets:
-        for name, value in bucket.to_slots(obj):
-            out[name] = value
+        out.update(bucket.to_slots(obj))
     return out
 
 
