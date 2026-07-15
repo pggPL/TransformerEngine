@@ -444,16 +444,18 @@ class _UniversalTensorBucket(_Bucket):
             (self.slot_meta(), _OPAQUE_VALUE_BUNDLE_TYPE_NAME),
         ]
 
-    @staticmethod
-    def _is_tensor_storage_union(annot: Any) -> bool:
+    # Canonical "plain tensor or quantized tensor" field annotation (the
+    # ``TensorOrQuantized`` alias in module code). Matched by exact member set,
+    # so a bare quantized annotation or an accidental extra union member is
+    # rejected rather than silently taken as a universal-tensor field.
+    _MEMBERS = frozenset({torch.Tensor, QuantizedTensorStorage})
+
+    @classmethod
+    def _is_tensor_storage_union(cls, annot: Any) -> bool:
         if not _is_union(annot):
             return False
-        members = [a for a in get_args(annot) if a is not type(None)]
-        if torch.Tensor not in members:
-            return False
-        return any(
-            isinstance(m, type) and issubclass(m, QuantizedTensorStorage) for m in members
-        )
+        members = frozenset(a for a in get_args(annot) if a is not type(None))
+        return members == cls._MEMBERS
 
     @classmethod
     def try_build(cls, name: str, annot: Any) -> Optional["_UniversalTensorBucket"]:
