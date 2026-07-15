@@ -5,24 +5,24 @@
 """Value-opaque quantizers for torch.compile."""
 
 from __future__ import annotations
-from typing import Any, Dict, Tuple
+import enum
+from typing import Any, Dict, Tuple, get_type_hints
 
 from ..constants import DType
 
 
-# Registration marks the class with this attribute rather than recording it in a
-# module-level set. It looks odd but is a deliberate workaround: the check must
-# stay traceable when it runs inside a torch.compile graph -- Dynamo can bake a
-# ``getattr`` on the opaque quantizer into a constant, but cannot evaluate
-# ``type(q) in some_set`` (no equality/hash rules for the opaque class object),
-# which would graph-break under ``fullgraph=True``.
-_VALUE_OPAQUE_FLAG = "_te_compile_value_opaque"
+# Qualnames of the registered quantizer classes. The set holds strings rather
+# than the classes themselves so that ``is_value_opaque_quantizer`` can be
+# called inside a ``torch.compile``'d function without a graph break: Dynamo
+# can evaluate ``type(q).__qualname__ in <set of strings>``, but not set
+# membership of a class registered as an opaque type.
+_VALUE_OPAQUE_QUALNAMES: set = set()
 
 
 def is_value_opaque_quantizer(quantizer: Any) -> bool:
     """Whether *quantizer*'s class is registered as a torch.compile value-opaque
     type."""
-    return getattr(quantizer, _VALUE_OPAQUE_FLAG, False)
+    return type(quantizer).__qualname__ in _VALUE_OPAQUE_QUALNAMES
 
 
 def _rebuild_quantizer(cls: type, items: Tuple[Tuple[str, Any], ...]) -> Any:
@@ -30,21 +30,20 @@ def _rebuild_quantizer(cls: type, items: Tuple[Tuple[str, Any], ...]) -> Any:
 
     Referenced by the ``__fx_repr__`` emitted for value-opaque quantizers; the
     generated FX code calls this to materialize the quantizer constant.
+
+    Only the value fields (plus derived state via ``_rebuild_derived_state``)
+    are restored. Non-value attributes such as the deprecated
+    ``amax_reduction_group`` are deliberately absent on the rebuilt quantizer,
+    so accessing them fails loudly unless set explicitly.
     """
     # Bypass ``__init__`` and restore the value attributes directly: the value
     # items already capture every value-defining field (including derived ones),
     # and the constructors have heterogeneous signatures / side effects.
     obj = cls.__new__(cls)
-    field_names = set()
     for name, value in items:
         if name == "dtype":
             value = DType.cast(value)
         object.__setattr__(obj, name, value)
-        field_names.add(name)
-    # The deprecated amax-reduction group is not a value field; initialize it to
-    # None so attribute access keeps working on the rebuilt quantizer.
-    if "with_amax_reduction" in field_names and not hasattr(obj, "amax_reduction_group"):
-        object.__setattr__(obj, "amax_reduction_group", None)
     # Restore non-value derived state that ``__init__`` would normally build but
     # that cannot live in the value key (e.g. NVFP4's ``rht_matrix`` tensor).
     finalize = getattr(obj, "_rebuild_derived_state", None)
@@ -78,19 +77,36 @@ def _quantizer_fx_repr(self: Any) -> Tuple[str, Dict[str, Any]]:
 def register_value_opaque_quantizer(cls: type) -> None:
     """Register a tensorless quantizer class as a torch.compile value opaque type.
 
-    Attaches ``__fx_repr__`` and registers the class with
+    This is the opt-in point for value semantics: it derives the value fields
+    from the class annotations and stores them on the class (enabling
+    config-based ``__eq__`` / ``__hash__``, see
+    :class:`transformer_engine.pytorch.quantized_tensor.Quantizer`), attaches
+    ``__fx_repr__`` and registers the class with
     ``torch._library.opaque_object``. Safe to call on any PyTorch build: on
-    versions without the opaque-object API it only attaches ``__fx_repr__``
-    (harmless), so Transformer Engine keeps importing and running in eager mode.
+    versions without the opaque-object API the value semantics still apply,
+    only the torch.compile specialization is skipped.
 
-    The quantizer class must already provide value ``__eq__`` / ``__hash__`` and
-    a non-``None`` ``_value_fields`` (see
-    :class:`transformer_engine.pytorch.quantized_tensor.Quantizer`).
+    Only plain value types (``int``/``bool``/``float``/``str`` and enums) may
+    be annotated: anything else (derived tensors, process groups, containers)
+    cannot be hashed into the value key or rebuilt from its repr, so it must
+    be left unannotated and rebuilt in ``_rebuild_derived_state`` instead.
+    This runs once per class at import time, not in any hot path, so resolving
+    the annotation strings to real types is affordable.
     """
-    # Stamp the class so it can be recognized as value-opaque in dynamo-traced
-    # code (used to fall back to eager for unregistered quantizers).
-    setattr(cls, _VALUE_OPAQUE_FLAG, True)
-
+    fields = cls._annotated_fields()
+    resolved = get_type_hints(cls)
+    for name in fields:
+        typ = resolved[name]
+        if typ not in (int, bool, float, str) and not (
+            isinstance(typ, type) and issubclass(typ, enum.Enum)
+        ):
+            raise TypeError(
+                f"{cls.__name__} cannot be a torch.compile value quantizer: "
+                f"annotated field {name!r} ({typ!r}) is not a plain value type "
+                "(int/bool/float/str/enum). Remove the annotation and rebuild "
+                "the field in ``_rebuild_derived_state`` instead."
+            )
+    cls._value_field_names = tuple(fields)
     # ``register_opaque_type`` requires ``__fx_repr__`` to already exist on the
     # class, so attach it before registering.
     if "__fx_repr__" not in cls.__dict__:
@@ -113,4 +129,6 @@ def register_value_opaque_quantizer(cls: type) -> None:
         # Keep TE importable: neither the opaque-type query nor the registration
         # must crash the import, e.g. on PyTorch versions with only partial /
         # experimental opaque-object support.
-        pass
+        return
+
+    _VALUE_OPAQUE_QUALNAMES.add(cls.__qualname__)

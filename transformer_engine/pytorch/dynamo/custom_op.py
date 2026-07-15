@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import dataclasses
-import types
+import types as _types
 import warnings
 from enum import Enum
 from typing import (
@@ -25,7 +25,9 @@ from typing import (
 
 import torch
 
-from .tensor_proto import TensorProto, to_tensor_proto, _contiguous_stride
+from torch._prims_common import make_contiguous_strides_for
+
+from .tensor_proto import TensorProto, to_tensor_proto
 from ..quantized_tensor import (
     QuantizedTensor,
     QuantizedTensorStorage,
@@ -320,7 +322,7 @@ def _storage_unflatten(meta: Any, tensors: List[torch.Tensor]) -> Any:
     inner_names = meta_dict["_inner_names"]
     inner = dict(zip(inner_names, tensors))
     outer_shape = meta_dict.get("_outer_shape")
-    stride = _contiguous_stride(tuple(outer_shape)) if outer_shape is not None else None
+    stride = make_contiguous_strides_for(tuple(outer_shape)) if outer_shape is not None else None
     return QuantizedTensorStorage.__tensor_unflatten__(inner, meta_dict, outer_shape, stride)
 
 
@@ -336,7 +338,7 @@ def _is_union(annot: Any) -> bool:
     for the latter, so the two syntaxes must be checked separately.
     """
     origin = get_origin(annot)
-    return origin is Union or origin is getattr(types, "UnionType", ())
+    return origin is Union or origin is getattr(_types, "UnionType", ())
 
 
 def _strip_optional(annot: Any) -> Tuple[Any, bool]:

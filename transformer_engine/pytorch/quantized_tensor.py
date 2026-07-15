@@ -24,19 +24,6 @@ from transformer_engine.pytorch.tensor._quantization_helpers import (
 )
 
 
-def _contains_process_group(value: Any) -> bool:
-    """Whether *value* is (or nests) a ``torch.distributed.ProcessGroup``.
-
-    Checks the value directly and one level of ``tuple``/``list`` nesting, which
-    covers the shapes a quantizer value field could plausibly take.
-    """
-    if isinstance(value, dist_group_type):
-        return True
-    if isinstance(value, (tuple, list)):
-        return any(_contains_process_group(item) for item in value)
-    return False
-
-
 # Custom ops that should pass through __torch_dispatch__ without unwrapping
 # QuantizedTensor subclasses (e.g. Float8Tensor). Register ops here that
 # handle quantized tensors internally.
@@ -65,6 +52,20 @@ class QuantizedTensorStorage:
 
     _dtype: torch.dtype
     _quantizer: Optional[Quantizer]
+
+    @property
+    def shape(self) -> torch.Size:
+        """Logical tensor shape, valid on bare storages and wrapper tensors alike.
+
+        Wrapper subclasses (also ``torch.Tensor``) defer to the native tensor
+        shape (``size()`` on a bare storage may reconstruct the shape from the
+        columnwise buffer, which is not necessarily the outer shape); bare
+        storages derive it from ``size()``.
+        """
+        if isinstance(self, torch.Tensor):
+            # pylint: disable=unnecessary-dunder-call
+            return torch._C.TensorBase.shape.__get__(self, type(self))
+        return torch.Size(self.size())
 
     def update_usage(
         self,
@@ -551,42 +552,44 @@ class Quantizer(abc.ABC):
             "columnwise": self.columnwise_usage,
         }
 
-    #: Attributes shared by every quantizer that take part in value identity.
-    _BASE_VALUE_FIELDS: Tuple[str, ...] = (
-        "rowwise_usage",
-        "columnwise_usage",
-        "internal",
-        "optimize_for_gemm",
-    )
+    @classmethod
+    def _annotated_fields(cls) -> Dict[str, Any]:
+        """Annotated fields (name -> annotation) across the ``Quantizer`` MRO,
+        base first. The class annotations are the single source of truth for
+        what defines a quantizer's value."""
+        fields: Dict[str, Any] = {}
+        for klass in reversed(cls.__mro__):
+            if issubclass(klass, Quantizer):
+                fields.update(klass.__dict__.get("__annotations__", {}))
+        return fields
 
     def _value_fields(self) -> Optional[Tuple[str, ...]]:
-        """Subclass-specific value-defining attribute names, or ``None``.
+        """Value-defining attribute names, or ``None``.
 
-        Returning ``None`` (the default) means the quantizer cannot be represented as
-        a value opaque object and keeps identity-based equality/hashing.
-        This also means that passing such a quantizer as an argument to a custom op
-        causes a graph break under torch.compile, since it cannot be baked into the
-        FX graph as a constant.
+        Computed from the class annotations and stored on the class by
+        ``register_value_opaque_quantizer``, which also checks that no
+        annotated field is a derived tensor or a process group. Looked up in
+        the class's own ``__dict__`` so a subclass of a registered quantizer
+        does not silently inherit value semantics without registering itself.
+        ``None`` (any class not registered) keeps identity-based
+        equality/hashing and graph-breaks under torch.compile when passed to a
+        custom op, since such a quantizer cannot be baked into the FX graph as
+        a constant.
         """
-        return None
+        return type(self).__dict__.get("_value_field_names")
 
     def _check_value_has_no_process_group(self) -> None:
-        # A value quantizer is baked into the FX graph as a constant via its
-        # value key, which cannot carry live distributed state. Enforced here --
-        # the single point every value-materialization path (``__eq__`` /
-        # ``__hash__`` / ``__fx_repr__``) goes through -- so a custom
-        # ``__fx_repr__`` cannot bypass it. Reject any field holding a
-        # ProcessGroup (e.g. the deprecated ``amax_reduction_group``) rather than
-        # silently dropping it; pass the reduction group per quantize call.
-        for name, value in vars(self).items():
-            if _contains_process_group(value):
-                raise TypeError(
-                    f"{type(self).__name__} cannot be used as a torch.compile value "
-                    f"object: attribute {name!r} holds a torch.distributed.ProcessGroup, "
-                    "which is live distributed state and must not be baked into an FX "
-                    "graph. Pass the amax reduction group per quantize call instead of "
-                    "storing it on the quantizer."
-                )
+        # A value quantizer cannot carry live distributed state into the FX
+        # graph; reject a stored ``amax_reduction_group`` and pass it per
+        # quantize call instead.
+        if isinstance(getattr(self, "amax_reduction_group", None), dist_group_type):
+            raise TypeError(
+                f"{type(self).__name__} cannot be used as a torch.compile value "
+                "object: 'amax_reduction_group' holds a torch.distributed.ProcessGroup, "
+                "which is live distributed state and must not be baked into an FX "
+                "graph. Pass the amax reduction group per quantize call instead of "
+                "storing it on the quantizer."
+            )
 
     def _value_key(self) -> Tuple[Any, ...]:
         """Hashable, reproducible key identifying this quantizer's value.
@@ -597,7 +600,7 @@ class Quantizer(abc.ABC):
         assert fields is not None, f"{type(self).__name__} is not a value quantizer"
         self._check_value_has_no_process_group()
         items = []
-        for name in self._BASE_VALUE_FIELDS + tuple(fields):
+        for name in fields:
             value = getattr(self, name)
             if name == "dtype":
                 # ``DType`` is an ``IntEnum``; store the int so the key stays
@@ -612,9 +615,7 @@ class Quantizer(abc.ABC):
         # fall back to identity). ``_value_key`` rejects a stored ProcessGroup.
         if self is other:
             return True
-        if self._value_fields() is None or type(self) is not type(other):
-            return NotImplemented
-        if other._value_fields() is None:
+        if type(self) is not type(other) or self._value_fields() is None:
             return NotImplemented
         return self._value_key() == other._value_key()
 
@@ -683,35 +684,6 @@ class QuantizedTensor(torch.Tensor):
     def dtype(self, value: torch.dtype) -> None:
         """Set dtype property"""
         self._dtype = value
-
-    @property
-    def requires_grad(self) -> bool:
-        """
-        Return whether or not the tensor requires gradient.
-        Attribute access of custom tensors goes through an
-        expensive Pyobject lookup. Since requires_grad is set during
-        initialization and may be updated, we cache it in a member variable.
-        """
-        # Fallback to parent if not cached yet
-        if not hasattr(self, "_requires_grad"):
-            # pylint: disable=unnecessary-dunder-call
-            self._requires_grad = torch._C.TensorBase.requires_grad.__get__(self, type(self))
-        return self._requires_grad
-
-    @requires_grad.setter
-    def requires_grad(self, value: bool) -> None:
-        """Set requires_grad property so that autograd engine is aware of the change"""
-        # Update the cached value and call parent class method to ensure autograd engine is aware
-        self.requires_grad_(value)
-
-    def requires_grad_(self, requires_grad: bool = True) -> QuantizedTensor:
-        """Cache requires_grad property and call parent class method"""
-        # pylint: disable=missing-function-docstring
-        # Update the cached value
-        self._requires_grad = requires_grad
-        # Call parent class method to ensure autograd engine is aware
-        super().requires_grad_(requires_grad)
-        return self
 
     def _get_data(self) -> torch.Tensor:
         """Get tensor data property"""
@@ -978,13 +950,7 @@ class QuantizedTensor(torch.Tensor):
         out = super().__torch_dispatch__(func, types, args, kwargs)
         return out
 
-    @classmethod
-    def __torch_function__(cls, func, types, args=(), kwargs=None):
-        if kwargs is None:
-            kwargs = {}
-
-        # Do not force the QuantizedTensor type on the returned tensor
-        return torch._C._disabled_torch_function_impl(func, types, args, kwargs)
+    __torch_function__ = torch._C._disabled_torch_function_impl
 
     def contiguous(
         self, memory_format: torch.memory_format = torch.contiguous_format

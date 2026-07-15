@@ -19,7 +19,7 @@ from ..utils import canonicalize_process_group, devices_match, is_non_tn_fp8_gem
 from .storage.float8_tensor_storage import Float8TensorStorage, _FromFloat8Func
 from ..quantized_tensor import QuantizedTensor, Quantizer
 from ..dynamo import register_value_opaque_quantizer
-from ._quantization_helpers import _IdentityFunc
+from ._quantization_helpers import _IdentityFunc, safe_quantized_repr
 from ..constants import dist_group_type, DType
 
 aten = torch.ops.aten
@@ -208,7 +208,6 @@ class Float8CurrentScalingQuantizer(Quantizer):
     dtype: DType
     """amax reduction options"""
     with_amax_reduction: bool
-    amax_reduction_group: Optional[dist_group_type]
     """Options about how to quantize the tensor"""
     force_pow_2_scales: bool
     amax_epsilon: float
@@ -258,7 +257,8 @@ class Float8CurrentScalingQuantizer(Quantizer):
             rowwise=self.rowwise_usage,
             columnwise=self.columnwise_usage,
             with_amax_reduction=self.with_amax_reduction,
-            amax_reduction_group=self.amax_reduction_group,
+            # Absent on quantizers rebuilt from a value key (deprecated field).
+            amax_reduction_group=getattr(self, "amax_reduction_group", None),
             force_pow_2_scales=self.force_pow_2_scales,
             amax_epsilon=self.amax_epsilon,
         )
@@ -387,12 +387,6 @@ class Float8CurrentScalingQuantizer(Quantizer):
         """
         return True
 
-    def _value_fields(self) -> Tuple[str, ...]:
-        # ``amax_reduction_group`` is intentionally excluded: it is a deprecated
-        # process group (not a value). If one is actually stored, ``__fx_repr__``
-        # raises so it can never be baked into a torch.compile graph.
-        return ("dtype", "force_pow_2_scales", "amax_epsilon", "with_amax_reduction")
-
     # ----- TensorProto / pure-Python allocation -----
 
     def _storage_metadata(self, fake_dtype: torch.dtype) -> Dict[str, Any]:
@@ -463,13 +457,16 @@ class Float8Tensor(Float8TensorStorage, QuantizedTensor):
     amax_reduction_group: Optional[dist_group_type] = None
 
     def __repr__(self, *, tensor_contents=None):
-        return (
-            "Float8Tensor("
-            f"fp8_dtype={self._fp8_dtype}, "
-            f"scale_inv={self._scale_inv.item()}, "
-            f"data={self.dequantize()}"
-            ")"
-        )
+        try:
+            return (
+                "Float8Tensor("
+                f"fp8_dtype={self._fp8_dtype}, "
+                f"scale_inv={self._scale_inv.item()}, "
+                f"data={self.dequantize()}"
+                ")"
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            return safe_quantized_repr(self, "Float8Tensor", error=exc)
 
     def dequantize(self, *, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """

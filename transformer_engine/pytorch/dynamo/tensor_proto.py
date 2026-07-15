@@ -10,16 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
-
-
-def _contiguous_stride(shape: Tuple[int, ...]) -> Tuple[int, ...]:
-    """Row-major (contiguous) stride for ``shape``."""
-    stride: list = []
-    acc = 1
-    for dim in reversed(shape):
-        stride.append(acc)
-        acc *= dim
-    return tuple(reversed(stride))
+from torch._prims_common import make_contiguous_strides_for
 
 
 @dataclass
@@ -61,10 +52,11 @@ class TensorProto:
         """Mirror ``QuantizedTensor.update_usage`` on the proto's buffer layout.
 
         Applied to the proto's own quantizer copy, so the shared (value-opaque)
-        quantizer is never mutated. No-op for plain (non-quantized) protos.
+        quantizer is never mutated. Raises on plain (non-quantized) protos --
+        a real plain ``torch.Tensor`` has no ``update_usage`` either.
         """
         if self.quantizer is None:
-            return
+            raise ValueError("update_usage called on a non-quantized TensorProto")
         self.quantizer.set_usage(rowwise=rowwise_usage, columnwise=columnwise_usage)
 
     def inner_names(self) -> Tuple[str, ...]:
@@ -120,7 +112,7 @@ class TensorProto:
     def assemble(self, inner_tensors: List[torch.Tensor]) -> torch.Tensor:
         """Rebuild the tensor from ready-made ``inner_tensors`` (in :meth:`inner_names`
         order). Shared by :meth:`create_tensor` (fresh buffers) and the custom-op
-        boundary (buffers arriving from the op's flat ``Tensor[]`` payload).
+        boundary (buffers arriving from an op's flat ``Tensor[]`` payload).
 
         Non-quantized protos are the single inner tensor as-is; quantized protos
         are reassembled into the storage/wrapper via ``__tensor_unflatten__``.
@@ -135,7 +127,9 @@ class TensorProto:
         ctx = self.create_metadata()
         inner = dict(zip(self.inner_names(), inner_tensors))
         storage_cls = _STORAGE_REGISTRY[ctx["cls"]]
-        return storage_cls.__tensor_unflatten__(inner, ctx, shape, _contiguous_stride(shape))
+        return storage_cls.__tensor_unflatten__(
+            inner, ctx, shape, make_contiguous_strides_for(shape)
+        )
 
     def create_tensor(self) -> torch.Tensor:
         """Materialize an (uninitialized) tensor matching this proto (traceable).
@@ -158,32 +152,17 @@ def to_tensor_proto(tensor: Any) -> TensorProto:
     """Build a :class:`TensorProto` describing ``tensor``.
 
     Works for plain ``torch.Tensor`` and for ``QuantizedTensorStorage`` /
-    ``QuantizedTensor``. A *bare* storage exposes its shape via ``.size()`` and
-    its (fake) dtype via ``_dtype`` rather than ``.shape`` / ``.dtype``.
+    ``QuantizedTensor``. A *bare* storage exposes its (fake) dtype via
+    ``_dtype`` rather than ``.dtype``.
     """
-    from ..quantized_tensor import (  # pylint: disable=import-outside-toplevel
-        QuantizedTensorStorage,
-    )
-
     requires_grad = bool(getattr(tensor, "requires_grad", False))
-    if isinstance(tensor, QuantizedTensorStorage):
-        shape = getattr(tensor, "shape", None)
-        if shape is None:
-            shape = tensor.size()
-        dtype = getattr(tensor, "dtype", None)
-        if dtype is None:
-            dtype = getattr(tensor, "_dtype", None)
-        return TensorProto(
-            shape=tuple(shape),
-            dtype=dtype,
-            quantizer=getattr(tensor, "_quantizer", None),
-            requires_grad=requires_grad,
-            device=tensor.device,
-        )
+    dtype = getattr(tensor, "dtype", None)
+    if dtype is None:
+        dtype = getattr(tensor, "_dtype", None)
     return TensorProto(
         shape=tuple(tensor.shape),
-        dtype=tensor.dtype,
-        quantizer=None,
+        dtype=dtype,
+        quantizer=getattr(tensor, "_quantizer", None),
         requires_grad=requires_grad,
         device=tensor.device,
     )

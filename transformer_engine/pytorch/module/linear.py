@@ -87,6 +87,11 @@ from ...debug.pytorch.debug_state import TEDebugState
 __all__ = ["Linear"]
 
 
+# Fields with this union may hold a *bare* ``QuantizedTensorStorage`` (see its
+# docstring), not just a plain / subclass tensor. The annotation is also
+# machine-read when the args bag becomes a torch.compile custom op (follow-up
+# PR): such fields get flatten/unflatten slots so a bare storage can cross the
+# op boundary -- a plain ``Tensor`` slot cannot carry it.
 TensorOrQuantized = Union[torch.Tensor, QuantizedTensorStorage]
 
 
@@ -341,6 +346,8 @@ def _linear_forward_impl(
     is_fsdp2 = args.is_fsdp2
     if backward_override == "high_precision":
         save_original_input = True
+    elif backward_override == "dequantized":
+        save_original_input = False
 
     # NVTX label for profiling
     nvtx_label = "transformer_engine._Linear.forward"
@@ -352,13 +359,9 @@ def _linear_forward_impl(
     # Configure tensor-parallel communication
     tp_world_size = get_distributed_world_size(tp_group)
     # Use the requires-grad flags captured into ``args`` at op-call time rather
-    # than the live tensors': the fake impl (``_linear_forward_impl_fake``) keys
-    # the number of FP8 inner buffers it emits off ``args.*_requires_grad``, so
-    # the real impl must agree to keep the custom-op output arity stable. Under
-    # ``torch.compile`` with CUDA-graph trees (``mode="reduce-overhead"``) the
-    # static graph inputs are detached during capture, so live
-    # ``weight.requires_grad`` / ``inp.requires_grad`` flip to False mid-capture
-    # and would otherwise diverge from the fake (schema/arity mismatch).
+    # than the live tensors': under ``torch.compile`` the live flags are
+    # sometimes unreliable, and the fake impl keys its output arity off the
+    # same captured flags, so real and fake must agree.
     backward_needs_input = is_grad_enabled and args.weight_requires_grad
     with_input_all_gather_nccl = (
         parallel_mode == "column" and sequence_parallel and not ub_overlap_ag_fprop
@@ -664,9 +667,9 @@ def _linear_forward_impl(
             wt_alias = None
         elif wt_save is weight:
             wt_alias = "weight"
-        elif new_weight_workspace is not None and wt_save is new_weight_workspace:
+        elif wt_save is new_weight_workspace:
             wt_alias = "new_workspace"
-        elif args.weight_workspace is not None and wt_save is args.weight_workspace:
+        elif wt_save is args.weight_workspace:
             wt_alias = "weight_workspace"
         else:
             wt_alias = None
