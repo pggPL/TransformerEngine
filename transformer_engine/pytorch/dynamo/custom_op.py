@@ -855,16 +855,11 @@ def _value_to_flat_tensors(
         return [_encode_none(None)]
     if isinstance(value, TensorProto):
         return [_encode_none(t) for t in value.create_inner_tensors()]
-    if isinstance(value, torch.Tensor):
-        if type(value) is not torch.Tensor and hasattr(  # pylint: disable=unidiomatic-typecheck
-            value, "__tensor_flatten__"
-        ):
-            inner_names, _ = value.__tensor_flatten__()
-            return [_encode_none(getattr(value, n)) for n in inner_names]
-        return [_encode_none(value)]
     if hasattr(value, "__tensor_flatten__"):
         inner_names, _ = value.__tensor_flatten__()
         return [_encode_none(getattr(value, n)) for n in inner_names]
+    if isinstance(value, torch.Tensor):
+        return [_encode_none(value)]
     raise TypeError(
         f"unsupported value type {type(value).__name__}; expected None / "
         "torch.Tensor / tensor subclass / bare storage / TensorProto."
