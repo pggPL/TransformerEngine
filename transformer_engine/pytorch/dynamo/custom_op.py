@@ -871,11 +871,31 @@ def _value_to_flat_tensors(
 _FWD_TRAILING_SLOTS = 2
 
 
+def _check_fwd_result(result: Any) -> None:
+    """Validate a fwd-impl return against the
+    ``(*user_outputs, tensors_to_save, ctx_attrs)`` contract, with a clear
+    message for op authors (user-output *types* are checked later, by
+    :func:`_value_to_flat_tensors`).
+    """
+    if not isinstance(result, tuple) or len(result) < _FWD_TRAILING_SLOTS:
+        raise TypeError(
+            f"fwd impl must return a tuple of >= {_FWD_TRAILING_SLOTS} elements "
+            "(*user_outputs, tensors_to_save, ctx_attrs); "
+            f"got {type(result).__name__}"
+        )
+    tensors_to_save, ctx_attrs = result[-2], result[-1]
+    if tensors_to_save is not None and not isinstance(tensors_to_save, (list, tuple)):
+        raise TypeError("fwd impl 'tensors_to_save' slot must be a list/tuple or None")
+    if ctx_attrs is not None and not isinstance(ctx_attrs, dict):
+        raise TypeError("fwd impl 'ctx_attrs' slot must be a dict or None")
+
+
 def _format_fwd_result(result: Any) -> List[torch.Tensor]:
     """Pack a fwd-impl return tuple into the op's ``Tensor[]`` payload.
 
     User outputs first, then saved-for-backward tensors in declaration order.
     """
+    _check_fwd_result(result)
     num_outputs = len(result) - _FWD_TRAILING_SLOTS
     flat: List[torch.Tensor] = []
     for value in result[:num_outputs]:
@@ -912,6 +932,7 @@ def _split_fwd_fake_result(
     result: Tuple[Any, ...],
 ) -> Tuple[List[Any], List[Any], Dict[str, Any]]:
     """Slice a fwd fake-impl return into ``(user_fakes, saved_fakes, ctx_attrs)``."""
+    _check_fwd_result(result)
     num_outputs = len(result) - _FWD_TRAILING_SLOTS
     saved = result[num_outputs]
     ctx_attrs = result[num_outputs + 1]
