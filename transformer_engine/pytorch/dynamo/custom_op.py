@@ -616,7 +616,12 @@ class _ReferenceOpaqueBucket(_Bucket):
 
 
 class _SimpleBundleBucket(_Bucket):
-    """Aggregates every simple-typed field into a single OpaqueValueBundle."""
+    """Aggregates every simple-typed field into a single OpaqueValueBundle.
+
+    Unlike the per-field buckets, exactly one of these exists per op: it owns the
+    single shared ``_simple_meta`` slot, and ``_get_buckets`` builds it once from
+    all simple-typed field names collected across the dataclass.
+    """
 
     SLOT = "_simple_meta"
 
