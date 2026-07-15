@@ -480,7 +480,7 @@ class _TensorOrQuantizedBucket(_Bucket):
         if isinstance(value, torch.Tensor):
             # Plain tensor *and* subclass (e.g. Float8Tensor) pass through the
             # ``Tensor?`` slot; subclass flattening (if any) is done by the
-            # outer op's ``register_torch_dispatch`` rule.
+            # wrapper op's ``register_torch_dispatch`` rule.
             return {
                 self.slot_name(): value,
                 self.slot_tensors(): [],
@@ -1136,32 +1136,32 @@ def _flatten_subclass_into_slots(
         new_args[offset + 2] = meta
 
 
-def _register_outer_forwarder(
+def _register_wrapper_op(
     *,
-    outer_op_name: str,
+    wrapper_op_name: str,
     schema_str: str,
-    inner_op_name: str,
+    base_op_name: str,
     buckets: Optional[List[_Bucket]] = None,
     subclass_list: Optional[List[type]] = None,
 ) -> Any:
-    """Define the outer op via ``torch.library.custom_op``: forward to the inner
+    """Define the wrapper op via ``torch.library.custom_op``: forward to the base
     op, optionally flattening registered subclass inputs in place first. Returns
     the ``CustomOpDef``.
     """
-    inner_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), inner_op_name)
+    base_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), base_op_name)
     input_flatten_enabled = bool(subclass_list) and buckets is not None
     slot_offsets = _collect_tensor_or_quantized_slot_offsets(buckets) if input_flatten_enabled else []
 
     def _forward(*flat: Any) -> List[torch.Tensor]:
         if not input_flatten_enabled:
-            return inner_op(*flat)
+            return base_op(*flat)
         new_args = list(flat)
         for sub in subclass_list:
             _flatten_subclass_into_slots(new_args, slot_offsets, sub)
-        return inner_op(*new_args)
+        return base_op(*new_args)
 
     op = torch.library.custom_op(
-        f"{_TE_OP_NAMESPACE}::{outer_op_name}", _forward, mutates_args=(), schema=schema_str
+        f"{_TE_OP_NAMESPACE}::{wrapper_op_name}", _forward, mutates_args=(), schema=schema_str
     )
     op.register_fake(_forward)
     return op
@@ -1187,15 +1187,15 @@ def register_custom_op(
 ) -> Optional[Callable[..., Any]]:
     """Register a TE module's forward + backward as torch custom ops.
 
-    Always two-tier: an inner ``<op>_base`` op carries the real schema /
-    autograd, and an outer ``<op>`` op forwards to it, flattening any
+    Always two-tier: an base ``<op>_base`` op carries the real schema /
+    autograd, and an wrapper ``<op>`` op forwards to it, flattening any
     quantized-tensor wrapper inputs first via ``register_torch_dispatch`` (an
-    empty subclass list simply makes the outer op a pass-through, so a pure
+    empty subclass list simply makes the wrapper op a pass-through, so a pure
     plain-tensor / bf16 call goes straight through).
 
     Returns ``forward_fn(fwd_arg_type_instance)`` -- a drop-in for
     ``Function.apply`` under ``torch.compiler.is_compiling()`` that dispatches
-    through the outer op and returns the user-facing outputs.
+    through the wrapper op and returns the user-facing outputs.
 
     Arg containers. ``fwd_arg_type`` and ``backward_arg_type`` are ``@dataclass``es
     whose *field annotations* define the op schema: each field maps to one or more
@@ -1291,10 +1291,10 @@ def _register_custom_op_impl(
             f"input_tensors_for_grad names not in {fwd_arg_type.__name__}: {missing}"
         )
 
-    outer_fwd_name = op_name
-    outer_bwd_name = f"{op_name}_backward"
-    inner_fwd_name = f"{op_name}_base"
-    inner_bwd_name = f"{outer_bwd_name}_base"
+    wrapper_fwd_name = op_name
+    wrapper_bwd_name = f"{op_name}_backward"
+    base_fwd_name = f"{op_name}_base"
+    base_bwd_name = f"{wrapper_bwd_name}_base"
     subclass_list = _all_quantized_tensor_subclasses()
 
     fwd_buckets = _get_buckets(fwd_arg_type)
@@ -1311,10 +1311,10 @@ def _register_custom_op_impl(
     fwd_schema = f"{fwd_schema_args} -> Tensor[]"
     bwd_schema = f"{bwd_schema_args} -> Tensor[]"
 
-    inner_bwd_qualname = f"{_TE_OP_NAMESPACE}::{inner_bwd_name}"
+    base_bwd_qualname = f"{_TE_OP_NAMESPACE}::{base_bwd_name}"
 
-    inner_fwd_def = _register_kernel(
-        op_name=inner_fwd_name,
+    base_fwd_def = _register_kernel(
+        op_name=base_fwd_name,
         schema_str=fwd_schema,
         arg_type=fwd_arg_type,
         arg_names=fwd_arg_names,
@@ -1325,7 +1325,7 @@ def _register_custom_op_impl(
         format_result=_format_fwd_result,
     )
     _register_kernel(
-        op_name=inner_bwd_name,
+        op_name=base_bwd_name,
         schema_str=bwd_schema,
         arg_type=backward_arg_type,
         arg_names=bwd_arg_names,
@@ -1333,18 +1333,18 @@ def _register_custom_op_impl(
         tensor_field_names=bwd_tensor_field_names,
         impl=backward_impl,
         fake_impl=bwd_fake_impl,
-        format_result=lambda g: _format_bwd_result(g, num_grad_inputs, inner_bwd_qualname),
+        format_result=lambda g: _format_bwd_result(g, num_grad_inputs, base_bwd_qualname),
     )
 
-    outer_fwd_def = _register_outer_forwarder(
-        outer_op_name=outer_fwd_name,
+    wrapper_fwd_def = _register_wrapper_op(
+        wrapper_op_name=wrapper_fwd_name,
         schema_str=fwd_schema,
-        inner_op_name=inner_fwd_name,
+        base_op_name=base_fwd_name,
         buckets=fwd_buckets,
         subclass_list=list(subclass_list),
     )
-    outer_bwd_def = _register_outer_forwarder(
-        outer_op_name=outer_bwd_name, schema_str=bwd_schema, inner_op_name=inner_bwd_name
+    wrapper_bwd_def = _register_wrapper_op(
+        wrapper_op_name=wrapper_bwd_name, schema_str=bwd_schema, base_op_name=base_bwd_name
     )
 
     autograd_common = {
@@ -1360,13 +1360,13 @@ def _register_custom_op_impl(
         "backward_obj_type": backward_arg_type,
         "fwd_fake_impl": fwd_fake_impl,
     }
-    inner_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), inner_fwd_name)
-    inner_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), inner_bwd_name)
-    outer_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), outer_fwd_name)
-    outer_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), outer_bwd_name)
+    base_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), base_fwd_name)
+    base_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), base_bwd_name)
+    wrapper_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), wrapper_fwd_name)
+    wrapper_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), wrapper_bwd_name)
 
-    _register_autograd_for_op(fwd_op=inner_fwd_def, bwd_op=inner_bwd_op, **autograd_common)
-    _register_autograd_for_op(fwd_op=outer_fwd_def, bwd_op=outer_bwd_op, **autograd_common)
+    _register_autograd_for_op(fwd_op=base_fwd_def, bwd_op=base_bwd_op, **autograd_common)
+    _register_autograd_for_op(fwd_op=wrapper_fwd_def, bwd_op=wrapper_bwd_op, **autograd_common)
 
     fwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(fwd_buckets)
     bwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(bwd_buckets)
@@ -1376,30 +1376,30 @@ def _register_custom_op_impl(
         new_args = list(args)
         for sub in subclass_list:
             _flatten_subclass_into_slots(new_args, fwd_slot_offsets, sub)
-        return inner_fwd_op(*new_args)
+        return base_fwd_op(*new_args)
 
     def _bwd_rule(mode, func, types, args, kwargs):
         del mode, func, types, kwargs
         new_args = list(args)
         for sub in subclass_list:
             _flatten_subclass_into_slots(new_args, bwd_slot_offsets, sub)
-        return inner_bwd_op(*new_args)
+        return base_bwd_op(*new_args)
 
     for sub in subclass_list:
-        outer_fwd_def.register_torch_dispatch(sub, _fwd_rule)
-        outer_bwd_def.register_torch_dispatch(sub, _bwd_rule)
+        wrapper_fwd_def.register_torch_dispatch(sub, _fwd_rule)
+        wrapper_bwd_def.register_torch_dispatch(sub, _bwd_rule)
 
-    _quantized_tensor_passthrough_ops.add(outer_fwd_op.default)
-    _quantized_tensor_passthrough_ops.add(outer_bwd_op.default)
-    _quantized_tensor_passthrough_ops.add(inner_fwd_op.default)
-    _quantized_tensor_passthrough_ops.add(inner_bwd_op.default)
+    _quantized_tensor_passthrough_ops.add(wrapper_fwd_op.default)
+    _quantized_tensor_passthrough_ops.add(wrapper_bwd_op.default)
+    _quantized_tensor_passthrough_ops.add(base_fwd_op.default)
+    _quantized_tensor_passthrough_ops.add(base_bwd_op.default)
 
     def forward_fn(fwd_args):
         proto_obj = _proto_view(fwd_args, fwd_tensor_field_names)
         user_fakes, _saved_fakes, _ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(proto_obj))
         kwargs = _args_to_slots(fwd_args, fwd_buckets)
         flat_in = [kwargs[name] for name in fwd_arg_names]
-        result = outer_fwd_op(*flat_in)
+        result = wrapper_fwd_op(*flat_in)
 
         cursor = 0
         outputs: List[Any] = []
