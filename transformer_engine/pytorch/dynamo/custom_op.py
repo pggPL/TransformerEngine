@@ -1072,7 +1072,7 @@ def _register_autograd_for_op(
         tensors_to_save_from_setup = setup_context_user(
             bwd_obj,
             fwd_obj,
-            user_outputs[0] if len(user_fakes) == 1 else tuple(user_outputs),
+            user_outputs[0] if len(user_outputs) == 1 else tuple(user_outputs),
             ctx_attrs,
             tuple(saved_list),
         )
