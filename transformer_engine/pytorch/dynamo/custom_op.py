@@ -2,7 +2,85 @@
 #
 # See LICENSE for license information.
 
-"""torch.compile custom-op framework for Transformer Engine."""
+"""torch.compile custom-op framework for Transformer Engine.
+
+Turns a TE module's eager forward/backward into ``torch.library`` custom ops so
+``torch.compile(fullgraph=True)`` traces them as single graph nodes -- no graph
+break into the eager ``autograd.Function``. ``register_custom_op`` is the entry
+point (its docstring documents the per-callable contract); ``module/linear.py``
+is the first user. Internal framework API -- exported from
+``transformer_engine.pytorch.dynamo``, not re-exported at the top level.
+
+A TE op's forward/backward is written as a plain impl over a single *args
+dataclass* (``fwd_arg_type`` / ``backward_arg_type``, e.g. ``LinearFwdArgs``): its
+fields are a mix of tensors, quantized tensors, quantizers, process groups,
+scalars and other Python values. The forward impl returns a tuple (user outputs +
+saved-for-backward tensors + ctx metadata); the backward impl returns one gradient
+per differentiable input.
+
+A ``torch.library`` custom op is narrower: it takes a flat list of schema slots
+-- tensors / ``Tensor[]`` plus, via torch's opaque-object support, value-opaque
+and reference-opaque objects -- and returns a flat ``Tensor[]``.
+
+Bridging the two takes three parts (below): per-field *adapters* map the args
+dataclass onto the op's input slots; *fake impls* on data-free protos give the
+output geometry and reassemble the op's flat return; and a *two-tier op* lets a
+quantized-tensor subclass be an op input.
+
+Field <-> slot mapping. This mapping turns each field of the args dataclass into
+the op's flat input slots, in a way that suits the field's type. A field's type
+annotation selects the one ``_Adapter`` that handles it; that adapter declares the
+slot(s) the field needs, packs the field's value into them on the way into the op,
+and unpacks it back on the way out. The kinds -- and how each represents its field
+as op inputs:
+
+  * ``_TensorAdapter`` -- a plain ``Tensor`` / ``Optional[Tensor]``: one tensor
+    slot.
+  * ``_TensorOrQuantizedAdapter`` -- a field that may be a plain tensor, a bare
+    quantized storage, or ``None``: three slots (the tensor, its flat inner
+    buffers, and a ``__kind__`` tag) so a quantized tensor crosses as its buffers.
+  * ``_QuantizerAdapter`` -- a quantizer, baked into the graph as a value-opaque
+    constant.
+  * ``_ReferenceOpaqueAdapter`` -- a ProcessGroup, carried as a live opaque graph
+    input.
+  * ``_SimpleBundleAdapter`` -- every remaining simple value (scalars, enums,
+    sizes, nested collections of them), gathered into one ``OpaqueValueBundle``
+    slot.
+  * ``_UnsupportedAdapter`` -- fallback for a field no adapter can encode; allowed
+    only when its value is trivial (``None`` / all-``None``) at call time.
+
+What runs where. Each op registers a data-free fake (``register_fake``) so it
+traces under ``torch.compile`` without allocating. ``register_custom_op`` returns
+``forward_fn`` -- the drop-in for the eager ``autograd.Function.apply``. A forward
+call through it:
+
+  * runs the fake ``fwd_fake_impl`` on ``TensorProto`` descriptors (data-free; see
+    ``tensor_proto.py``) to get the outputs' geometry in pure Python;
+  * calls the *forward op* -- which runs the real ``fwd_impl`` -- for a flat
+    ``Tensor[]`` payload;
+  * rebuilds the structured user outputs from that payload, sliced and reassembled
+    per the fake's output descriptors (``_proto_reassemble``;
+    ``_value_to_flat_tensors`` is the pack-side inverse).
+
+Autograd, registered on the op, drives backward:
+
+  * ``setup_context`` (run when the forward is taped) re-runs ``fwd_fake_impl`` for
+    the saved-tensor descriptors and a ``ctx_attrs`` dict, reassembles the saved
+    tensors from the op's flat output, then calls the user ``setup_context`` to
+    fill the backward args from forward state + ``ctx_attrs`` (e.g. saved-tensor
+    aliases) and return the tensors to persist;
+  * on ``backward()`` the backward args container's optional ``setup_saved_tensors``
+    hook restores those saved tensors, then the *backward op* runs the real
+    ``backward_impl`` and returns the flat grads (``bwd_fake_impl`` is its
+    data-free fake).
+
+Two-tier op (``base`` + ``wrapper``), so a ``QuantizedTensor`` subclass can be an
+op *input*. The ``<op>_base`` op carries the real schema + autograd; a custom op
+can't take a tensor-subclass input directly, so the ``<op>`` wrapper intercepts
+those via ``register_torch_dispatch`` and flattens each into the base op's slots
+(``_flatten_subclass_into_slots``) before forwarding. An empty subclass list makes
+the wrapper a pass-through (plain / bf16 calls go straight through).
+"""
 
 from __future__ import annotations
 import dataclasses
