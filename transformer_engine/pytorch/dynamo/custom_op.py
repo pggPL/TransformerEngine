@@ -327,7 +327,7 @@ def _storage_unflatten(meta: Any, tensors: List[torch.Tensor]) -> Any:
 
 
 # --------------------------------------------------------------------------- #
-# Field buckets: dataclass field <-> flat torch.library slot(s)
+# Field adapters: dataclass field <-> flat torch.library slot(s)
 # --------------------------------------------------------------------------- #
 
 
@@ -352,24 +352,24 @@ def _strip_optional(annot: Any) -> Tuple[Any, bool]:
     return annot, False
 
 
-class _Bucket:
-    """Maps one (or, for the aggregating bucket, several) dataclass field(s)
+class _Adapter:
+    """Maps one (or, for the aggregating adapter, several) dataclass field(s)
     to/from a contiguous run of custom-op schema *slots*.
 
     A custom op only takes flat, simply-typed arguments, but a TE op takes a
-    single ``@dataclass`` of mixed fields. Each bucket knows how to translate
+    single ``@dataclass`` of mixed fields. Each adapter knows how to translate
     its kind of field both ways. ``try_build`` and ``schema_slots`` run once at
     registration (to build the op's schema); ``to_slots`` and ``from_slots`` run
     on each call and must agree on the slot layout that ``schema_slots`` declares.
     """
 
     @classmethod
-    def try_build(cls, name: str, annot: Any) -> Optional["_Bucket"]:
-        """Decide whether this bucket type handles the field ``name`` given its
-        type annotation ``annot``; return a configured bucket if so, else
+    def try_build(cls, name: str, annot: Any) -> Optional["_Adapter"]:
+        """Decide whether this adapter type handles the field ``name`` given its
+        type annotation ``annot``; return a configured adapter if so, else
         ``None`` so the next candidate is tried.
 
-        Called once per field at registration, in :data:`_FIELD_BUCKETS`
+        Called once per field at registration, in :data:`_FIELD_ADAPTERS`
         priority order.
         """
         raise NotImplementedError
@@ -378,7 +378,7 @@ class _Bucket:
         """Declare the schema slots this field occupies, each as a
         ``(slot_name, schema_type)`` pair (e.g. ``("bias", "Tensor?")``).
 
-        Concatenated across all buckets to form the op's schema string.
+        Concatenated across all adapters to form the op's schema string.
         """
         raise NotImplementedError
 
@@ -401,11 +401,11 @@ class _Bucket:
         raise NotImplementedError
 
     def grad_slot(self) -> Optional[int]:
-        """Index (within this bucket's :meth:`schema_slots`) of the slot that
+        """Index (within this adapter's :meth:`schema_slots`) of the slot that
         carries a gradient, or ``None`` if the field is not differentiable.
 
         Used to map ``input_tensors_for_grad`` names onto backward grad-output
-        positions. Non-tensor buckets (quantizers, metadata) return ``None``.
+        positions. Non-tensor adapters (quantizers, metadata) return ``None``.
         """
         return None
 
@@ -418,7 +418,7 @@ class _TensorOrQuantizedKind(Enum):
     STORAGE = "storage"
 
 
-class _TensorOrQuantizedBucket(_Bucket):
+class _TensorOrQuantizedAdapter(_Adapter):
     """``Tensor | QuantizedTensorStorage | None`` (also subclass tensor) field.
 
     Three slots regardless of value: ``<name>`` (``Tensor?`` -- plain / subclass
@@ -466,7 +466,7 @@ class _TensorOrQuantizedBucket(_Bucket):
         return members == cls._MEMBERS
 
     @classmethod
-    def try_build(cls, name: str, annot: Any) -> Optional["_TensorOrQuantizedBucket"]:
+    def try_build(cls, name: str, annot: Any) -> Optional["_TensorOrQuantizedAdapter"]:
         if cls._is_tensor_storage_union(annot):
             return cls(name)
         return None
@@ -516,7 +516,7 @@ class _TensorOrQuantizedBucket(_Bucket):
         return 0
 
 
-class _TensorBucket(_Bucket):
+class _TensorAdapter(_Adapter):
     """``Tensor`` / ``Optional[Tensor]`` -> single ``Tensor`` / ``Tensor?`` slot."""
 
     def __init__(self, name: str, is_optional: bool) -> None:
@@ -524,7 +524,7 @@ class _TensorBucket(_Bucket):
         self.type_str = "Tensor?" if is_optional else "Tensor"
 
     @classmethod
-    def try_build(cls, name: str, annot: Any) -> Optional["_TensorBucket"]:
+    def try_build(cls, name: str, annot: Any) -> Optional["_TensorAdapter"]:
         stripped, is_optional = _strip_optional(annot)
         if stripped is torch.Tensor:
             return cls(name, is_optional)
@@ -543,7 +543,7 @@ class _TensorBucket(_Bucket):
         return 0
 
 
-class _QuantizerBucket(_Bucket):
+class _QuantizerAdapter(_Adapter):
     """``Quantizer`` / ``Optional[Quantizer]`` -> one own ``OpaqueValueBundle`` slot.
 
     Each quantizer gets its own dedicated slot. The field is annotated with the
@@ -561,7 +561,7 @@ class _QuantizerBucket(_Bucket):
         return self.name + "__q"
 
     @classmethod
-    def try_build(cls, name: str, annot: Any) -> Optional["_QuantizerBucket"]:
+    def try_build(cls, name: str, annot: Any) -> Optional["_QuantizerAdapter"]:
         stripped, _ = _strip_optional(annot)
         if isinstance(stripped, type) and issubclass(stripped, Quantizer):
             return cls(name)
@@ -577,7 +577,7 @@ class _QuantizerBucket(_Bucket):
         kwargs[self.name] = args[self.slot()][self.KEY]
 
 
-class _ReferenceOpaqueBucket(_Bucket):
+class _ReferenceOpaqueAdapter(_Adapter):
     """``ProcessGroup`` (or any reference-opaque type) -> one own opaque slot.
 
     A reference-opaque object is live, stateful black-box data (e.g. a
@@ -597,7 +597,7 @@ class _ReferenceOpaqueBucket(_Bucket):
         self.type_str = f"{type_name}?" if is_optional else type_name
 
     @classmethod
-    def try_build(cls, name: str, annot: Any) -> Optional["_ReferenceOpaqueBucket"]:
+    def try_build(cls, name: str, annot: Any) -> Optional["_ReferenceOpaqueAdapter"]:
         if _is_opaque_reference_type is None:
             return None
         stripped, is_optional = _strip_optional(annot)
@@ -617,11 +617,11 @@ class _ReferenceOpaqueBucket(_Bucket):
         kwargs[self.name] = args[self.name]
 
 
-class _SimpleBundleBucket(_Bucket):
+class _SimpleBundleAdapter(_Adapter):
     """Aggregates every simple-typed field into a single OpaqueValueBundle.
 
-    Unlike the per-field buckets, exactly one of these exists per op: it owns the
-    single shared ``_simple_meta`` slot, and ``_get_buckets`` builds it once from
+    Unlike the per-field adapters, exactly one of these exists per op: it owns the
+    single shared ``_simple_meta`` slot, and ``_get_adapters`` builds it once from
     all simple-typed field names collected across the dataclass.
     """
 
@@ -663,8 +663,8 @@ class _SimpleBundleBucket(_Bucket):
             kwargs[n] = meta[n]
 
 
-class _UnsupportedBucket(_Bucket):
-    """Fallback for fields whose type no other bucket can encode.
+class _UnsupportedAdapter(_Adapter):
+    """Fallback for fields whose type no other adapter can encode.
 
     Such a field cannot cross the op boundary, so it emits no slot and is
     tolerated only when its runtime value carries nothing: ``to_slots`` accepts
@@ -673,7 +673,7 @@ class _UnsupportedBucket(_Bucket):
     ``None``. A non-trivial value means the config is genuinely unsupported
     under torch.compile, and ``to_slots`` raises.
 
-    The check must run at call time (not in ``_get_buckets``): the annotation
+    The check must run at call time (not in ``_get_adapters``): the annotation
     alone -- e.g. ``Optional[Any]`` -- is valid when the value is ``None``, so
     only the runtime value can decide.
     """
@@ -699,7 +699,7 @@ class _UnsupportedBucket(_Bucket):
             raise TypeError(
                 f"{self.owner_cls_name} field {self.name!r} has a type not "
                 "supported by torch.compile (not Tensor, simple, or Quantizer) "
-                "and carries a non-trivial value; add a matching bucket in "
+                "and carries a non-trivial value; add a matching adapter in "
                 "dynamo.py to handle it."
             )
         return {}
@@ -708,16 +708,16 @@ class _UnsupportedBucket(_Bucket):
         kwargs[self.name] = None
 
 
-# Buckets, in priority order, owning ``try_build`` for a single field.
-# These buckets are mutually exclusive on annotations (a plain ``torch.Tensor``
-# matches only ``_TensorBucket``; the ``TensorOrQuantized`` union only
-# ``_TensorOrQuantizedBucket``; etc.), so the order is just iteration, not a
+# Adapters, in priority order, owning ``try_build`` for a single field.
+# These adapters are mutually exclusive on annotations (a plain ``torch.Tensor``
+# matches only ``_TensorAdapter``; the ``TensorOrQuantized`` union only
+# ``_TensorOrQuantizedAdapter``; etc.), so the order is just iteration, not a
 # priority ranking -- no annotation can be claimed by more than one.
-_FIELD_BUCKETS: Tuple[type, ...] = (
-    _TensorOrQuantizedBucket,
-    _TensorBucket,
-    _ReferenceOpaqueBucket,
-    _QuantizerBucket,
+_FIELD_ADAPTERS: Tuple[type, ...] = (
+    _TensorOrQuantizedAdapter,
+    _TensorAdapter,
+    _ReferenceOpaqueAdapter,
+    _QuantizerAdapter,
 )
 
 
@@ -732,65 +732,65 @@ def _resolved_field_annotations(cls: type) -> List[Tuple[str, Any]]:
     return [(f.name, hints.get(f.name, f.type)) for f in dataclasses.fields(cls)]
 
 
-def _get_buckets(cls: type) -> List[_Bucket]:
-    """Build the bucket list for a dataclass from its field annotations."""
+def _get_adapters(cls: type) -> List[_Adapter]:
+    """Build the adapter list for a dataclass from its field annotations."""
     if _OPAQUE_VALUE_BUNDLE_TYPE_NAME is None:
         raise RuntimeError(
             f"{cls.__name__} cannot be turned into a TE custom op: OpaqueValueBundle "
             "is not registered as a torch._library value-opaque type (PyTorch build "
             "without opaque-object support)."
         )
-    buckets: List[_Bucket] = []
+    adapters: List[_Adapter] = []
     simple_names: List[str] = []
     for name, annot in _resolved_field_annotations(cls):
-        built: Optional[_Bucket] = None
-        for bucket_cls in _FIELD_BUCKETS:
-            built = bucket_cls.try_build(name, annot)
+        built: Optional[_Adapter] = None
+        for adapter_cls in _FIELD_ADAPTERS:
+            built = adapter_cls.try_build(name, annot)
             if built is not None:
                 break
         if built is not None:
-            buckets.append(built)
-        elif _SimpleBundleBucket.matches_field(annot):
+            adapters.append(built)
+        elif _SimpleBundleAdapter.matches_field(annot):
             simple_names.append(name)
         else:
-            buckets.append(_UnsupportedBucket(name, cls.__name__))
+            adapters.append(_UnsupportedAdapter(name, cls.__name__))
     if simple_names:
-        buckets.append(_SimpleBundleBucket(simple_names))
-    return buckets
+        adapters.append(_SimpleBundleAdapter(simple_names))
+    return adapters
 
 
-def _tensor_field_names(buckets: List[_Bucket]) -> List[str]:
+def _tensor_field_names(adapters: List[_Adapter]) -> List[str]:
     """Names of fields carrying tensors (for building the proto view)."""
-    return [b.name for b in buckets if isinstance(b, (_TensorBucket, _TensorOrQuantizedBucket))]
+    return [b.name for b in adapters if isinstance(b, (_TensorAdapter, _TensorOrQuantizedAdapter))]
 
 
-def _build_schema(buckets: List[_Bucket]) -> Tuple[str, List[str]]:
-    """Return ``(schema_arg_str, slot_names)`` for a bucket list."""
-    spec = [slot for b in buckets for slot in b.schema_slots()]
+def _build_schema(adapters: List[_Adapter]) -> Tuple[str, List[str]]:
+    """Return ``(schema_arg_str, slot_names)`` for a adapter list."""
+    spec = [slot for b in adapters for slot in b.schema_slots()]
     names = [name for name, _ in spec]
     schema_str = "(" + ", ".join(f"{type_str} {name}" for name, type_str in spec) + ")"
     return schema_str, names
 
 
-def _args_to_slots(obj: Any, buckets: List[_Bucket]) -> Dict[str, Any]:
+def _args_to_slots(obj: Any, adapters: List[_Adapter]) -> Dict[str, Any]:
     """Build the op's flat ``{slot_name: value}`` argument dict from an args
-    dataclass ``obj`` (e.g. ``LinearFwdArgs``), by collecting every bucket's
+    dataclass ``obj`` (e.g. ``LinearFwdArgs``), by collecting every adapter's
     packed slot(s). Inverse of :func:`_args_from_slots`.
     """
     out: Dict[str, Any] = {}
-    for bucket in buckets:
-        out.update(bucket.to_slots(obj))
+    for adapter in adapters:
+        out.update(adapter.to_slots(obj))
     return out
 
 
-def _args_from_slots(cls: type, args: Dict[str, Any], buckets: List[_Bucket]) -> Any:
+def _args_from_slots(cls: type, args: Dict[str, Any], adapters: List[_Adapter]) -> Any:
     """Rebuild a fresh args dataclass ``cls`` (e.g. ``LinearFwdArgs``) from the
-    op's flat slot ``args`` dict, by letting every bucket restore its field(s).
+    op's flat slot ``args`` dict, by letting every adapter restore its field(s).
     Inverse of :func:`_args_to_slots`.
     """
     kwargs: Dict[str, Any] = {}
-    for bucket in buckets:
-        bucket.from_slots(args, kwargs)
+    for adapter in adapters:
+        adapter.from_slots(args, kwargs)
     obj = cls.__new__(cls)
     for k, v in kwargs.items():
         object.__setattr__(obj, k, v)
@@ -954,12 +954,12 @@ def _split_fwd_fake_result(
 
 
 def _resolve_grad_targets(
-    fwd_buckets: List[_Bucket],
+    fwd_adapters: List[_Adapter],
     input_tensors_for_grad: List[str],
 ) -> Tuple[int, List[int]]:
     """Validate ``input_tensors_for_grad`` and resolve the grad-output layout.
 
-    ``fwd_buckets`` already encode the arg dataclass's fields (they are built
+    ``fwd_adapters`` already encode the arg dataclass's fields (they are built
     from it), so the type itself is not needed here.
 
     Returns ``(slot_count, grad_targets)``: the total number of input schema
@@ -968,11 +968,11 @@ def _resolve_grad_targets(
     """
     name_to_slot: Dict[str, int] = {}
     slot_offset = 0
-    for bucket in fwd_buckets:
-        slots = bucket.schema_slots()
-        grad_slot = bucket.grad_slot()
+    for adapter in fwd_adapters:
+        slots = adapter.schema_slots()
+        grad_slot = adapter.grad_slot()
         if grad_slot is not None:
-            name_to_slot[bucket.name] = slot_offset + grad_slot
+            name_to_slot[adapter.name] = slot_offset + grad_slot
         slot_offset += len(slots)
 
     non_differentiable = [n for n in input_tensors_for_grad if n not in name_to_slot]
@@ -990,7 +990,7 @@ def _register_kernel(
     schema_str: str,
     arg_type: type,
     arg_names: List[str],
-    buckets: List[_Bucket],
+    adapters: List[_Adapter],
     tensor_field_names: List[str],
     impl: Callable[[Any], Any],
     fake_impl: Callable[[Any], Any],
@@ -1006,12 +1006,12 @@ def _register_kernel(
 
     def _impl(*flat: Any) -> List[torch.Tensor]:
         kwargs = dict(zip(arg_names, flat))
-        obj = _args_from_slots(arg_type, kwargs, buckets)
+        obj = _args_from_slots(arg_type, kwargs, adapters)
         return format_result(impl(obj))
 
     def _fake(*flat: Any) -> List[torch.Tensor]:
         kwargs = dict(zip(arg_names, flat))
-        obj = _args_from_slots(arg_type, kwargs, buckets)
+        obj = _args_from_slots(arg_type, kwargs, adapters)
         proto_obj = _proto_view(obj, tensor_field_names)
         return format_result(fake_impl(proto_obj))
 
@@ -1028,10 +1028,10 @@ def _register_autograd_for_op(
     bwd_op: Any,
     fwd_arg_type: type,
     fwd_arg_names: List[str],
-    fwd_buckets: List[_Bucket],
+    fwd_adapters: List[_Adapter],
     fwd_tensor_field_names: List[str],
     bwd_arg_names: List[str],
-    bwd_buckets: List[_Bucket],
+    bwd_adapters: List[_Adapter],
     slot_count: int,
     grad_targets: List[int],
     setup_context_user: Callable[..., Any],
@@ -1050,7 +1050,7 @@ def _register_autograd_for_op(
             i: len(value) for i, value in enumerate(inputs) if isinstance(value, list)
         }
         kwargs = dict(zip(fwd_arg_names, inputs))
-        fwd_obj = _args_from_slots(fwd_arg_type, kwargs, fwd_buckets)
+        fwd_obj = _args_from_slots(fwd_arg_type, kwargs, fwd_adapters)
         proto_obj = _proto_view(fwd_obj, fwd_tensor_field_names)
 
         user_fakes, saved_fakes, ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(proto_obj))
@@ -1092,7 +1092,7 @@ def _register_autograd_for_op(
         ctx.tensor_objects = None
         per_output_grads = grad_outputs[0]
         bwd_obj.grad_output = _decode_none(per_output_grads[0])
-        kwargs = _args_to_slots(bwd_obj, bwd_buckets)
+        kwargs = _args_to_slots(bwd_obj, bwd_adapters)
         bwd_args_flat = [kwargs[name] for name in bwd_arg_names]
         grads = [_decode_none(g) for g in bwd_op(*bwd_args_flat)]
         # One grad per input schema slot: default None, but a ``Tensor[]`` slot
@@ -1109,21 +1109,21 @@ def _register_autograd_for_op(
     fwd_op.register_autograd(_autograd_backward, setup_context=_setup_context)
 
 
-def _collect_tensor_or_quantized_slot_offsets(buckets: List[_Bucket]) -> List[int]:
-    """Start index of each ``_TensorOrQuantizedBucket`` group in the flat args."""
+def _collect_tensor_or_quantized_slot_offsets(adapters: List[_Adapter]) -> List[int]:
+    """Start index of each ``_TensorOrQuantizedAdapter`` group in the flat args."""
     offsets: List[int] = []
     pos = 0
-    for bucket in buckets:
-        if isinstance(bucket, _TensorOrQuantizedBucket):
+    for adapter in adapters:
+        if isinstance(adapter, _TensorOrQuantizedAdapter):
             offsets.append(pos)
-        pos += len(bucket.schema_slots())
+        pos += len(adapter.schema_slots())
     return offsets
 
 
 def _flatten_subclass_into_slots(
     new_args: List[Any], slot_offsets: List[int], subclass: type
 ) -> None:
-    """Rewrite each tensor-or-quantized-bucket group whose ``Tensor?`` slot holds an
+    """Rewrite each tensor-or-quantized-adapter group whose ``Tensor?`` slot holds an
     instance of ``subclass`` into the storage layout (3 slots: name / tensors / meta).
     """
     for offset in slot_offsets:
@@ -1131,7 +1131,7 @@ def _flatten_subclass_into_slots(
         if not isinstance(val, subclass):
             continue
         meta, tensors = _storage_flatten(
-            val, {_TensorOrQuantizedBucket.KIND_KEY: _TensorOrQuantizedKind.STORAGE}
+            val, {_TensorOrQuantizedAdapter.KIND_KEY: _TensorOrQuantizedKind.STORAGE}
         )
         new_args[offset] = None
         new_args[offset + 1] = tensors
@@ -1143,15 +1143,15 @@ def _register_wrapper_op(
     wrapper_op_name: str,
     schema_str: str,
     base_op: Any,
-    buckets: Optional[List[_Bucket]] = None,
+    adapters: Optional[List[_Adapter]] = None,
     subclass_list: Optional[List[type]] = None,
 ) -> Any:
     """Define the wrapper op via ``torch.library.custom_op``: forward to the base
     op, optionally flattening registered subclass inputs in place first. Returns
     the ``CustomOpDef``.
     """
-    input_flatten_enabled = bool(subclass_list) and buckets is not None
-    slot_offsets = _collect_tensor_or_quantized_slot_offsets(buckets) if input_flatten_enabled else []
+    input_flatten_enabled = bool(subclass_list) and adapters is not None
+    slot_offsets = _collect_tensor_or_quantized_slot_offsets(adapters) if input_flatten_enabled else []
 
     def _forward(*flat: Any) -> List[torch.Tensor]:
         if not input_flatten_enabled:
@@ -1201,7 +1201,7 @@ def register_custom_op(
     Arg containers. ``fwd_arg_type`` and ``backward_arg_type`` are ``@dataclass``es
     whose *field annotations* define the op schema: each field maps to one or more
     flat schema slots (tensor fields cross the boundary as tensors, quantizers ride
-    as value-opaque objects, simple values are bundled -- see the ``_Bucket``
+    as value-opaque objects, simple values are bundled -- see the ``_Adapter``
     classes). The caller builds a ``fwd_arg_type`` instance and passes it to the
     returned ``forward_fn``.
 
@@ -1298,16 +1298,16 @@ def _register_custom_op_impl(
     base_bwd_name = f"{wrapper_bwd_name}_base"
     subclass_list = _all_quantized_tensor_subclasses()
 
-    fwd_buckets = _get_buckets(fwd_arg_type)
-    bwd_buckets = _get_buckets(backward_arg_type)
-    fwd_tensor_field_names = _tensor_field_names(fwd_buckets)
-    bwd_tensor_field_names = _tensor_field_names(bwd_buckets)
+    fwd_adapters = _get_adapters(fwd_arg_type)
+    bwd_adapters = _get_adapters(backward_arg_type)
+    fwd_tensor_field_names = _tensor_field_names(fwd_adapters)
+    bwd_tensor_field_names = _tensor_field_names(bwd_adapters)
 
-    fwd_schema_args, fwd_arg_names = _build_schema(fwd_buckets)
-    bwd_schema_args, bwd_arg_names = _build_schema(bwd_buckets)
+    fwd_schema_args, fwd_arg_names = _build_schema(fwd_adapters)
+    bwd_schema_args, bwd_arg_names = _build_schema(bwd_adapters)
 
     num_grad_inputs = len(input_tensors_for_grad)
-    slot_count, grad_targets = _resolve_grad_targets(fwd_buckets, input_tensors_for_grad)
+    slot_count, grad_targets = _resolve_grad_targets(fwd_adapters, input_tensors_for_grad)
 
     fwd_schema = f"{fwd_schema_args} -> Tensor[]"
     bwd_schema = f"{bwd_schema_args} -> Tensor[]"
@@ -1319,7 +1319,7 @@ def _register_custom_op_impl(
         schema_str=fwd_schema,
         arg_type=fwd_arg_type,
         arg_names=fwd_arg_names,
-        buckets=fwd_buckets,
+        adapters=fwd_adapters,
         tensor_field_names=fwd_tensor_field_names,
         impl=fwd_impl,
         fake_impl=fwd_fake_impl,
@@ -1330,7 +1330,7 @@ def _register_custom_op_impl(
         schema_str=bwd_schema,
         arg_type=backward_arg_type,
         arg_names=bwd_arg_names,
-        buckets=bwd_buckets,
+        adapters=bwd_adapters,
         tensor_field_names=bwd_tensor_field_names,
         impl=backward_impl,
         fake_impl=bwd_fake_impl,
@@ -1344,7 +1344,7 @@ def _register_custom_op_impl(
         wrapper_op_name=wrapper_fwd_name,
         schema_str=fwd_schema,
         base_op=base_fwd_op,
-        buckets=fwd_buckets,
+        adapters=fwd_adapters,
         subclass_list=list(subclass_list),
     )
     wrapper_bwd_def = _register_wrapper_op(
@@ -1354,10 +1354,10 @@ def _register_custom_op_impl(
     autograd_common = {
         "fwd_arg_type": fwd_arg_type,
         "fwd_arg_names": fwd_arg_names,
-        "fwd_buckets": fwd_buckets,
+        "fwd_adapters": fwd_adapters,
         "fwd_tensor_field_names": fwd_tensor_field_names,
         "bwd_arg_names": bwd_arg_names,
-        "bwd_buckets": bwd_buckets,
+        "bwd_adapters": bwd_adapters,
         "slot_count": slot_count,
         "grad_targets": grad_targets,
         "setup_context_user": setup_context,
@@ -1370,8 +1370,8 @@ def _register_custom_op_impl(
     _register_autograd_for_op(fwd_op=base_fwd_def, bwd_op=base_bwd_op, **autograd_common)
     _register_autograd_for_op(fwd_op=wrapper_fwd_def, bwd_op=wrapper_bwd_op, **autograd_common)
 
-    fwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(fwd_buckets)
-    bwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(bwd_buckets)
+    fwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(fwd_adapters)
+    bwd_slot_offsets = _collect_tensor_or_quantized_slot_offsets(bwd_adapters)
 
     def _fwd_rule(mode, func, types, args, kwargs):
         del mode, func, types, kwargs
@@ -1399,7 +1399,7 @@ def _register_custom_op_impl(
     def forward_fn(fwd_args):
         proto_obj = _proto_view(fwd_args, fwd_tensor_field_names)
         user_fakes, _saved_fakes, _ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(proto_obj))
-        kwargs = _args_to_slots(fwd_args, fwd_buckets)
+        kwargs = _args_to_slots(fwd_args, fwd_adapters)
         flat_in = [kwargs[name] for name in fwd_arg_names]
         result = wrapper_fwd_op(*flat_in)
 
