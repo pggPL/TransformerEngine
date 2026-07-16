@@ -1223,12 +1223,20 @@ def _register_wrapper_op(
     schema_str: str,
     base_op: Any,
     adapters: Optional[List[_Adapter]] = None,
-    subclass_list: Optional[List[type]] = None,
 ) -> Any:
     """Define the wrapper op via ``torch.library.custom_op``: forward to the base
-    op, optionally flattening registered subclass inputs in place first. Returns
-    the ``CustomOpDef``.
+    op, first flattening any ``QuantizedTensor`` subclass input into the base op's
+    slots.
+
+    A ``torch.library`` op cannot take a tensor subclass directly, so each such
+    input is unpacked into its tensor-or-quantized slots
+    (``_flatten_subclass_into_slots``) before forwarding to the base op -- see the
+    two-tier op note in the module docstring. The subclasses to flatten are the
+    live ``QuantizedTensor`` wrappers (e.g. ``Float8Tensor``), obtained from the
+    registry via ``_all_quantized_tensor_subclasses()``. With no adapters the
+    wrapper is a plain pass-through. Returns the ``CustomOpDef``.
     """
+    subclass_list = _all_quantized_tensor_subclasses()
     input_flatten_enabled = bool(subclass_list) and adapters is not None
     slot_offsets = _collect_tensor_or_quantized_slot_offsets(adapters) if input_flatten_enabled else []
 
@@ -1424,7 +1432,6 @@ def _register_custom_op_impl(
         schema_str=fwd_schema,
         base_op=base_fwd_op,
         adapters=fwd_adapters,
-        subclass_list=list(subclass_list),
     )
     wrapper_bwd_def = _register_wrapper_op(
         wrapper_op_name=wrapper_bwd_name, schema_str=bwd_schema, base_op=base_bwd_op
