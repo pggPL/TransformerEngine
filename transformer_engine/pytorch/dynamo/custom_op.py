@@ -122,8 +122,8 @@ _TE_OP_NAMESPACE = "transformer_engine_compile"
 # 0-element uint8 tensor: a non-nullable ``Tensor[]`` schema is required for
 # ``register_autograd`` to attach a ``grad_fn`` to the outputs.
 #
-# TODO: once https://github.com/pytorch/pytorch/pull/187434 lands, a nullable
-# ``Tensor?[]`` return schema lets ``None`` pass through directly and this
+# Once https://github.com/pytorch/pytorch/pull/187434 lands, a nullable
+# ``Tensor?[]`` return schema will let ``None`` pass through directly and this
 # sentinel encoding (``_encode_none`` / ``_decode_none``) can be removed.
 _NONE_SENTINEL_DTYPE = torch.uint8
 
