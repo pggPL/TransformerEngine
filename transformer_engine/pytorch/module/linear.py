@@ -109,13 +109,12 @@ class LinearFwdArgs:
     # across the torch.compile custom-op boundary.
     weight_workspace: Optional[TensorOrQuantized]
 
-    # Workspace pinning (torch.compile). The process-global, lru_cached cuBLAS /
-    # NVFP4-RHT workspaces are fetched in the traced forward and threaded in as op
-    # inputs so they are allocated at trace time rather than lazily inside the op.
-    # The op body never reads them (general_gemm / the quantizer fetch the same
-    # globals by address). None on eager / non-compiled paths.
+    # Workspace pinning (torch.compile). The process-global, lru_cached cuBLAS
+    # workspace is fetched in the traced forward and threaded in as an op input so
+    # it is allocated at trace time rather than lazily inside the op. The op body
+    # never reads it (general_gemm fetches the same global by address). None on
+    # eager / non-compiled paths.
     cublas_workspace: Optional[torch.Tensor]
-    rht_matrix: Optional[torch.Tensor]
 
     # --- requires_grad flags (cached so backward does not re-query) ---
     input_requires_grad: bool
@@ -2329,19 +2328,12 @@ class Linear(TransformerEngineBaseModule):
             )
             wgrad_store = self.wgrad_store if self.wgrad_store.delay_wgrad_compute() else None
 
-            # Pin the lazily-cached cuBLAS (and NVFP4-RHT) workspaces as op inputs so
-            # they are materialized at trace time (external to the cudagraph pool)
-            # rather than inside the op during capture. See LinearFwdArgs for details.
+            # Pin the lazily-cached cuBLAS workspace as an op input so it is
+            # materialized at trace time (external to the cudagraph pool) rather
+            # than inside the op during capture. See LinearFwdArgs for details.
             cublas_workspace = None
-            rht_matrix = None
             if use_compiled_op:
                 cublas_workspace = get_cublas_workspace(inp.device.index, False, False)
-                from ..tensor.nvfp4_tensor import NVFP4Quantizer, get_rht_matrix
-
-                if isinstance(input_quantizer, NVFP4Quantizer):
-                    rht_matrix = get_rht_matrix(
-                        input_quantizer._with_random_sign_mask, inp.device.index
-                    )
 
             fwd_args = LinearFwdArgs(
                 # tensors
@@ -2350,7 +2342,6 @@ class Linear(TransformerEngineBaseModule):
                 bias=linear_bias_tensor,
                 weight_workspace=weight_workspace,
                 cublas_workspace=cublas_workspace,
-                rht_matrix=rht_matrix,
                 # requires_grad flags
                 input_requires_grad=inp.requires_grad,
                 weight_requires_grad=weight_tensor.requires_grad,
