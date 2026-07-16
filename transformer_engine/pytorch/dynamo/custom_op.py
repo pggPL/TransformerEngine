@@ -777,9 +777,9 @@ class _UnsupportedAdapter(_Adapter):
         if not self._is_trivial(value):
             raise TypeError(
                 f"{self.owner_cls_name} field {self.name!r} has a type not "
-                "supported by torch.compile (not Tensor, simple, or Quantizer) "
-                "and carries a non-trivial value; add a matching adapter in "
-                "dynamo.py to handle it."
+                "supported by torch.compile (not Tensor, simple, Quantizer, or a "
+                "reference-opaque type such as ProcessGroup) and carries a "
+                "non-trivial value; add a matching adapter in dynamo.py to handle it."
             )
         return {}
 
