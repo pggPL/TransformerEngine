@@ -416,7 +416,7 @@ def _is_union(annot: Any) -> bool:
     for the latter, so the two syntaxes must be checked separately.
     """
     origin = get_origin(annot)
-    return origin is Union or origin is getattr(_types, "UnionType", ())
+    return origin is Union or origin is _types.UnionType
 
 
 def _strip_optional(annot: Any) -> Tuple[Any, bool]:
