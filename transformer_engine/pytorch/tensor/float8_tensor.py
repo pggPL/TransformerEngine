@@ -19,7 +19,11 @@ from ..utils import canonicalize_process_group, devices_match, is_non_tn_fp8_gem
 from .storage.float8_tensor_storage import Float8TensorStorage, _FromFloat8Func
 from ..quantized_tensor import QuantizedTensor, Quantizer
 from ..dynamo import register_value_opaque_quantizer
-from ._quantization_helpers import _IdentityFunc, safe_quantized_repr
+from ._quantization_helpers import (
+    _IdentityFunc,
+    safe_quantized_repr,
+    tensor_can_be_materialized,
+)
 from ..constants import dist_group_type, DType
 
 aten = torch.ops.aten
@@ -457,6 +461,11 @@ class Float8Tensor(Float8TensorStorage, QuantizedTensor):
     amax_reduction_group: Optional[dist_group_type] = None
 
     def __repr__(self, *, tensor_contents=None):
+        # A fake/meta/functional scale_inv cannot be materialized without leaking
+        # an unbacked symbol into the ShapeEnv (see tensor_can_be_materialized);
+        # fall back to a metadata-only repr under tracing.
+        if not tensor_can_be_materialized(self._scale_inv):
+            return safe_quantized_repr(self, "Float8Tensor")
         try:
             return (
                 "Float8Tensor("
