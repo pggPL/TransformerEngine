@@ -698,9 +698,10 @@ class _ReferenceOpaqueAdapter(_Adapter):
 class _SimpleBundleAdapter(_Adapter):
     """Aggregates every simple-typed field into a single OpaqueValueBundle.
 
-    Unlike the per-field adapters, exactly one of these exists per op: it owns the
-    single shared ``_simple_meta`` slot, and ``_get_adapters`` builds it once from
-    all simple-typed field names collected across the dataclass.
+    Unlike the per-field adapters, at most one of these exists per op (none if the
+    dataclass has no simple-typed fields): it owns the single shared
+    ``_simple_meta`` slot, and ``_get_adapters`` builds it once from all
+    simple-typed field names collected across the dataclass.
     """
 
     SLOT = "_simple_meta"
