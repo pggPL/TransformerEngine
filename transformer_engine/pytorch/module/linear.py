@@ -87,11 +87,9 @@ from ...debug.pytorch.debug_state import TEDebugState
 __all__ = ["Linear"]
 
 
-# Fields with this union may hold a *bare* ``QuantizedTensorStorage`` (see its
-# docstring), not just a plain / subclass tensor. The annotation is also
-# machine-read when the args bag becomes a torch.compile custom op (follow-up
-# PR): such fields get flatten/unflatten slots so a bare storage can cross the
-# op boundary -- a plain ``Tensor`` slot cannot carry it.
+# Fields with this union may hold a *bare* ``QuantizedTensorStorage`` (the
+# internal-quantizer optimization; see its docstring), not just a plain /
+# subclass tensor -- hence the union rather than a plain ``torch.Tensor``.
 TensorOrQuantized = Union[torch.Tensor, QuantizedTensorStorage]
 
 
