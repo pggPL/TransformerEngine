@@ -68,6 +68,8 @@
 #include <optional>
 #include <vector>
 
+#include "common/util/logging.h"  // NVTE_ERROR used by the inline helpers below
+
 namespace transformer_engine::pytorch {
 
 // ===========================================================================
@@ -163,11 +165,65 @@ using MaybeTensor = std::optional<Tensor>;
 // dtype mapping -- the TE<->torch dtype boundary.
 // ===========================================================================
 
+// These are defined inline (in this facade header) on purpose: they sit on the
+// per-tensor Python<->C++ marshalling path, so keeping them inlinable at call
+// sites avoids an out-of-line call and matches the pre-facade codegen.
+
 /*! \brief Map a TE DType to the corresponding torch scalar type. */
-ScalarType GetATenDType(transformer_engine::DType t);
+inline ScalarType GetATenDType(transformer_engine::DType t) {
+  switch (t) {
+    case transformer_engine::DType::kInt16:
+      return torch::kInt16;
+    case transformer_engine::DType::kInt32:
+      return torch::kInt32;
+    case transformer_engine::DType::kInt64:
+      return torch::kInt64;
+    case transformer_engine::DType::kFloat32:
+      return at::kFloat;
+    case transformer_engine::DType::kFloat16:
+      return at::kHalf;
+    case transformer_engine::DType::kBFloat16:
+      return at::kBFloat16;
+    case transformer_engine::DType::kByte:
+      return at::kByte;
+    case transformer_engine::DType::kFloat8E4M3:
+      return at::kFloat8_e4m3fn;
+    case transformer_engine::DType::kFloat8E5M2:
+      return at::kFloat8_e5m2;
+    case transformer_engine::DType::kFloat8E8M0:
+      return at::kByte;  // e8m0 dtype requires PyTorch 2.7.0+
+    default:
+      NVTE_ERROR("Invalid type (", static_cast<int>(t), ").");
+  }
+}
 
 /*! \brief Map a torch scalar type to the corresponding TE DType. */
-transformer_engine::DType GetTransformerEngineDType(ScalarType t);
+inline transformer_engine::DType GetTransformerEngineDType(ScalarType t) {
+  switch (t) {
+    case at::kFloat8_e4m3fn:
+      return transformer_engine::DType::kFloat8E4M3;
+    case at::kFloat8_e5m2:
+      return transformer_engine::DType::kFloat8E5M2;
+    case at::kHalf:
+      return transformer_engine::DType::kFloat16;
+    case at::kFloat:
+      return transformer_engine::DType::kFloat32;
+    case at::kBFloat16:
+      return transformer_engine::DType::kBFloat16;
+    case at::kBool:
+      return transformer_engine::DType::kByte;
+    case torch::kByte:
+      return transformer_engine::DType::kByte;
+    case torch::kInt16:
+      return transformer_engine::DType::kInt16;
+    case torch::kInt32:
+      return transformer_engine::DType::kInt32;
+    case torch::kInt64:
+      return transformer_engine::DType::kInt64;
+    default:
+      NVTE_ERROR("Invalid type (", static_cast<int>(t), ").");
+  }
+}
 
 // ===========================================================================
 // Tensor factories -- wrappers over at::empty/at::zeros/... so no extension
@@ -177,7 +233,13 @@ transformer_engine::DType GetTransformerEngineDType(ScalarType t);
 /*! \brief Allocate a CUDA tensor of the given shape/dtype.
  *  \param zero_init  If true, zero-initialize; otherwise leave uninitialized.
  */
-Tensor new_cuda_tensor(const std::vector<int64_t>& shape, ScalarType dtype, bool zero_init);
+inline Tensor new_cuda_tensor(const std::vector<int64_t>& shape, ScalarType dtype, bool zero_init) {
+  c10::IntArrayRef ar_shape(shape);
+  if (zero_init) {
+    return at::zeros(ar_shape, at::CUDA(dtype));
+  }
+  return at::empty(ar_shape, at::CUDA(dtype));
+}
 
 }  // namespace transformer_engine::pytorch
 
