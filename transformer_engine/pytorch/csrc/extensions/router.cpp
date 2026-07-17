@@ -17,21 +17,21 @@ static std::map<std::string, int> score_function_map = {
 // Allocate a routing_map output tensor:
 //   BYTEMAP   -> bool [*leading_dims, num_experts]
 //   BITMAP_U8 -> uint8[*leading_dims, ceil(num_experts/8)], LSB-first
-static at::Tensor allocate_routing_map(c10::IntArrayRef leading_dims, int64_t num_experts,
+static Tensor allocate_routing_map(IntArrayRef leading_dims, int64_t num_experts,
                                        int routing_map_format) {
   std::vector<int64_t> shape(leading_dims.begin(), leading_dims.end());
   if (routing_map_format == NVTE_ROUTING_MAP_FORMAT_BITMAP_U8) {
     shape.push_back((num_experts + 7) / 8);
-    return at::empty(shape, at::dtype(at::kByte).device(at::kCUDA));
+    return empty(shape, dtype(kByte).device(kCUDA));
   }
   shape.push_back(num_experts);
-  return at::empty(shape, at::dtype(at::kBool).device(at::kCUDA));
+  return empty(shape, dtype(kBool).device(kCUDA));
 }
 
-std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_topk_with_score_function_fwd(
-    at::Tensor logits, int topk, bool use_pre_softmax, std::optional<int> num_groups,
+std::tuple<Tensor, Tensor, Tensor> fused_topk_with_score_function_fwd(
+    Tensor logits, int topk, bool use_pre_softmax, std::optional<int> num_groups,
     std::optional<int> group_topk, std::optional<float> scaling_factor, std::string score_function,
-    std::optional<at::Tensor> expert_bias, int routing_map_format) {
+    std::optional<Tensor> expert_bias, int routing_map_format) {
   TORCH_CHECK(logits.dim() >= 1, "logits must have at least 1 dim");
   TORCH_CHECK(logits.is_contiguous(), "logits must be contiguous");
   auto sizes = logits.sizes();
@@ -44,7 +44,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_topk_with_score_function_fw
   if (expert_bias.has_value()) {
     TORCH_CHECK(score_function == "sigmoid" || score_function == "sqrtsoftplus",
                 "score_function must be sigmoid or sqrtsoftplus when expert_bias is not None");
-    TORCH_CHECK(expert_bias.value().scalar_type() == at::kFloat,
+    TORCH_CHECK(expert_bias.value().scalar_type() == kFloat,
                 "expert_bias must be a float32 tensor");
   }
   // Check if the score function is valid
@@ -60,10 +60,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_topk_with_score_function_fw
   int num_groups_value = num_groups.has_value() ? num_groups.value() : -1;
   float scaling_factor_value = scaling_factor.has_value() ? scaling_factor.value() : 1.0f;
 
-  at::Tensor probs = at::empty(sizes, at::dtype(logits.scalar_type()).device(at::kCUDA));
-  at::Tensor routing_map =
+  Tensor probs = empty(sizes, dtype(logits.scalar_type()).device(kCUDA));
+  Tensor routing_map =
       allocate_routing_map(sizes.slice(0, sizes.size() - 1), num_experts, routing_map_format);
-  at::Tensor intermediate_output = at::empty(sizes, at::dtype(at::kFloat).device(at::kCUDA));
+  Tensor intermediate_output = empty(sizes, dtype(kFloat).device(kCUDA));
 
   // 2D shape for the kernel (common-layer NVTE_CHECKs require {num_tokens, trailing_dim}).
   const std::vector<size_t> shape_2d = {static_cast<size_t>(num_tokens),
@@ -92,13 +92,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_topk_with_score_function_fw
       use_pre_softmax, num_groups_value, group_topk_value, scaling_factor_value,
       score_function_map[score_function], expert_bias_cu.data(), probs_cu.data(),
       routing_map_cu.data(), static_cast<NVTERoutingMapFormat>(routing_map_format),
-      intermediate_output_cu.data(), at::cuda::getCurrentCUDAStream());
+      intermediate_output_cu.data(), getCurrentCUDAStream());
 
   return std::make_tuple(probs, routing_map, intermediate_output);
 }
 
-void fused_topk_with_score_function_bwd(at::Tensor routing_map, at::Tensor intermediate_output,
-                                        at::Tensor grad_probs, at::Tensor grad_logits, int topk,
+void fused_topk_with_score_function_bwd(Tensor routing_map, Tensor intermediate_output,
+                                        Tensor grad_probs, Tensor grad_logits, int topk,
                                         bool use_pre_softmax, std::optional<float> scaling_factor,
                                         std::string score_function, int routing_map_format) {
   TORCH_CHECK(grad_probs.dim() >= 1, "grad_probs must have at least 1 dim");
@@ -133,11 +133,11 @@ void fused_topk_with_score_function_bwd(at::Tensor routing_map, at::Tensor inter
       routing_map_cu.data(), static_cast<NVTERoutingMapFormat>(routing_map_format),
       intermediate_output_cu.data(), grad_probs_cu.data(), static_cast<int>(num_tokens),
       static_cast<int>(num_experts), topk, use_pre_softmax, scaling_factor_value,
-      score_function_value, grad_logits_cu.data(), at::cuda::getCurrentCUDAStream());
+      score_function_value, grad_logits_cu.data(), getCurrentCUDAStream());
 }
 
-std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_score_for_moe_aux_loss_fwd(
-    at::Tensor logits, int topk, std::string score_function, int routing_map_format) {
+std::tuple<Tensor, Tensor, Tensor> fused_score_for_moe_aux_loss_fwd(
+    Tensor logits, int topk, std::string score_function, int routing_map_format) {
   TORCH_CHECK(logits.dim() >= 1, "logits must have at least 1 dim");
   TORCH_CHECK(logits.is_contiguous(), "logits must be contiguous");
   auto sizes = logits.sizes();
@@ -152,10 +152,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_score_for_moe_aux_loss_fwd(
               "score_function must be softmax, sigmoid or sqrtsoftplus for router fusion");
   int score_function_value = score_function_map[score_function];
 
-  at::Tensor scores = at::empty(sizes, at::dtype(at::kFloat).device(at::kCUDA));
-  at::Tensor routing_map =
+  Tensor scores = empty(sizes, dtype(kFloat).device(kCUDA));
+  Tensor routing_map =
       allocate_routing_map(sizes.slice(0, sizes.size() - 1), num_experts, routing_map_format);
-  at::Tensor intermediate_output = at::empty(sizes, at::dtype(at::kFloat).device(at::kCUDA));
+  Tensor intermediate_output = empty(sizes, dtype(kFloat).device(kCUDA));
 
   const std::vector<size_t> shape_2d = {static_cast<size_t>(num_tokens),
                                         static_cast<size_t>(num_experts)};
@@ -178,13 +178,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_score_for_moe_aux_loss_fwd(
       logits_cu.data(), static_cast<int>(num_tokens), static_cast<int>(num_experts), topk,
       score_function_value, scores_cu.data(), routing_map_cu.data(),
       static_cast<NVTERoutingMapFormat>(routing_map_format), intermediate_output_cu.data(),
-      at::cuda::getCurrentCUDAStream());
+      getCurrentCUDAStream());
 
   return std::make_tuple(scores, routing_map, intermediate_output);
 }
 
-void fused_score_for_moe_aux_loss_bwd(at::Tensor intermediate_output, at::Tensor grad_scores,
-                                      at::Tensor grad_logits, int topk,
+void fused_score_for_moe_aux_loss_bwd(Tensor intermediate_output, Tensor grad_scores,
+                                      Tensor grad_logits, int topk,
                                       std::string score_function) {
   TORCH_CHECK(grad_scores.dim() >= 1, "grad_scores must have at least 1 dim");
   TORCH_CHECK(grad_scores.is_contiguous(), "grad_scores must be contiguous");
@@ -210,11 +210,11 @@ void fused_score_for_moe_aux_loss_bwd(at::Tensor intermediate_output, at::Tensor
   nvte_fused_score_for_moe_aux_loss_backward(
       intermediate_output_cu.data(), grad_scores_cu.data(), static_cast<int>(num_tokens),
       static_cast<int>(num_experts), topk, score_function_value, grad_logits_cu.data(),
-      at::cuda::getCurrentCUDAStream());
+      getCurrentCUDAStream());
 }
 
-std::tuple<at::Tensor, at::Tensor> fused_moe_aux_loss_fwd(at::Tensor probs,
-                                                          at::Tensor tokens_per_expert,
+std::tuple<Tensor, Tensor> fused_moe_aux_loss_fwd(Tensor probs,
+                                                          Tensor tokens_per_expert,
                                                           int total_num_tokens, int num_experts,
                                                           int num_rows, int num_cols, int topk,
                                                           float coeff) {
@@ -223,8 +223,8 @@ std::tuple<at::Tensor, at::Tensor> fused_moe_aux_loss_fwd(at::Tensor probs,
   TORCH_CHECK(num_experts > 0, "num_experts must be greater than 0");
 
   // Create the output tensor
-  at::Tensor aux_loss = at::empty({}, at::dtype(probs.scalar_type()).device(at::kCUDA));
-  at::Tensor Const_buf = at::empty({2}, at::dtype(at::kFloat).device(at::kCUDA));
+  Tensor aux_loss = empty({}, dtype(probs.scalar_type()).device(kCUDA));
+  Tensor Const_buf = empty({2}, dtype(kFloat).device(kCUDA));
 
   auto probs_cu = makeTransformerEngineTensor(probs);
   auto tokens_per_expert_cu = makeTransformerEngineTensor(tokens_per_expert);
@@ -233,16 +233,16 @@ std::tuple<at::Tensor, at::Tensor> fused_moe_aux_loss_fwd(at::Tensor probs,
 
   nvte_fused_moe_aux_loss_forward(probs_cu.data(), tokens_per_expert_cu.data(), total_num_tokens,
                                   num_experts, num_rows, num_cols, topk, coeff, aux_loss_cu.data(),
-                                  Const_buf_cu.data(), at::cuda::getCurrentCUDAStream());
+                                  Const_buf_cu.data(), getCurrentCUDAStream());
 
   return std::make_tuple(aux_loss, Const_buf);
 }
 
-at::Tensor fused_moe_aux_loss_bwd(at::Tensor Const_buf, at::Tensor tokens_per_expert, int num_rows,
-                                  int num_cols, at::Tensor grad_aux_loss) {
+Tensor fused_moe_aux_loss_bwd(Tensor Const_buf, Tensor tokens_per_expert, int num_rows,
+                                  int num_cols, Tensor grad_aux_loss) {
   // Create the output tensor
-  at::Tensor grad_probs =
-      at::empty({num_rows, num_cols}, at::dtype(grad_aux_loss.scalar_type()).device(at::kCUDA));
+  Tensor grad_probs =
+      empty({num_rows, num_cols}, dtype(grad_aux_loss.scalar_type()).device(kCUDA));
 
   auto Const_buf_cu = makeTransformerEngineTensor(Const_buf);
   auto tokens_per_expert_cu = makeTransformerEngineTensor(tokens_per_expert);
@@ -252,7 +252,7 @@ at::Tensor fused_moe_aux_loss_bwd(at::Tensor Const_buf, at::Tensor tokens_per_ex
   // Meta data for the kernel
   nvte_fused_moe_aux_loss_backward(Const_buf_cu.data(), tokens_per_expert_cu.data(), num_rows,
                                    num_cols, grad_aux_loss_cu.data(), grad_probs_cu.data(),
-                                   at::cuda::getCurrentCUDAStream());
+                                   getCurrentCUDAStream());
 
   return grad_probs;
 }

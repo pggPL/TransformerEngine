@@ -13,7 +13,7 @@
 #define HALF_BYTES 2
 #define UB_MAX_SM 32
 
-using namespace torch::indexing;
+using namespace indexing;
 using namespace std::placeholders;
 
 namespace te = transformer_engine;
@@ -28,14 +28,14 @@ CommOverlapHelper::CommOverlapHelper() {
 #endif
 }  // empty constructor for NVTE_UB_WITH_MPI=1
 
-CommOverlapHelper::CommOverlapHelper(c10d::ProcessGroup *world_group,
-                                     std::optional<c10d::ProcessGroup *> intra_domain_group) {
+CommOverlapHelper::CommOverlapHelper(ProcessGroup *world_group,
+                                     std::optional<ProcessGroup *> intra_domain_group) {
 #ifndef NVTE_UB_WITH_MPI
   torch_pgs.insert({"world", world_group});
   myrank = torch_pgs["world"]->getRank();
   numranks = torch_pgs["world"]->getSize();
-  c10d::ProcessGroup::BackendType backend = torch_pgs["world"]->getBackendType();
-  backend_is_nccl = (backend == c10d::ProcessGroup::BackendType::NCCL);
+  ProcessGroup::BackendType backend = torch_pgs["world"]->getBackendType();
+  backend_is_nccl = (backend == ProcessGroup::BackendType::NCCL);
 
   if (intra_domain_group.has_value()) {
     // Get local rank on node and number of local ranks
@@ -78,13 +78,13 @@ CommOverlapHelper::CommOverlapHelper(c10d::ProcessGroup *world_group,
     NVTE_CHECK_NCCL(ncclGetUniqueId(&nccl_world_id));
   }
   auto nccl_world_id_tensor =
-      torch::from_blob(reinterpret_cast<uint8_t *>(&nccl_world_id), {sizeof(ncclUniqueId)},
-                       at::device(torch::kCPU).dtype(torch::kUInt8));
+      from_blob(reinterpret_cast<uint8_t *>(&nccl_world_id), {sizeof(ncclUniqueId)},
+                       device(kCPU).dtype(kUInt8));
   nccl_world_id_tensor = (backend_is_nccl) ? nccl_world_id_tensor.cuda() : nccl_world_id_tensor;
   {
-    c10d::BroadcastOptions bcast_opts;
+    BroadcastOptions bcast_opts;
     bcast_opts.rootRank = 0;
-    std::vector<at::Tensor> bcast_tensors = {nccl_world_id_tensor};
+    std::vector<Tensor> bcast_tensors = {nccl_world_id_tensor};
     auto work = torch_pgs["world"]->broadcast(bcast_tensors, bcast_opts);
     work->wait();
   }
@@ -104,13 +104,13 @@ CommOverlapHelper::CommOverlapHelper(c10d::ProcessGroup *world_group,
 
     // Broadcast the intra-node unique ID from the local root to all local ranks
     auto nccl_intra_id_tensor =
-        torch::from_blob(reinterpret_cast<uint8_t *>(&nccl_intra_id), {sizeof(ncclUniqueId)},
-                         at::device(torch::kCPU).dtype(torch::kUInt8));
+        from_blob(reinterpret_cast<uint8_t *>(&nccl_intra_id), {sizeof(ncclUniqueId)},
+                         device(kCPU).dtype(kUInt8));
     nccl_intra_id_tensor = (backend_is_nccl) ? nccl_intra_id_tensor.cuda() : nccl_intra_id_tensor;
     {
-      c10d::BroadcastOptions bcast_opts;
+      BroadcastOptions bcast_opts;
       bcast_opts.rootRank = 0;
-      std::vector<at::Tensor> bcast_tensors = {nccl_intra_id_tensor};
+      std::vector<Tensor> bcast_tensors = {nccl_intra_id_tensor};
       auto work = torch_pgs["intra"]->broadcast(bcast_tensors, bcast_opts);
       work->wait();
     }
@@ -155,24 +155,24 @@ void CommOverlapHelper::ub_allgather(void *globaldata, size_t globalbytes, void 
              "with valid process groups!");
 
   auto localtensor =
-      torch::from_blob(localdata, {static_cast<int64_t>(localbytes / sizeof(uint8_t))},
-                       at::device(torch::kCPU).dtype(torch::kUInt8));
+      from_blob(localdata, {static_cast<int64_t>(localbytes / sizeof(uint8_t))},
+                       device(kCPU).dtype(kUInt8));
   auto localtmp = (backend_is_nccl) ? localtensor.cuda() : localtensor;
   auto globaltensor =
-      torch::from_blob(globaldata, {static_cast<int64_t>(globalbytes / sizeof(uint8_t))},
-                       at::device(torch::kCPU).dtype(torch::kUInt8));
+      from_blob(globaldata, {static_cast<int64_t>(globalbytes / sizeof(uint8_t))},
+                       device(kCPU).dtype(kUInt8));
   auto globaltmp = (backend_is_nccl) ? globaltensor.cuda() : globaltensor;
 
-  std::vector<std::vector<torch::Tensor>> globalchunks = {
+  std::vector<std::vector<Tensor>> globalchunks = {
       globaltmp.chunk(torch_pgs[group]->getSize())};
-  std::vector<torch::Tensor> localchunk = {localtmp};
+  std::vector<Tensor> localchunk = {localtmp};
   auto work = torch_pgs[group]->allgather(globalchunks, localchunk);
   work->wait();
 
   if (backend_is_nccl) {
     globaltensor.copy_(globaltmp.cpu());
-    globaltmp = torch::Tensor();
-    localtmp = torch::Tensor();
+    globaltmp = Tensor();
+    localtmp = Tensor();
   }
 #else
   NVTE_ERROR("Internal TE error: CommOverlapHelper::ub_allgather is a no-op when TE is compiled ",
@@ -213,7 +213,7 @@ CommOverlapHelper::NcclCommSharedPtr CommOverlapHelper::get_nccl_comm(std::strin
  * CommOverlap
  **************************************************************************************************/
 
-CommOverlap::CommOverlap(const std::vector<size_t> &buffer_shape, at::ScalarType buffer_dtype,
+CommOverlap::CommOverlap(const std::vector<size_t> &buffer_shape, ScalarType buffer_dtype,
                          CommOverlapHelper *helper, int tp_size, int num_splits,
                          int num_max_streams, int comm_cga_size, int gemm_priority,
                          int comm_priority, int num_comm_sm, bool set_sm_margin, bool atomic_gemm,
@@ -279,7 +279,7 @@ void cublasmp_capture_warmup(te::CommOverlapCore *core, int tp_size, te::CommOve
   B_tw.set_rowwise_data(b_ptr, te::DType::kBFloat16, b_shape);
   D_tw.set_rowwise_data(d_ptr, te::DType::kBFloat16, d_shape);
 
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  cudaStream_t stream = getCurrentCUDAStream();
   if (comm_type == te::CommOverlapType::AG) {
     if (core->is_atomic_gemm()) {
       core->atomic_gemm_overlap_ag(
@@ -311,7 +311,7 @@ void cublasmp_capture_warmup(te::CommOverlapCore *core, int tp_size, te::CommOve
 
 CommOverlap::CommOverlap(CommOverlapHelper *helper, int tp_rank, int tp_size,
                          te::CommOverlapType comm_type, const std::vector<size_t> &buffer_shape,
-                         at::ScalarType buffer_dtype, int num_comm_sm, bool atomic_gemm)
+                         ScalarType buffer_dtype, int num_comm_sm, bool atomic_gemm)
     : te::CommOverlapBase(helper->get_nccl_comm("intra").get(), tp_rank, tp_size, num_comm_sm,
                           atomic_gemm),
       _nccl_comm(helper->get_nccl_comm("intra")) {
@@ -324,7 +324,7 @@ CommOverlap::CommOverlap(CommOverlapHelper *helper, int tp_rank, int tp_size,
 /*
 ** Helper function to copy input to _ubuf
 */
-void CommOverlap::copy_into_buffer(const at::Tensor &input, bool local_chunk) {
+void CommOverlap::copy_into_buffer(const Tensor &input, bool local_chunk) {
   const auto &input_ = input.contiguous();
 
   // Check element size
@@ -354,14 +354,14 @@ void CommOverlap::copy_into_buffer(const at::Tensor &input, bool local_chunk) {
   }
 
   // Copy data
-  auto stream_main = at::cuda::getCurrentCUDAStream();
+  auto stream_main = getCurrentCUDAStream();
   NVTE_CHECK_CUDA(cudaEventRecord(_start_d2dcopy, (cudaStream_t)stream_main));
   NVTE_CHECK_CUDA(cudaStreamWaitEvent((cudaStream_t)_stream_comm, _start_d2dcopy, 0));
   NVTE_CHECK_CUDA(cudaMemcpyAsync(dst_ptr, src_ptr, input_size * element_size,
                                   cudaMemcpyDeviceToDevice, (cudaStream_t)_stream_comm));
 }
 
-at::Tensor CommOverlap::get_buffer(bool local_chunk, std::optional<std::vector<int64_t>> shape) {
+Tensor CommOverlap::get_buffer(bool local_chunk, std::optional<std::vector<int64_t>> shape) {
   // Check buffer shape
   const size_t ubuf_size = _ubuf.numel();
   if (shape) {
@@ -393,20 +393,20 @@ at::Tensor CommOverlap::get_buffer(bool local_chunk, std::optional<std::vector<i
 
   // Construct PyTorch tensor
   const auto dtype = transformer_engine::pytorch::GetATenDType(_ubuf.dtype());
-  return torch::from_blob(ubuf_ptr, *shape, at::dtype(dtype).device(torch::kCUDA));
+  return from_blob(ubuf_ptr, *shape, dtype(dtype).device(kCUDA));
 }
 
-std::pair<at::Stream, at::Stream> CommOverlap::get_communication_stream() {
+std::pair<Stream, Stream> CommOverlap::get_communication_stream() {
   // Return the same stream for both send and recv
-  return {at::cuda::getStreamFromExternal(_stream_comm, at::cuda::current_device()),
-          at::cuda::getStreamFromExternal(_stream_comm, at::cuda::current_device())};
+  return {getStreamFromExternal(_stream_comm, current_device()),
+          getStreamFromExternal(_stream_comm, current_device())};
 }
 
 /***************************************************************************************************
  * CommOverlapP2P
  **************************************************************************************************/
 
-CommOverlapP2P::CommOverlapP2P(const std::vector<size_t> &buffer_shape, at::ScalarType buffer_dtype,
+CommOverlapP2P::CommOverlapP2P(const std::vector<size_t> &buffer_shape, ScalarType buffer_dtype,
                                CommOverlapHelper *helper, int tp_size,
                                te::CommOverlapType comm_type, int num_max_streams,
                                int comm_cga_size, int gemm_priority, int comm_priority,
@@ -422,7 +422,7 @@ CommOverlapP2P::CommOverlapP2P(const std::vector<size_t> &buffer_shape, at::Scal
 
 CommOverlapP2P::CommOverlapP2P(CommOverlapHelper *helper, int tp_rank, int tp_size,
                                te::CommOverlapType comm_type,
-                               const std::vector<size_t> &buffer_shape, at::ScalarType buffer_dtype,
+                               const std::vector<size_t> &buffer_shape, ScalarType buffer_dtype,
                                int num_comm_sm, bool atomic_gemm)
     : te::CommOverlapP2PBase(helper->get_nccl_comm("intra").get(), tp_rank, tp_size, num_comm_sm,
                              atomic_gemm),
@@ -435,7 +435,7 @@ CommOverlapP2P::CommOverlapP2P(CommOverlapHelper *helper, int tp_rank, int tp_si
 /*
 ** Copy input to _ubufs[0]
 */
-void CommOverlapP2P::copy_into_buffer(const at::Tensor &input, bool local_chunk) {
+void CommOverlapP2P::copy_into_buffer(const Tensor &input, bool local_chunk) {
   const auto &input_ = input.contiguous();
 
   // Check element size
@@ -466,10 +466,10 @@ void CommOverlapP2P::copy_into_buffer(const at::Tensor &input, bool local_chunk)
   // Copy data
   NVTE_CHECK_CUDA(cudaMemcpyAsync(dst_ptr, src_ptr, input_size * element_size,
                                   cudaMemcpyDeviceToDevice,
-                                  (cudaStream_t)at::cuda::getCurrentCUDAStream()));
+                                  (cudaStream_t)getCurrentCUDAStream()));
 }
 
-at::Tensor CommOverlapP2P::get_buffer(bool local_chunk, std::optional<std::vector<int64_t>> shape) {
+Tensor CommOverlapP2P::get_buffer(bool local_chunk, std::optional<std::vector<int64_t>> shape) {
   // Check buffer shape
   if (shape) {
     const size_t requested_size = transformer_engine::pytorch::product(*shape);
@@ -496,17 +496,17 @@ at::Tensor CommOverlapP2P::get_buffer(bool local_chunk, std::optional<std::vecto
 
   // Construct PyTorch tensor
   const auto dtype = transformer_engine::pytorch::GetATenDType(_ubuf.dtype());
-  return torch::from_blob(ubuf_ptr, *shape, at::dtype(dtype).device(torch::kCUDA));
+  return from_blob(ubuf_ptr, *shape, dtype(dtype).device(kCUDA));
 }
 
-std::pair<at::Stream, at::Stream> CommOverlapP2P::get_communication_stream() {
-  return {at::cuda::getStreamFromExternal(_stream_send[0], at::cuda::current_device()),
-          at::cuda::getStreamFromExternal(_stream_recv, at::cuda::current_device())};
+std::pair<Stream, Stream> CommOverlapP2P::get_communication_stream() {
+  return {getStreamFromExternal(_stream_send[0], current_device()),
+          getStreamFromExternal(_stream_recv, current_device())};
 }
 
 void transformer_engine::pytorch::bulk_overlap_ag_with_external_gemm(
-    CommOverlap &allgather_communicator, at::Stream send_stream, at::Stream recv_stream) {
-  auto main_stream = at::cuda::getCurrentCUDAStream();
-  allgather_communicator.bulk_overlap_external_ag(at::cuda::CUDAStream(send_stream),
-                                                  at::cuda::CUDAStream(recv_stream), main_stream);
+    CommOverlap &allgather_communicator, Stream send_stream, Stream recv_stream) {
+  auto main_stream = getCurrentCUDAStream();
+  allgather_communicator.bulk_overlap_external_ag(CUDAStream(send_stream),
+                                                  CUDAStream(recv_stream), main_stream);
 }

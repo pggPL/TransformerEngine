@@ -6,8 +6,6 @@
 
 // Experimental helpers for the fused grouped MLP.
 
-#include <ATen/cuda/CUDAContext.h>
-
 #include <string>
 #include <tuple>
 #include <utility>
@@ -20,9 +18,9 @@ namespace transformer_engine {
 namespace pytorch {
 namespace grouped_mlp_experimental {
 
-std::tuple<at::Tensor, at::Tensor, at::Tensor> swizzle_scales_and_pack_ptrs_for_discrete_weights(
-    const std::vector<at::Tensor> &data_tensors, const std::vector<at::Tensor> &scale_tensors,
-    const std::string &swizzle_type_str, const c10::Device &device) {
+std::tuple<Tensor, Tensor, Tensor> swizzle_scales_and_pack_ptrs_for_discrete_weights(
+    const std::vector<Tensor> &data_tensors, const std::vector<Tensor> &scale_tensors,
+    const std::string &swizzle_type_str, const Device &device) {
   const size_t num_tensors = data_tensors.size();
   NVTE_CHECK(scale_tensors.size() == num_tensors,
              "Expected data_tensors and scale_tensors to have matching sizes, but got ",
@@ -44,13 +42,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> swizzle_scales_and_pack_ptrs_for_
 
   // Trivial case: no tensors. Return empty tensors.
   if (num_tensors == 0) {
-    auto empty_ptrs = at::empty({0}, at::TensorOptions().dtype(at::kLong).device(device));
-    auto empty_scales = at::empty({0}, at::TensorOptions().dtype(at::kByte).device(device));
+    auto empty_ptrs = empty({0}, TensorOptions().dtype(kLong).device(device));
+    auto empty_scales = empty({0}, TensorOptions().dtype(kByte).device(device));
     return {empty_ptrs, empty_ptrs.clone(), std::move(empty_scales)};
   }
 
   // CUDA stream
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = getCurrentCUDAStream();
 
   // Tensor properties
   NVTEScalingMode scaling_mode;
@@ -101,8 +99,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> swizzle_scales_and_pack_ptrs_for_
   // Allocate single buffer for swizzled scales. Uses a uniform stride since
   // all tensors share the same scale shape.
   const size_t swizzled_scales_stride = roundup(scale_bytes, 16);  // Align to 16 bytes
-  auto swizzled_scales = at::empty({static_cast<int64_t>(swizzled_scales_stride * num_tensors)},
-                                   at::TensorOptions().dtype(at::kByte).device(device));
+  auto swizzled_scales = empty({static_cast<int64_t>(swizzled_scales_stride * num_tensors)},
+                                   TensorOptions().dtype(kByte).device(device));
   uint8_t *swizzled_scales_dptr = reinterpret_cast<uint8_t *>(swizzled_scales.data_ptr());
 
   // Allocate input/output NVTETensors as a single batch. The first
@@ -141,8 +139,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> swizzle_scales_and_pack_ptrs_for_
     packed_ptrs_host[num_tensors + i] =
         reinterpret_cast<uintptr_t>(swizzled_scales_dptr + i * swizzled_scales_stride);
   }
-  auto packed_ptrs_device = at::empty({static_cast<int64_t>(2 * num_tensors)},
-                                      at::TensorOptions().dtype(at::kLong).device(device));
+  auto packed_ptrs_device = empty({static_cast<int64_t>(2 * num_tensors)},
+                                      TensorOptions().dtype(kLong).device(device));
   nvte_copy_host_to_device_via_kernel(packed_ptrs_host.data(), packed_ptrs_device.data_ptr(),
                                       2 * num_tensors * sizeof(uint64_t), stream);
 

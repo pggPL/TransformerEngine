@@ -44,7 +44,7 @@ bool is_empty_grouped_tensor_param(const NVTEBasicTensor &t) {
 
 }  // namespace
 
-std::tuple<std::optional<at::Tensor>, std::optional<at::Tensor>> swizzle_scales_for_gemm(
+std::tuple<std::optional<Tensor>, std::optional<Tensor>> swizzle_scales_for_gemm(
     transformer_engine::TensorWrapper &tensor, bool rowwise_usage, bool columnwise_usage) {
   // Return early if scale swizzling is not required
   const auto scaling_mode = tensor.scaling_mode();
@@ -66,10 +66,10 @@ std::tuple<std::optional<at::Tensor>, std::optional<at::Tensor>> swizzle_scales_
   }
 
   // CUDA stream
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = getCurrentCUDAStream();
 
   // Swizzle row-wise scales if needed
-  std::optional<at::Tensor> rowwise_scales_pyt;
+  std::optional<Tensor> rowwise_scales_pyt;
   if (rowwise_usage) {
     // Buffer for unswizzled scales
     const auto input_scales_nvte = tensor.get_rowwise_scale_inv();
@@ -102,7 +102,7 @@ std::tuple<std::optional<at::Tensor>, std::optional<at::Tensor>> swizzle_scales_
   }
 
   // Swizzle column-wise scales if needed
-  std::optional<at::Tensor> columnwise_scales_pyt;
+  std::optional<Tensor> columnwise_scales_pyt;
   if (columnwise_usage) {
     // Buffer for unswizzled scales
     const auto input_scales_nvte = tensor.get_columnwise_scale_inv();
@@ -143,7 +143,7 @@ std::tuple<std::optional<at::Tensor>, std::optional<at::Tensor>> swizzle_scales_
 
 namespace {
 
-std::optional<at::Tensor> multi_tensor_swizzle_scales_for_gemm_impl(
+std::optional<Tensor> multi_tensor_swizzle_scales_for_gemm_impl(
     std::vector<transformer_engine::TensorWrapper> &tensors, bool rowwise_usage,
     bool columnwise_usage, bool check_scale_inv_shapes) {
   // Checks and trivial cases
@@ -260,10 +260,10 @@ std::optional<at::Tensor> multi_tensor_swizzle_scales_for_gemm_impl(
   NVTE_SCOPED_GIL_RELEASE({
     if (check_scale_inv_shapes) {
       nvte_multi_tensor_swizzle_scaling_factors(inputs_nvte, outputs_nvte, n_swizzle,
-                                                at::cuda::getCurrentCUDAStream());
+                                                getCurrentCUDAStream());
     } else {
       nvte_multi_tensor_swizzle_scaling_factors_unchecked(inputs_nvte, outputs_nvte, n_swizzle,
-                                                          at::cuda::getCurrentCUDAStream());
+                                                          getCurrentCUDAStream());
     }
   });
 
@@ -286,21 +286,21 @@ std::optional<at::Tensor> multi_tensor_swizzle_scales_for_gemm_impl(
 
 }  // anonymous namespace
 
-std::optional<at::Tensor> multi_tensor_swizzle_scales_for_gemm(
+std::optional<Tensor> multi_tensor_swizzle_scales_for_gemm(
     std::vector<transformer_engine::TensorWrapper> &tensors, bool rowwise_usage,
     bool columnwise_usage) {
   return multi_tensor_swizzle_scales_for_gemm_impl(tensors, rowwise_usage, columnwise_usage,
                                                    /*check_scale_inv_shapes=*/true);
 }
 
-std::optional<at::Tensor> multi_tensor_swizzle_scales_for_gemm_unchecked(
+std::optional<Tensor> multi_tensor_swizzle_scales_for_gemm_unchecked(
     std::vector<transformer_engine::TensorWrapper> &tensors, bool rowwise_usage,
     bool columnwise_usage) {
   return multi_tensor_swizzle_scales_for_gemm_impl(tensors, rowwise_usage, columnwise_usage,
                                                    /*check_scale_inv_shapes=*/false);
 }
 
-at::Tensor convert_block_scaling_to_mxfp8_tensor(transformer_engine::TensorWrapper &input,
+Tensor convert_block_scaling_to_mxfp8_tensor(transformer_engine::TensorWrapper &input,
                                                  bool rowwise) {
   // Check input tensor
   const NVTEScalingMode scaling_mode = input.scaling_mode();
@@ -330,7 +330,7 @@ at::Tensor convert_block_scaling_to_mxfp8_tensor(transformer_engine::TensorWrapp
   const size_t swizzled_scale_inv_first_dim = ceildiv(data_flat_first_dim, 128) * 128;
   const size_t swizzled_scale_inv_last_dim = ceildiv(data_flat_last_dim, 128) * 4;
   // Allocate memory for swizzled mxfp8 scaling factors
-  at::Tensor swizzled_scale_inv =
+  Tensor swizzled_scale_inv =
       allocateSpace(std::vector<size_t>{swizzled_scale_inv_first_dim, swizzled_scale_inv_last_dim},
                     transformer_engine::DType::kByte, false);
   // Set rowwise scaling factors on output
@@ -346,7 +346,7 @@ at::Tensor convert_block_scaling_to_mxfp8_tensor(transformer_engine::TensorWrapp
   // Convert scaling factors from FP8 block scaling GEMM_READY format to mxfp8 swizzled format
   NVTE_SCOPED_GIL_RELEASE({
     nvte_swizzle_block_scaling_to_mxfp8_scaling_factors(input_cu.data(), output_cu.data(),
-                                                        at::cuda::getCurrentCUDAStream());
+                                                        getCurrentCUDAStream());
   });
 
   // Set the input tensor to be the converted mxfp8 tensor and return the swizzled scaling factor
@@ -373,8 +373,8 @@ std::optional<SwizzledGroupedScales> maybe_swizzle_grouped_tensor(GroupedTensorW
     return std::nullopt;
   }
 
-  std::optional<at::Tensor> rowwise_scales_pyt;
-  std::optional<at::Tensor> columnwise_scales_pyt;
+  std::optional<Tensor> rowwise_scales_pyt;
+  std::optional<Tensor> columnwise_scales_pyt;
 
   GroupedTensorWrapper swizzle_input(input.num_tensors(), input.logical_shape(),
                                      input.scaling_mode());
@@ -441,7 +441,7 @@ std::optional<SwizzledGroupedScales> maybe_swizzle_grouped_tensor(GroupedTensorW
 
   NVTE_SCOPED_GIL_RELEASE({
     nvte_swizzle_grouped_scaling_factors(swizzle_input.data(), swizzle_output.data(),
-                                         at::cuda::getCurrentCUDAStream());
+                                         getCurrentCUDAStream());
   });
 
   if (swizzle_rowwise) {

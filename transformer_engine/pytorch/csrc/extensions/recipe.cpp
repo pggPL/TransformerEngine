@@ -4,9 +4,6 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#include <ATen/ATen.h>
-#include <ATen/cuda/CUDAContext.h>
-
 #include <string>
 
 #include "../extensions.h"
@@ -14,11 +11,11 @@
 
 namespace transformer_engine::pytorch {
 
-void compute_amax(const at::Tensor& tensor, at::Tensor& amax) {
+void compute_amax(const Tensor& tensor, Tensor& amax) {
   auto input_tensor = tensor.contiguous();
   const TensorWrapper& te_input = makeTransformerEngineTensor(input_tensor);
 
-  TORCH_CHECK(amax.scalar_type() == at::kFloat, "amax must be a float tensor");
+  TORCH_CHECK(amax.scalar_type() == kFloat, "amax must be a float tensor");
   TORCH_CHECK(amax.numel() == 1, "amax must have exactly one element");
   auto* amax_ptr = amax.data_ptr<float>();
   TensorWrapper fake_te_output(
@@ -26,12 +23,12 @@ void compute_amax(const at::Tensor& tensor, at::Tensor& amax) {
       DType::kFloat32,  // It doesn't matter because we only compute amax.
       amax_ptr);
 
-  nvte_compute_amax(te_input.data(), fake_te_output.data(), at::cuda::getCurrentCUDAStream());
+  nvte_compute_amax(te_input.data(), fake_te_output.data(), getCurrentCUDAStream());
 }
 
-void fused_amax_and_scale_update_after_reduction(const at::Tensor& amax_reduction_buffer,
-                                                 std::vector<at::Tensor> amax_histories,
-                                                 std::vector<at::Tensor> scales,
+void fused_amax_and_scale_update_after_reduction(const Tensor& amax_reduction_buffer,
+                                                 std::vector<Tensor> amax_histories,
+                                                 std::vector<Tensor> scales,
                                                  const std::string& amax_compute_algo,
                                                  DType fp8_dtype, float margin) {
   size_t num_tensors = amax_histories.size();
@@ -58,7 +55,7 @@ void fused_amax_and_scale_update_after_reduction(const at::Tensor& amax_reductio
       makeTransformerEngineTensor(amax_reduction_buffer).data(),
       std::vector<NVTETensor>(te_amax_histories.begin(), te_amax_histories.end()),
       std::vector<NVTETensor>(te_scales.begin(), te_scales.end()), amax_compute_algo.c_str(),
-      static_cast<NVTEDType>(fp8_dtype), margin, at::cuda::getCurrentCUDAStream());
+      static_cast<NVTEDType>(fp8_dtype), margin, getCurrentCUDAStream());
 }
 
 }  // namespace transformer_engine::pytorch

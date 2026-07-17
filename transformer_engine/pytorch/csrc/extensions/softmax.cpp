@@ -8,10 +8,10 @@
 
 namespace transformer_engine::pytorch {
 
-at::Tensor scaled_softmax_forward(at::Tensor input, float scale_factor) {
+Tensor scaled_softmax_forward(Tensor input, float scale_factor) {
   AT_ASSERTM(input.dim() == 4, "expected 4D tensor");
-  AT_ASSERTM((input.scalar_type() == at::ScalarType::Half) ||
-                 (input.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((input.scalar_type() == ScalarType::Half) ||
+                 (input.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
 
   const int batches = input.size(0);
@@ -26,18 +26,18 @@ at::Tensor scaled_softmax_forward(at::Tensor input, float scale_factor) {
   // Output
   auto act_options = input.options().requires_grad(false);
   auto softmax_results =
-      torch::empty({batches, attn_heads, query_seq_len, key_seq_len}, act_options);
+      empty({batches, attn_heads, query_seq_len, key_seq_len}, act_options);
 
   auto input_cu = makeTransformerEngineTensor(input);
   auto softmax_results_cu = makeTransformerEngineTensor(softmax_results);
 
   nvte_scaled_softmax_forward(input_cu.data(), softmax_results_cu.data(), scale_factor,
-                              at::cuda::getCurrentCUDAStream());
+                              getCurrentCUDAStream());
 
   return softmax_results;
 }
 
-at::Tensor scaled_softmax_backward(at::Tensor output_grad_, at::Tensor softmax_results_,
+Tensor scaled_softmax_backward(Tensor output_grad_, Tensor softmax_results_,
                                    float scale_factor) {
   auto output_grads = output_grad_.contiguous();
   auto softmax_results = softmax_results_.contiguous();
@@ -45,11 +45,11 @@ at::Tensor scaled_softmax_backward(at::Tensor output_grad_, at::Tensor softmax_r
   AT_ASSERTM(output_grads.dim() == 4, "expected 4D tensor");
   AT_ASSERTM(softmax_results.dim() == 4, "expected 4D tensor");
 
-  AT_ASSERTM((output_grads.scalar_type() == at::ScalarType::Half) ||
-                 (output_grads.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((output_grads.scalar_type() == ScalarType::Half) ||
+                 (output_grads.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
-  AT_ASSERTM((softmax_results.scalar_type() == at::ScalarType::Half) ||
-                 (softmax_results.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((softmax_results.scalar_type() == ScalarType::Half) ||
+                 (softmax_results.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
 
   auto output_grads_cu = makeTransformerEngineTensor(output_grads);
@@ -58,15 +58,15 @@ at::Tensor scaled_softmax_backward(at::Tensor output_grad_, at::Tensor softmax_r
   // Produce gradients in place.
   nvte_scaled_softmax_backward(output_grads_cu.data(), softmax_results_cu.data(),
                                output_grads_cu.data(), scale_factor,
-                               at::cuda::getCurrentCUDAStream());
+                               getCurrentCUDAStream());
 
   return output_grads;
 }
 
-at::Tensor scaled_masked_softmax_forward(at::Tensor input, at::Tensor mask, float scale_factor) {
+Tensor scaled_masked_softmax_forward(Tensor input, Tensor mask, float scale_factor) {
   AT_ASSERTM(input.dim() == 4, "expected 4D tensor");
-  AT_ASSERTM((input.scalar_type() == at::ScalarType::Half) ||
-                 (input.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((input.scalar_type() == ScalarType::Half) ||
+                 (input.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
   AT_ASSERTM(mask.dim() == 4, "expected 4D tensor");
   if (!input.is_contiguous()) input = input.contiguous();
@@ -88,19 +88,19 @@ at::Tensor scaled_masked_softmax_forward(at::Tensor input, at::Tensor mask, floa
 
   auto act_options = input.options().requires_grad(false);
   auto softmax_results =
-      torch::empty({batches, attn_heads, query_seq_len, key_seq_len}, act_options);
+      empty({batches, attn_heads, query_seq_len, key_seq_len}, act_options);
 
   auto input_cu = makeTransformerEngineTensor(input);
   auto mask_cu = makeTransformerEngineTensor(mask);
   auto softmax_results_cu = makeTransformerEngineTensor(softmax_results);
 
   nvte_scaled_masked_softmax_forward(input_cu.data(), mask_cu.data(), softmax_results_cu.data(),
-                                     scale_factor, at::cuda::getCurrentCUDAStream());
+                                     scale_factor, getCurrentCUDAStream());
 
   return softmax_results;
 }
 
-at::Tensor scaled_masked_softmax_backward(at::Tensor output_grad_, at::Tensor softmax_results_,
+Tensor scaled_masked_softmax_backward(Tensor output_grad_, Tensor softmax_results_,
                                           float scale_factor) {
   auto output_grads = output_grad_.contiguous();
   auto softmax_results = softmax_results_.contiguous();
@@ -108,11 +108,11 @@ at::Tensor scaled_masked_softmax_backward(at::Tensor output_grad_, at::Tensor so
   AT_ASSERTM(output_grads.dim() == 4, "expected 3D tensor");
   AT_ASSERTM(softmax_results.dim() == 4, "expected 3D tensor");
 
-  AT_ASSERTM((output_grads.scalar_type() == at::ScalarType::Half) ||
-                 (output_grads.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((output_grads.scalar_type() == ScalarType::Half) ||
+                 (output_grads.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
-  AT_ASSERTM((softmax_results.scalar_type() == at::ScalarType::Half) ||
-                 (softmax_results.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((softmax_results.scalar_type() == ScalarType::Half) ||
+                 (softmax_results.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
 
   auto output_grads_cu = makeTransformerEngineTensor(output_grads);
@@ -121,15 +121,15 @@ at::Tensor scaled_masked_softmax_backward(at::Tensor output_grad_, at::Tensor so
   // Produce gradients in place.
   nvte_scaled_softmax_backward(output_grads_cu.data(), softmax_results_cu.data(),
                                output_grads_cu.data(), scale_factor,
-                               at::cuda::getCurrentCUDAStream());
+                               getCurrentCUDAStream());
 
   return output_grads;
 }
 
-at::Tensor scaled_upper_triang_masked_softmax_forward(at::Tensor input, float scale_factor) {
+Tensor scaled_upper_triang_masked_softmax_forward(Tensor input, float scale_factor) {
   AT_ASSERTM(input.dim() == 3, "expected 3D tensor");
-  AT_ASSERTM((input.scalar_type() == at::ScalarType::Half) ||
-                 (input.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((input.scalar_type() == ScalarType::Half) ||
+                 (input.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
 
   const int attn_batches = input.size(0);
@@ -138,19 +138,19 @@ at::Tensor scaled_upper_triang_masked_softmax_forward(at::Tensor input, float sc
 
   // Output
   auto act_options = input.options().requires_grad(false);
-  auto softmax_results = torch::empty({attn_batches, seq_len, seq_len}, act_options);
+  auto softmax_results = empty({attn_batches, seq_len, seq_len}, act_options);
 
   auto input_cu = makeTransformerEngineTensor(input);
   auto softmax_results_cu = makeTransformerEngineTensor(softmax_results);
 
   nvte_scaled_upper_triang_masked_softmax_forward(input_cu.data(), softmax_results_cu.data(),
-                                                  scale_factor, at::cuda::getCurrentCUDAStream());
+                                                  scale_factor, getCurrentCUDAStream());
 
   return softmax_results;
 }
 
-at::Tensor scaled_upper_triang_masked_softmax_backward(at::Tensor output_grads_,
-                                                       at::Tensor softmax_results_,
+Tensor scaled_upper_triang_masked_softmax_backward(Tensor output_grads_,
+                                                       Tensor softmax_results_,
                                                        float scale_factor) {
   auto output_grads = output_grads_.contiguous();
   auto softmax_results = softmax_results_.contiguous();
@@ -158,11 +158,11 @@ at::Tensor scaled_upper_triang_masked_softmax_backward(at::Tensor output_grads_,
   AT_ASSERTM(output_grads.dim() == 3, "expected 3D tensor");
   AT_ASSERTM(softmax_results.dim() == 3, "expected 3D tensor");
 
-  AT_ASSERTM((output_grads.scalar_type() == at::ScalarType::Half) ||
-                 (output_grads.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((output_grads.scalar_type() == ScalarType::Half) ||
+                 (output_grads.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
-  AT_ASSERTM((softmax_results.scalar_type() == at::ScalarType::Half) ||
-                 (softmax_results.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((softmax_results.scalar_type() == ScalarType::Half) ||
+                 (softmax_results.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
 
   TORCH_CHECK(output_grads.size(1) == output_grads.size(2));
@@ -173,15 +173,15 @@ at::Tensor scaled_upper_triang_masked_softmax_backward(at::Tensor output_grads_,
   // Produce gradients in place.
   nvte_scaled_upper_triang_masked_softmax_backward(
       output_grads_cu.data(), softmax_results_cu.data(), output_grads_cu.data(), scale_factor,
-      at::cuda::getCurrentCUDAStream());
+      getCurrentCUDAStream());
 
   return output_grads;
 }
 
-at::Tensor scaled_aligned_causal_masked_softmax_forward(at::Tensor input, float scale_factor) {
+Tensor scaled_aligned_causal_masked_softmax_forward(Tensor input, float scale_factor) {
   AT_ASSERTM(input.dim() == 4, "expected 4D tensor");
-  AT_ASSERTM((input.scalar_type() == at::ScalarType::Half) ||
-                 (input.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((input.scalar_type() == ScalarType::Half) ||
+                 (input.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
 
   const int batches = input.size(0);
@@ -196,19 +196,19 @@ at::Tensor scaled_aligned_causal_masked_softmax_forward(at::Tensor input, float 
   // Output
   auto act_options = input.options().requires_grad(false);
   auto softmax_results =
-      torch::empty({batches, attn_heads, query_seq_len, key_seq_len}, act_options);
+      empty({batches, attn_heads, query_seq_len, key_seq_len}, act_options);
 
   auto input_cu = makeTransformerEngineTensor(input);
   auto softmax_results_cu = makeTransformerEngineTensor(softmax_results);
 
   nvte_scaled_aligned_causal_masked_softmax_forward(input_cu.data(), softmax_results_cu.data(),
-                                                    scale_factor, at::cuda::getCurrentCUDAStream());
+                                                    scale_factor, getCurrentCUDAStream());
 
   return softmax_results;
 }
 
-at::Tensor scaled_aligned_causal_masked_softmax_backward(at::Tensor output_grad_,
-                                                         at::Tensor softmax_results_,
+Tensor scaled_aligned_causal_masked_softmax_backward(Tensor output_grad_,
+                                                         Tensor softmax_results_,
                                                          float scale_factor) {
   auto output_grads = output_grad_.contiguous();
   auto softmax_results = softmax_results_.contiguous();
@@ -216,11 +216,11 @@ at::Tensor scaled_aligned_causal_masked_softmax_backward(at::Tensor output_grad_
   AT_ASSERTM(output_grads.dim() == 4, "expected 4D tensor");
   AT_ASSERTM(softmax_results.dim() == 4, "expected 4D tensor");
 
-  AT_ASSERTM((output_grads.scalar_type() == at::ScalarType::Half) ||
-                 (output_grads.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((output_grads.scalar_type() == ScalarType::Half) ||
+                 (output_grads.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
-  AT_ASSERTM((softmax_results.scalar_type() == at::ScalarType::Half) ||
-                 (softmax_results.scalar_type() == at::ScalarType::BFloat16),
+  AT_ASSERTM((softmax_results.scalar_type() == ScalarType::Half) ||
+                 (softmax_results.scalar_type() == ScalarType::BFloat16),
              "Only fp16 and bf16 are supported");
 
   auto output_grads_cu = makeTransformerEngineTensor(output_grads);
@@ -229,7 +229,7 @@ at::Tensor scaled_aligned_causal_masked_softmax_backward(at::Tensor output_grad_
   // Produce gradients in place.
   nvte_scaled_aligned_causal_masked_softmax_backward(
       output_grads_cu.data(), softmax_results_cu.data(), output_grads_cu.data(), scale_factor,
-      at::cuda::getCurrentCUDAStream());
+      getCurrentCUDAStream());
 
   return output_grads;
 }

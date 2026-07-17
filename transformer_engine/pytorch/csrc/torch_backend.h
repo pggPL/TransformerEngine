@@ -82,23 +82,76 @@ using Tensor = torch::stable::Tensor;
 
 #else
 
-using Tensor = at::Tensor;
-using ScalarType = at::ScalarType;
-using Device = at::Device;
+// --- Types -----------------------------------------------------------------
+using Tensor = at::Tensor;               // also torch::Tensor
+using ScalarType = at::ScalarType;       // also c10::ScalarType
+using Device = at::Device;               // also c10::Device
 using Stream = at::Stream;
-using TensorOptions = at::TensorOptions;
+using TensorOptions = at::TensorOptions;  // also torch::TensorOptions
 using IntArrayRef = c10::IntArrayRef;
 template <typename T>
 using ArrayRef = c10::ArrayRef<T>;
 template <typename T>
 using IntrusivePtr = c10::intrusive_ptr<T>;
+using Generator = at::Generator;
+using CustomClassHolder = torch::CustomClassHolder;
 
-// Distributed process group (python: torch.distributed.ProcessGroup).
+// Distributed process group (python: torch.distributed.ProcessGroup) and the
+// collective option structs used for amax reduction.
 using ProcessGroup = c10d::ProcessGroup;
+using ReduceOp = c10d::ReduceOp;
+using c10d::AllreduceCoalescedOptions;
+using c10d::AllreduceOptions;
+using c10d::BroadcastOptions;
 
-// CUDA RNG interop.
+// CUDA interop.
 using PhiloxCudaState = at::PhiloxCudaState;
 using CUDAGeneratorImpl = at::CUDAGeneratorImpl;
+using CUDAStream = at::cuda::CUDAStream;
+using CUDAGuard = at::cuda::CUDAGuard;
+
+// --- dtype / device constants (torch-free spellings) -----------------------
+// RHS keeps the original torch spelling on purpose (this is the boundary).
+inline constexpr auto kCUDA = at::kCUDA;
+inline constexpr auto kCPU = at::kCPU;
+inline constexpr auto kByte = at::kByte;
+inline constexpr auto kUInt8 = torch::kUInt8;
+inline constexpr auto kInt8 = torch::kInt8;
+inline constexpr auto kInt32 = torch::kInt32;
+inline constexpr auto kInt64 = torch::kInt64;
+inline constexpr auto kLong = at::kLong;
+inline constexpr auto kFloat = at::kFloat;
+inline constexpr auto kFloat32 = torch::kFloat32;
+inline constexpr auto kHalf = at::kHalf;
+inline constexpr auto kBFloat16 = at::kBFloat16;
+inline constexpr auto kBool = at::kBool;
+inline constexpr auto kFloat8_e4m3fn = at::kFloat8_e4m3fn;
+inline constexpr auto kFloat8_e5m2 = at::kFloat8_e5m2;
+
+// --- Factories / ops re-exported with identical semantics ------------------
+// (using-declarations bring every overload; behaviour is unchanged.)
+using at::CUDA;
+using at::device;
+using at::dtype;
+using at::empty;
+using at::empty_like;
+using at::from_blob;
+using at::get_generator_or_default;
+using at::reciprocal;
+using at::sum_out;
+using at::zeros;
+using c10::elementSize;
+using torch::range;
+
+// --- CUDA helpers ----------------------------------------------------------
+using at::cuda::current_device;
+using at::cuda::getCurrentCUDAStream;
+using at::cuda::getCurrentDeviceProperties;
+using at::cuda::getStreamFromExternal;
+using at::cuda::detail::getDefaultCUDAGenerator;
+
+// --- torch.Tensor indexing (Slice/None/TensorIndex) ------------------------
+namespace indexing = torch::indexing;
 
 #endif
 
@@ -124,13 +177,6 @@ transformer_engine::DType GetTransformerEngineDType(ScalarType t);
  *  \param zero_init  If true, zero-initialize; otherwise leave uninitialized.
  */
 Tensor new_cuda_tensor(const std::vector<int64_t>& shape, ScalarType dtype, bool zero_init);
-
-// ===========================================================================
-// CUDA stream interop -- the only place that names at::cuda::getCurrentCUDAStream.
-// ===========================================================================
-
-/*! \brief Current CUDA stream for the active device, as a raw ``cudaStream_t``. */
-cudaStream_t getCurrentCUDAStream();
 
 }  // namespace transformer_engine::pytorch
 

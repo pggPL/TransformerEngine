@@ -76,6 +76,4 @@ Tensor new_cuda_tensor(const std::vector<int64_t>& shape, ScalarType dtype, bool
   return at::empty(ar_shape, at::CUDA(dtype));
 }
 
-cudaStream_t getCurrentCUDAStream() { return at::cuda::getCurrentCUDAStream(); }
-
 }  // namespace transformer_engine::pytorch

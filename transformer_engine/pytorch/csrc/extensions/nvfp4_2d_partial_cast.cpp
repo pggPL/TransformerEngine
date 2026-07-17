@@ -8,13 +8,13 @@
 
 namespace transformer_engine::pytorch {
 
-void nvfp4_2d_compute_partial_amax(const at::Tensor& tensor, at::Tensor amax, size_t h, size_t w,
+void nvfp4_2d_compute_partial_amax(const Tensor& tensor, Tensor amax, size_t h, size_t w,
                                    size_t start_offset, size_t block_len) {
   TORCH_CHECK(block_len == 16, "Currently only block_len = 16 is supported for NVFP4 2D");
   TORCH_CHECK(amax.dim() == 2, "amax must be a 2D tensor");
-  TORCH_CHECK(amax.scalar_type() == at::ScalarType::Float, "amax must be a float tensor");
-  TORCH_CHECK(tensor.scalar_type() == at::ScalarType::Float ||
-                  tensor.scalar_type() == at::ScalarType::BFloat16,
+  TORCH_CHECK(amax.scalar_type() == ScalarType::Float, "amax must be a float tensor");
+  TORCH_CHECK(tensor.scalar_type() == ScalarType::Float ||
+                  tensor.scalar_type() == ScalarType::BFloat16,
               "tensor must be a float or bfloat16 tensor");
 
   const TensorWrapper tensor_cu = makeTransformerEngineTensor(tensor.contiguous());
@@ -22,20 +22,20 @@ void nvfp4_2d_compute_partial_amax(const at::Tensor& tensor, at::Tensor amax, si
 
   nvte_nvfp4_2d_compute_partial_amax(tensor_cu.data(), amax_cu.data(), h, w, amax.stride(0),
                                      amax.stride(1), start_offset, block_len,
-                                     at::cuda::getCurrentCUDAStream());
+                                     getCurrentCUDAStream());
 }
 
-void nvfp4_2d_partial_cast(const at::Tensor& inp, py::handle out, const at::Tensor& scale,
-                           const at::Tensor& global_scale, size_t h, size_t w, size_t start_offset,
+void nvfp4_2d_partial_cast(const Tensor& inp, py::handle out, const Tensor& scale,
+                           const Tensor& global_scale, size_t h, size_t w, size_t start_offset,
                            size_t block_len) {
   TORCH_CHECK(block_len == 16, "Currently only block_len = 16 is supported for NVFP4 2D");
   TORCH_CHECK(scale.dim() == 2, "scale must be a 2D tensor");
-  TORCH_CHECK(scale.scalar_type() == at::ScalarType::Float, "scale must be a float tensor");
+  TORCH_CHECK(scale.scalar_type() == ScalarType::Float, "scale must be a float tensor");
   TORCH_CHECK(global_scale.numel() == 1, "global_scale must be a scalar tensor");
-  TORCH_CHECK(global_scale.scalar_type() == at::ScalarType::Float,
+  TORCH_CHECK(global_scale.scalar_type() == ScalarType::Float,
               "global_scale must be a float tensor");
   TORCH_CHECK(
-      inp.scalar_type() == at::ScalarType::Float || inp.scalar_type() == at::ScalarType::BFloat16,
+      inp.scalar_type() == ScalarType::Float || inp.scalar_type() == ScalarType::BFloat16,
       "input must be a float or bfloat16 tensor");
 
   const TensorWrapper inp_cu = makeTransformerEngineTensor(inp.contiguous());
@@ -45,13 +45,13 @@ void nvfp4_2d_partial_cast(const at::Tensor& inp, py::handle out, const at::Tens
 
   nvte_nvfp4_2d_partial_cast(inp_cu.data(), out_cu.data(), scale_cu.data(), global_scale_cu.data(),
                              h, w, scale.stride(0), scale.stride(1), start_offset, block_len,
-                             at::cuda::getCurrentCUDAStream());
+                             getCurrentCUDAStream());
 }
 
-void nvfp4_multi_tensor_2d_partial_cast(std::vector<at::Tensor> inp_list,
-                                        std::vector<at::Tensor> out_list,
-                                        std::vector<at::Tensor> scale_list,
-                                        std::vector<at::Tensor> global_scale_list,
+void nvfp4_multi_tensor_2d_partial_cast(std::vector<Tensor> inp_list,
+                                        std::vector<Tensor> out_list,
+                                        std::vector<Tensor> scale_list,
+                                        std::vector<Tensor> global_scale_list,
                                         std::vector<int64_t> h_list, std::vector<int64_t> w_list,
                                         std::vector<int64_t> start_offset_list, int64_t block_len) {
   TORCH_CHECK(block_len == 16, "Currently only block_len = 16 is supported for NVFP4 2D");
@@ -68,7 +68,7 @@ void nvfp4_multi_tensor_2d_partial_cast(std::vector<at::Tensor> inp_list,
     return;
   }
 
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = getCurrentCUDAStream();
 
   for (size_t i = 0; i < num_tensors; ++i) {
     const auto& inp = inp_list[i];
@@ -80,12 +80,12 @@ void nvfp4_multi_tensor_2d_partial_cast(std::vector<at::Tensor> inp_list,
     const size_t start_offset = static_cast<size_t>(start_offset_list[i]);
 
     TORCH_CHECK(scale.dim() == 2, "scale must be a 2D tensor");
-    TORCH_CHECK(scale.scalar_type() == at::ScalarType::Float, "scale must be a float tensor");
+    TORCH_CHECK(scale.scalar_type() == ScalarType::Float, "scale must be a float tensor");
     TORCH_CHECK(global_scale.numel() == 1, "global_scale must be a scalar tensor");
-    TORCH_CHECK(global_scale.scalar_type() == at::ScalarType::Float,
+    TORCH_CHECK(global_scale.scalar_type() == ScalarType::Float,
                 "global_scale must be a float tensor");
     TORCH_CHECK(
-        inp.scalar_type() == at::ScalarType::Float || inp.scalar_type() == at::ScalarType::BFloat16,
+        inp.scalar_type() == ScalarType::Float || inp.scalar_type() == ScalarType::BFloat16,
         "input must be a float or bfloat16 tensor");
 
     const TensorWrapper inp_cu = makeTransformerEngineTensor(inp.contiguous());
@@ -100,8 +100,8 @@ void nvfp4_multi_tensor_2d_partial_cast(std::vector<at::Tensor> inp_list,
 }
 
 void nvfp4_multi_tensor_compute_partial_amax(
-    std::vector<at::Tensor> master_weight_list, std::vector<at::Tensor> partial_amax_list,
-    std::vector<at::Tensor> global_amax_list, std::vector<int64_t> h_list,
+    std::vector<Tensor> master_weight_list, std::vector<Tensor> partial_amax_list,
+    std::vector<Tensor> global_amax_list, std::vector<int64_t> h_list,
     std::vector<int64_t> w_list, std::vector<int64_t> start_offset_list, int64_t block_len) {
   TORCH_CHECK(block_len == 16, "Currently only block_len = 16 is supported for NVFP4 2D");
 
@@ -116,7 +116,7 @@ void nvfp4_multi_tensor_compute_partial_amax(
     return;
   }
 
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = getCurrentCUDAStream();
 
   for (size_t i = 0; i < num_tensors; ++i) {
     const auto& master_weight = master_weight_list[i];
@@ -127,12 +127,12 @@ void nvfp4_multi_tensor_compute_partial_amax(
     const size_t start_offset = static_cast<size_t>(start_offset_list[i]);
 
     TORCH_CHECK(partial_amax.dim() == 2, "partial_amax must be a 2D tensor");
-    TORCH_CHECK(partial_amax.scalar_type() == at::ScalarType::Float,
+    TORCH_CHECK(partial_amax.scalar_type() == ScalarType::Float,
                 "partial_amax must be a float tensor");
-    TORCH_CHECK(master_weight.scalar_type() == at::ScalarType::Float ||
-                    master_weight.scalar_type() == at::ScalarType::BFloat16,
+    TORCH_CHECK(master_weight.scalar_type() == ScalarType::Float ||
+                    master_weight.scalar_type() == ScalarType::BFloat16,
                 "master_weight must be a float or bfloat16 tensor");
-    TORCH_CHECK(global_amax.scalar_type() == at::ScalarType::Float,
+    TORCH_CHECK(global_amax.scalar_type() == ScalarType::Float,
                 "global_amax must be a float tensor");
     TORCH_CHECK(global_amax.numel() == 1, "global_amax must have exactly one element");
 

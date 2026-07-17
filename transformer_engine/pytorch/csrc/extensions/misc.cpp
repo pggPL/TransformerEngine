@@ -4,8 +4,6 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#include <ATen/cuda/CUDAContext.h>
-
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -20,27 +18,27 @@ size_t get_cublasLt_version() { return cublasLtGetVersion(); }
 
 size_t get_cudnn_version() { return cudnnGetVersion(); }
 
-at::Tensor splits_to_offsets(const at::Tensor &first_dims, int64_t logical_last_dim) {
+Tensor splits_to_offsets(const Tensor &first_dims, int64_t logical_last_dim) {
   NVTE_CHECK(first_dims.is_cuda(), "first_dims must be on CUDA.");
-  NVTE_CHECK(first_dims.scalar_type() == at::kLong, "first_dims must have dtype int64.");
+  NVTE_CHECK(first_dims.scalar_type() == kLong, "first_dims must have dtype int64.");
   NVTE_CHECK(first_dims.dim() == 1, "first_dims must be a 1D tensor.");
   NVTE_CHECK(logical_last_dim > 0, "logical_last_dim must be greater than 0.");
 
   auto first_dims_contiguous = first_dims.contiguous();
   const auto num_tensors = static_cast<size_t>(first_dims_contiguous.numel());
-  auto output = at::empty({static_cast<int64_t>(num_tensors) + 1},
-                          first_dims_contiguous.options().dtype(at::kLong));
+  auto output = empty({static_cast<int64_t>(num_tensors) + 1},
+                          first_dims_contiguous.options().dtype(kLong));
 
   nvte_splits_to_offsets(static_cast<const int64_t *>(first_dims_contiguous.data_ptr()),
                          static_cast<int64_t *>(output.data_ptr()), num_tensors, logical_last_dim,
-                         at::cuda::getCurrentCUDAStream());
+                         getCurrentCUDAStream());
 
   return output;
 }
 
-std::tuple<at::Tensor, std::vector<at::Tensor>> splits_to_offsets_multi(
-    const at::Tensor &split_sizes, const c10::Device &device, const std::vector<int64_t> &strides,
-    const std::vector<bool> &include_leading_zero, const std::vector<at::ScalarType> &dtypes,
+std::tuple<Tensor, std::vector<Tensor>> splits_to_offsets_multi(
+    const Tensor &split_sizes, const Device &device, const std::vector<int64_t> &strides,
+    const std::vector<bool> &include_leading_zero, const std::vector<ScalarType> &dtypes,
     bool bulk_allocate_outputs) {
   const size_t num_outputs = strides.size();
   const size_t num_splits = static_cast<size_t>(split_sizes.numel());
@@ -52,13 +50,13 @@ std::tuple<at::Tensor, std::vector<at::Tensor>> splits_to_offsets_multi(
   NVTE_CHECK(device.is_cuda(), "device must be CUDA, but got ", device.str(), ".");
 
   // Convert split sizes to int64 GPU tensor.
-  const at::Tensor split_sizes_i64 =
-      split_sizes.scalar_type() == at::kLong ? split_sizes : split_sizes.to(at::kLong);
-  const at::Tensor split_sizes_out =
+  const Tensor split_sizes_i64 =
+      split_sizes.scalar_type() == kLong ? split_sizes : split_sizes.to(kLong);
+  const Tensor split_sizes_out =
       split_sizes_i64.device() == device ? split_sizes_i64 : split_sizes_i64.to(device);
 
   // Allocate outputs.
-  std::vector<at::Tensor> outputs;
+  std::vector<Tensor> outputs;
   outputs.reserve(num_outputs);
   if (bulk_allocate_outputs) {
     std::vector<std::vector<size_t>> shapes;
@@ -75,7 +73,7 @@ std::tuple<at::Tensor, std::vector<at::Tensor>> splits_to_offsets_multi(
     for (size_t i = 0; i < num_outputs; ++i) {
       const int64_t length = static_cast<int64_t>(num_splits) + (include_leading_zero[i] ? 1 : 0);
       outputs.emplace_back(
-          at::empty({length}, at::TensorOptions().dtype(dtypes[i]).device(device)));
+          empty({length}, TensorOptions().dtype(dtypes[i]).device(device)));
     }
   }
 
@@ -95,14 +93,14 @@ std::tuple<at::Tensor, std::vector<at::Tensor>> splits_to_offsets_multi(
   NVTE_SCOPED_GIL_RELEASE({
     nvte_splits_to_offsets_multi(split_sizes_nvte.data(), outputs_nvte.data(), strides.data(),
                                  include_leading_zero_int.data(), num_outputs,
-                                 at::cuda::getCurrentCUDAStream());
+                                 getCurrentCUDAStream());
   });
 
   return {split_sizes_out, std::move(outputs)};
 }
 
-at::Tensor copy_data_ptrs_to_device(const std::vector<at::Tensor> &tensors,
-                                    const c10::Device &device) {
+Tensor copy_data_ptrs_to_device(const std::vector<Tensor> &tensors,
+                                    const Device &device) {
   // Collect data pointers
   std::vector<uint64_t> ptrs_host;
   ptrs_host.reserve(tensors.size());
@@ -111,13 +109,13 @@ at::Tensor copy_data_ptrs_to_device(const std::vector<at::Tensor> &tensors,
   }
 
   // Allocate device buffer
-  auto ptrs_device = at::empty({static_cast<int64_t>(tensors.size())},
-                               at::TensorOptions().dtype(at::kLong).device(device));
+  auto ptrs_device = empty({static_cast<int64_t>(tensors.size())},
+                               TensorOptions().dtype(kLong).device(device));
 
   // Load pointers on device
   nvte_copy_host_to_device_via_kernel(ptrs_host.data(), ptrs_device.data_ptr(),
                                       tensors.size() * sizeof(uint64_t),
-                                      at::cuda::getCurrentCUDAStream());
+                                      getCurrentCUDAStream());
 
   return ptrs_device;
 }

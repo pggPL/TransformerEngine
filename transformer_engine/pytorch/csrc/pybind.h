@@ -13,7 +13,6 @@
 #include <pybind11/detail/common.h>
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
-#include <torch/torch.h>
 
 #include "common.h"
 #include "transformer_engine/transformer_engine.h"
@@ -99,8 +98,8 @@ TensorWrapper NVTETensorFromNVFP4Tensor(py::handle tensor, Quantizer *quantizer)
 
 GroupedTensorWrapper GroupedTensorFromPyTorchGroupedTensor(py::handle tensor);
 
-inline bool IsFloatingPointType(at::ScalarType type) {
-  return type == at::kFloat || type == at::kHalf || type == at::kBFloat16;
+inline bool IsFloatingPointType(ScalarType type) {
+  return type == kFloat || type == kHalf || type == kBFloat16;
 }
 
 constexpr std::array custom_types_converters = {

@@ -9,7 +9,7 @@
 
 namespace transformer_engine::pytorch {
 
-void fused_multi_row_padding(at::Tensor input, at::Tensor output,
+void fused_multi_row_padding(Tensor input, Tensor output,
                              std::vector<size_t> input_row_list,
                              std::vector<size_t> padded_input_row_list) {
   NVTE_CHECK(input_row_list.size() == padded_input_row_list.size(),
@@ -77,11 +77,11 @@ void fused_multi_row_padding(at::Tensor input, at::Tensor output,
   // Launch TE kernel
   NVTE_SCOPED_GIL_RELEASE({
     nvte_multi_padding(nvte_input_list.size(), nvte_input_list.data(), nvte_output_list.data(),
-                       padded_num_rows_list.data(), at::cuda::getCurrentCUDAStream());
+                       padded_num_rows_list.data(), getCurrentCUDAStream());
   });
 }
 
-void fused_multi_row_unpadding(at::Tensor input, at::Tensor output,
+void fused_multi_row_unpadding(Tensor input, Tensor output,
                                std::vector<size_t> input_row_list,
                                std::vector<size_t> unpadded_input_row_list) {
   using namespace transformer_engine;
@@ -151,7 +151,7 @@ void fused_multi_row_unpadding(at::Tensor input, at::Tensor output,
 
   // Launch TE kernel
   nvte_multi_unpadding(nvte_input_list.size(), nvte_input_list.data(), nvte_output_list.data(),
-                       unpadded_num_rows_list.data(), at::cuda::getCurrentCUDAStream());
+                       unpadded_num_rows_list.data(), getCurrentCUDAStream());
 }
 
 }  // namespace transformer_engine::pytorch

@@ -488,7 +488,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("multi_tensor_transpose_to_bhsd",
         &transformer_engine::pytorch::multi_tensor_transpose_to_bhsd,
         "Permute multiple tensors from BSHD/SBHD to BHSD.", py::arg("inputs"),
-        py::arg("original_format"), py::arg("outputs") = std::vector<std::optional<at::Tensor>>{},
+        py::arg("original_format"), py::arg("outputs") = std::vector<std::optional<Tensor>>{},
         py::call_guard<py::gil_scoped_release>());
   m.def("multi_tensor_pad_last_dim", &transformer_engine::pytorch::multi_tensor_pad_last_dim,
         "Pad multiple tensors' last dimension to a common alignment.", py::arg("inputs"),
@@ -683,13 +683,13 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
   py::class_<CommOverlapHelper>(m, "CommOverlapHelper")
       .def(py::init<>(), py::call_guard<py::gil_scoped_release>())
-      .def(py::init<c10d::ProcessGroup *, std::optional<c10d::ProcessGroup *>>(),
+      .def(py::init<ProcessGroup *, std::optional<ProcessGroup *>>(),
            py::call_guard<py::gil_scoped_release>(), py::arg("world_group"),
            py::arg("intra_node_group") = py::none());
 
   py::class_<CommOverlap, std::shared_ptr<CommOverlap>, transformer_engine::CommOverlapBase,
              transformer_engine::CommOverlapCore>(m, "CommOverlap")
-      .def(py::init([](const std::vector<size_t> &buffer_shape, at::ScalarType buffer_dtype,
+      .def(py::init([](const std::vector<size_t> &buffer_shape, ScalarType buffer_dtype,
                        CommOverlapHelper *helper, int tp_size, bool use_cublasmp,
                        transformer_engine::CommOverlapType comm_type, int num_splits,
                        int num_max_streams, int comm_cga_size, int gemm_priority, int comm_priority,
@@ -714,7 +714,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
            py::arg("num_comm_sm") = 16, py::arg("set_sm_margin") = true,
            py::arg("atomic_gemm") = false, py::arg("rs_overlap_first_gemm") = false)
       .def("copy_into_buffer",
-           static_cast<void (CommOverlap::*)(const at::Tensor &, bool)>(
+           static_cast<void (CommOverlap::*)(const Tensor &, bool)>(
                &CommOverlap::copy_into_buffer),
            py::arg("input"), py::arg("local_chunk") = false)
       .def("get_buffer", &CommOverlap::get_buffer, py::arg("local_chunk") = false,
@@ -724,7 +724,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   py::class_<CommOverlapP2P, std::shared_ptr<CommOverlapP2P>,
              transformer_engine::CommOverlapP2PBase, transformer_engine::CommOverlapCore>(
       m, "CommOverlapP2P")
-      .def(py::init([](const std::vector<size_t> &buffer_shape, at::ScalarType buffer_dtype,
+      .def(py::init([](const std::vector<size_t> &buffer_shape, ScalarType buffer_dtype,
                        CommOverlapHelper *helper, int tp_size,
                        transformer_engine::CommOverlapType comm_type, int num_max_streams,
                        int comm_cga_size, int gemm_priority, int comm_priority, int num_comm_sm,
@@ -747,7 +747,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
            py::arg("set_sm_margin") = false, py::arg("atomic_gemm") = false,
            py::arg("use_ce") = true, py::arg("aggregate") = false, py::arg("use_cublasmp") = false)
       .def("copy_into_buffer",
-           static_cast<void (CommOverlapP2P::*)(const at::Tensor &, bool)>(
+           static_cast<void (CommOverlapP2P::*)(const Tensor &, bool)>(
                &CommOverlapP2P::copy_into_buffer),
            py::arg("input"), py::arg("local_chunk") = false)
       .def("get_buffer", &CommOverlapP2P::get_buffer, py::arg("local_chunk") = false,
