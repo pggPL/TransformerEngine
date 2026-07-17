@@ -24,13 +24,13 @@ std::tuple<Tensor, Tensor, std::vector<Tensor>> moe_permute_fwd(
     Tensor row_id = range(0, max_expanded_token_num - 1, 1, options);
     Tensor sorted_row_id =
         empty(max_expanded_token_num,
-                     dtype(kInt32).device(kCUDA).requires_grad(false));
+                     TensorOptions().dtype(kInt32).device(kCUDA).requires_grad(false));
 
     size_t temp_storage_bytes = 0;
     nvte_device_radix_sort_pairs(nullptr, &temp_storage_bytes, nullptr, nullptr, nullptr, nullptr,
                                  max_expanded_token_num);
     Tensor temp_storage = empty(
-        temp_storage_bytes, dtype(kInt8).device(kCUDA).requires_grad(false));
+        temp_storage_bytes, TensorOptions().dtype(kInt8).device(kCUDA).requires_grad(false));
 
     workspace.push_back(sorted_indices);
     workspace.push_back(row_id);
@@ -55,9 +55,9 @@ std::tuple<Tensor, Tensor, std::vector<Tensor>> moe_permute_fwd(
   num_out_tokens = (num_out_tokens > 0) ? num_out_tokens : num_tokens * topK;
   Tensor permuted_output =
       empty({num_out_tokens, num_cols},
-                   dtype(input.scalar_type()).device(kCUDA).requires_grad(false));
+                   TensorOptions().dtype(input.scalar_type()).device(kCUDA).requires_grad(false));
   Tensor row_id_map = empty(
-      {num_tokens * topK}, dtype(kInt32).device(kCUDA).requires_grad(false));
+      {num_tokens * topK}, TensorOptions().dtype(kInt32).device(kCUDA).requires_grad(false));
 
   auto stream = getCurrentCUDAStream().stream();
 
@@ -94,7 +94,7 @@ Tensor moe_unpermute_fwd(Tensor input, const DType dtype, Tensor row_id_map,
   // Output buffer alloc
   Tensor unpermuted_output =
       empty({num_tokens, num_cols},
-                   dtype(input.scalar_type()).device(kCUDA).requires_grad(false));
+                   TensorOptions().dtype(input.scalar_type()).device(kCUDA).requires_grad(false));
 
   auto stream = getCurrentCUDAStream().stream();
 
@@ -126,9 +126,9 @@ std::tuple<Tensor, Tensor> moe_unpermute_bwd(Tensor input_bwd, Tensor input_fwd,
   // Output buffer alloc
   Tensor act_grad =
       empty({input_fwd.size(0), num_cols},
-                   dtype(input_bwd.scalar_type()).device(kCUDA).requires_grad(false));
+                   TensorOptions().dtype(input_bwd.scalar_type()).device(kCUDA).requires_grad(false));
   Tensor prob_grad = empty(
-      {num_tokens, topK}, dtype(kFloat32).device(kCUDA).requires_grad(false));
+      {num_tokens, topK}, TensorOptions().dtype(kFloat32).device(kCUDA).requires_grad(false));
 
   auto stream = getCurrentCUDAStream().stream();
 

@@ -130,9 +130,10 @@ inline constexpr auto kFloat8_e5m2 = at::kFloat8_e5m2;
 
 // --- Factories / ops re-exported with identical semantics ------------------
 // (using-declarations bring every overload; behaviour is unchanged.)
+// NOTE: at::device()/at::dtype() are intentionally NOT re-exported -- their bare
+// names collide with the many locals/params called `device`/`dtype`. Build
+// TensorOptions explicitly instead: TensorOptions().device(...).dtype(...).
 using at::CUDA;
-using at::device;
-using at::dtype;
 using at::empty;
 using at::empty_like;
 using at::from_blob;

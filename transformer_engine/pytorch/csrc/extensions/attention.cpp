@@ -8,6 +8,10 @@
 #include "common.h"
 #include "pybind.h"
 
+// This TU has helpers in the anonymous (global) namespace; bring the facade
+// aliases/functions (Tensor, getCurrentCUDAStream, ...) into scope for them.
+using namespace transformer_engine::pytorch;  // NOLINT(build/namespaces)
+
 namespace {
 
 constexpr int block_size = 512;

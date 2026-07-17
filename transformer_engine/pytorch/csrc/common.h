@@ -542,9 +542,10 @@ string to_string(const vector<T>& vec) {
   return ret;
 }
 
-// Torch shape -> string
+// Torch shape -> string. Fully qualified because the ArrayRef alias lives in
+// transformer_engine::pytorch and this overload is in namespace std.
 template <typename T>
-string to_string(const ArrayRef<T>& vec) {
+string to_string(const transformer_engine::pytorch::ArrayRef<T>& vec) {
   string ret = "[";
   for (const auto& val : vec) {
     ret += to_string(val) + ",";

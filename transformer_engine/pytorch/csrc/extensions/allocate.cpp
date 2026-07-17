@@ -65,7 +65,7 @@ std::vector<Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &shapes
 
   // Allocate base buffer
   auto base_buffer = std::make_shared<Tensor>(
-      empty({static_cast<int64_t>(base_byte_size)}, device(*device).dtype(kUInt8)));
+      empty({static_cast<int64_t>(base_byte_size)}, TensorOptions().device(*device).dtype(kUInt8)));
   uint8_t *base_ptr = base_buffer->data_ptr<uint8_t>();
   base_ptr =
       reinterpret_cast<uint8_t *>(roundup(reinterpret_cast<uintptr_t>(base_ptr), base_alignment));
@@ -81,12 +81,12 @@ std::vector<Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &shapes
       // empty tensor. Passing a null pointer fails because it checks
       // that the pointer is on GPU. Passing a non-null pointer can
       // cause bugs in TE kernels.
-      out.emplace_back(empty(shape_int64, device(*device).dtype(dtypes[i])));
+      out.emplace_back(empty(shape_int64, TensorOptions().device(*device).dtype(dtypes[i])));
     } else {
       // Construct tensor with custom deleter to keep base buffer alive
       out.emplace_back(from_blob(
           base_ptr + offsets[i], shape_int64, [base_buffer](void *) {},
-          device(*device).dtype(dtypes[i])));
+          TensorOptions().device(*device).dtype(dtypes[i])));
     }
   }
   return out;

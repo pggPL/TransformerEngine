@@ -193,7 +193,7 @@ void group_quantize_nvfp4_impl(const GroupedTensorWrapper &grouped_input_tensor,
   }
 
   // RHT cast fusion
-  auto tile_scheduler_workspace_torch = empty({1}, device(kCUDA).dtype(kInt32));
+  auto tile_scheduler_workspace_torch = empty({1}, TensorOptions().device(kCUDA).dtype(kInt32));
   auto nvte_tile_scheduler_workspace = makeTransformerEngineTensor(tile_scheduler_workspace_torch);
 
   auto rht_matrix_nvte = makeTransformerEngineTensor(nvfp4_quantizer_cpp->rht_matrix);
@@ -1266,7 +1266,7 @@ void split_quantize_nvfp4_impl_with_rht_helper(const TensorWrapper &input,
   if (all_aligned_token_dim) {
     // allocate a tile scheduler workspace
     auto tile_scheduler_workspace_torch =
-        empty({1}, device(kCUDA).dtype(kInt32));
+        empty({1}, TensorOptions().device(kCUDA).dtype(kInt32));
     auto nvte_tile_scheduler_workspace =
         makeTransformerEngineTensor(tile_scheduler_workspace_torch);
     // call the fully-fused grouped kernel for rowwise quantization & colwise RHT quantization transpose

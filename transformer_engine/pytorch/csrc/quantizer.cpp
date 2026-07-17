@@ -2349,7 +2349,7 @@ void NVFP4Quantizer::quantize_impl(const TensorWrapper& input, TensorWrapper& ou
       return from_blob(
           data_ptr, std::vector<int64_t>{1},
           [](void*) {},  // deleter doing nothing since it doesn't own the data
-          device(kCUDA).dtype(kFloat32));
+          TensorOptions().device(kCUDA).dtype(kFloat32));
     };
     if (rowwise_usage) {
       amax_tensors.push_back(make_amax_tensor(out.get_amax().data_ptr));

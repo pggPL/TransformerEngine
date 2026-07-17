@@ -22,10 +22,10 @@ static Tensor allocate_routing_map(IntArrayRef leading_dims, int64_t num_experts
   std::vector<int64_t> shape(leading_dims.begin(), leading_dims.end());
   if (routing_map_format == NVTE_ROUTING_MAP_FORMAT_BITMAP_U8) {
     shape.push_back((num_experts + 7) / 8);
-    return empty(shape, dtype(kByte).device(kCUDA));
+    return empty(shape, TensorOptions().dtype(kByte).device(kCUDA));
   }
   shape.push_back(num_experts);
-  return empty(shape, dtype(kBool).device(kCUDA));
+  return empty(shape, TensorOptions().dtype(kBool).device(kCUDA));
 }
 
 std::tuple<Tensor, Tensor, Tensor> fused_topk_with_score_function_fwd(
@@ -60,10 +60,10 @@ std::tuple<Tensor, Tensor, Tensor> fused_topk_with_score_function_fwd(
   int num_groups_value = num_groups.has_value() ? num_groups.value() : -1;
   float scaling_factor_value = scaling_factor.has_value() ? scaling_factor.value() : 1.0f;
 
-  Tensor probs = empty(sizes, dtype(logits.scalar_type()).device(kCUDA));
+  Tensor probs = empty(sizes, TensorOptions().dtype(logits.scalar_type()).device(kCUDA));
   Tensor routing_map =
       allocate_routing_map(sizes.slice(0, sizes.size() - 1), num_experts, routing_map_format);
-  Tensor intermediate_output = empty(sizes, dtype(kFloat).device(kCUDA));
+  Tensor intermediate_output = empty(sizes, TensorOptions().dtype(kFloat).device(kCUDA));
 
   // 2D shape for the kernel (common-layer NVTE_CHECKs require {num_tokens, trailing_dim}).
   const std::vector<size_t> shape_2d = {static_cast<size_t>(num_tokens),
@@ -152,10 +152,10 @@ std::tuple<Tensor, Tensor, Tensor> fused_score_for_moe_aux_loss_fwd(
               "score_function must be softmax, sigmoid or sqrtsoftplus for router fusion");
   int score_function_value = score_function_map[score_function];
 
-  Tensor scores = empty(sizes, dtype(kFloat).device(kCUDA));
+  Tensor scores = empty(sizes, TensorOptions().dtype(kFloat).device(kCUDA));
   Tensor routing_map =
       allocate_routing_map(sizes.slice(0, sizes.size() - 1), num_experts, routing_map_format);
-  Tensor intermediate_output = empty(sizes, dtype(kFloat).device(kCUDA));
+  Tensor intermediate_output = empty(sizes, TensorOptions().dtype(kFloat).device(kCUDA));
 
   const std::vector<size_t> shape_2d = {static_cast<size_t>(num_tokens),
                                         static_cast<size_t>(num_experts)};
@@ -223,8 +223,8 @@ std::tuple<Tensor, Tensor> fused_moe_aux_loss_fwd(Tensor probs,
   TORCH_CHECK(num_experts > 0, "num_experts must be greater than 0");
 
   // Create the output tensor
-  Tensor aux_loss = empty({}, dtype(probs.scalar_type()).device(kCUDA));
-  Tensor Const_buf = empty({2}, dtype(kFloat).device(kCUDA));
+  Tensor aux_loss = empty({}, TensorOptions().dtype(probs.scalar_type()).device(kCUDA));
+  Tensor Const_buf = empty({2}, TensorOptions().dtype(kFloat).device(kCUDA));
 
   auto probs_cu = makeTransformerEngineTensor(probs);
   auto tokens_per_expert_cu = makeTransformerEngineTensor(tokens_per_expert);
@@ -242,7 +242,7 @@ Tensor fused_moe_aux_loss_bwd(Tensor Const_buf, Tensor tokens_per_expert, int nu
                                   int num_cols, Tensor grad_aux_loss) {
   // Create the output tensor
   Tensor grad_probs =
-      empty({num_rows, num_cols}, dtype(grad_aux_loss.scalar_type()).device(kCUDA));
+      empty({num_rows, num_cols}, TensorOptions().dtype(grad_aux_loss.scalar_type()).device(kCUDA));
 
   auto Const_buf_cu = makeTransformerEngineTensor(Const_buf);
   auto tokens_per_expert_cu = makeTransformerEngineTensor(tokens_per_expert);

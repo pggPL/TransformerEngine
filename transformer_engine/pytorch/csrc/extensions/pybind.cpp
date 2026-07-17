@@ -177,6 +177,10 @@ void bind_quantize_with_amax_extensions(py::module_ &m) {
 
 #include "common/util/pybind_helper.h"
 
+// PYBIND11_MODULE below is at global scope; bring the facade aliases
+// (Tensor, ProcessGroup, ...) into scope for the binding definitions.
+using namespace transformer_engine::pytorch;  // NOLINT(build/namespaces)
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   NVTE_DECLARE_COMMON_PYBIND11_HANDLES(m)
 

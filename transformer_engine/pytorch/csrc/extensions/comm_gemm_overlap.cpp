@@ -13,6 +13,9 @@
 #define HALF_BYTES 2
 #define UB_MAX_SM 32
 
+// CommOverlap methods and helpers in this TU live in the global namespace;
+// bring the facade aliases/functions into scope (also makes `indexing` visible).
+using namespace transformer_engine::pytorch;  // NOLINT(build/namespaces)
 using namespace indexing;
 using namespace std::placeholders;
 
@@ -79,7 +82,7 @@ CommOverlapHelper::CommOverlapHelper(ProcessGroup *world_group,
   }
   auto nccl_world_id_tensor =
       from_blob(reinterpret_cast<uint8_t *>(&nccl_world_id), {sizeof(ncclUniqueId)},
-                       device(kCPU).dtype(kUInt8));
+                       TensorOptions().device(kCPU).dtype(kUInt8));
   nccl_world_id_tensor = (backend_is_nccl) ? nccl_world_id_tensor.cuda() : nccl_world_id_tensor;
   {
     BroadcastOptions bcast_opts;
@@ -105,7 +108,7 @@ CommOverlapHelper::CommOverlapHelper(ProcessGroup *world_group,
     // Broadcast the intra-node unique ID from the local root to all local ranks
     auto nccl_intra_id_tensor =
         from_blob(reinterpret_cast<uint8_t *>(&nccl_intra_id), {sizeof(ncclUniqueId)},
-                         device(kCPU).dtype(kUInt8));
+                         TensorOptions().device(kCPU).dtype(kUInt8));
     nccl_intra_id_tensor = (backend_is_nccl) ? nccl_intra_id_tensor.cuda() : nccl_intra_id_tensor;
     {
       BroadcastOptions bcast_opts;
@@ -156,11 +159,11 @@ void CommOverlapHelper::ub_allgather(void *globaldata, size_t globalbytes, void 
 
   auto localtensor =
       from_blob(localdata, {static_cast<int64_t>(localbytes / sizeof(uint8_t))},
-                       device(kCPU).dtype(kUInt8));
+                       TensorOptions().device(kCPU).dtype(kUInt8));
   auto localtmp = (backend_is_nccl) ? localtensor.cuda() : localtensor;
   auto globaltensor =
       from_blob(globaldata, {static_cast<int64_t>(globalbytes / sizeof(uint8_t))},
-                       device(kCPU).dtype(kUInt8));
+                       TensorOptions().device(kCPU).dtype(kUInt8));
   auto globaltmp = (backend_is_nccl) ? globaltensor.cuda() : globaltensor;
 
   std::vector<std::vector<Tensor>> globalchunks = {
@@ -393,7 +396,7 @@ Tensor CommOverlap::get_buffer(bool local_chunk, std::optional<std::vector<int64
 
   // Construct PyTorch tensor
   const auto dtype = transformer_engine::pytorch::GetATenDType(_ubuf.dtype());
-  return from_blob(ubuf_ptr, *shape, dtype(dtype).device(kCUDA));
+  return from_blob(ubuf_ptr, *shape, TensorOptions().dtype(dtype).device(kCUDA));
 }
 
 std::pair<Stream, Stream> CommOverlap::get_communication_stream() {
@@ -496,7 +499,7 @@ Tensor CommOverlapP2P::get_buffer(bool local_chunk, std::optional<std::vector<in
 
   // Construct PyTorch tensor
   const auto dtype = transformer_engine::pytorch::GetATenDType(_ubuf.dtype());
-  return from_blob(ubuf_ptr, *shape, dtype(dtype).device(kCUDA));
+  return from_blob(ubuf_ptr, *shape, TensorOptions().dtype(dtype).device(kCUDA));
 }
 
 std::pair<Stream, Stream> CommOverlapP2P::get_communication_stream() {

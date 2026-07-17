@@ -685,7 +685,7 @@ void newton_schulz(int64_t ctx_ptr, int64_t m, int64_t n, Tensor x, int64_t num_
  * Comm+GEMM Overlap Wrappers
  **************************************************************************************************/
 
-class CommOverlapHelper : CustomClassHolder {
+class CommOverlapHelper : transformer_engine::pytorch::CustomClassHolder {
  public:
   // Shared ownership of an ncclComm_t. The deleter calls ncclCommDestroy when
   // the last reference (held by the helper and/or any CommOverlap consumers)
@@ -696,7 +696,7 @@ class CommOverlapHelper : CustomClassHolder {
  private:
   bool initialized{false};
   bool backend_is_nccl{false};
-  std::map<std::string, ProcessGroup *> torch_pgs;
+  std::map<std::string, transformer_engine::pytorch::ProcessGroup *> torch_pgs;
   std::map<std::string, NcclCommSharedPtr> nccl_comms;
 
  public:
@@ -709,8 +709,8 @@ class CommOverlapHelper : CustomClassHolder {
 
   CommOverlapHelper();
 
-  CommOverlapHelper(ProcessGroup *world_group,
-                    std::optional<ProcessGroup *> intra_node_group);
+  CommOverlapHelper(transformer_engine::pytorch::ProcessGroup *world_group,
+                    std::optional<transformer_engine::pytorch::ProcessGroup *> intra_node_group);
 
   ~CommOverlapHelper();
 
@@ -722,14 +722,14 @@ class CommOverlapHelper : CustomClassHolder {
   NcclCommSharedPtr get_nccl_comm(std::string comm_name);
 };
 
-class CommOverlap : CustomClassHolder, public transformer_engine::CommOverlapBase {
+class CommOverlap : transformer_engine::pytorch::CustomClassHolder, public transformer_engine::CommOverlapBase {
  private:
   // Keeps the cuBLASMp NCCL communicator alive for the lifetime of this
   // instance, independent of the CommOverlapHelper that created it.
   CommOverlapHelper::NcclCommSharedPtr _nccl_comm;
 
  public:
-  CommOverlap(const std::vector<size_t> &buffer_shape, ScalarType buffer_dtype,
+  CommOverlap(const std::vector<size_t> &buffer_shape, transformer_engine::pytorch::ScalarType buffer_dtype,
               CommOverlapHelper *helper, int tp_size, int num_splits = 4,
               int num_max_streams = NVTE_COMM_OVERLAP_MAX_STREAMS, int comm_cga_size = 2,
               int gemm_priority = 0, int comm_priority = 0, int num_comm_sm = 16,
@@ -742,29 +742,29 @@ class CommOverlap : CustomClassHolder, public transformer_engine::CommOverlapBas
   // (including those captured in CUDA graphs) avoid the unsafe lazy paths.
   CommOverlap(CommOverlapHelper *helper, int tp_rank, int tp_size,
               transformer_engine::CommOverlapType comm_type,
-              const std::vector<size_t> &buffer_shape, ScalarType buffer_dtype,
+              const std::vector<size_t> &buffer_shape, transformer_engine::pytorch::ScalarType buffer_dtype,
               int num_comm_sm = 16, bool atomic_gemm = false);
 
   ~CommOverlap() {}
 
   using transformer_engine::CommOverlapCore::copy_into_buffer;
-  void copy_into_buffer(const Tensor &input, bool local_chunk = false);
+  void copy_into_buffer(const transformer_engine::pytorch::Tensor &input, bool local_chunk = false);
 
-  Tensor get_buffer(bool local_chunk = false,
+  transformer_engine::pytorch::Tensor get_buffer(bool local_chunk = false,
                         std::optional<std::vector<int64_t>> shape = std::nullopt);
 
-  std::pair<Stream, Stream> get_communication_stream();
+  std::pair<transformer_engine::pytorch::Stream, transformer_engine::pytorch::Stream> get_communication_stream();
 
 };  // CommOverlap
 
-class CommOverlapP2P : CustomClassHolder, public transformer_engine::CommOverlapP2PBase {
+class CommOverlapP2P : transformer_engine::pytorch::CustomClassHolder, public transformer_engine::CommOverlapP2PBase {
  private:
   // Keeps the cuBLASMp NCCL communicator alive for the lifetime of this
   // instance, independent of the CommOverlapHelper that created it.
   CommOverlapHelper::NcclCommSharedPtr _nccl_comm;
 
  public:
-  CommOverlapP2P(const std::vector<size_t> &buffer_shape, ScalarType buffer_dtype,
+  CommOverlapP2P(const std::vector<size_t> &buffer_shape, transformer_engine::pytorch::ScalarType buffer_dtype,
                  CommOverlapHelper *helper, int tp_size,
                  transformer_engine::CommOverlapType comm_type,
                  int num_max_streams = NVTE_COMM_OVERLAP_MAX_STREAMS, int comm_cga_size = 1,
@@ -775,18 +775,18 @@ class CommOverlapP2P : CustomClassHolder, public transformer_engine::CommOverlap
   // cuBLASMp variant. See CommOverlap for the `comm_type`/buffer args.
   CommOverlapP2P(CommOverlapHelper *helper, int tp_rank, int tp_size,
                  transformer_engine::CommOverlapType comm_type,
-                 const std::vector<size_t> &buffer_shape, ScalarType buffer_dtype,
+                 const std::vector<size_t> &buffer_shape, transformer_engine::pytorch::ScalarType buffer_dtype,
                  int num_comm_sm = 1, bool atomic_gemm = false);
 
   ~CommOverlapP2P() {}
 
   using transformer_engine::CommOverlapP2PBase::copy_into_buffer;
-  void copy_into_buffer(const Tensor &input, bool local_chunk = false);
+  void copy_into_buffer(const transformer_engine::pytorch::Tensor &input, bool local_chunk = false);
 
-  Tensor get_buffer(bool local_chunk = false,
+  transformer_engine::pytorch::Tensor get_buffer(bool local_chunk = false,
                         std::optional<std::vector<int64_t>> shape = std::nullopt);
 
-  std::pair<Stream, Stream> get_communication_stream();
+  std::pair<transformer_engine::pytorch::Stream, transformer_engine::pytorch::Stream> get_communication_stream();
 
 };  // CommOverlapP2P
 

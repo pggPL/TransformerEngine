@@ -33,7 +33,7 @@ void init_nvshmem_backend(ProcessGroup *process_group) {
   auto datatensor =
       from_blob(reinterpret_cast<void *>(&id),
                        {static_cast<int64_t>(sizeof(nvshmemx_uniqueid_t) / sizeof(uint8_t))},
-                       device(kCPU).dtype(kUInt8));
+                       TensorOptions().device(kCPU).dtype(kUInt8));
   auto datatmp = (backend_is_nccl) ? datatensor.cuda() : datatensor;
 
   BroadcastOptions bcast_opts;
