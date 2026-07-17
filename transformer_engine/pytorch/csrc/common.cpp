@@ -40,7 +40,7 @@ std::array<size_t, 2> get_2d_dims(NVTEShape shape, bool transpose) {
   }
 }
 
-std::vector<size_t> getTensorShape(const at::Tensor& t) {
+std::vector<size_t> getTensorShape(const Tensor& t) {
   std::vector<size_t> shape;
   for (auto s : t.sizes()) {
     shape.push_back(s);
@@ -48,7 +48,7 @@ std::vector<size_t> getTensorShape(const at::Tensor& t) {
   return shape;
 }
 
-NVTEShape convertTorchShape(const c10::IntArrayRef torch_shape) {
+NVTEShape convertTorchShape(const IntArrayRef torch_shape) {
   NVTEShape ret;
   ret.ndim = torch_shape.size();
   constexpr int max_dimensions = sizeof(ret.data) / sizeof(size_t);
@@ -132,7 +132,7 @@ TensorWrapper makeTransformerEngineTensor(py::handle tensor, py::handle quantize
              "Unexpected quantization params type.");
 
   // Regular pyTorch tensor
-  at::Tensor torch_tensor = tensor.cast<at::Tensor>();
+  Tensor torch_tensor = tensor.cast<Tensor>();
 
   // #TODO (pgadzinski) - needed in attention for non-contiguous tensors.
   //if (!torch_tensor.is_contiguous()) {
@@ -156,7 +156,7 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
   return transformer_engine::TensorWrapper(data_ptr, shape, type);
 }
 
-transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor) {
+transformer_engine::TensorWrapper makeTransformerEngineTensor(Tensor tensor) {
   transformer_engine::DType dtype = GetTransformerEngineDType(tensor.scalar_type());
   std::vector<size_t> shape;
   for (auto s : tensor.sizes()) {
@@ -167,7 +167,7 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor)
 
 std::tuple<std::vector<transformer_engine::TensorWrapper>, std::vector<std::vector<NVTETensor>>,
            std::vector<NVTETensor*>, size_t, size_t>
-makeTransformerEngineTensorList(std::vector<std::vector<at::Tensor>> at_tensor_lists) {
+makeTransformerEngineTensorList(std::vector<std::vector<Tensor>> at_tensor_lists) {
   size_t num_lists = at_tensor_lists.size();
 
   NVTE_CHECK(num_lists > 0, "List of tensors is empty.");
@@ -238,18 +238,18 @@ transformer_engine::TensorWrapper makeTransformerEngineTensor(
   return ret;
 }
 
-transformer_engine::TensorWrapper makeTransformerEngineTensor(at::Tensor tensor, at::Tensor amax,
-                                                              const at::Tensor scale,
-                                                              at::Tensor scale_inv,
+transformer_engine::TensorWrapper makeTransformerEngineTensor(Tensor tensor, Tensor amax,
+                                                              const Tensor scale,
+                                                              Tensor scale_inv,
                                                               NVTEScalingMode scaling_mode) {
   transformer_engine::DType dtype = GetTransformerEngineDType(tensor.scalar_type());
 
   auto tensor_shape = getTensorShape(tensor);
   auto scale_inv_shape = getTensorShape(scale_inv);
 
-  NVTE_CHECK(amax.scalar_type() == at::kFloat);
-  NVTE_CHECK(scale.scalar_type() == at::kFloat);
-  NVTE_CHECK(scale_inv.scalar_type() == at::kFloat);
+  NVTE_CHECK(GetTransformerEngineDType(amax.scalar_type()) == DType::kFloat32);
+  NVTE_CHECK(GetTransformerEngineDType(scale.scalar_type()) == DType::kFloat32);
+  NVTE_CHECK(GetTransformerEngineDType(scale_inv.scalar_type()) == DType::kFloat32);
 
   return makeTransformerEngineTensor(tensor.data_ptr(), tensor_shape, dtype, amax.data_ptr(),
                                      scale.data_ptr(), scale_inv.data_ptr(), scale_inv_shape,
@@ -286,45 +286,37 @@ std::vector<size_t> nvte_shape_to_vector(const NVTEShape& nvte_shape) {
   return shape;
 }
 
-at::Tensor allocateSpace(const std::vector<size_t>& shape, const transformer_engine::DType type,
+Tensor allocateSpace(const std::vector<size_t>& shape, const transformer_engine::DType type,
                          bool init_to_zeros) {
   std::vector<int64_t> shape_int64(shape.begin(), shape.end());
-  c10::IntArrayRef ar_shape(shape_int64);
-  if (init_to_zeros) {
-    return at::zeros(ar_shape, at::CUDA(GetATenDType(type)));
-  } else {
-    return at::empty(ar_shape, at::CUDA(GetATenDType(type)));
-  }
+  return new_cuda_tensor(shape_int64, GetATenDType(type), init_to_zeros);
 }
 
-at::Tensor allocateSpace(const NVTEShape& shape, const transformer_engine::DType type,
+Tensor allocateSpace(const NVTEShape& shape, const transformer_engine::DType type,
                          bool init_to_zeros) {
   auto size = shape.ndim;
-  if (size == 2 && init_to_zeros) {
-    return at::zeros({static_cast<int64_t>(shape.data[0]), static_cast<int64_t>(shape.data[1])},
-                     at::CUDA(GetATenDType(type)));
-  } else if (size == 2) {
-    return at::empty({static_cast<int64_t>(shape.data[0]), static_cast<int64_t>(shape.data[1])},
-                     at::CUDA(GetATenDType(type)));
-  } else if (size == 1 && init_to_zeros) {
-    return at::zeros({static_cast<int64_t>(shape.data[0])}, at::CUDA(GetATenDType(type)));
+  if (size == 2) {
+    return new_cuda_tensor(
+        {static_cast<int64_t>(shape.data[0]), static_cast<int64_t>(shape.data[1])},
+        GetATenDType(type), init_to_zeros);
   } else if (size == 1) {
-    return at::empty({static_cast<int64_t>(shape.data[0])}, at::CUDA(GetATenDType(type)));
+    return new_cuda_tensor({static_cast<int64_t>(shape.data[0])}, GetATenDType(type),
+                           init_to_zeros);
   }
   NVTE_ERROR("Unsupported tensor allocation: ndim=", size, ", init_to_zeros=", init_to_zeros,
              ". Only 1D and 2D tensors are supported.");
 }
 
-at::Tensor allocateTorchTensor(int M, int N, transformer_engine::DType dtype) {
-  return at::empty({static_cast<int64_t>(M), static_cast<int64_t>(N)},
-                   at::CUDA(GetATenDType(dtype)));
+Tensor allocateTorchTensor(int M, int N, transformer_engine::DType dtype) {
+  return new_cuda_tensor({static_cast<int64_t>(M), static_cast<int64_t>(N)}, GetATenDType(dtype),
+                         /*zero_init=*/false);
 }
 
-at::Tensor allocateTorchTensor(int M, transformer_engine::DType dtype) {
-  return at::empty({static_cast<int64_t>(M)}, at::CUDA(GetATenDType(dtype)));
+Tensor allocateTorchTensor(int M, transformer_engine::DType dtype) {
+  return new_cuda_tensor({static_cast<int64_t>(M)}, GetATenDType(dtype), /*zero_init=*/false);
 }
 
-void* getDataPtr(at::Tensor tensor, int offset) {
+void* getDataPtr(Tensor tensor, int offset) {
   void* dptr = nullptr;
   if (tensor.numel() > 0) {
     dptr = tensor.data_ptr();
@@ -348,17 +340,17 @@ size_t roundup(size_t value, size_t multiple) {
 
 size_t ceildiv(size_t numer, size_t denom) { return (numer + denom - 1) / denom; }
 
-void philox_unpack(at::PhiloxCudaState arg, int64_t* rng_state_ptr) {
+void philox_unpack(PhiloxCudaState arg, int64_t* rng_state_ptr) {
   NVTE_SCOPED_GIL_RELEASE({
     nvte_extract_seed_and_offset(rng_state_ptr, arg.captured_, arg.seed_.ptr, arg.seed_.val,
                                  arg.offset_.ptr, arg.offset_.val, arg.offset_intragraph_,
-                                 at::cuda::getCurrentCUDAStream());
+                                 getCurrentCUDAStream());
   });
 }
 
 // extract PhiloxCudaState from CUDA random number generator
-at::PhiloxCudaState init_philox_state(at::CUDAGeneratorImpl* gen, size_t elts_per_thread) {
-  at::PhiloxCudaState philox_args;
+PhiloxCudaState init_philox_state(CUDAGeneratorImpl* gen, size_t elts_per_thread) {
+  PhiloxCudaState philox_args;
   std::lock_guard<std::mutex> lock(gen->mutex_);
   philox_args = gen->philox_cuda_state(elts_per_thread);
   return philox_args;

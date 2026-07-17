@@ -1,0 +1,43 @@
+# Files in transformer_engine/pytorch/csrc that still talk to the PyTorch ABI
+# (at::/c10::/torch::) directly instead of going through torch_backend.h.
+#
+# This list only shrinks: when a file is migrated to the torch_backend.h
+# facade, remove it here. The guard (check_torch_boundary.py) fails if a listed
+# file no longer touches the torch ABI (stale) or if an unlisted file starts to.
+#
+# Paths are relative to transformer_engine/pytorch/csrc/.
+
+extensions.h
+pybind.h
+util.h
+quantizer.cpp
+type_converters.cpp
+extensions/activation.cpp
+extensions/allocate.cpp
+extensions/apply_rope.cpp
+extensions/attention.cpp
+extensions/bias.cpp
+extensions/cast.cpp
+extensions/comm_gemm_overlap.cpp
+extensions/dropout.cpp
+extensions/fp8_partial_cast.cpp
+extensions/gemm.cpp
+extensions/grouped_mlp_experimental.cpp
+extensions/misc.cpp
+extensions/newton_schulz.cpp
+extensions/normalization.cpp
+extensions/nvfp4_2d_partial_cast.cpp
+extensions/nvshmem_comm.cpp
+extensions/padding.cpp
+extensions/permutation.cpp
+extensions/pybind.cpp
+extensions/recipe.cpp
+extensions/router.cpp
+extensions/softmax.cpp
+extensions/swizzle.cpp
+extensions/transpose.cpp
+extensions/multi_tensor/adam.cpp
+extensions/multi_tensor/compute_scale.cpp
+extensions/multi_tensor/l2norm.cpp
+extensions/multi_tensor/scale.cpp
+extensions/multi_tensor/sgd.cpp

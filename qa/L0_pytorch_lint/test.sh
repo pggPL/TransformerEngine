@@ -15,6 +15,8 @@ then
   echo "Checking C++ files"
   python3 -m cpplint --recursive --exclude=transformer_engine/common/include --exclude=transformer_engine/build_tools/build transformer_engine/common
   python3 -m cpplint --recursive transformer_engine/pytorch
+  echo "Checking TE<->PyTorch binary boundary"
+  python3 qa/L0_pytorch_lint/check_torch_boundary.py "$TE_PATH"
 fi
 if [ -z "${CPP_ONLY}" ]
 then
