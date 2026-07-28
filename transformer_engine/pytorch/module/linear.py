@@ -27,6 +27,7 @@ from .base import (
     is_ub_initialized,
     using_cublasmp_backend,
     quantize_weight,
+    _is_weight_workspace_valid,
     TransformerEngineBaseModule,
     _2X_ACC_FPROP,
     _2X_ACC_DGRAD,
@@ -71,7 +72,7 @@ from ..quantized_tensor import (
     prepare_for_saving,
     restore_from_func_ctx,
 )
-from ..dynamo import TensorProto, register_custom_op, is_value_opaque_quantizer
+from ..dynamo import TensorProto, to_tensor_proto, register_custom_op, is_value_opaque_quantizer
 from ..tensor.float8_tensor import Float8CurrentScalingQuantizer, Float8Quantizer
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ..tensor.utils import clear_columnwise_cache, is_custom
@@ -717,6 +718,8 @@ def _linear_forward_impl_fake(
     save_original_input = args.save_original_input
     if args.backward_override == "high_precision":
         save_original_input = True
+    elif args.backward_override == "dequantized":
+        save_original_input = False
 
     out_features, _ = weight.shape
     backward_needs_input = is_grad_enabled and args.weight_requires_grad
@@ -778,21 +781,26 @@ def _linear_forward_impl_fake(
             weightmat_is_storage = True
             weightmat_aliases_weight = True
         else:
-            weightmat = TensorProto(
-                shape=tuple(weight.shape),
-                dtype=activation_dtype,
-                quantizer=weight_quantizer,
-                device=weight.device,
-            )
             weightmat_is_storage = True
-            update_ws = args.is_first_microbatch is None or args.is_first_microbatch
-            if args.cache_weight and update_ws and args.weight_workspace is None:
-                new_weight_workspace = TensorProto(
+            workspace = args.weight_workspace
+            if workspace is not None and weight_quantizer is not None:
+                if not _is_weight_workspace_valid(workspace, weight_quantizer):
+                    workspace = None
+            if workspace is not None:
+                weightmat = to_tensor_proto(workspace)
+            else:
+                weightmat = TensorProto(
                     shape=tuple(weight.shape),
                     dtype=activation_dtype,
                     quantizer=weight_quantizer,
                     device=weight.device,
                 )
+                if args.cache_weight:
+                    # Persistent cache entries are wrappers, not bare storages.
+                    if weightmat.quantizer is not None:
+                        weightmat.quantizer.internal = False
+                    new_weight_workspace = weightmat
+            weightmat.update_usage(rowwise_usage=True)
     else:
         weightmat_aliases_weight = weight.dtype == activation_dtype
         weightmat = TensorProto(
@@ -814,7 +822,8 @@ def _linear_forward_impl_fake(
         shape=(out_leading, *tuple(inp.shape[1:-1]), out_features),
         dtype=activation_dtype,
         quantizer=output_quantizer,
-        requires_grad=is_grad_enabled and (args.input_requires_grad or args.weight_requires_grad),
+        requires_grad=is_grad_enabled
+        and (args.input_requires_grad or args.weight_requires_grad or args.bias_requires_grad),
         device=inp.device,
     )
 
