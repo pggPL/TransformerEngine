@@ -110,7 +110,6 @@ from ..quantized_tensor import (
     QuantizedTensor,
     QuantizedTensorStorage,
     Quantizer,
-    _STORAGE_REGISTRY,
     _quantized_tensor_passthrough_ops,
     prepare_for_saving,
 )
@@ -155,10 +154,10 @@ class OpaqueValueBundle:
     Wraps a ``{name: value}`` dict so many small non-Tensor args pass through a
     single custom-op input; registered as a torch.compile *value* opaque type
     (Dynamo specializes the graph on its contents). Allowed values: primitives
-    in :attr:`PRIMITIVE_TYPES` (incl. ``torch.Size``), ``enum.Enum``, any
-    registered value-opaque type (e.g. TE quantizers), plus nested tuples /
+    in :attr:`PRIMITIVE_TYPES` (incl. ``torch.Size``), ``enum.Enum``, classes,
+    any registered value-opaque type (e.g. TE quantizers), plus nested tuples /
     lists / dicts thereof (so a bundle can carry a ``__tensor_flatten__``
-    context verbatim).
+    context verbatim -- including its ``cls`` entry).
     """
 
     PRIMITIVE_TYPES: Tuple[type, ...] = (
@@ -178,6 +177,8 @@ class OpaqueValueBundle:
         if isinstance(value, cls.PRIMITIVE_TYPES):
             return True
         if isinstance(value, Enum):
+            return True
+        if isinstance(value, type):
             return True
         if _is_opaque_value_type(type(value)):
             return True
@@ -210,6 +211,10 @@ class OpaqueValueBundle:
         # ``EnumName.MEMBER`` (the Enum class is added to globals by ``_collect``).
         if isinstance(value, Enum):
             return f"{type(value).__name__}.{value.name}"
+        # Class objects (e.g. the flatten context's ``cls``) render by name; the
+        # class itself is added to globals by ``_collect``.
+        if isinstance(value, type):
+            return value.__name__
         if isinstance(value, dict):
             body = ", ".join(f"{k!r}: {cls._fmt_simple(v)}" for k, v in value.items())
             return f"{{{body}}}"
@@ -279,6 +284,9 @@ class OpaqueValueBundle:
                 return
             if isinstance(value, Enum):
                 globals_[type(value).__name__] = type(value)
+                return
+            if isinstance(value, type):
+                globals_[value.__name__] = value
                 return
             if isinstance(value, OpaqueValueBundle.PRIMITIVE_TYPES):
                 return
@@ -1258,7 +1266,15 @@ def _register_wrapper_op(
 def _all_quantized_tensor_subclasses() -> List[type]:
     """Return every imported ``QuantizedTensor`` wrapper subclass."""
     import transformer_engine.pytorch.tensor  # noqa: F401  pylint: disable=import-outside-toplevel,unused-import
-    return [cls for cls in _STORAGE_REGISTRY.values() if issubclass(cls, QuantizedTensor)]
+
+    found: List[type] = []
+    stack = list(QuantizedTensor.__subclasses__())
+    while stack:
+        cls = stack.pop()
+        if cls not in found:
+            found.append(cls)
+            stack.extend(cls.__subclasses__())
+    return found
 
 
 def register_custom_op(
