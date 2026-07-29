@@ -4,7 +4,7 @@
 
 """Linear API"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dataclass_replace
 from typing import Any, Callable, Dict, Optional, Tuple, Union, List
 from functools import reduce
 from operator import mul as multiply_op
@@ -27,7 +27,6 @@ from .base import (
     is_ub_initialized,
     using_cublasmp_backend,
     quantize_weight,
-    _is_weight_workspace_valid,
     TransformerEngineBaseModule,
     _2X_ACC_FPROP,
     _2X_ACC_DGRAD,
@@ -72,7 +71,7 @@ from ..quantized_tensor import (
     prepare_for_saving,
     restore_from_func_ctx,
 )
-from ..dynamo import TensorProto, to_tensor_proto, register_custom_op, is_value_opaque_quantizer
+from ..dynamo import TensorProto, register_custom_op, is_value_opaque_quantizer
 from ..tensor.float8_tensor import Float8CurrentScalingQuantizer, Float8Quantizer
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ..tensor.utils import clear_columnwise_cache, is_custom
@@ -782,12 +781,13 @@ def _linear_forward_impl_fake(
             weightmat_aliases_weight = True
         else:
             weightmat_is_storage = True
+            # ``_proto_view`` already turned this field into a ``TensorProto``, so
+            # the real ``_is_weight_workspace_valid`` cannot run here: it dispatches
+            # on storage types and would accept any proto unconditionally.
             workspace = args.weight_workspace
-            if workspace is not None and weight_quantizer is not None:
-                if not _is_weight_workspace_valid(workspace, weight_quantizer):
-                    workspace = None
             if workspace is not None:
-                weightmat = to_tensor_proto(workspace)
+                # Copy, so the ``update_usage`` below stays off the input proto.
+                weightmat = dataclass_replace(workspace)
             else:
                 weightmat = TensorProto(
                     shape=tuple(weight.shape),
