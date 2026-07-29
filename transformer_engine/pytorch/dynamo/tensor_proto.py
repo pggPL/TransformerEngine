@@ -150,7 +150,19 @@ def to_tensor_proto(tensor: Any) -> TensorProto:
     Works for plain ``torch.Tensor`` and for ``QuantizedTensorStorage`` /
     ``QuantizedTensor``. A *bare* storage exposes its (fake) dtype via
     ``_dtype`` rather than ``.dtype``.
+
+    Idempotent: a proto-view field (``_proto_view``) may be re-described by a
+    fake impl, and a ``TensorProto`` holds its quantizer as ``quantizer``, not
+    ``_quantizer`` -- rebuilding it blindly would silently drop it.
     """
+    if isinstance(tensor, TensorProto):
+        return TensorProto(
+            shape=tuple(tensor.shape),
+            dtype=tensor.dtype,
+            quantizer=tensor.quantizer,
+            requires_grad=tensor.requires_grad,
+            device=tensor.device,
+        )
     requires_grad = bool(getattr(tensor, "requires_grad", False))
     dtype = getattr(tensor, "dtype", None)
     if dtype is None:
