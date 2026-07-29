@@ -137,12 +137,49 @@ def _param_key(name):
     return name.split(".")[-1]
 
 
+def _no_checkpoint_activation_bytes(cfg, seq_size, itemsize):
+    """Activations LayerNormMLP saves for backward when checkpoint=False.
+
+    Per layer: ln_out and out (seq*hidden each), fc1_out and act_out
+    (seq*ffn_hidden each), mu and rsigma (seq each).
+    """
+    per_layer = 2 * seq_size * (cfg._ffn_hidden_size + cfg._hidden_size + 1)
+    return cfg._layers * per_layer * itemsize
+
+
+def _recomputed_activation_bytes(cfg, seq_size, itemsize):
+    """Activations checkpointing must free: fc1_out and act_out, per layer."""
+    return cfg._layers * 2 * seq_size * cfg._ffn_hidden_size * itemsize
+
+
+GRAD_KEYS = [
+    "layer_norm_weight",
+    "layer_norm_bias",
+    "fc1_weight",
+    "fc1_bias",
+    "fc2_weight",
+    "fc2_bias",
+]
+
+
 @pytest.mark.parametrize("size", config.keys())
 @pytest.mark.parametrize("seq_size", seq_sizes)
-def test_selective_activation_checkpoint(size, seq_size):
+def test_selective_activation_checkpoint(size, seq_size, record_property):
 
-    ln_model, sln_model = config[size].build()
-    data = torch.randn((seq_size, config[size]._hidden_size), device=device)
+    cfg = config[size]
+    itemsize = torch.empty((), dtype=torch.get_default_dtype()).element_size()
+    no_ckpt_bytes = _no_checkpoint_activation_bytes(cfg, seq_size, itemsize)
+
+    # Both models live in the same process, so budget the non-checkpointed peak twice.
+    free_bytes, _ = torch.cuda.mem_get_info(device)
+    if free_bytes < 2 * no_ckpt_bytes:
+        pytest.skip(
+            f"needs {2 * no_ckpt_bytes / 2**30:.1f} GiB free device memory, only"
+            f" {free_bytes / 2**30:.1f} GiB available"
+        )
+
+    ln_model, sln_model = cfg.build()
+    data = torch.randn((seq_size, cfg._hidden_size), device=device)
 
     _warmup(ln_model, data)
     ln_fwd_out, ln_fwd_time, ln_fwd_mem = _run_fwd(ln_model, data)
@@ -152,24 +189,28 @@ def test_selective_activation_checkpoint(size, seq_size):
     sln_fwd_out, sln_fwd_time, sln_fwd_mem = _run_fwd(sln_model, data)
     sln_grads, sln_bwd_time, sln_bwd_mem = _run_bwd(sln_model, sln_fwd_out)
 
-    assert ln_fwd_mem > 6 * sln_fwd_mem, (
-        "selective activation checkpointing does not reduce forward memory by 6X, only by"
-        f" {ln_fwd_mem/sln_fwd_mem}!"
-    )
-    assert ln_bwd_time < sln_bwd_time, (
-        "selective activation activation checkpointing backward pass is NOT slower than native!"
-        f" got Native LayerNormMLP Backward Time: {ln_bwd_time} ms and Selective Activation"
-        f" Checkpointed LayerNormMLP Backward Time: {sln_bwd_time} ms"
-    )
+    # Correctness first, so that a numerical regression is not masked by the
+    # memory check below.
     diff = _max_diff(ln_fwd_out, sln_fwd_out)
     assert diff == 0.0, f"outputs are not equal! maximum difference {diff}"
-    for key in [
-        "layer_norm_weight",
-        "layer_norm_bias",
-        "fc1_weight",
-        "fc1_bias",
-        "fc2_weight",
-        "fc2_bias",
-    ]:
+    for key in GRAD_KEYS:
         diff = _max_diff(ln_grads[key], sln_grads[key])
         assert diff == 0.0, f"gradients for {key} are not equal! maximum difference: {diff}"
+
+    # Checkpointing recomputes fc1_out and act_out, so it must free at least those.
+    expected_saving = _recomputed_activation_bytes(cfg, seq_size, itemsize)
+    saving = ln_fwd_mem - sln_fwd_mem
+    assert saving >= 0.95 * expected_saving, (
+        "selective activation checkpointing did not free the recomputed activations: saved"
+        f" {saving} B, expected at least {0.95 * expected_saving} B (ln_fwd_mem={ln_fwd_mem},"
+        f" sln_fwd_mem={sln_fwd_mem})"
+    )
+
+    # Checkpointing trades backward time for memory, but wall-clock is too noisy in
+    # CI to assert on - report it instead.
+    record_property("ln_fwd_ms", round(ln_fwd_time, 3))
+    record_property("sln_fwd_ms", round(sln_fwd_time, 3))
+    record_property("ln_bwd_ms", round(ln_bwd_time, 3))
+    record_property("sln_bwd_ms", round(sln_bwd_time, 3))
+    record_property("fwd_mem_ratio", round(ln_fwd_mem / sln_fwd_mem, 3))
+    record_property("bwd_mem_ratio", round(ln_bwd_mem / sln_bwd_mem, 3))
