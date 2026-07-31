@@ -85,7 +85,6 @@ the wrapper a pass-through (plain / bf16 calls go straight through).
 from __future__ import annotations
 import dataclasses
 import types as _types
-import warnings
 from enum import Enum
 from typing import (
     Any,
@@ -105,6 +104,7 @@ import torch
 
 from torch._prims_common import make_contiguous_strides_for
 
+from .quantizer_opaque import warn_compile_unsupported
 from .tensor_proto import TensorProto, to_tensor_proto
 from ..quantized_tensor import (
     QuantizedTensor,
@@ -309,7 +309,8 @@ try:
 
     register_opaque_type(OpaqueValueBundle, typ="value")
     _OPAQUE_VALUE_BUNDLE_TYPE_NAME: Optional[str] = get_opaque_type_name(OpaqueValueBundle)
-except Exception:  # pylint: disable=broad-exception-caught  # pragma: no cover - older torch without opaque_object
+except Exception as e:  # pylint: disable=broad-exception-caught  # pragma: no cover - older torch without opaque_object
+    warn_compile_unsupported(f"could not register OpaqueValueBundle as an opaque type ({e})")
     _is_opaque_value_type = None
     _is_opaque_reference_type = None
     _OPAQUE_VALUE_BUNDLE_TYPE_NAME = None
@@ -1362,11 +1363,8 @@ def register_custom_op(
             bwd_fake_impl=bwd_fake_impl,
         )
     except (ImportError, AttributeError, RuntimeError, TypeError) as e:
-        warnings.warn(
-            f"Could not register the torch.compile custom op '{op_name}' "
-            f"({type(e).__name__}: {e}); modules using it will fall back to eager "
-            "execution under torch.compile (a graph break, incompatible with "
-            "fullgraph=True)."
+        warn_compile_unsupported(
+            f"could not register the custom op '{op_name}' ({type(e).__name__}: {e})"
         )
         return None
 
