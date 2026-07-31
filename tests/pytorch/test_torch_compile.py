@@ -31,7 +31,7 @@ from transformer_engine.pytorch.quantization import QuantizerRole
 from transformer_engine.pytorch.ops.basic.basic_linear import BasicLinear
 from transformer_engine.pytorch.tensor.float8_tensor import Float8CurrentScalingQuantizer
 from transformer_engine.pytorch.tensor.nvfp4_tensor import NVFP4Quantizer
-from transformer_engine.pytorch.quantized_tensor import QuantizedTensor
+from transformer_engine.pytorch.quantized_tensor import QuantizedTensor, Quantizer
 from transformer_engine.pytorch.dynamo import TensorProto, to_tensor_proto
 from transformer_engine.pytorch import (
     is_fp8_available,
@@ -928,7 +928,7 @@ def _build_from_primitives(quantizer, shape, dtype, device="cpu"):
     ``__tensor_unflatten__`` -- i.e. exactly what ``TensorProto.create_tensor``
     does, but without going through :class:`TensorProto`.
     """
-    names = tuple(quantizer._describe_buffers(shape))  # pylint: disable=protected-access
+    names = tuple(quantizer.inner_tensor_specs(shape))
     ctx = quantizer.create_metadata(shape, dtype=dtype)
     buffers = quantizer.alloc_tensors(shape, device=device)
     inner = {name: buffers[name] for name in names}
@@ -975,7 +975,7 @@ def test_primitives_unflatten_compiles(factory, shape):
     """create_metadata + alloc_tensors + __tensor_unflatten__ compose and trace
     under ``fullgraph=True`` (CPU), without TensorProto."""
     q = factory()
-    names = tuple(q._describe_buffers(shape))  # pylint: disable=protected-access
+    names = tuple(q.inner_tensor_specs(shape))
 
     def fn(x):
         t = _build_from_primitives(q, shape, x.dtype, device=x.device)
@@ -996,7 +996,7 @@ def test_primitives_unflatten_compiles(factory, shape):
 def test_alloc_tensors_fake(factory, shape):
     """``alloc_tensors`` produces FakeTensors with the described shapes/dtypes."""
     q = factory()
-    bufs = q._describe_buffers(shape)  # pylint: disable=protected-access
+    bufs = q.inner_tensor_specs(shape)
     with FakeTensorMode():
         alloc = q.alloc_tensors(shape, device="cpu")
     assert set(alloc) == set(bufs)
@@ -1017,7 +1017,7 @@ def test_storage_flatten_unflatten_roundtrip(factory, shape):
     _skip_if_dequantize_unsupported(q)
 
     tensor = _build_from_primitives(q, shape, torch.bfloat16)
-    names = tuple(q._describe_buffers(shape))  # pylint: disable=protected-access
+    names = tuple(q.inner_tensor_specs(shape))
     # Fill buffers with deterministic data (empty() may contain NaNs) so the
     # round-trip can be checked by value via dequantize().
     for name in names:
@@ -1054,7 +1054,7 @@ def test_python_alloc_matches_cpp_make_empty(factory, shape, rowwise, columnwise
 
     Builds the same quantized tensor twice: via ``Quantizer.make_empty``
     (``tex.create_empty_quantized_tensor``, the C++ path) and via the Python
-    primitives ``_describe_buffers`` + ``create_metadata`` + ``alloc_tensors``
+    primitives ``inner_tensor_specs`` + ``create_metadata`` + ``alloc_tensors``
     + ``__tensor_unflatten__`` (exactly what ``TensorProto.create_tensor``
     does). Checks:
 
@@ -1190,8 +1190,8 @@ def test_tensor_proto_matches_primitives(factory, shape):
 
     # inner_names follows the storage's canonical __tensor_flatten__ order (the
     # order the real op flattens its outputs to), while create_inner_tensors
-    # matches the _describe_buffers geometry (a name->shape/dtype mapping).
-    bufs = q._describe_buffers(shape)  # pylint: disable=protected-access
+    # matches the inner_tensor_specs geometry (a name->shape/dtype mapping).
+    bufs = q.inner_tensor_specs(shape)
     direct = _build_from_primitives(q, shape, torch.bfloat16)
     names = tuple(direct.__tensor_flatten__()[0])
     assert set(names) == set(bufs)
@@ -1277,9 +1277,7 @@ def test_to_tensor_proto_quantized(factory, shape):
     assert proto.shape == tuple(shape)
     assert proto.dtype == torch.bfloat16
     # Same buffer layout as the original tensor.
-    assert proto.inner_names() == tuple(
-        q._describe_buffers(shape)
-    )  # pylint: disable=protected-access
+    assert proto.inner_names() == tuple(q.inner_tensor_specs(shape))
     # Rebuilding from the derived proto matches the original tensor's structure.
     assert _signature(proto.create_tensor(), proto.inner_names()) == _signature(
         tensor, proto.inner_names()
