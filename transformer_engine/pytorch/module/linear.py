@@ -362,7 +362,7 @@ def _linear_forward_impl(
 
     # Configure tensor-parallel communication
     tp_world_size = get_distributed_world_size(tp_group)
-    backward_needs_input = is_grad_enabled and weight.requires_grad
+    backward_needs_input = is_grad_enabled and args.weight_requires_grad
     with_input_all_gather_nccl = (
         parallel_mode == "column" and sequence_parallel and not ub_overlap_ag_fprop
     )
@@ -486,7 +486,7 @@ def _linear_forward_impl(
         # No need to set the quantizer states if weight is already quantized
         # for debug mode we create quantizer every iteration, thus we need to set the quantizer states
         if weight_quantizer is not None and (not isinstance(weight, QuantizedTensor) or debug):
-            columnwise_usage = is_grad_enabled and inp.requires_grad and not is_fsdp2
+            columnwise_usage = is_grad_enabled and args.input_requires_grad and not is_fsdp2
             if backward_override is not None:
                 columnwise_usage = False
             if not columnwise_usage:
