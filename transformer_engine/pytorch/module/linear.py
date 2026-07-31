@@ -781,9 +781,8 @@ def _linear_forward_impl_fake(
             weightmat_aliases_weight = True
         else:
             weightmat_is_storage = True
-            # ``_proto_view`` already turned this field into a ``TensorProto``, so
-            # the real ``_is_weight_workspace_valid`` cannot run here: it dispatches
-            # on storage types and would accept any proto unconditionally.
+            # No ``_is_weight_workspace_valid`` here: it dispatches on storage
+            # types and would accept any proto.
             workspace = args.weight_workspace
             if workspace is not None:
                 # Copy, so the ``update_usage`` below stays off the input proto.
