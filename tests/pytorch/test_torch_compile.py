@@ -1528,11 +1528,17 @@ def test_te_linear_dynamic_shapes():
         out_eager = model(inp_eager)
         out_eager.sum().backward()
         torch.testing.assert_close(
-            out.detach(), out_eager.detach(), atol=_EAGER_ATOL, rtol=_EAGER_RTOL,
+            out.detach(),
+            out_eager.detach(),
+            atol=_EAGER_ATOL,
+            rtol=_EAGER_RTOL,
             msg=f"forward mismatch at batch={batch}",
         )
         torch.testing.assert_close(
-            inp.grad, inp_eager.grad, atol=_EAGER_ATOL, rtol=_EAGER_RTOL,
+            inp.grad,
+            inp_eager.grad,
+            atol=_EAGER_ATOL,
+            rtol=_EAGER_RTOL,
             msg=f"dgrad mismatch at batch={batch}",
         )
 
@@ -1543,6 +1549,6 @@ def test_te_linear_dynamic_shapes():
 
     recompile_count_after = counters["stats"].get("recompile_reasons", 0)
     assert recompile_count_after == recompile_count_baseline, (
-        f"Unexpected recompilation(s) across different batch sizes: "
+        "Unexpected recompilation(s) across different batch sizes: "
         f"{recompile_count_after - recompile_count_baseline} recompile(s) detected"
     )
