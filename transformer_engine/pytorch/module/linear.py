@@ -783,8 +783,6 @@ def _linear_forward_impl_fake(
             weightmat_aliases_weight = True
         else:
             weightmat_is_storage = True
-            # No ``_is_weight_workspace_valid`` here: it dispatches on storage
-            # types and would accept any proto.
             workspace = args.weight_workspace
             if workspace is not None:
                 # Copy, so the ``update_usage`` below stays off the input proto.
