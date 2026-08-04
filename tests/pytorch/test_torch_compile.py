@@ -1488,13 +1488,9 @@ def test_te_linear_dynamic_shapes():
     Key correctness property: a graph compiled for batch=16 must produce
     numerically correct results for batch=32 without triggering a recompile.
 
-    This exercises two fixes for dynamic shapes:
-    1. ``_linear_setup_ctx`` no longer stores ``inp_shape`` in the value bundle
-       (torch.Size with SymInt dims is not hashable in OpaqueValueBundle).
-    2. ``_linear_backward_impl_fake`` derives dgrad shape from grad_output +
-       weight + SP config instead of relying on the stored ``inp_shape``.
-    3. ``_linear_backward`` reconstructs ``inp_shape`` on-the-fly from the same
-       tensor sources when it is None (compiled mode).
+    ``LinearBwdArgs.inp_shape`` crosses the custom-op boundary through a
+    ``SymInt[]`` schema slot rather than the value-opaque metadata bundle. The
+    backward fake and real implementation both consume that symbolic shape.
 
     FP8 + dynamic=True is tracked separately (requires resolving
     ``UnsafeScriptObjectError`` for TorchScript quantizer objects with Dynamo).
@@ -1508,7 +1504,7 @@ def test_te_linear_dynamic_shapes():
         return model(inp)
 
     torch._dynamo.reset()
-    compiled = torch.compile(fn, fullgraph=True)
+    compiled = torch.compile(fn, fullgraph=True, dynamic=True)
 
     batch_sizes = [16, 32, 48]
 

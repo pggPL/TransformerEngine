@@ -630,6 +630,37 @@ class _TensorAdapter(_Adapter):
         return 0
 
 
+class _SymIntSequenceAdapter(_Adapter):
+    """``torch.Size`` / ``Optional[torch.Size]`` -> ``SymInt[]`` schema slot.
+
+    Shape values must remain graph data when dimensions are symbolic. Putting a
+    ``torch.Size`` containing ``SymInt`` values in the value-opaque simple bundle
+    would instead try to specialize and hash it as a Python constant.
+    """
+
+    def __init__(self, name: str, is_optional: bool) -> None:
+        self.name = name
+        self.type_str = "SymInt[]?" if is_optional else "SymInt[]"
+
+    @classmethod
+    def try_build(cls, name: str, annot: Any) -> Optional["_SymIntSequenceAdapter"]:
+        stripped, is_optional = _strip_optional(annot)
+        if stripped is torch.Size:
+            return cls(name, is_optional)
+        return None
+
+    def schema_slots(self) -> List[Tuple[str, str]]:
+        return [(self.name, self.type_str)]
+
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
+        value = getattr(owner, self.name)
+        return {self.name: None if value is None else list(value)}
+
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+        value = args[self.name]
+        kwargs[self.name] = None if value is None else torch.Size(value)
+
+
 class _QuantizerAdapter(_Adapter):
     """``Quantizer`` / ``Optional[Quantizer]`` -> one own ``OpaqueValueBundle`` slot.
 
@@ -804,6 +835,7 @@ class _UnsupportedAdapter(_Adapter):
 _FIELD_ADAPTERS: Tuple[type, ...] = (
     _TensorOrQuantizedAdapter,
     _TensorAdapter,
+    _SymIntSequenceAdapter,
     _ReferenceOpaqueAdapter,
     _QuantizerAdapter,
 )
