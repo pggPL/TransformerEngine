@@ -391,7 +391,7 @@ class Float8CurrentScalingQuantizer(Quantizer):
         """
         return True
 
-    # ----- TensorProto / pure-Python allocation -----
+    # ----- TensorSpec / pure-Python allocation -----
 
     def storage_metadata(self, fake_dtype: torch.dtype) -> Dict[str, Any]:
         return {
@@ -407,19 +407,19 @@ class Float8CurrentScalingQuantizer(Quantizer):
         self, shape: Tuple[int, ...]
     ) -> Dict[str, Tuple[Tuple[int, ...], torch.dtype]]:
         shape = tuple(shape)
-        buffers: Dict[str, Tuple[Tuple[int, ...], torch.dtype]] = {}
+        specs: Dict[str, Tuple[Tuple[int, ...], torch.dtype]] = {}
         # Mirror the C++ quantizer allocation (csrc/quantizer.cpp): on non-TN-capable
         # archs (Blackwell+) a single ``_data`` buffer backs both row- and column-wise
         # usage and no separate transpose is materialized. This must match what the
         # real kernel produces so the torch.compile fake layout lines up slot-for-slot.
         non_tn = is_non_tn_fp8_gemm_supported()
         if self.rowwise_usage or non_tn:
-            buffers["_data"] = (shape, torch.uint8)
+            specs["_data"] = (shape, torch.uint8)
         if self.columnwise_usage and not non_tn:
-            buffers["_transpose"] = ((shape[-1], *shape[:-1]), torch.uint8)
+            specs["_transpose"] = ((shape[-1], *shape[:-1]), torch.uint8)
         # Per-tensor scale-inv is always present for current scaling.
-        buffers["_scale_inv"] = ((1,), torch.float32)
-        return buffers
+        specs["_scale_inv"] = ((1,), torch.float32)
+        return specs
 
 
 register_value_opaque_quantizer(Float8CurrentScalingQuantizer)

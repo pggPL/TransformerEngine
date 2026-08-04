@@ -77,7 +77,7 @@ from ..quantized_tensor import (
     prepare_for_saving,
     restore_from_func_ctx,
 )
-from ..dynamo import TensorProto, register_custom_op, is_value_opaque_quantizer
+from ..dynamo import TensorSpec, register_custom_op, is_value_opaque_quantizer
 from ..tensor.float8_tensor import Float8CurrentScalingQuantizer, Float8Quantizer
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ..tensor.utils import clear_columnwise_cache, is_custom
@@ -707,9 +707,9 @@ def _linear_forward_impl(
 
 def _linear_forward_impl_fake(
     args: LinearFwdArgs,
-) -> Tuple[TensorProto, Optional[TensorProto], Optional[Tuple[Any, ...]], Optional[Dict]]:
+) -> Tuple[TensorSpec, Optional[TensorSpec], Optional[Tuple[Any, ...]], Optional[Dict]]:
     """Shape/metadata-only twin of :func:`_linear_forward_impl` for torch.compile,
-    returning ``TensorProto`` descriptors for the outputs and saved tensors instead
+    returning ``TensorSpec`` descriptors for the outputs and saved tensors instead
     of allocating real data."""
     if args.fsdp_group is not None and args.is_grad_enabled:
         raise NotImplementedError(
@@ -797,10 +797,10 @@ def _linear_forward_impl_fake(
             weightmat_is_storage = True
             workspace = args.weight_workspace
             if workspace is not None:
-                # Copy, so the ``update_usage`` below stays off the input proto.
+                # Copy, so the ``update_usage`` below stays off the input spec.
                 weightmat = dataclass_replace(workspace)
             else:
-                weightmat = TensorProto(
+                weightmat = TensorSpec(
                     shape=tuple(weight.shape),
                     dtype=activation_dtype,
                     quantizer=weight_quantizer,
@@ -814,7 +814,7 @@ def _linear_forward_impl_fake(
             weightmat.update_usage(rowwise_usage=True)
     else:
         weightmat_aliases_weight = weight.dtype == activation_dtype
-        weightmat = TensorProto(
+        weightmat = TensorSpec(
             shape=tuple(weight.shape), dtype=activation_dtype, device=weight.device
         )
 
@@ -829,7 +829,7 @@ def _linear_forward_impl_fake(
         out_leading = out_leading * args.tp_size
     elif args.parallel_mode == "row" and args.sequence_parallel:
         out_leading = out_leading // args.tp_size
-    out = TensorProto(
+    out = TensorSpec(
         shape=(out_leading, *tuple(inp.shape[1:-1]), out_features),
         dtype=activation_dtype,
         quantizer=output_quantizer,
@@ -852,7 +852,7 @@ def _linear_forward_impl_fake(
             if inputmat_aliases_inp:
                 inputmat_alias = "inp"
             elif inputmat_is_storage:
-                saved_inputmat = TensorProto(
+                saved_inputmat = TensorSpec(
                     shape=tuple(inp.shape),
                     dtype=activation_dtype,
                     quantizer=input_quantizer,
@@ -873,7 +873,7 @@ def _linear_forward_impl_fake(
                     else:
                         saved_inputmat.update_usage(rowwise_usage=False, columnwise_usage=True)
             else:
-                saved_inputmat = TensorProto(
+                saved_inputmat = TensorSpec(
                     shape=tuple(inp.shape), dtype=activation_dtype, device=inp.device
                 )
 
@@ -894,7 +894,7 @@ def _linear_forward_impl_fake(
         elif weightmat_is_storage:
             wt_save = weightmat
         else:
-            wt_save = TensorProto(
+            wt_save = TensorSpec(
                 shape=tuple(weight.shape), dtype=activation_dtype, device=weight.device
             )
 
@@ -1658,12 +1658,12 @@ def _linear_backward(args: LinearBwdArgs) -> Tuple[Union[torch.Tensor, None], ..
 
 def _linear_backward_impl_fake(
     args: LinearBwdArgs,
-) -> Tuple[Optional[TensorProto], Optional[TensorProto], Optional[TensorProto]]:
-    """Allocation-free fake of :func:`_linear_backward` on ``TensorProto``.
+) -> Tuple[Optional[TensorSpec], Optional[TensorSpec], Optional[TensorSpec]]:
+    """Allocation-free fake of :func:`_linear_backward` on ``TensorSpec``.
 
     The saved-tensor fields of ``args`` carry
-    :class:`~transformer_engine.pytorch.dynamo.TensorProto` instances. Returns
-    ``(wgrad, dgrad, grad_bias)`` protos describing the nature of the gradients,
+    :class:`~transformer_engine.pytorch.dynamo.TensorSpec` instances. Returns
+    ``(wgrad, dgrad, grad_bias)`` specs describing the nature of the gradients,
     mirroring the real backward's return contract without allocating storage.
 
     Tensor-/sequence-parallel gather/scatter happens inside the eager backward
@@ -1699,7 +1699,7 @@ def _linear_backward_impl_fake(
             dgrad_leading = go_leading * args.tp_size
         else:
             dgrad_leading = go_leading
-        dgrad = TensorProto(
+        dgrad = TensorSpec(
             shape=(dgrad_leading, *args.grad_output.shape[1:-1], in_features),
             dtype=out_dtype,
             quantizer=args.grad_input_quantizer,
@@ -1712,7 +1712,7 @@ def _linear_backward_impl_fake(
         # requested (mirrors ``quantization_params=grad_weight_quantizer``),
         # otherwise high precision. Under fuse_wgrad_accumulation the grad is
         # written into ``main_grad`` in place and no wgrad tensor is returned.
-        wgrad = TensorProto(
+        wgrad = TensorSpec(
             shape=(out_features, in_features),
             dtype=out_dtype,
             quantizer=args.grad_weight_quantizer,
@@ -1721,7 +1721,7 @@ def _linear_backward_impl_fake(
 
     grad_bias = None
     if args.use_bias and args.requires_wgrad:
-        grad_bias = TensorProto(
+        grad_bias = TensorSpec(
             shape=(out_features,), dtype=out_dtype, device=args.grad_output.device
         )
 

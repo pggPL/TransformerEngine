@@ -23,7 +23,7 @@ A ``torch.library`` custom op is narrower: it takes a flat list of schema slots
 and reference-opaque objects -- and returns a flat ``Tensor[]``.
 
 Bridging the two takes three parts (below): per-field *adapters* map the args
-dataclass onto the op's input slots; *fake impls* on data-free protos give the
+dataclass onto the op's input slots; *fake impls* on data-free specs give the
 output geometry and reassemble the op's flat return; and a *two-tier op* lets a
 quantized-tensor subclass be an op input.
 
@@ -54,12 +54,12 @@ traces under ``torch.compile`` without allocating. ``register_custom_op`` return
 ``forward_fn`` -- the drop-in for the eager ``autograd.Function.apply``. A forward
 call through it:
 
-  * runs the fake ``fwd_fake_impl`` on ``TensorProto`` descriptors (data-free; see
-    ``tensor_proto.py``) to get the outputs' geometry in pure Python;
+  * runs the fake ``fwd_fake_impl`` on ``TensorSpec`` descriptors (data-free; see
+    ``tensor_spec.py``) to get the outputs' geometry in pure Python;
   * calls the *forward op* -- which runs the real ``fwd_impl`` -- for a flat
     ``Tensor[]`` payload;
   * rebuilds the structured user outputs from that payload, sliced and reassembled
-    per the fake's output descriptors (``_proto_reassemble``;
+    per the fake's output descriptors (``_spec_reassemble``;
     ``_value_to_flat_tensors`` is the pack-side inverse).
 
 Autograd, registered on the op, drives backward:
@@ -105,7 +105,7 @@ import torch
 from torch._prims_common import make_contiguous_strides_for
 
 from .quantizer_opaque import warn_compile_unsupported
-from .tensor_proto import TensorProto, to_tensor_proto
+from .tensor_spec import TensorSpec, to_tensor_spec
 from ..quantized_tensor import (
     QuantizedTensor,
     QuantizedTensorStorage,
@@ -848,7 +848,7 @@ def _get_adapters(cls: type) -> List[_Adapter]:
 
 
 def _tensor_field_names(adapters: List[_Adapter]) -> List[str]:
-    """Names of fields carrying tensors (for building the proto view)."""
+    """Names of fields carrying tensors (for building the spec view)."""
     return [b.name for b in adapters if isinstance(b, (_TensorAdapter, _TensorOrQuantizedAdapter))]
 
 
@@ -885,10 +885,10 @@ def _args_from_slots(cls: type, args: Dict[str, Any], adapters: List[_Adapter]) 
     return obj
 
 
-def _proto_view(obj: Any, tensor_field_names: Sequence[str]) -> Any:
-    """Copy of dataclass ``obj`` with each tensor field replaced by a :class:`TensorProto`.
+def _spec_view(obj: Any, tensor_field_names: Sequence[str]) -> Any:
+    """Copy of dataclass ``obj`` with each tensor field replaced by a :class:`TensorSpec`.
 
-    Only tensor fields have a ``TensorProto`` equivalent, so quantizer / scalar
+    Only tensor fields have a ``TensorSpec`` equivalent, so quantizer / scalar
     fields are simply carried over unchanged; the fake impl works purely on
     geometry. Built with :func:`dataclasses.replace` (the only such construction
     Dynamo can trace).
@@ -896,8 +896,8 @@ def _proto_view(obj: Any, tensor_field_names: Sequence[str]) -> Any:
     overrides: Dict[str, Any] = {}
     for name in tensor_field_names:
         value = getattr(obj, name, None)
-        if value is not None and not isinstance(value, TensorProto):
-            overrides[name] = to_tensor_proto(value)
+        if value is not None and not isinstance(value, TensorSpec):
+            overrides[name] = to_tensor_spec(value)
     if not overrides:
         return obj
     return dataclasses.replace(obj, **overrides)
@@ -907,43 +907,43 @@ def _proto_view(obj: Any, tensor_field_names: Sequence[str]) -> Any:
 # Op outputs <-> flat ``Tensor[]`` payload: this is how an op returns / saves
 # quantized tensors (and wrapper subclasses). Outputs are flattened to their
 # inner buffers on the way out and rebuilt via ``__tensor_unflatten__`` on the
-# way back; on the fake side a TensorProto supplies the geometry.
+# way back; on the fake side a TensorSpec supplies the geometry.
 # --------------------------------------------------------------------------- #
 
 
-def _proto_slot_count(proto: Optional[TensorProto]) -> int:
-    """Flat ``Tensor[]`` slots the value for ``proto`` occupies."""
-    if proto is None:
+def _spec_slot_count(spec: Optional[TensorSpec]) -> int:
+    """Flat ``Tensor[]`` slots the value for ``spec`` occupies."""
+    if spec is None:
         return 1
-    return len(proto.inner_names())
+    return len(spec.inner_names())
 
 
-def _proto_reassemble(
-    proto: Optional[TensorProto],
+def _spec_reassemble(
+    spec: Optional[TensorSpec],
     chunk: List[Optional[torch.Tensor]],
 ) -> Optional[Union[torch.Tensor, QuantizedTensorStorage]]:
-    """Rebuild the value described by ``proto`` from its flat tensors ``chunk``.
+    """Rebuild the value described by ``spec`` from its flat tensors ``chunk``.
 
-    ``proto is None`` -> ``None`` (op-boundary sentinel for an absent output);
-    otherwise delegates to :meth:`TensorProto.assemble`, which returns a plain
+    ``spec is None`` -> ``None`` (op-boundary sentinel for an absent output);
+    otherwise delegates to :meth:`TensorSpec.assemble`, which returns a plain
     tensor as-is or reassembles a quantized tensor from its inner buffers.
     """
-    if proto is None:
+    if spec is None:
         return None
-    return proto.assemble(chunk)
+    return spec.assemble(chunk)
 
 
 def _value_to_flat_tensors(
-    value: Optional[Union[torch.Tensor, QuantizedTensorStorage, TensorProto]],
+    value: Optional[Union[torch.Tensor, QuantizedTensorStorage, TensorSpec]],
 ) -> List[torch.Tensor]:
     """Return the flat ``Tensor[]`` slots that represent one op output ``value``.
 
-    Inverse of :func:`_proto_reassemble`; the slot count matches
-    :func:`_proto_slot_count`.
+    Inverse of :func:`_spec_reassemble`; the slot count matches
+    :func:`_spec_slot_count`.
     """
     if value is None:
         return [_encode_none(None)]
-    if isinstance(value, TensorProto):
+    if isinstance(value, TensorSpec):
         return [_encode_none(t) for t in value.create_inner_tensors()]
     if hasattr(value, "__tensor_flatten__"):
         inner_names, _ = value.__tensor_flatten__()
@@ -952,7 +952,7 @@ def _value_to_flat_tensors(
         return [_encode_none(value)]
     raise TypeError(
         f"unsupported value type {type(value).__name__}; expected None / "
-        "torch.Tensor / tensor subclass / bare storage / TensorProto."
+        "torch.Tensor / tensor subclass / bare storage / TensorSpec."
     )
 
 
@@ -1005,7 +1005,7 @@ def _format_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> Li
     """Pack a backward-impl return tuple into the op's ``Tensor[]`` payload.
 
     Each grad occupies exactly one slot (validated against ``num_grad_inputs``);
-    a :class:`TensorProto` grad is materialized into a single tensor.
+    a :class:`TensorSpec` grad is materialized into a single tensor.
     """
     grads = list(grads)
     if len(grads) != num_grad_inputs:
@@ -1015,7 +1015,7 @@ def _format_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> Li
         )
     out: List[torch.Tensor] = []
     for g in grads:
-        if isinstance(g, TensorProto):
+        if isinstance(g, TensorSpec):
             out.append(_encode_none(g.create_tensor()))
         else:
             out.append(_encode_none(g))
@@ -1085,10 +1085,10 @@ def _register_kernel(
     format_result: Callable[[Any], List[torch.Tensor]],
 ) -> Any:
     """Define the op via ``torch.library.custom_op`` with the real ``impl`` + the
-    ``fake_impl`` (proto), returning the ``CustomOpDef``.
+    ``fake_impl`` (spec), returning the ``CustomOpDef``.
 
     The real kernel rebuilds the dataclass and runs ``impl``; the fake kernel
-    runs the proto fake impl on the :func:`_proto_view`. Both go through
+    runs the spec fake impl on the :func:`_spec_view`. Both go through
     ``format_result``.
     """
 
@@ -1100,8 +1100,8 @@ def _register_kernel(
     def _fake(*flat: Any) -> List[torch.Tensor]:
         kwargs = dict(zip(arg_names, flat))
         obj = _args_from_slots(arg_type, kwargs, adapters)
-        proto_obj = _proto_view(obj, tensor_field_names)
-        return format_result(fake_impl(proto_obj))
+        spec_obj = _spec_view(obj, tensor_field_names)
+        return format_result(fake_impl(spec_obj))
 
     op = torch.library.custom_op(
         f"{_TE_OP_NAMESPACE}::{op_name}", _impl, mutates_args=(), schema=schema_str
@@ -1128,7 +1128,7 @@ def _register_autograd_for_op(
 ) -> None:
     """Wire ``register_autograd`` on a forward op so its backward calls ``bwd_op``.
 
-    ``setup_context`` re-runs the proto fwd fake impl to recover output / saved
+    ``setup_context`` re-runs the spec fwd fake impl to recover output / saved
     templates, reassembles each flat output chunk, and hands the saved tuple +
     ``ctx_attrs`` to the module's ``setup_context``.
     """
@@ -1139,24 +1139,24 @@ def _register_autograd_for_op(
         }
         kwargs = dict(zip(fwd_arg_names, inputs))
         fwd_obj = _args_from_slots(fwd_arg_type, kwargs, fwd_adapters)
-        proto_obj = _proto_view(fwd_obj, fwd_tensor_field_names)
+        spec_obj = _spec_view(fwd_obj, fwd_tensor_field_names)
 
-        user_fakes, saved_fakes, ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(proto_obj))
+        user_fakes, saved_fakes, ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(spec_obj))
 
         cursor = 0
         user_outputs: List[Any] = []
-        for proto in user_fakes:
-            n = _proto_slot_count(proto)
+        for spec in user_fakes:
+            n = _spec_slot_count(spec)
             chunk = [_decode_none(t) for t in output[cursor : cursor + n]]
             cursor += n
-            user_outputs.append(_proto_reassemble(proto, chunk))
+            user_outputs.append(_spec_reassemble(spec, chunk))
 
         saved_list: List[Any] = []
-        for proto in saved_fakes:
-            n = _proto_slot_count(proto)
+        for spec in saved_fakes:
+            n = _spec_slot_count(spec)
             chunk = [_decode_none(t) for t in output[cursor : cursor + n]]
             cursor += n
-            saved_list.append(_proto_reassemble(proto, chunk))
+            saved_list.append(_spec_reassemble(spec, chunk))
 
         bwd_obj = backward_obj_type()
         tensors_to_save_from_setup = setup_context_user(
@@ -1327,7 +1327,7 @@ def register_custom_op(
       The trailing two slots are fixed (``_FWD_TRAILING_SLOTS``); everything
       before them is a user output.
     * ``fwd_fake_impl(fwd_args)`` -- data-free traceable twin of ``fwd_impl``:
-      same return shape, but tensor outputs are :class:`TensorProto`. Must match
+      same return shape, but tensor outputs are :class:`TensorSpec`. Must match
       ``fwd_impl``'s shape (checked at compile time by ``_check_fwd_result``).
     * ``setup_context(bwd_obj, fwd_args, user_outputs, ctx_attrs, saved)
       -> tensors_to_save`` -- populate ``bwd_obj`` from forward state; return the
@@ -1336,7 +1336,7 @@ def register_custom_op(
       ``input_tensors_for_grad`` entry, in that order (``None`` for a
       non-differentiable input).
     * ``bwd_fake_impl(bwd_args)`` -- data-free twin of ``backward_impl`` returning
-      :class:`TensorProto` grads.
+      :class:`TensorSpec` grads.
     * ``backward_arg_type.setup_saved_tensors(ctx)`` -- optional hook on the backward
       container (see above); skipped if absent.
 
@@ -1497,19 +1497,19 @@ def _register_custom_op_impl(
     _quantized_tensor_passthrough_ops.add(base_bwd_op.default)
 
     def forward_fn(fwd_args):
-        proto_obj = _proto_view(fwd_args, fwd_tensor_field_names)
-        user_fakes, _saved_fakes, _ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(proto_obj))
+        spec_obj = _spec_view(fwd_args, fwd_tensor_field_names)
+        user_fakes, _saved_fakes, _ctx_attrs = _split_fwd_fake_result(fwd_fake_impl(spec_obj))
         kwargs = _args_to_slots(fwd_args, fwd_adapters)
         flat_in = [kwargs[name] for name in fwd_arg_names]
         result = wrapper_fwd_op(*flat_in)
 
         cursor = 0
         outputs: List[Any] = []
-        for proto in user_fakes:
-            n = _proto_slot_count(proto)
+        for spec in user_fakes:
+            n = _spec_slot_count(spec)
             chunk = [_decode_none(t) for t in result[cursor : cursor + n]]
             cursor += n
-            outputs.append(_proto_reassemble(proto, chunk))
+            outputs.append(_spec_reassemble(spec, chunk))
 
         if len(outputs) == 1:
             return outputs[0]
