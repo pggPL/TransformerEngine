@@ -955,10 +955,7 @@ def _linear_setup_ctx(
     bwd_args.use_bias = bias is not None
     bwd_args.requires_dgrad = fwd_args.input_requires_grad
     bwd_args.requires_wgrad = fwd_args.weight_requires_grad
-    # Don't store inp_shape in the value bundle: under torch.compile(dynamic=True)
-    # inp.shape contains SymInt dims which are not hashable in OpaqueValueBundle.
-    # The backward reconstructs inp_shape from grad_output + weight + SP config.
-    bwd_args.inp_shape = None
+    bwd_args.inp_shape = inp.shape
 
     # Numerical / dtype config
     bwd_args.activation_dtype = fwd_args.activation_dtype
@@ -1109,18 +1106,6 @@ def _linear_backward(args: LinearBwdArgs) -> Tuple[Union[torch.Tensor, None], ..
             weight_fp8,
         )
         nvtx_range_pop(f"{nvtx_label}.fsdp_gather")
-
-        # Reconstruct inp_shape when not stored (compiled mode with dynamic shapes).
-        if bwd_args.inp_shape is None:
-            in_features = saved_weight.shape[-1]
-            go_leading = grad_output.shape[0]
-            if bwd_args.parallel_mode == "column" and bwd_args.sequence_parallel:
-                inp_leading = go_leading // bwd_args.tp_size
-            elif bwd_args.parallel_mode == "row" and bwd_args.sequence_parallel:
-                inp_leading = go_leading * bwd_args.tp_size
-            else:
-                inp_leading = go_leading
-            bwd_args.inp_shape = torch.Size([inp_leading, *grad_output.shape[1:-1], in_features])
 
         # Configure Userbuffers communication (comm+GEMM overlap)
         bwd_args.ub_obj_gradout = None
@@ -1689,18 +1674,8 @@ def _linear_backward_impl_fake(
     dgrad = None
     if args.requires_dgrad:
         # dgrad has the logical input shape and may be quantized for the next op.
-        # Derive shape from grad_output + weight + SP config instead of args.inp_shape:
-        # inp_shape is not stored in the value bundle under dynamic shapes (SymInt is
-        # not hashable in OpaqueValueBundle), so we reconstruct it here.
-        go_leading = args.grad_output.shape[0]
-        if args.parallel_mode == "column" and args.sequence_parallel:
-            dgrad_leading = go_leading // args.tp_size
-        elif args.parallel_mode == "row" and args.sequence_parallel:
-            dgrad_leading = go_leading * args.tp_size
-        else:
-            dgrad_leading = go_leading
         dgrad = TensorProto(
-            shape=(dgrad_leading, *args.grad_output.shape[1:-1], in_features),
+            shape=tuple(args.inp_shape),
             dtype=out_dtype,
             quantizer=args.grad_input_quantizer,
             device=args.grad_output.device,
