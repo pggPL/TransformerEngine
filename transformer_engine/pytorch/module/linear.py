@@ -32,7 +32,13 @@ from .base import (
     _2X_ACC_DGRAD,
     _2X_ACC_WGRAD,
 )
-from ._common import noop_cat, set_quantizer_amax_reduction_group, WeightGradStore
+from ._common import (
+    can_reconstruct_wgrad_input_from_original,
+    noop_cat,
+    set_quantizer_amax_reduction_group,
+    set_quantizer_usage_for_wgrad_all_gather,
+    WeightGradStore,
+)
 from ..quantization import FP8GlobalStateManager, QuantizerRole
 from ..utils import (
     cast_if_needed,
@@ -348,10 +354,38 @@ def _linear_forward_impl(
     debug = args.debug
     backward_override = args.backward_override
     is_fsdp2 = args.is_fsdp2
+    backward_needs_input = is_grad_enabled and weight.requires_grad
     if backward_override == "high_precision":
         save_original_input = True
     elif backward_override == "dequantized":
         save_original_input = False
+    if (
+        backward_override is None
+        and save_original_input
+        and backward_needs_input
+        and input_quantizer is not None
+    ):
+        # Megatron-Core enables this automatically for attention output projections
+        # to reuse the high-precision DPA output saved by attention backward. Validate
+        # the resolved quantizer since this is not necessarily an informed user opt-in.
+        if isinstance(input_quantizer, Float8Quantizer):
+            if FP8GlobalStateManager.get_fp8_recipe().custom():
+                warnings.warn(
+                    "save_original_input is incompatible with delayed-scaling quantizers "
+                    "(Float8Quantizer). Disabling save_original_input for this module.",
+                    stacklevel=2,
+                )
+                save_original_input = False
+            else:
+                raise ValueError("DelayedScaling recipe is not supported with save_original_input")
+        elif not can_reconstruct_wgrad_input_from_original(input_quantizer):
+            warnings.warn(
+                "Ignoring save_original_input=True because the input quantizer cannot "
+                "safely reconstruct the backward operand from the original input "
+                f"({input_quantizer}).",
+                stacklevel=2,
+            )
+            save_original_input = False
 
     # NVTX label for profiling
     nvtx_label = "transformer_engine._Linear.forward"
@@ -391,11 +425,6 @@ def _linear_forward_impl(
     inputmat = inp  # Input tensor to save for backward (maybe sharded)
     inputmat_total = None  # Input tensor to pass to GEMM (gathered)
     own_quantized_input = False
-    if fp8:
-        if save_original_input:
-            assert not isinstance(
-                input_quantizer, Float8Quantizer
-            ), "DelayedScaling recipe is not supported with save_original_input"
 
     if with_input_all_gather_nccl or ub_overlap_ag_fprop:  # All-gather input tensor
 
@@ -1244,12 +1273,7 @@ def _linear_backward(args: LinearBwdArgs) -> Tuple[Union[torch.Tensor, None], ..
             quantizer = None
             if bwd_args.fp8 or bwd_args.debug:
                 quantizer = input_quantizer
-                if quantizer.supports_only_rowwise_all_gather():
-                    # If data is in FP8, we compute FP8 transposes manually
-                    quantizer.set_usage(rowwise=True, columnwise=False)
-                else:
-                    # wgrad GEMM requires input with column-wise usage
-                    quantizer.set_usage(rowwise=False, columnwise=True)
+                set_quantizer_usage_for_wgrad_all_gather(quantizer)
             if bwd_args.ub_bulk_dgrad:
                 inputmat_total, _ = fill_userbuffers_buffer_for_all_gather(
                     ub_obj_dgrad,
@@ -1421,7 +1445,7 @@ def _linear_backward(args: LinearBwdArgs) -> Tuple[Union[torch.Tensor, None], ..
             and bwd_args.ub_obj_gradout.with_cublasmp()
         ):
             if grad_output_quantizer is not None:
-                grad_output_quantizer.set_usage(rowwise=True, columnwise=False)
+                set_quantizer_usage_for_wgrad_all_gather(grad_output_quantizer)
             grad_output, _ = gather_along_first_dim(
                 grad_output,
                 bwd_args.tp_group,
@@ -1923,7 +1947,8 @@ class Linear(TransformerEngineBaseModule):
                        If set to ``True``, always saves the original input tensor rather than the
                        cast tensor. In some scenarios, the input tensor is used by multiple modules,
                        and saving the original input tensor may reduce the memory usage.
-                       Cannot work with FP8 DelayedScaling recipe.
+                       Requires an input quantizer that can safely reproduce its result from the
+                       original input. Cannot work with FP8 DelayedScaling recipe.
     """
 
     def __init__(
