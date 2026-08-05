@@ -183,9 +183,7 @@ class OpaqueValueBundle:
         if _is_opaque_value_type(type(value)):
             return True
         if isinstance(value, dict):
-            return all(
-                isinstance(k, str) and cls.is_simple_value(v) for k, v in value.items()
-            )
+            return all(isinstance(k, str) and cls.is_simple_value(v) for k, v in value.items())
         if isinstance(value, (list, tuple)):
             return all(cls.is_simple_value(v) for v in value)
         return False
@@ -309,7 +307,9 @@ try:
 
     register_opaque_type(OpaqueValueBundle, typ="value")
     _OPAQUE_VALUE_BUNDLE_TYPE_NAME: Optional[str] = get_opaque_type_name(OpaqueValueBundle)
-except Exception as e:  # pylint: disable=broad-exception-caught  # pragma: no cover - older torch without opaque_object
+except (
+    Exception
+) as e:  # pylint: disable=broad-exception-caught  # pragma: no cover - older torch without opaque_object
     warn_compile_unsupported(f"could not register OpaqueValueBundle as an opaque type ({e})")
     _is_opaque_value_type = None
     _is_opaque_reference_type = None
@@ -1166,9 +1166,7 @@ def _register_autograd_for_op(
             ctx_attrs,
             tuple(saved_list),
         )
-        tensors_to_save, tensor_objects = prepare_for_saving(
-            *(tensors_to_save_from_setup or ())
-        )
+        tensors_to_save, tensor_objects = prepare_for_saving(*(tensors_to_save_from_setup or ()))
         ctx.tensor_objects = tensor_objects
         ctx.save_for_backward(*tensors_to_save)
         ctx.bwd_obj = bwd_obj
@@ -1247,7 +1245,9 @@ def _register_wrapper_op(
     """
     subclass_list = _all_quantized_tensor_subclasses()
     input_flatten_enabled = bool(subclass_list) and adapters is not None
-    slot_offsets = _collect_tensor_or_quantized_slot_offsets(adapters) if input_flatten_enabled else []
+    slot_offsets = (
+        _collect_tensor_or_quantized_slot_offsets(adapters) if input_flatten_enabled else []
+    )
 
     def _forward(*flat: Any) -> List[torch.Tensor]:
         if not input_flatten_enabled:
@@ -1258,7 +1258,10 @@ def _register_wrapper_op(
         return base_op(*new_args)
 
     op = torch.library.custom_op(
-        f"{_TE_OP_NAMESPACE}::{wrapper_op_name}", _forward, mutates_args=(), schema=schema_str
+        f"{_TE_OP_NAMESPACE}::{wrapper_op_name}",
+        _forward,
+        mutates_args=(),
+        schema=schema_str,
     )
     op.register_fake(_forward)
     return op
@@ -1389,9 +1392,7 @@ def _register_custom_op_impl(
     fwd_field_names = {f.name for f in dataclasses.fields(fwd_arg_type)}
     missing = [n for n in input_tensors_for_grad if n not in fwd_field_names]
     if missing:
-        raise ValueError(
-            f"input_tensors_for_grad names not in {fwd_arg_type.__name__}: {missing}"
-        )
+        raise ValueError(f"input_tensors_for_grad names not in {fwd_arg_type.__name__}: {missing}")
 
     wrapper_fwd_name = op_name
     wrapper_bwd_name = f"{op_name}_backward"
@@ -1692,7 +1693,11 @@ def _register_op_halves_impl(
 
         outputs, cursor = _reassemble(user_specs, payload, 0)
         saved, _ = _reassemble(saved_specs, payload, cursor)
-        return (outputs[0] if len(outputs) == 1 else tuple(outputs)), tuple(saved), ctx_attrs
+        return (
+            (outputs[0] if len(outputs) == 1 else tuple(outputs)),
+            tuple(saved),
+            ctx_attrs,
+        )
 
     def backward_fn(bwd_args):
         # Unlike the forward payload, each grad occupies exactly one slot

@@ -18,7 +18,6 @@ from ...tensor import Quantizer
 from ...quantized_tensor import QuantizedTensorStorage
 from ...dynamo import TensorSpec, register_op_halves
 
-
 TensorOrQuantized = Union[torch.Tensor, QuantizedTensorStorage]
 
 
@@ -60,37 +59,38 @@ def _bias_forward_impl_fake(
 
 def _bias_backward_impl(
     args: BiasBwdArgs,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Bias backward: reduce the grad over all but the inner dimension."""
+) -> Tuple[Optional[torch.Tensor], torch.Tensor]:
+    """Bias backward: reduce the grad over all but the inner dimension.
+
+    Returns ``None`` for the grad input when it is ``grad_output`` unchanged. A
+    custom op may not return one of its own inputs, and cloning would cost a
+    full-size copy on the common (unquantized) path; the caller substitutes
+    ``grad_output`` instead.
+    """
     dy = args.grad_output
     if dy.dim() > 1:
         quantizer = args.grad_input_quantizer
         if quantizer is None:
-            db = dy.sum(tuple(range(dy.dim() - 1)))
-        else:
-            db, dy = tex.bgrad_quantize(dy, quantizer)
-    else:
-        db = dy
-    return dy, db
+            return None, dy.sum(tuple(range(dy.dim() - 1)))
+        db, dy = tex.bgrad_quantize(dy, quantizer)
+        return dy, db
+    return None, dy
 
 
 def _bias_backward_impl_fake(
     args: BiasBwdArgs,
-) -> Tuple[TensorSpec, TensorSpec]:
-    """Allocation-free fake of :func:`_bias_backward_impl`.
-
-    Mirrors its branching: with a quantizer the grad input is quantized in place
-    of the reduction, otherwise both grads stay in high precision.
-    """
+) -> Tuple[Optional[TensorSpec], TensorSpec]:
+    """Allocation-free fake of :func:`_bias_backward_impl`."""
     dy = args.grad_output
     shape = tuple(dy.shape)
-    quantizer = args.grad_input_quantizer if len(shape) > 1 else None
-    grad_bias_shape = (shape[-1],) if len(shape) > 1 else shape
-    grad_input = TensorSpec(
-        shape=shape, dtype=dy.dtype, quantizer=quantizer, device=dy.device
-    )
-    grad_bias = TensorSpec(shape=grad_bias_shape, dtype=dy.dtype, device=dy.device)
-    return grad_input, grad_bias
+    if len(shape) > 1:
+        grad_bias = TensorSpec(shape=(shape[-1],), dtype=dy.dtype, device=dy.device)
+        quantizer = args.grad_input_quantizer
+        if quantizer is None:
+            return None, grad_bias
+        grad_input = TensorSpec(shape=shape, dtype=dy.dtype, quantizer=quantizer, device=dy.device)
+        return grad_input, grad_bias
+    return None, TensorSpec(shape=shape, dtype=dy.dtype, device=dy.device)
 
 
 _bias_ops = register_op_halves(
@@ -258,4 +258,6 @@ class Bias(BasicOperation):
                 grad_input_quantizer=ctx.grad_input_quantizer,
             )
         )
+        if grad_input is None:
+            grad_input = grad_output
         return grad_input, (grad_bias,)

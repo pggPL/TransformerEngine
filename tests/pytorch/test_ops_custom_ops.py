@@ -135,14 +135,16 @@ def test_bias_custom_op_matches_eager(dtype) -> None:
     dx_ref, db_ref = x.grad.clone(), op.bias.grad.clone()
 
     # Same computation through the custom ops.
-    args = op.resolve_fwd_args(
-        x.detach(), requires_grad=True, prev_op_grad_output_quantizer=None
-    )
+    args = op.resolve_fwd_args(x.detach(), requires_grad=True, prev_op_grad_output_quantizer=None)
     y, saved, ctx_attrs = forward_fn(args)
     assert saved == (), "bias saves no tensors"
     dx, db = backward_fn(
         BiasBwdArgs(grad_output=dy, grad_input_quantizer=ctx_attrs["grad_input_quantizer"])
     )
+    # A None grad input means "grad_output unchanged" -- a custom op may not
+    # return one of its own inputs.
+    if dx is None:
+        dx = dy
 
     torch.testing.assert_close(y, y_ref)
     torch.testing.assert_close(dx, dx_ref)
@@ -152,7 +154,12 @@ def test_bias_custom_op_matches_eager(dtype) -> None:
 @_cuda
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 def test_bias_custom_op_compiles_fullgraph(dtype) -> None:
-    """Both halves must trace without a graph break."""
+    """Both halves must trace without a graph break.
+
+    Run under ``no_grad``: the halves carry no autograd of their own (that is
+    the point of ``register_op_halves``), so a caller is expected to wire them
+    into its own ``autograd.Function``.
+    """
     assert _bias_ops is not None, "bias custom ops failed to register"
     forward_fn, backward_fn = _bias_ops
 
@@ -162,16 +169,19 @@ def test_bias_custom_op_compiles_fullgraph(dtype) -> None:
     dy = torch.randn(*shape, device=_device, dtype=dtype)
 
     def fwd(x_):
-        args = op.resolve_fwd_args(
-            x_, requires_grad=True, prev_op_grad_output_quantizer=None
-        )
+        args = op.resolve_fwd_args(x_, requires_grad=True, prev_op_grad_output_quantizer=None)
         out, _saved, _attrs = forward_fn(args)
         return out
 
     def bwd(dy_):
         return backward_fn(BiasBwdArgs(grad_output=dy_, grad_input_quantizer=None))
 
-    torch.testing.assert_close(torch.compile(fwd, fullgraph=True)(x), fwd(x))
-    compiled_grads = torch.compile(bwd, fullgraph=True)(dy)
-    for got, expected in zip(compiled_grads, bwd(dy)):
+    with torch.no_grad():
+        torch.testing.assert_close(torch.compile(fwd, fullgraph=True)(x), fwd(x))
+        compiled_grads = torch.compile(bwd, fullgraph=True)(dy)
+        expected_grads = bwd(dy)
+    for got, expected in zip(compiled_grads, expected_grads):
+        if got is None or expected is None:
+            assert got is expected is None
+            continue
         torch.testing.assert_close(got, expected)
