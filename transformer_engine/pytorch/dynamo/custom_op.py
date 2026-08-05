@@ -1257,7 +1257,10 @@ def _register_wrapper_op(
         return base_op(*new_args)
 
     op = torch.library.custom_op(
-        f"{_TE_OP_NAMESPACE}::{wrapper_op_name}", _forward, mutates_args=(), schema=schema_str
+        f"{_TE_OP_NAMESPACE}::{wrapper_op_name}",
+        _forward,
+        mutates_args=(),
+        schema=schema_str,
     )
     op.register_fake(_forward)
     return op
@@ -1689,7 +1692,11 @@ def _register_op_halves_impl(
 
         outputs, cursor = _reassemble(user_specs, payload, 0)
         saved, _ = _reassemble(saved_specs, payload, cursor)
-        return (outputs[0] if len(outputs) == 1 else tuple(outputs)), tuple(saved), ctx_attrs
+        return (
+            (outputs[0] if len(outputs) == 1 else tuple(outputs)),
+            tuple(saved),
+            ctx_attrs,
+        )
 
     def backward_fn(bwd_args):
         # Unlike the forward payload, each grad occupies exactly one slot
