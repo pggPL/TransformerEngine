@@ -23,6 +23,8 @@ import torch
 
 import transformer_engine.pytorch as te
 from transformer_engine.pytorch.dynamo import TensorSpec
+from transformer_engine.pytorch.dynamo.custom_op import _spec_slot_count, _value_to_flat_tensors
+from transformer_engine.pytorch.ops.basic.activation import ActivationBwdArgs
 from transformer_engine.pytorch.ops.basic.bias import (
     BiasBwdArgs,
     BiasFwdArgs,
@@ -44,47 +46,70 @@ _device = "cuda"
 # --------------------------------------------------------------------------- #
 
 
-def _describe(value: Any) -> Optional[Tuple]:
-    """Structural fingerprint of a real tensor or of the spec describing it."""
+def _geometry(value: Any) -> Optional[Tuple]:
+    """Shape / dtype / quantizer type of a real value, or ``None`` for a sentinel."""
     if value is None:
         return None
-    if isinstance(value, TensorSpec):
-        quantizer = value.quantizer
-        return (tuple(value.shape), value.dtype, type(quantizer) if quantizer else None)
     quantizer = getattr(value, "_quantizer", None)
     if not isinstance(value, QuantizedTensorStorage):
         quantizer = None
     return (tuple(value.shape), value.dtype, type(quantizer) if quantizer else None)
 
 
-def _describe_all(values: Any) -> List[Optional[Tuple]]:
+def _spec_geometry(spec: Optional[TensorSpec]) -> Optional[Tuple]:
+    if spec is None:
+        return None
+    return (tuple(spec.shape), spec.dtype, type(spec.quantizer) if spec.quantizer else None)
+
+
+def _as_sequence(values: Any) -> Tuple:
     if values is None:
-        return []
+        return ()
     if not isinstance(values, (tuple, list)):
-        values = (values,)
-    return [_describe(v) for v in values]
+        return (values,)
+    return tuple(values)
+
+
+def assert_values_match_specs(real: Any, specs: Any, what: str) -> None:
+    """Require that the fake describes what the real impl produced.
+
+    The invariant the compiled path actually relies on is the flat ``Tensor[]``
+    slot layout, so that is what gets checked, using the framework's own
+    helpers. Geometry is compared on top, but only where the real impl produced
+    a value: ``None`` is a legal payload meaning "an input, unchanged" (a custom
+    op may not return one of its own inputs), and it occupies the same single
+    slot as an unquantized tensor.
+    """
+    real_seq, spec_seq = _as_sequence(real), _as_sequence(specs)
+    assert len(real_seq) == len(spec_seq), f"{what}: count differs"
+    for i, (value, spec) in enumerate(zip(real_seq, spec_seq)):
+        real_slots = len(_value_to_flat_tensors(value))
+        fake_slots = _spec_slot_count(spec)
+        assert real_slots == fake_slots, f"{what}[{i}]: {real_slots} slots vs fake {fake_slots}"
+        if value is not None:
+            assert _geometry(value) == _spec_geometry(spec), f"{what}[{i}]: geometry differs"
 
 
 def assert_fwd_fake_matches_real(args: Any, impl, fake_impl) -> None:
-    """Run a forward impl and its fake on the same args; require agreement.
-
-    Compares user outputs, saved tensors (count included -- the compiled path
-    slices a flat payload by the fake's saved-tensor list) and ``ctx_attrs``
-    keys.
-    """
+    """Run a forward impl and its fake on the same args; require agreement."""
     real_out, real_saved, real_attrs = impl(args)
     fake_out, fake_saved, fake_attrs = fake_impl(args)
 
-    assert _describe_all(real_out) == _describe_all(fake_out), "forward outputs disagree"
-    assert _describe_all(real_saved) == _describe_all(fake_saved), "saved tensors disagree"
+    assert_values_match_specs(real_out, fake_out, "forward output")
+    assert_values_match_specs(real_saved, fake_saved, "saved tensor")
     assert set(real_attrs) == set(fake_attrs), "ctx_attrs keys disagree"
 
 
 def assert_bwd_fake_matches_real(args: Any, impl, fake_impl) -> None:
-    """Run a backward impl and its fake on the same args; require agreement."""
-    real = impl(args)
-    fake = fake_impl(args)
-    assert _describe_all(real) == _describe_all(fake), "gradients disagree"
+    """Run a backward impl and its fake on the same args; require agreement.
+
+    Gradients are not slot-counted: the backward payload holds exactly one slot
+    per gradient regardless of quantization, so only geometry is compared.
+    """
+    real_seq, spec_seq = _as_sequence(impl(args)), _as_sequence(fake_impl(args))
+    assert len(real_seq) == len(spec_seq), "gradient count differs"
+    for i, (value, spec) in enumerate(zip(real_seq, spec_seq)):
+        assert _geometry(value) == _spec_geometry(spec), f"gradient[{i}]: geometry differs"
 
 
 # --------------------------------------------------------------------------- #
@@ -185,3 +210,135 @@ def test_bias_custom_op_compiles_fullgraph(dtype) -> None:
             assert got is expected is None
             continue
         torch.testing.assert_close(got, expected)
+
+
+# --------------------------------------------------------------------------- #
+# Activations
+# --------------------------------------------------------------------------- #
+
+
+def _fp8_quantizer(dtype: torch.dtype) -> Any:
+    """A current-scaling FP8 quantizer, as a next op would hand down."""
+    from transformer_engine.pytorch.tensor.float8_tensor import Float8CurrentScalingQuantizer
+    from transformer_engine.pytorch.constants import DType
+
+    del dtype
+    quantizer = Float8CurrentScalingQuantizer(DType.kFloat8E4M3, torch.device(_device))
+    quantizer.set_usage(rowwise=True, columnwise=False)
+    return quantizer
+
+
+_ACTIVATIONS = [te.ops.GELU, te.ops.ReLU, te.ops.SiLU, te.ops.GEGLU, te.ops.ReGLU]
+
+
+@_cuda
+@pytest.mark.parametrize("cls", _ACTIVATIONS)
+@pytest.mark.parametrize("quantize_output", [False, True])
+def test_activation_fake_conformance(cls, quantize_output) -> None:
+    """The fake must predict output geometry, including whether it is quantized."""
+    dtype = torch.bfloat16
+    op = cls()
+    x = torch.randn(16, 64, device=_device, dtype=dtype)
+    args = op.resolve_fwd_args(
+        x,
+        requires_grad=True,
+        prev_op_grad_output_quantizer=None,
+        next_op_input_quantizer=_fp8_quantizer(dtype) if quantize_output else None,
+    )
+    assert_fwd_fake_matches_real(args, op._impls.forward, op._impls.forward_fake)
+
+    out, saved, ctx_attrs = op._impls.forward(args)
+    dy = torch.randn_like(out if not quantize_output else out.dequantize())
+    bwd_args = ActivationBwdArgs(
+        grad_output=dy,
+        saved_input=x if saved[0] is None else saved[0],
+        dtype=ctx_attrs["dtype"],
+        grad_input_quantizer=None,
+    )
+    assert_bwd_fake_matches_real(bwd_args, op._impls.backward, op._impls.backward_fake)
+
+
+@_cuda
+@pytest.mark.parametrize("cls", _ACTIVATIONS)
+def test_activation_custom_op_returns_fp8(cls) -> None:
+    """With a next-op quantizer the registered op must hand back an FP8 tensor.
+
+    This is the case that matters for a pipeline: an operation quantizes its
+    output with the *next* operation's input quantizer, so a quantized tensor
+    crosses the custom-op boundary rather than being dequantized at it.
+    """
+    assert cls._impls.ops is not None, f"{cls.__name__} custom ops failed to register"
+    forward_fn, _ = cls._impls.ops
+
+    dtype = torch.bfloat16
+    op = cls()
+    x = torch.randn(16, 64, device=_device, dtype=dtype)
+    args = op.resolve_fwd_args(
+        x,
+        requires_grad=True,
+        prev_op_grad_output_quantizer=None,
+        next_op_input_quantizer=_fp8_quantizer(dtype),
+    )
+    y, saved, _ctx_attrs = forward_fn(args)
+
+    assert isinstance(y, QuantizedTensorStorage), f"expected a quantized output, got {type(y)}"
+    y_ref, _saved_ref, _ = op._impls.forward(args)
+    torch.testing.assert_close(y.dequantize(), y_ref.dequantize())
+    assert len(saved) == 1
+
+
+@_cuda
+@pytest.mark.parametrize("cls", _ACTIVATIONS)
+def test_activation_custom_op_matches_eager(cls) -> None:
+    dtype = torch.bfloat16
+    op = cls()
+    forward_fn, backward_fn = cls._impls.ops
+
+    x = torch.randn(16, 64, device=_device, dtype=dtype, requires_grad=True)
+    y_ref = op(x)
+    dy = torch.randn_like(y_ref)
+    y_ref.backward(dy)
+    dx_ref = x.grad.clone()
+
+    args = op.resolve_fwd_args(
+        x.detach(),
+        requires_grad=True,
+        prev_op_grad_output_quantizer=None,
+        next_op_input_quantizer=None,
+    )
+    y, saved, ctx_attrs = forward_fn(args)
+    # None means "the input, unchanged" -- a custom op may not return its own input.
+    saved_input = x.detach() if saved[0] is None else saved[0]
+    (dx,) = backward_fn(
+        ActivationBwdArgs(
+            grad_output=dy,
+            saved_input=saved_input,
+            dtype=ctx_attrs["dtype"],
+            grad_input_quantizer=ctx_attrs["prev_op_grad_output_quantizer"],
+        )
+    )
+
+    torch.testing.assert_close(y, y_ref)
+    torch.testing.assert_close(dx, dx_ref)
+
+
+@_cuda
+@pytest.mark.parametrize("cls", [te.ops.GELU, te.ops.GEGLU])
+def test_activation_custom_op_compiles_fullgraph(cls) -> None:
+    dtype = torch.bfloat16
+    op = cls()
+    forward_fn, _ = cls._impls.ops
+    x = torch.randn(16, 64, device=_device, dtype=dtype)
+
+    def fwd(x_):
+        args = op.resolve_fwd_args(
+            x_,
+            requires_grad=False,
+            prev_op_grad_output_quantizer=None,
+            next_op_input_quantizer=None,
+        )
+        out, _saved, _attrs = forward_fn(args)
+        return out
+
+    with torch.no_grad():
+        torch.testing.assert_close(torch.compile(fwd, fullgraph=True)(x), fwd(x))
