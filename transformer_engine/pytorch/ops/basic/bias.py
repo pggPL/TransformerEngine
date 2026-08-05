@@ -16,7 +16,7 @@ from ..op import BasicOperation, OperationContext
 from ...utils import canonicalize_device, canonicalize_dtype
 from ...tensor import Quantizer
 from ...quantized_tensor import QuantizedTensorStorage
-from ...dynamo import TensorSpec, register_op_halves
+from ...dynamo import TensorSpec
 
 TensorOrQuantized = Union[torch.Tensor, QuantizedTensorStorage]
 
@@ -39,72 +39,6 @@ class BiasBwdArgs:
     grad_input_quantizer: Optional[Quantizer] = None
 
 
-def _bias_forward_impl(
-    args: BiasFwdArgs,
-) -> Tuple[torch.Tensor, Tuple[()], Dict[str, Any]]:
-    """Bias forward. Saves no tensors; backward only needs the quantizer."""
-    x = args.input_
-    b = args.bias.view([1] * (x.dim() - 1) + [args.local_size])
-    return x + b, (), {"grad_input_quantizer": args.grad_input_quantizer}
-
-
-def _bias_forward_impl_fake(
-    args: BiasFwdArgs,
-) -> Tuple[TensorSpec, Tuple[()], Dict[str, Any]]:
-    """Allocation-free fake of :func:`_bias_forward_impl`."""
-    x = args.input_
-    out = TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device)
-    return out, (), {"grad_input_quantizer": args.grad_input_quantizer}
-
-
-def _bias_backward_impl(
-    args: BiasBwdArgs,
-) -> Tuple[Optional[torch.Tensor], torch.Tensor]:
-    """Bias backward: reduce the grad over all but the inner dimension.
-
-    Returns ``None`` for the grad input when it is ``grad_output`` unchanged. A
-    custom op may not return one of its own inputs, and cloning would cost a
-    full-size copy on the common (unquantized) path; the caller substitutes
-    ``grad_output`` instead.
-    """
-    dy = args.grad_output
-    if dy.dim() > 1:
-        quantizer = args.grad_input_quantizer
-        if quantizer is None:
-            return None, dy.sum(tuple(range(dy.dim() - 1)))
-        db, dy = tex.bgrad_quantize(dy, quantizer)
-        return dy, db
-    return None, dy
-
-
-def _bias_backward_impl_fake(
-    args: BiasBwdArgs,
-) -> Tuple[Optional[TensorSpec], TensorSpec]:
-    """Allocation-free fake of :func:`_bias_backward_impl`."""
-    dy = args.grad_output
-    shape = tuple(dy.shape)
-    if len(shape) > 1:
-        grad_bias = TensorSpec(shape=(shape[-1],), dtype=dy.dtype, device=dy.device)
-        quantizer = args.grad_input_quantizer
-        if quantizer is None:
-            return None, grad_bias
-        grad_input = TensorSpec(shape=shape, dtype=dy.dtype, quantizer=quantizer, device=dy.device)
-        return grad_input, grad_bias
-    return None, TensorSpec(shape=shape, dtype=dy.dtype, device=dy.device)
-
-
-_bias_ops = register_op_halves(
-    op_name="bias",
-    fwd_arg_type=BiasFwdArgs,
-    fwd_impl=_bias_forward_impl,
-    fwd_fake_impl=_bias_forward_impl_fake,
-    bwd_arg_type=BiasBwdArgs,
-    bwd_impl=_bias_backward_impl,
-    bwd_fake_impl=_bias_backward_impl_fake,
-    num_grad_inputs=2,
-)
-
-
 class Bias(BasicOperation):
     """Apply additive bias
 
@@ -125,6 +59,10 @@ class Bias(BasicOperation):
         Process group for tensor parallelism
 
     """
+
+    fwd_args_type = BiasFwdArgs
+    bwd_args_type = BiasBwdArgs
+    num_grad_inputs = 2  # grad input, grad bias
 
     def __init__(
         self,
@@ -202,6 +140,51 @@ class Bias(BasicOperation):
         if self.bias.device.type == "meta":
             self.reset_parameters()
 
+    @classmethod
+    def forward_compute(cls, args: BiasFwdArgs) -> Tuple[torch.Tensor, Tuple[()], Dict[str, Any]]:
+        """Add the bias. Saves no tensors; the backward only needs the quantizer."""
+        x = args.input_
+        b = args.bias.view([1] * (x.dim() - 1) + [args.local_size])
+        return x + b, (), {"grad_input_quantizer": args.grad_input_quantizer}
+
+    @classmethod
+    def forward_fake(cls, args: BiasFwdArgs) -> Tuple[TensorSpec, Tuple[()], Dict[str, Any]]:
+        x = args.input_
+        out = TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device)
+        return out, (), {"grad_input_quantizer": args.grad_input_quantizer}
+
+    @classmethod
+    def backward_compute(cls, args: BiasBwdArgs) -> Tuple[Optional[torch.Tensor], torch.Tensor]:
+        """Reduce the gradient over every dimension but the inner one.
+
+        Returns ``None`` for the grad input when it is ``grad_output``
+        unchanged: a custom op may not return one of its own inputs, and cloning
+        would cost a full-size copy on the common (unquantized) path.
+        """
+        dy = args.grad_output
+        if dy.dim() > 1:
+            quantizer = args.grad_input_quantizer
+            if quantizer is None:
+                return None, dy.sum(tuple(range(dy.dim() - 1)))
+            db, dy = tex.bgrad_quantize(dy, quantizer)
+            return dy, db
+        return None, dy
+
+    @classmethod
+    def backward_fake(cls, args: BiasBwdArgs) -> Tuple[Optional[TensorSpec], TensorSpec]:
+        dy = args.grad_output
+        shape = tuple(dy.shape)
+        if len(shape) > 1:
+            grad_bias = TensorSpec(shape=(shape[-1],), dtype=dy.dtype, device=dy.device)
+            quantizer = args.grad_input_quantizer
+            if quantizer is None:
+                return None, grad_bias
+            grad_input = TensorSpec(
+                shape=shape, dtype=dy.dtype, quantizer=quantizer, device=dy.device
+            )
+            return grad_input, grad_bias
+        return None, TensorSpec(shape=shape, dtype=dy.dtype, device=dy.device)
+
     def resolve_fwd_args(
         self,
         input_: torch.Tensor,
@@ -233,37 +216,8 @@ class Bias(BasicOperation):
             grad_input_quantizer=grad_input_quantizer,
         )
 
-    def op_forward(
-        self,
-        ctx: OperationContext,
-        input_: torch.Tensor,
-        prev_op_grad_output_quantizer: Optional[Quantizer],
-        next_op_input_quantizer: Optional[Quantizer],
-    ) -> torch.Tensor:
-        del next_op_input_quantizer  # Bias never quantizes its output
-        args = self.resolve_fwd_args(
-            input_,
-            requires_grad=ctx.requires_grad,
-            prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
+    def resolve_bwd_args(self, ctx: OperationContext, grad_output: torch.Tensor) -> BiasBwdArgs:
+        return BiasBwdArgs(
+            grad_output=grad_output,
+            grad_input_quantizer=ctx.grad_input_quantizer,
         )
-        out, saved, ctx_attrs = _bias_forward_impl(args)
-        if ctx.requires_grad:
-            ctx.save_for_backward(*saved)
-            for name, value in ctx_attrs.items():
-                setattr(ctx, name, value)
-        return out
-
-    def op_backward(
-        self,
-        ctx: OperationContext,
-        grad_output: torch.Tensor,
-    ) -> tuple[torch.Tensor, tuple[()]]:
-        grad_input, grad_bias = _bias_backward_impl(
-            BiasBwdArgs(
-                grad_output=grad_output,
-                grad_input_quantizer=ctx.grad_input_quantizer,
-            )
-        )
-        if grad_input is None:
-            grad_input = grad_output
-        return grad_input, (grad_bias,)

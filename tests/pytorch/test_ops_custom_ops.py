@@ -4,10 +4,11 @@
 
 """Per-op custom ops for ``transformer_engine.pytorch.ops``.
 
-Every fusible operation registers its forward and backward as independent custom
-ops (``register_op_halves``) so a compiled pipeline can call them directly. The
-checks here are the same for every operation and are driven by ``_OP_CASES``:
-adding an operation means adding one entry to that list.
+An operation opts into ``torch.compile`` by declaring its two argument
+containers and implementing four compute halves; ``BasicOperation`` registers
+the custom ops and drives them. The checks here are the same for every such
+operation and are driven by ``_OP_CASES`` -- adding an operation means adding
+one entry.
 
 Each operation is checked three ways:
 
@@ -30,13 +31,14 @@ import transformer_engine.pytorch as te
 from transformer_engine.pytorch.constants import DType
 from transformer_engine.pytorch.dynamo import TensorSpec
 from transformer_engine.pytorch.dynamo.custom_op import _spec_slot_count, _value_to_flat_tensors
-from transformer_engine.pytorch.ops.basic import bias as _bias_mod
-from transformer_engine.pytorch.ops.basic.activation import ActivationBwdArgs
-from transformer_engine.pytorch.ops.basic.bias import BiasBwdArgs
+from transformer_engine.pytorch.ops.op import OperationContext
 from transformer_engine.pytorch.quantized_tensor import QuantizedTensorStorage
 from transformer_engine.pytorch.tensor.float8_tensor import Float8CurrentScalingQuantizer
 
 _cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+_device = "cuda"
+_dtype = torch.bfloat16
+_HIDDEN = 64
 
 
 @pytest.fixture(autouse=True)
@@ -53,11 +55,6 @@ def _fresh_dynamo():
     torch._dynamo.reset()
 
 
-_device = "cuda"
-_dtype = torch.bfloat16
-_HIDDEN = 64
-
-
 def _fp8_quantizer() -> Any:
     """An FP8 quantizer, standing in for the next operation's input quantizer."""
     quantizer = Float8CurrentScalingQuantizer(DType.kFloat8E4M3, torch.device(_device))
@@ -70,40 +67,6 @@ def _fp8_quantizer() -> Any:
 # --------------------------------------------------------------------------- #
 
 
-@dataclass
-class OpCase:
-    """One operation and how to drive it.
-
-    Everything except ``bwd_args`` is uniform; that one callable exists because
-    each operation's backward container names its own fields.
-    """
-
-    name: str
-    build: Callable[[], Any]
-    bwd_args: Callable[..., Any]
-    impls: Callable[[Any], Any]
-    quantizes_output: bool = True
-    num_grads: int = 1
-    in_shape: Tuple[int, ...] = (16, _HIDDEN)
-
-
-def _bias_bwd_args(grad_output, saved, ctx_attrs, input_):
-    del saved, input_
-    return BiasBwdArgs(
-        grad_output=grad_output,
-        grad_input_quantizer=ctx_attrs["grad_input_quantizer"],
-    )
-
-
-def _activation_bwd_args(grad_output, saved, ctx_attrs, input_):
-    return ActivationBwdArgs(
-        grad_output=grad_output,
-        saved_input=saved[0] if saved else input_,
-        dtype=ctx_attrs["dtype"],
-        grad_input_quantizer=ctx_attrs["prev_op_grad_output_quantizer"],
-    )
-
-
 def _build_bias():
     op = te.ops.Bias(_HIDDEN, device=_device, dtype=_dtype)
     with torch.no_grad():
@@ -111,32 +74,21 @@ def _build_bias():
     return op
 
 
-class _BiasImpls:
-    """The Bias module's halves, in the same shape the activations expose."""
+@dataclass
+class OpCase:
+    """One operation and how to build it."""
 
-    forward = staticmethod(_bias_mod._bias_forward_impl)
-    forward_fake = staticmethod(_bias_mod._bias_forward_impl_fake)
-    backward = staticmethod(_bias_mod._bias_backward_impl)
-    backward_fake = staticmethod(_bias_mod._bias_backward_impl_fake)
-    ops = _bias_mod._bias_ops
+    name: str
+    build: Callable[[], Any]
+    quantizes_output: bool = True
+    num_grads: int = 1
+    in_shape: Tuple[int, ...] = (16, _HIDDEN)
 
 
 _OP_CASES = [
-    OpCase(
-        name="Bias",
-        build=_build_bias,
-        bwd_args=_bias_bwd_args,
-        impls=lambda op: _BiasImpls,
-        quantizes_output=False,
-        num_grads=2,
-    ),
+    OpCase(name="Bias", build=_build_bias, quantizes_output=False, num_grads=2),
     *(
-        OpCase(
-            name=cls.__name__,
-            build=cls,
-            bwd_args=_activation_bwd_args,
-            impls=lambda op: type(op)._impls,
-        )
+        OpCase(name=cls.__name__, build=cls)
         for cls in (te.ops.GELU, te.ops.ReLU, te.ops.SiLU, te.ops.GEGLU, te.ops.ReGLU)
     ),
 ]
@@ -155,6 +107,20 @@ def _resolve(op, x, *, fp8_output: bool):
         prev_op_grad_output_quantizer=None,
         next_op_input_quantizer=_fp8_quantizer() if fp8_output else None,
     )
+
+
+def _forward_through_ctx(op, x, *, fp8_output: bool):
+    """Run the eager forward and hand back a context the backward can read."""
+    ctx = OperationContext()
+    ctx.requires_grad = True
+    y = op.op_forward(
+        ctx,
+        x,
+        prev_op_grad_output_quantizer=None,
+        next_op_input_quantizer=_fp8_quantizer() if fp8_output else None,
+    )
+    ctx.saved_tensors = ctx.to_save
+    return y, ctx
 
 
 # --------------------------------------------------------------------------- #
@@ -213,20 +179,21 @@ def assert_values_match_specs(real: Any, specs: Any, what: str) -> None:
 def test_op_fake_matches_real(case: OpCase, fp8_output: bool) -> None:
     """The fake must predict output geometry, including whether it is quantized."""
     op = case.build()
-    impls = case.impls(op)
+    cls = type(op)
     x = _make_input(case)
     args = _resolve(op, x, fp8_output=fp8_output)
 
-    real_out, real_saved, real_attrs = impls.forward(args)
-    fake_out, fake_saved, fake_attrs = impls.forward_fake(args)
+    real_out, real_saved, real_attrs = cls.forward_compute(args)
+    fake_out, fake_saved, fake_attrs = cls.forward_fake(args)
     assert_values_match_specs(real_out, fake_out, "forward output")
     assert_values_match_specs(real_saved, fake_saved, "saved tensor")
     assert set(real_attrs) == set(fake_attrs), "ctx_attrs keys disagree"
 
+    _y, ctx = _forward_through_ctx(op, x, fp8_output=fp8_output)
     dy = torch.randn(*real_out.shape, device=_device, dtype=_dtype)
-    bwd_args = case.bwd_args(dy, real_saved, real_attrs, x)
-    real_grads = _as_sequence(impls.backward(bwd_args))
-    fake_grads = _as_sequence(impls.backward_fake(bwd_args))
+    bwd_args = op.resolve_bwd_args(ctx, dy)
+    real_grads = _as_sequence(cls.backward_compute(bwd_args))
+    fake_grads = _as_sequence(cls.backward_fake(bwd_args))
     assert len(real_grads) == len(fake_grads) == case.num_grads
     for i, (value, spec) in enumerate(zip(real_grads, fake_grads)):
         # One slot per gradient regardless of quantization, so only geometry matters.
@@ -236,11 +203,10 @@ def test_op_fake_matches_real(case: OpCase, fp8_output: bool) -> None:
 @_cuda
 @pytest.mark.parametrize("case", _OP_CASES, ids=_CASE_IDS)
 def test_op_matches_eager(case: OpCase) -> None:
-    """The registered op must reproduce the eager operation, forward and backward."""
+    """The registered op must reproduce the eager operation."""
     op = case.build()
-    ops = case.impls(op).ops
-    assert ops is not None, f"{case.name}: custom ops failed to register"
-    forward_fn, backward_fn = ops
+    assert op.compile_ops is not None, f"{case.name}: custom ops failed to register"
+    forward_fn, backward_fn = op.compile_ops
 
     x = _make_input(case, requires_grad=True)
     y_ref = op(x)
@@ -248,9 +214,9 @@ def test_op_matches_eager(case: OpCase) -> None:
     y_ref.backward(dy)
     dx_ref = x.grad.clone()
 
-    args = _resolve(op, x.detach(), fp8_output=False)
-    y, saved, ctx_attrs = forward_fn(args)
-    grads = backward_fn(case.bwd_args(dy, saved, ctx_attrs, x.detach()))
+    y, _saved, _attrs = forward_fn(_resolve(op, x.detach(), fp8_output=False))
+    _y_eager, ctx = _forward_through_ctx(op, x.detach(), fp8_output=False)
+    grads = backward_fn(op.resolve_bwd_args(ctx, dy))
     # A None gradient means "the incoming gradient, unchanged" -- a custom op may
     # not return one of its own inputs.
     dx = grads[0] if grads[0] is not None else dy
@@ -270,10 +236,8 @@ def test_op_compiles_fullgraph(case: OpCase, fp8_output: bool) -> None:
     ``autograd.Function`` -- see ``test_ops_hop_poc.py``.
     """
     op = case.build()
-    ops = case.impls(op).ops
-    assert ops is not None, f"{case.name}: custom ops failed to register"
-    forward_fn, backward_fn = ops
-
+    assert op.compile_ops is not None, f"{case.name}: custom ops failed to register"
+    forward_fn, backward_fn = op.compile_ops
     x = _make_input(case)
 
     def fwd(x_):
@@ -291,15 +255,16 @@ def test_op_compiles_fullgraph(case: OpCase, fp8_output: bool) -> None:
     for a, b in zip(got, expected):
         torch.testing.assert_close(a, b)
 
-    _out, saved, attrs = forward_fn(_resolve(op, x, fp8_output=fp8_output))
-    dy = torch.randn(*_as_sequence(_out)[0].shape, device=_device, dtype=_dtype)
+    y, ctx = _forward_through_ctx(op, x, fp8_output=fp8_output)
+    dy = torch.randn(*y.shape, device=_device, dtype=_dtype)
+    bwd_args = op.resolve_bwd_args(ctx, dy)
 
-    def bwd(dy_, input_):
-        return backward_fn(case.bwd_args(dy_, saved, attrs, input_))
+    def bwd(args):
+        return backward_fn(args)
 
     with torch.no_grad():
-        expected_grads = bwd(dy, x)
-        got_grads = torch.compile(bwd, fullgraph=True)(dy, x)
+        expected_grads = bwd(bwd_args)
+        got_grads = torch.compile(bwd, fullgraph=True)(bwd_args)
     for a, b in zip(got_grads, expected_grads):
         if a is None or b is None:
             assert a is b is None
@@ -318,6 +283,6 @@ def test_op_returns_fp8(case: OpCase) -> None:
     than being dequantized at it.
     """
     op = case.build()
-    forward_fn, _ = case.impls(op).ops
+    forward_fn, _ = op.compile_ops
     y, _saved, _attrs = forward_fn(_resolve(op, _make_input(case), fp8_output=True))
     assert isinstance(y, QuantizedTensorStorage), f"expected a quantized output, got {type(y)}"

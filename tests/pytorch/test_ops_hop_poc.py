@@ -87,7 +87,7 @@ class _Pipeline(torch.autograd.Function):
             next_op_input_quantizer=_fp8_quantizer() if quantize_middle else None,
         )
         y1, saved1, attrs1 = act_fwd(args1)
-        ctxs[1].saved = saved1 or (y0,)
+        ctxs[1].saved = ops["act_op"].saved_for_backward(saved1, y0)
         ctxs[1].attrs = attrs1
 
         # op 2: bias, consuming what op 1 produced (FP8 when quantize_middle)
@@ -149,8 +149,8 @@ def _build(dtype: torch.dtype):
         bias_op1.bias.copy_(torch.randn_like(bias_op1.bias))
         bias_op2.bias.copy_(torch.randn_like(bias_op2.bias))
     ops = {
-        "bias": te.ops.basic.bias._bias_ops,
-        "act": type(act_op)._impls.ops,
+        "bias": bias_op1.compile_ops,
+        "act": act_op.compile_ops,
         "bias_op1": bias_op1,
         "bias_op2": bias_op2,
         "act_op": act_op,
