@@ -207,13 +207,19 @@ class Bias(BasicOperation):
         input_: torch.Tensor,
         *,
         requires_grad: bool,
-        prev_op_grad_output_quantizer: Optional[Quantizer],
+        prev_op_grad_output_quantizer: Optional[Quantizer] = None,
+        next_op_input_quantizer: Optional[Quantizer] = None,
     ) -> BiasFwdArgs:
         """Gather everything the forward needs into a flat, self-free container.
 
         Reads module config and global FP8 state, so it must run in the traced
         region (where Dynamo guards those reads), never inside the custom op.
+
+        Bias never quantizes its output, so ``next_op_input_quantizer`` is
+        accepted (every operation resolves through the same signature) and
+        ignored.
         """
+        del next_op_input_quantizer
         grad_input_quantizer = None
         if requires_grad:
             grad_input_quantizer = prev_op_grad_output_quantizer

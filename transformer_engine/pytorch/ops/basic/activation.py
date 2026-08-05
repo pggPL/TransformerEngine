@@ -250,8 +250,8 @@ class _ActivationOperation(BasicOperation, metaclass=abc.ABCMeta):
         input_: torch.Tensor,
         *,
         requires_grad: bool,
-        prev_op_grad_output_quantizer: Optional[Quantizer],
-        next_op_input_quantizer: Optional[Quantizer],
+        prev_op_grad_output_quantizer: Optional[Quantizer] = None,
+        next_op_input_quantizer: Optional[Quantizer] = None,
     ) -> ActivationFwdArgs:
         """Gather everything the forward needs into a flat, self-free container.
 
