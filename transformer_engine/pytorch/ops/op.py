@@ -603,6 +603,44 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
                 setattr(ctx, name, value)
         return output
 
+    def compiled_op_forward(
+        self,
+        ctx: OperationContext,
+        input_: torch.Tensor,
+        *,
+        prev_op_grad_output_quantizer: Optional[Quantizer],
+        next_op_input_quantizer: Optional[Quantizer],
+    ) -> torch.Tensor:
+        """:meth:`op_forward` routed through this operation's custom op.
+
+        Same bookkeeping, but the computation crosses an op boundary so Dynamo
+        sees one graph node instead of tracing into the kernels.
+        """
+        args = self.resolve_fwd_args(
+            input_,
+            requires_grad=ctx.requires_grad,
+            prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
+            next_op_input_quantizer=next_op_input_quantizer,
+        )
+        output, saved, ctx_attrs = self.compile_ops[0](args)
+        if ctx.requires_grad:
+            ctx.save_for_backward(*self.saved_for_backward(saved, input_))
+            for name, value in ctx_attrs.items():
+                setattr(ctx, name, value)
+        return output
+
+    def compiled_op_backward(
+        self,
+        ctx: OperationContext,
+        grad_output: torch.Tensor,
+    ) -> tuple[torch.Tensor, Iterable[Optional[torch.Tensor]]]:
+        """:meth:`op_backward` routed through this operation's custom op."""
+        grads = self.compile_ops[1](self.resolve_bwd_args(ctx, grad_output))
+        grad_input = grads[0]
+        if grad_input is None:
+            grad_input = grad_output
+        return grad_input, tuple(grads[1:])
+
     def op_backward(
         self,
         ctx: OperationContext,
