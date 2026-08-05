@@ -9,7 +9,7 @@ import abc
 from collections.abc import Iterable
 import dataclasses
 import pickle
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import torch
 
@@ -22,6 +22,7 @@ from ..quantization import (
     autocast,
 )
 from ..tensor import Quantizer
+from ..dynamo import is_value_opaque_quantizer, register_custom_op
 
 
 @dataclasses.dataclass
@@ -184,12 +185,138 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
     # Number of extra tensor outputs
     num_extra_outputs: int = 0
 
+    # torch.compile support. An operation opts in by declaring the two arg
+    # containers and implementing the four compute classmethods below; the base
+    # class then registers its custom ops and drives them from op_forward /
+    # op_backward, so no operation writes that plumbing itself.
+    fwd_args_type: Optional[type] = None
+    bwd_args_type: Optional[type] = None
+    # Gradients returned by backward_compute: the input's, then any parameters'.
+    num_grad_inputs: int = 1
+    # (forward_fn, backward_fn) pair, or None if the operation cannot be compiled.
+    compile_ops: Optional[tuple[Callable[..., Any], Callable[..., Any]]] = None
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls.fwd_args_type is None or cls.bwd_args_type is None:
+            return
+        if getattr(cls.forward_compute, "__isabstractmethod__", False):
+            return
+        for name, arg_type in (
+            ("fwd_args_type", cls.fwd_args_type),
+            ("bwd_args_type", cls.bwd_args_type),
+        ):
+            # The op schema is built from the container's fields, so this is the
+            # framework's actual requirement -- check it where it is declared.
+            if not dataclasses.is_dataclass(arg_type):
+                raise TypeError(f"{cls.__name__}.{name} must be a dataclass")
+        # One registration per class. The compute halves are bound here, so a
+        # subclass that only swaps kernels (the activations) still gets its own
+        # op without repeating any of this.
+        cls.compile_ops = register_custom_op(
+            op_name=cls.__name__.lower(),
+            fwd_arg_type=cls.fwd_args_type,
+            fwd_impl=cls.forward_compute,
+            fwd_fake_impl=cls.forward_fake,
+            bwd_arg_type=cls.bwd_args_type,
+            bwd_impl=cls.backward_compute,
+            bwd_fake_impl=cls.backward_fake,
+            num_grad_inputs=cls.num_grad_inputs,
+        )
+
     def __init__(self) -> None:
         super().__init__()
 
         # Objects for quantization
         self._fp8_metas: Optional[dict[str, dict[str, Any]]] = None
         self._quantizers: Optional[dict[str, list[Quantizer]]] = None
+
+    # ------------------------------------------------------------------ #
+    # Compute halves. Classmethods, not free functions: they belong to the
+    # operation, and binding to the class is what lets a family of operations
+    # share one implementation while dispatching to per-class kernels.
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def forward_compute(cls, args: Any) -> tuple[Any, tuple, dict[str, Any]]:
+        """Pure forward: ``(output, tensors_to_save, ctx_attrs)``.
+
+        Takes everything through ``args``; must not read ``self`` or global
+        state, both of which are invisible to the compiler at this point.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def forward_fake(cls, args: Any) -> tuple[Any, tuple, dict[str, Any]]:
+        """Allocation-free twin of :meth:`forward_compute` over ``TensorSpec``.
+
+        Runs as a meta kernel, outside the traced frame, and more than once per
+        compile, so it must be a pure function of ``args`` -- a read of global
+        state here is unguarded and can silently disagree with the real impl.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def backward_compute(cls, args: Any) -> tuple:
+        """Pure backward: ``num_grad_inputs`` gradients."""
+        raise NotImplementedError
+
+    @classmethod
+    def backward_fake(cls, args: Any) -> tuple:
+        """Allocation-free twin of :meth:`backward_compute`."""
+        raise NotImplementedError
+
+    def compile_unsupported_reason(self) -> Optional[str]:
+        """Why this operation cannot go through its custom op, or ``None``.
+
+        Asked per operation, but acted on per fuser group: a pipeline compiles
+        as a whole, so one unsupported operation sends the whole group to eager.
+        Recipe-level limits are not checked here -- they belong to whoever reads
+        the recipe, which is the fuser.
+        """
+        if self.compile_ops is None:
+            return f"{self.__class__.__name__} does not implement the compute halves"
+        for mode in ("forward", "backward"):
+            for index in range(self.num_quantizers(mode)):
+                quantizer = self.get_quantizer(mode, index)
+                if quantizer is not None and not is_value_opaque_quantizer(quantizer):
+                    # Delayed scaling holds live scale/amax tensors, so its
+                    # quantizer cannot be specialized on and would be baked into
+                    # the graph as a stale constant.
+                    return (
+                        f"{type(quantizer).__name__} is not a torch.compile value-opaque quantizer"
+                    )
+        return None
+
+    def resolve_fwd_args(
+        self,
+        input_: torch.Tensor,
+        *,
+        requires_grad: bool,
+        prev_op_grad_output_quantizer: Optional[Quantizer] = None,
+        next_op_input_quantizer: Optional[Quantizer] = None,
+    ) -> Any:
+        """Gather the forward's inputs into a flat, ``self``-free container.
+
+        This is where module config and global state are read, so it belongs in
+        the traced region where Dynamo guards those reads -- never inside the
+        custom op.
+        """
+        raise NotImplementedError
+
+    def resolve_bwd_args(self, ctx: OperationContext, grad_output: torch.Tensor) -> Any:
+        """Rebuild the backward's inputs from the forward's saved state."""
+        raise NotImplementedError
+
+    def saved_for_backward(self, saved: tuple, input_: torch.Tensor) -> tuple:
+        """Tensors to persist, given what the forward handed back.
+
+        An operation whose backward needs its input but whose forward does not
+        produce a distinct tensor for it overrides this; a custom op may not
+        return one of its own inputs.
+        """
+        del input_
+        return saved
 
     @property
     def is_fused_op(self) -> bool:
@@ -425,7 +552,6 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
                 self._fp8_metas[mode][fp8_meta_key].scale.copy_(scale)
                 self._fp8_metas[mode][fp8_meta_key].amax_history.copy_(amax_history)
 
-    @abc.abstractmethod
     def op_forward(
         self,
         ctx: OperationContext,
@@ -436,6 +562,10 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         **kwargs: Any,
     ) -> torch.Tensor:
         """Forward pass
+
+        Operations that declare the compute halves inherit this: it resolves the
+        arguments, runs the forward, and records what the backward will need. The
+        rest override it.
 
         Parameters
         ----------
@@ -454,14 +584,71 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             Output tensor
 
         """
+        if self.fwd_args_type is None:
+            raise NotImplementedError(
+                f"{self.__class__.__name__} implements neither op_forward nor the compute halves"
+            )
+        if kwargs:
+            raise ValueError(f"{self.__class__.__name__} forward does not expect keyword arguments")
+        args = self.resolve_fwd_args(
+            input_,
+            requires_grad=ctx.requires_grad,
+            prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
+            next_op_input_quantizer=next_op_input_quantizer,
+        )
+        output, saved, ctx_attrs = self.forward_compute(args)
+        if ctx.requires_grad:
+            ctx.save_for_backward(*self.saved_for_backward(saved, input_))
+            for name, value in ctx_attrs.items():
+                setattr(ctx, name, value)
+        return output
 
-    @abc.abstractmethod
+    def compiled_op_forward(
+        self,
+        ctx: OperationContext,
+        input_: torch.Tensor,
+        *,
+        prev_op_grad_output_quantizer: Optional[Quantizer],
+        next_op_input_quantizer: Optional[Quantizer],
+    ) -> torch.Tensor:
+        """:meth:`op_forward` routed through this operation's custom op.
+
+        Same bookkeeping, but the computation crosses an op boundary so Dynamo
+        sees one graph node instead of tracing into the kernels.
+        """
+        args = self.resolve_fwd_args(
+            input_,
+            requires_grad=ctx.requires_grad,
+            prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
+            next_op_input_quantizer=next_op_input_quantizer,
+        )
+        output, saved, ctx_attrs = self.compile_ops[0](args)
+        if ctx.requires_grad:
+            ctx.save_for_backward(*self.saved_for_backward(saved, input_))
+            for name, value in ctx_attrs.items():
+                setattr(ctx, name, value)
+        return output
+
+    def compiled_op_backward(
+        self,
+        ctx: OperationContext,
+        grad_output: torch.Tensor,
+    ) -> tuple[torch.Tensor, Iterable[Optional[torch.Tensor]]]:
+        """:meth:`op_backward` routed through this operation's custom op."""
+        grads = self.compile_ops[1](self.resolve_bwd_args(ctx, grad_output))
+        grad_input = grads[0]
+        if grad_input is None:
+            grad_input = grad_output
+        return grad_input, tuple(grads[1:])
+
     def op_backward(
         self,
         ctx: OperationContext,
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor, Iterable[Optional[torch.Tensor]]]:
         """Backward pass
+
+        Counterpart to the inherited :meth:`op_forward`.
 
         Parameters
         ----------
@@ -478,6 +665,17 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             Loss gradients w.r.t. parameters
 
         """
+        if self.bwd_args_type is None:
+            raise NotImplementedError(
+                f"{self.__class__.__name__} implements neither op_backward nor the compute halves"
+            )
+        grads = self.backward_compute(self.resolve_bwd_args(ctx, grad_output))
+        grad_input = grads[0]
+        if grad_input is None:
+            # "The incoming gradient, unchanged": a custom op may not return one
+            # of its own inputs, so the compute half hands back None instead.
+            grad_input = grad_output
+        return grad_input, tuple(grads[1:])
 
     def fuser_forward(
         self,

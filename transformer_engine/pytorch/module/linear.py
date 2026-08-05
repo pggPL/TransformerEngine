@@ -83,7 +83,7 @@ from ..quantized_tensor import (
     prepare_for_saving,
     restore_from_func_ctx,
 )
-from ..dynamo import TensorSpec, register_custom_op, is_value_opaque_quantizer
+from ..dynamo import TensorSpec, register_custom_op_with_autograd, is_value_opaque_quantizer
 from ..tensor.float8_tensor import Float8CurrentScalingQuantizer, Float8Quantizer
 from ..tensor.mxfp8_tensor import MXFP8Quantizer
 from ..tensor.utils import clear_columnwise_cache, is_custom
@@ -1753,7 +1753,7 @@ def _linear_backward_impl_fake(
 
 
 # Custom op used under ``torch.compile``.
-_linear_op = register_custom_op(
+_linear_op = register_custom_op_with_autograd(
     op_name="linear",
     input_tensors_for_grad=["weight", "inp", "bias"],
     fwd_arg_type=LinearFwdArgs,
