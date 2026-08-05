@@ -232,7 +232,7 @@ def test_op_compiles_fullgraph(case: OpCase, fp8_output: bool) -> None:
     """Every operation's halves must trace under ``fullgraph=True``.
 
     Run under ``no_grad``: the halves carry no autograd of their own (that is the
-    point of ``register_custom_op_without_autograd``), so a caller wires them into
+    point of ``register_custom_op``), so a caller wires them into
     ``autograd.Function`` -- see ``test_ops_hop_poc.py``.
     """
     op = case.build()

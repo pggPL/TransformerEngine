@@ -22,7 +22,7 @@ from ..quantization import (
     autocast,
 )
 from ..tensor import Quantizer
-from ..dynamo import is_value_opaque_quantizer, register_custom_op_without_autograd
+from ..dynamo import is_value_opaque_quantizer, register_custom_op
 
 
 @dataclasses.dataclass
@@ -213,7 +213,7 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         # One registration per class. The compute halves are bound here, so a
         # subclass that only swaps kernels (the activations) still gets its own
         # op without repeating any of this.
-        cls.compile_ops = register_custom_op_without_autograd(
+        cls.compile_ops = register_custom_op(
             op_name=cls.__name__.lower(),
             fwd_arg_type=cls.fwd_args_type,
             fwd_impl=cls.forward_compute,
