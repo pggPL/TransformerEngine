@@ -22,7 +22,7 @@ from ..quantization import (
     autocast,
 )
 from ..tensor import Quantizer
-from ..dynamo import register_op_halves
+from ..dynamo import is_value_opaque_quantizer, register_op_halves
 
 
 @dataclasses.dataclass
@@ -202,6 +202,14 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             return
         if getattr(cls.forward_compute, "__isabstractmethod__", False):
             return
+        for name, arg_type in (
+            ("fwd_args_type", cls.fwd_args_type),
+            ("bwd_args_type", cls.bwd_args_type),
+        ):
+            # The op schema is built from the container's fields, so this is the
+            # framework's actual requirement -- check it where it is declared.
+            if not dataclasses.is_dataclass(arg_type):
+                raise TypeError(f"{cls.__name__}.{name} must be a dataclass")
         # One registration per class. The compute halves are bound here, so a
         # subclass that only swaps kernels (the activations) still gets its own
         # op without repeating any of this.
@@ -257,6 +265,28 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
     def backward_fake(cls, args: Any) -> tuple:
         """Allocation-free twin of :meth:`backward_compute`."""
         raise NotImplementedError
+
+    def compile_unsupported_reason(self) -> Optional[str]:
+        """Why this operation cannot go through its custom op, or ``None``.
+
+        Asked per operation, but acted on per fuser group: a pipeline compiles
+        as a whole, so one unsupported operation sends the whole group to eager.
+        Recipe-level limits are not checked here -- they belong to whoever reads
+        the recipe, which is the fuser.
+        """
+        if self.compile_ops is None:
+            return f"{self.__class__.__name__} does not implement the compute halves"
+        for mode in ("forward", "backward"):
+            for index in range(self.num_quantizers(mode)):
+                quantizer = self.get_quantizer(mode, index)
+                if quantizer is not None and not is_value_opaque_quantizer(quantizer):
+                    # Delayed scaling holds live scale/amax tensors, so its
+                    # quantizer cannot be specialized on and would be baked into
+                    # the graph as a stale constant.
+                    return (
+                        f"{type(quantizer).__name__} is not a torch.compile value-opaque quantizer"
+                    )
+        return None
 
     def resolve_fwd_args(
         self,

@@ -286,3 +286,44 @@ def test_op_returns_fp8(case: OpCase) -> None:
     forward_fn, _ = op.compile_ops
     y, _saved, _attrs = forward_fn(_resolve(op, _make_input(case), fp8_output=True))
     assert isinstance(y, QuantizedTensorStorage), f"expected a quantized output, got {type(y)}"
+
+
+@_cuda
+@pytest.mark.parametrize("case", _OP_CASES, ids=_CASE_IDS)
+def test_op_is_compile_supported(case: OpCase) -> None:
+    """A converted operation must not gate itself out in a plain configuration."""
+    op = case.build()
+    assert op.compile_unsupported_reason() is None
+
+
+@_cuda
+def test_unconverted_op_reports_a_reason() -> None:
+    """An operation without the compute halves must say so rather than compile."""
+    op = te.ops.Identity()
+    assert op.compile_ops is None
+    reason = op.compile_unsupported_reason()
+    assert reason is not None and "compute halves" in reason
+
+
+@_cuda
+def test_non_value_opaque_quantizer_is_gated() -> None:
+    """A quantizer torch.compile cannot specialize on must be refused.
+
+    Delayed scaling is the case that matters: its quantizer holds live
+    scale/amax tensors, so baking it into the graph would silently freeze stale
+    scales. None of the operations converted so far hold quantizers, so the
+    check is driven directly until one that does lands.
+    """
+    from transformer_engine.common.recipe import DelayedScaling
+    from transformer_engine.pytorch.quantization import RecipeState
+
+    op = te.ops.GELU()
+    assert op.compile_unsupported_reason() is None
+
+    state = RecipeState.create(DelayedScaling(), mode="forward", num_quantizers=1)
+    (quantizer,) = state.make_quantizers()
+    op.num_quantizers = lambda mode: 1 if mode == "forward" else 0
+    op.get_quantizer = lambda mode, index: quantizer
+
+    reason = op.compile_unsupported_reason()
+    assert reason is not None and "value-opaque" in reason
