@@ -22,7 +22,7 @@ from ..quantization import (
     autocast,
 )
 from ..tensor import Quantizer
-from ..dynamo import is_value_opaque_quantizer, register_op_halves
+from ..dynamo import is_value_opaque_quantizer, register_custom_op_without_autograd
 
 
 @dataclasses.dataclass
@@ -193,7 +193,7 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
     bwd_args_type: Optional[type] = None
     # Gradients returned by backward_compute: the input's, then any parameters'.
     num_grad_inputs: int = 1
-    # (forward_fn, backward_fn) from register_op_halves, or None if unsupported.
+    # (forward_fn, backward_fn) pair, or None if the operation cannot be compiled.
     compile_ops: Optional[tuple[Callable[..., Any], Callable[..., Any]]] = None
 
     def __init_subclass__(cls, **kwargs) -> None:
@@ -213,7 +213,7 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         # One registration per class. The compute halves are bound here, so a
         # subclass that only swaps kernels (the activations) still gets its own
         # op without repeating any of this.
-        cls.compile_ops = register_op_halves(
+        cls.compile_ops = register_custom_op_without_autograd(
             op_name=cls.__name__.lower(),
             fwd_arg_type=cls.fwd_args_type,
             fwd_impl=cls.forward_compute,
