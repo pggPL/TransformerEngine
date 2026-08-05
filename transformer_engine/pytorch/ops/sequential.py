@@ -179,9 +179,7 @@ class Sequential(torch.nn.Module):
             or grouped MLP.
         """
 
-        # Create module groups if needed
-        if self._module_groups is None:
-            self._module_groups = self._make_module_groups(self._modules.values())
+        module_groups = self._get_module_groups()
 
         # Route op kwargs to each module group's basic ops
         group_op_kwargs = self._resolve_op_kwargs(op_kwargs)
@@ -189,7 +187,7 @@ class Sequential(torch.nn.Module):
         # Forward pass for each module group
         x = input
         extra_outputs: list[torch.Tensor] = []
-        for group_idx, module_group in enumerate(self._module_groups):
+        for group_idx, module_group in enumerate(module_groups):
             if isinstance(module_group, OperationFuser):
                 xs, extra_inputs = (
                     (x,) + extra_inputs[: module_group.num_extra_inputs],
@@ -207,6 +205,17 @@ class Sequential(torch.nn.Module):
         if extra_outputs:
             return (x,) + tuple(extra_outputs)
         return x
+
+    def _get_module_groups(self) -> list[OperationFuser | torch.nn.Module]:
+        """Module groups, built once.
+
+        Kept out of the forward pass: building them constructs ``OperationFuser``
+        and fused-operation objects, and an ``nn.Module`` cannot be constructed
+        inside a traced region.
+        """
+        if self._module_groups is None:
+            self._module_groups = self._make_module_groups(self._modules.values())
+        return self._module_groups
 
     def _resolve_op_kwargs(
         self,

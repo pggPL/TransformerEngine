@@ -4,6 +4,7 @@
 
 import abc
 import contextlib
+import dataclasses
 import os
 import re
 import sys
@@ -37,6 +38,7 @@ from transformer_engine.pytorch.constants import FP8FwdTensorIdx, FP8BwdTensorId
 from transformer_engine.pytorch.module.base import TransformerEngineBaseModule
 from transformer_engine.pytorch.quantization import FP8GlobalStateManager, QuantizerRole
 from transformer_engine.pytorch.ops.basic.basic_linear import BasicLinear
+from transformer_engine.pytorch.ops.op import BasicOperation
 from transformer_engine.pytorch.tensor.float8_tensor import Float8CurrentScalingQuantizer
 from transformer_engine.pytorch.tensor.float8_blockwise_tensor import Float8BlockQuantizer
 from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Quantizer
@@ -2339,3 +2341,141 @@ def test_te_linear_dynamic_shapes():
             "Unexpected recompilation(s) across different batch sizes: "
             f"{unique_graphs_after - unique_graphs_baseline} extra graph(s) compiled"
         )
+
+
+# --------------------------------------------------------------------------- #
+# transformer_engine.pytorch.ops under torch.compile
+# --------------------------------------------------------------------------- #
+
+
+@dataclasses.dataclass(slots=True)
+class _ScaleFwdArgs:
+    """Flat, ``self``-free inputs to the test operation's forward."""
+
+    input_: torch.Tensor
+    scale: torch.Tensor
+
+
+@dataclasses.dataclass(slots=True)
+class _ScaleBwdArgs:
+    """Flat inputs to the test operation's backward."""
+
+    grad_output: torch.Tensor = None
+    saved_input: torch.Tensor = None
+    scale: torch.Tensor = None
+
+
+class _ScaleOp(BasicOperation):
+    """Test-only operation: multiply by a learnable scalar.
+
+    Exists so the fuser's compiled path can be exercised without depending on
+    which real operations happen to declare their compute halves. It is the
+    smallest operation that still has a parameter gradient and a saved tensor.
+    """
+
+    fwd_args_type = _ScaleFwdArgs
+    bwd_args_type = _ScaleBwdArgs
+    num_grad_inputs = 2  # grad input, grad scale
+
+    def __init__(self, *, device: str = "cuda", dtype: torch.dtype = torch.bfloat16) -> None:
+        super().__init__()
+        self.scale = torch.nn.Parameter(torch.full((), 2.0, device=device, dtype=dtype))
+
+    @classmethod
+    def forward_compute(cls, args):
+        return args.input_ * args.scale, (), {}
+
+    @classmethod
+    def forward_fake(cls, args):
+        x = args.input_
+        return TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device), (), {}
+
+    @classmethod
+    def backward_compute(cls, args):
+        dy = args.grad_output
+        return dy * args.scale, (dy * args.saved_input).sum()
+
+    @classmethod
+    def backward_fake(cls, args):
+        dy = args.grad_output
+        return (
+            TensorSpec(shape=tuple(dy.shape), dtype=dy.dtype, device=dy.device),
+            TensorSpec(shape=(), dtype=dy.dtype, device=dy.device),
+        )
+
+    def saved_for_backward(self, saved, input_):
+        # The forward produces no distinct tensor for its input, and a custom op
+        # may not return one of its own inputs.
+        del saved
+        return (input_,)
+
+    def resolve_fwd_args(
+        self,
+        input_,
+        *,
+        requires_grad,
+        prev_op_grad_output_quantizer=None,
+        next_op_input_quantizer=None,
+    ):
+        del requires_grad, prev_op_grad_output_quantizer, next_op_input_quantizer
+        return _ScaleFwdArgs(input_=input_, scale=self.scale)
+
+    def resolve_bwd_args(self, ctx, grad_output):
+        (x,) = ctx.saved_tensors
+        return _ScaleBwdArgs(grad_output=grad_output, saved_input=x, scale=self.scale)
+
+
+def _assert_sequential_matches_eager(model, compiled, base):
+    """Run a Sequential eagerly and compiled on identical inputs; compare both
+    the output and every parameter gradient."""
+    inp_eager = base.detach().clone().requires_grad_(True)
+    model.zero_grad(set_to_none=True)
+    out_eager = model(inp_eager)
+    out_eager.sum().backward()
+    ref_out = out_eager.detach().clone()
+    ref_igrad = inp_eager.grad.detach().clone()
+    ref_pgrads = [p.grad.detach().clone() for p in model.parameters()]
+
+    inp_compiled = base.detach().clone().requires_grad_(True)
+    model.zero_grad(set_to_none=True)
+    out_compiled = compiled(inp_compiled).clone()
+    out_compiled.sum().backward()
+
+    torch.testing.assert_close(out_compiled, ref_out)
+    torch.testing.assert_close(inp_compiled.grad, ref_igrad)
+    for got, expected in zip(model.parameters(), ref_pgrads):
+        torch.testing.assert_close(got.grad, expected)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_single_op_group_compiles():
+    """``fullgraph=True`` over an ``OperationFuser`` group holding one operation.
+
+    The pipeline-level ``autograd.Function`` is traced as a higher-order op and
+    calls the operation's custom ops inside, so forward and backward both end up
+    in the graph.
+    """
+    torch._dynamo.reset()
+    model = te.ops.Sequential(_ScaleOp())
+    compiled = torch.compile(model, fullgraph=True)
+    base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+    _assert_sequential_matches_eager(model, compiled, base)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_unsupported_group_still_compiles_eagerly():
+    """An operation without the compute halves runs its eager implementation.
+
+    Note that this is not a fallback: under ``fullgraph=True`` there is no
+    leaving the graph, so the pipeline is traced either way and only the choice
+    of implementation changes. That is why the tracing constraints -- no
+    mutation of anything from an enclosing scope -- have to hold on both paths.
+    """
+    torch._dynamo.reset()
+    op = te.ops.Identity()
+    assert op.compile_unsupported_reason() is not None
+
+    model = te.ops.Sequential(op)
+    compiled = torch.compile(model, fullgraph=True)
+    base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+    _assert_sequential_matches_eager(model, compiled, base)
