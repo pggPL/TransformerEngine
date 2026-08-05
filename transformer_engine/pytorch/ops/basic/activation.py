@@ -104,14 +104,13 @@ def _make_activation_ops(
             input_quantizer = Float8CurrentScalingQuantizer(DType.kFloat8E4M3, x.device)
             input_quantizer.set_usage(rowwise=True, columnwise=False)
             x = input_quantizer(x)
-        saved = ()
-        if args.requires_grad:
-            # Both dequantize and contiguous are no-ops for an input that is
-            # already plain and contiguous, leaving x as the input itself. A
-            # custom op may not return one of its own inputs, so hand back None
-            # and let the caller substitute; the slot count is unchanged because
-            # a None value and an unquantized spec both occupy one slot.
-            saved = (None if x is args.input_ else x,)
+        # Only the re-quantized input is handed back. Otherwise x is derived from
+        # the input by dequantize + contiguous, both of which are no-ops for an
+        # already-plain contiguous tensor, so x would *be* the input -- which a
+        # custom op may not return. Whether those calls are no-ops depends on
+        # strides, which the fake cannot see, so the rule has to be a static one:
+        # the caller passes the input to the backward, which dequantizes it there.
+        saved = (x,) if (args.requires_grad and args.cache_quantized_input) else ()
         ctx_attrs = {
             "dtype": args.dtype,
             "prev_op_grad_output_quantizer": args.prev_op_grad_output_quantizer,
@@ -128,14 +127,9 @@ def _make_activation_ops(
             device=x.device,
         )
         saved = ()
-        if args.requires_grad:
-            # ``cache_quantized_input`` re-quantizes the dequantized input with a
-            # fresh current-scaling quantizer, so the saved tensor is quantized
-            # exactly when that flag is set -- never because the input was.
-            saved_quantizer = None
-            if args.cache_quantized_input:
-                saved_quantizer = Float8CurrentScalingQuantizer(DType.kFloat8E4M3, x.device)
-                saved_quantizer.set_usage(rowwise=True, columnwise=False)
+        if args.requires_grad and args.cache_quantized_input:
+            saved_quantizer = Float8CurrentScalingQuantizer(DType.kFloat8E4M3, x.device)
+            saved_quantizer.set_usage(rowwise=True, columnwise=False)
             saved = (
                 TensorSpec(
                     shape=shape, dtype=args.dtype, quantizer=saved_quantizer, device=x.device
@@ -295,7 +289,9 @@ class _ActivationOperation(BasicOperation, metaclass=abc.ABCMeta):
         )
         y, saved, ctx_attrs = self._impls.forward(args)
         if ctx.requires_grad:
-            saved = tuple(input_ if t is None else t for t in saved)
+            # Without ``cache_quantized_input`` the op keeps nothing: the backward
+            # rebuilds its input from the operation's input tensor.
+            saved = saved or (input_,)
             if is_cpu_offload_enabled():
                 mark_activation_offload(*saved)
             ctx.save_for_backward(*saved)

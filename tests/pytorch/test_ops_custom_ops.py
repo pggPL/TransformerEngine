@@ -251,7 +251,7 @@ def test_activation_fake_conformance(cls, quantize_output) -> None:
     dy = torch.randn_like(out if not quantize_output else out.dequantize())
     bwd_args = ActivationBwdArgs(
         grad_output=dy,
-        saved_input=x if saved[0] is None else saved[0],
+        saved_input=saved[0] if saved else x,
         dtype=ctx_attrs["dtype"],
         grad_input_quantizer=None,
     )
@@ -284,7 +284,7 @@ def test_activation_custom_op_returns_fp8(cls) -> None:
     assert isinstance(y, QuantizedTensorStorage), f"expected a quantized output, got {type(y)}"
     y_ref, _saved_ref, _ = op._impls.forward(args)
     torch.testing.assert_close(y.dequantize(), y_ref.dequantize())
-    assert len(saved) == 1
+    assert saved == (), "without cache_quantized_input the op keeps nothing"
 
 
 @_cuda
@@ -308,7 +308,7 @@ def test_activation_custom_op_matches_eager(cls) -> None:
     )
     y, saved, ctx_attrs = forward_fn(args)
     # None means "the input, unchanged" -- a custom op may not return its own input.
-    saved_input = x.detach() if saved[0] is None else saved[0]
+    saved_input = saved[0] if saved else x.detach()
     (dx,) = backward_fn(
         ActivationBwdArgs(
             grad_output=dy,
