@@ -195,6 +195,9 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
     bwd_args_type: Optional[type] = None
     # Gradients returned by backward_compute: the input's, then any parameters'.
     num_grad_inputs: int = 1
+    # Forward kwargs this operation accepts, resolved into fwd_args_type like
+    # any other config. A kwarg carries no gradient and must not be mutated.
+    fwd_kwarg_names: tuple[str, ...] = ()
     # (forward_fn, backward_fn) pair, or None if the operation cannot be compiled.
     compile_ops: Optional[tuple[Callable[..., Any], Callable[..., Any]]] = None
 
@@ -378,12 +381,15 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         requires_grad: bool,
         prev_op_grad_output_quantizer: Optional[Quantizer] = None,
         next_op_input_quantizer: Optional[Quantizer] = None,
+        **kwargs: Any,
     ) -> Any:
         """Gather the forward's inputs into a flat, ``self``-free container.
 
         This is where module config and global state are read, so it belongs in
         the traced region where Dynamo guards those reads -- never inside the
-        custom op.
+        custom op. ``kwargs`` are the caller's forward kwargs, restricted to
+        ``fwd_kwarg_names``; an operation declaring them supplies their defaults
+        here, since a kwarg may be absent.
         """
         raise NotImplementedError
 
@@ -671,13 +677,17 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             raise NotImplementedError(
                 f"{self.__class__.__name__} implements neither op_forward nor the compute halves"
             )
-        if kwargs:
-            raise ValueError(f"{self.__class__.__name__} forward does not expect keyword arguments")
+        unsupported = sorted(name for name in kwargs if name not in self.fwd_kwarg_names)
+        if unsupported:
+            raise ValueError(
+                f"{self.__class__.__name__} forward does not accept keyword arguments {unsupported}"
+            )
         args = self.resolve_fwd_args(
             input_,
             requires_grad=ctx.requires_grad,
             prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
             next_op_input_quantizer=next_op_input_quantizer,
+            **kwargs,
         )
         output, saved, ctx_attrs = self.forward_compute(args)
         if ctx.requires_grad:
@@ -693,17 +703,21 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         *,
         prev_op_grad_output_quantizer: Optional[Quantizer],
         next_op_input_quantizer: Optional[Quantizer],
+        **kwargs: Any,
     ) -> torch.Tensor:
         """:meth:`op_forward` routed through this operation's custom op.
 
         Same bookkeeping, but the computation crosses an op boundary so Dynamo
-        sees one graph node instead of tracing into the kernels.
+        sees one graph node instead of tracing into the kernels. ``kwargs`` are
+        not validated here -- the fuser's gate already rejected a group whose
+        kwargs an operation does not declare.
         """
         args = self.resolve_fwd_args(
             input_,
             requires_grad=ctx.requires_grad,
             prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
             next_op_input_quantizer=next_op_input_quantizer,
+            **kwargs,
         )
         output, saved, ctx_attrs = self.compile_ops[0](args)
         if ctx.requires_grad:
