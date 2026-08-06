@@ -148,6 +148,7 @@ class _OperationFuserAutogradFunction(torch.autograd.Function):
                     x,
                     prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
                     next_op_input_quantizer=next_op_input_quantizer,
+                    **basic_op_kwargs[basic_op_idxs[0]],
                 )
                 fused_op_extra_outputs = [()]
             else:
@@ -549,8 +550,14 @@ class OperationFuser:
         if len(self._forward_ops) != self._num_basic_ops:
             # A fused op covers several basic ops; only single-op groups so far.
             return "fused operations are not supported yet"
-        if any(kwargs for kwargs in basic_op_kwargs):
-            return "operation keyword arguments are not supported"
+        for op, kwargs in zip(self._basic_ops, basic_op_kwargs):
+            # A kwarg an operation declares is resolved into its args container
+            # like any other config. Anything else -- notably the preallocated
+            # buffers of the grouped operations -- is written to by the op, and a
+            # custom op may not mutate a tensor from an enclosing scope.
+            unsupported = sorted(name for name in kwargs if name not in op.fwd_kwarg_names)
+            if unsupported:
+                return f"{type(op).__name__} does not support keyword arguments {unsupported}"
         for op in self._basic_ops:
             reason = op.compile_unsupported_reason()
             if reason is not None:
