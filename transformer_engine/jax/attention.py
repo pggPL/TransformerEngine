@@ -120,11 +120,11 @@ class QKVLayout(Enum):
     BSHD Format:
         - BS3HD: q,k,v are interleave packed as a tensor with shape [b, s, 3, h, d].
         - BSHD_BS2HD: q with shape [b, s, h, d] and kv are interleaved with shape [b, s, 2, h, d].
-        - BSHD_BSHD_BSHD: q,k,v are seperate tensors with shape [b, s, h, d]
+        - BSHD_BSHD_BSHD: q,k,v are separate tensors with shape [b, s, h, d]
     THD Format: Shape is same as BSHD layout but allow multiple segments packed in a sequence.
         - T3HD: q,k,v are interleave packed as a tensor with shape [b, s, 3, h, d].
         - THD_T2HD: q with shape [b, s, h, d] and kv are interleaved with shape [b, s, 2, h, d].
-        - THD_THD_THD: q,k,v are seperate tensors with shape [b, s, h, d]
+        - THD_THD_THD: q,k,v are separate tensors with shape [b, s, h, d]
     """
 
     BS3HD = NVTE_QKV_Layout.NVTE_BS3HD
