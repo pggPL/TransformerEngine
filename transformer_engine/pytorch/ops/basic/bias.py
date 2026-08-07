@@ -5,7 +5,8 @@
 """Fusible operation for bias."""
 
 from __future__ import annotations
-from typing import Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 
@@ -14,6 +15,28 @@ from ...quantization import FP8GlobalStateManager
 from ..op import BasicOperation, OperationContext
 from ...utils import canonicalize_device, canonicalize_dtype
 from ...tensor import Quantizer
+from ...quantized_tensor import QuantizedTensorStorage
+from ...dynamo import TensorSpec
+
+TensorOrQuantized = Union[torch.Tensor, QuantizedTensorStorage]
+
+
+@dataclass(slots=True)
+class BiasFwdArgs:
+    """Flat, ``self``-free inputs to the bias forward."""
+
+    input_: TensorOrQuantized
+    bias: torch.Tensor
+    local_size: int
+    grad_input_quantizer: Optional[Quantizer]
+
+
+@dataclass(slots=True)
+class BiasBwdArgs:
+    """Flat inputs to the bias backward."""
+
+    grad_output: Optional[torch.Tensor] = None
+    grad_input_quantizer: Optional[Quantizer] = None
 
 
 class Bias(BasicOperation):
@@ -36,6 +59,10 @@ class Bias(BasicOperation):
         Process group for tensor parallelism
 
     """
+
+    fwd_args_type = BiasFwdArgs
+    bwd_args_type = BiasBwdArgs
+    num_grad_inputs = 2  # grad input, grad bias
 
     def __init__(
         self,
@@ -113,37 +140,84 @@ class Bias(BasicOperation):
         if self.bias.device.type == "meta":
             self.reset_parameters()
 
-    def op_forward(
-        self,
-        ctx: OperationContext,
-        input_: torch.Tensor,
-        prev_op_grad_output_quantizer: Optional[Quantizer],
-        next_op_input_quantizer: Optional[Quantizer],
-    ) -> torch.Tensor:
-        x = input_
-        b = self.bias.view([1] * (x.dim() - 1) + [self.local_size])
+    @classmethod
+    def forward_compute(cls, args: BiasFwdArgs) -> Tuple[torch.Tensor, Tuple[()], Dict[str, Any]]:
+        """Add the bias. Saves no tensors; the backward only needs the quantizer."""
+        x = args.input_
+        b = args.bias.view([1] * (x.dim() - 1) + [args.local_size])
+        return x + b, (), {"grad_input_quantizer": args.grad_input_quantizer}
 
-        if ctx.requires_grad:
-            ctx.grad_input_quantizer = prev_op_grad_output_quantizer
-            if FP8GlobalStateManager.is_fp8_enabled():
-                fp8_recipe = FP8GlobalStateManager.get_fp8_recipe()
-                if fp8_recipe.backward_override is not None:
-                    ctx.grad_input_quantizer = None
+    @classmethod
+    def forward_fake(cls, args: BiasFwdArgs) -> Tuple[TensorSpec, Tuple[()], Dict[str, Any]]:
+        x = args.input_
+        out = TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device)
+        return out, (), {"grad_input_quantizer": args.grad_input_quantizer}
 
-        return x + b
+    @classmethod
+    def backward_compute(cls, args: BiasBwdArgs) -> Tuple[Optional[torch.Tensor], torch.Tensor]:
+        """Reduce the gradient over every dimension but the inner one.
 
-    def op_backward(
-        self,
-        ctx: OperationContext,
-        grad_output: torch.Tensor,
-    ) -> tuple[torch.Tensor, tuple[()]]:
-        dy = grad_output
+        Returns ``None`` for the grad input when it is ``grad_output``
+        unchanged: a custom op may not return one of its own inputs, and cloning
+        would cost a full-size copy on the common (unquantized) path.
+        """
+        dy = args.grad_output
         if dy.dim() > 1:
-            quantizer = ctx.grad_input_quantizer
+            quantizer = args.grad_input_quantizer
             if quantizer is None:
-                db = dy.sum(tuple(range(dy.dim() - 1)))
-            else:
-                db, dy = tex.bgrad_quantize(dy, quantizer)
-        else:
-            db = dy
-        return dy, (db,)
+                return None, dy.sum(tuple(range(dy.dim() - 1)))
+            db, dy = tex.bgrad_quantize(dy, quantizer)
+            return dy, db
+        return None, dy
+
+    @classmethod
+    def backward_fake(cls, args: BiasBwdArgs) -> Tuple[Optional[TensorSpec], TensorSpec]:
+        dy = args.grad_output
+        shape = tuple(dy.shape)
+        if len(shape) > 1:
+            grad_bias = TensorSpec(shape=(shape[-1],), dtype=dy.dtype, device=dy.device)
+            quantizer = args.grad_input_quantizer
+            if quantizer is None:
+                return None, grad_bias
+            grad_input = TensorSpec(
+                shape=shape, dtype=dy.dtype, quantizer=quantizer, device=dy.device
+            )
+            return grad_input, grad_bias
+        return None, TensorSpec(shape=shape, dtype=dy.dtype, device=dy.device)
+
+    def resolve_fwd_args(
+        self,
+        input_: torch.Tensor,
+        *,
+        requires_grad: bool,
+        prev_op_grad_output_quantizer: Optional[Quantizer] = None,
+        next_op_input_quantizer: Optional[Quantizer] = None,
+    ) -> BiasFwdArgs:
+        """Gather everything the forward needs into a flat, self-free container.
+
+        Reads module config and global FP8 state, so it must run in the traced
+        region (where Dynamo guards those reads), never inside the custom op.
+
+        Bias never quantizes its output, so ``next_op_input_quantizer`` is
+        accepted (every operation resolves through the same signature) and
+        ignored.
+        """
+        del next_op_input_quantizer
+        grad_input_quantizer = None
+        if requires_grad:
+            grad_input_quantizer = prev_op_grad_output_quantizer
+            if FP8GlobalStateManager.is_fp8_enabled():
+                if FP8GlobalStateManager.get_fp8_recipe().backward_override is not None:
+                    grad_input_quantizer = None
+        return BiasFwdArgs(
+            input_=input_,
+            bias=self.bias,
+            local_size=self.local_size,
+            grad_input_quantizer=grad_input_quantizer,
+        )
+
+    def resolve_bwd_args(self, ctx: OperationContext, grad_output: torch.Tensor) -> BiasBwdArgs:
+        return BiasBwdArgs(
+            grad_output=grad_output,
+            grad_input_quantizer=ctx.grad_input_quantizer,
+        )
