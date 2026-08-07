@@ -1785,25 +1785,32 @@ def test_te_ops_unsupported_group_still_compiles_eagerly():
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 @pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
 def test_te_ops_forward_kwargs_compile():
-    """Forward kwargs reach the operation through its custom op.
+    """A tensor forward kwarg reaches the operation through its custom op.
 
-    Covers both kinds at once: a value, which Dynamo guards on -- hence the
-    second call with a different one -- and a tensor, quantized here, which
-    crosses the op boundary as its inner buffers.
+    The tensor is quantized, so it crosses the op boundary as its inner buffers,
+    and it changes between calls, which a graph input absorbs without a
+    recompilation. The last call adds a value kwarg: that one is gated onto the
+    eager implementation, since Dynamo turns a changed scalar into a symbol that
+    cannot be carried as opaque config.
     """
     torch._dynamo.reset()
     quantizer = Float8CurrentScalingQuantizer(
         fp8_dtype=tex.DType.kFloat8E4M3,
         device=torch.device("cuda"),
     )
-    offset = quantizer(torch.randn(64, dtype=torch.bfloat16, device="cuda"))
+
+    def offset(value):
+        return quantizer(torch.full((64,), value, dtype=torch.bfloat16, device="cuda"))
 
     base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
     _assert_sequential_matches_eager(
         lambda: te.ops.Sequential(_ScaleWithKwargsOp()),
         base,
         op_kwargs_seq=(
-            {0: {"extra_scale": 3.0, "offset": offset}},
-            {0: {"extra_scale": 5.0, "offset": offset}},
+            {0: {"offset": offset(0.5)}},
+            {0: {"offset": offset(1.5)}},
+            # No quantized offset here: this call runs the eager implementation,
+            # which is traced directly, and dequantize() is not traceable.
+            {0: {"extra_scale": 3.0}},
         ),
     )

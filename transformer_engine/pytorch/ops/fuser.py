@@ -550,14 +550,22 @@ class OperationFuser:
         if len(self._forward_ops) != self._num_basic_ops:
             # A fused op covers several basic ops; only single-op groups so far.
             return "fused operations are not supported yet"
-        for op, kwargs in zip(self._basic_ops, basic_op_kwargs):
+        for op, kwargs in zip(self._basic_ops, basic_op_kwargs, strict=True):
             # A kwarg an operation declares is resolved into its args container
             # like any other config. Anything else -- notably the preallocated
             # buffers of the grouped operations -- is written to by the op, and a
             # custom op may not mutate a tensor from an enclosing scope.
-            unsupported = sorted(name for name in kwargs if name not in op.fwd_kwarg_names)
-            if unsupported:
-                return f"{type(op).__name__} does not support keyword arguments {unsupported}"
+            undeclared = sorted(name for name in kwargs if name not in op.fwd_kwarg_names)
+            if undeclared:
+                return f"{type(op).__name__} does not support keyword arguments {undeclared}"
+            # Only tensors. The other fields of an args container are values read
+            # off the module, constant across calls and baked into the graph; a
+            # kwarg changes per call, and on the second value Dynamo hands over a
+            # symbolic scalar, which cannot go into an opaque value bundle. Pass a
+            # 0-d tensor instead -- it is a graph input, so it does not recompile.
+            values = sorted(name for name, v in kwargs.items() if not isinstance(v, torch.Tensor))
+            if values:
+                return f"{type(op).__name__} keyword arguments {values} are not tensors"
         for op in self._basic_ops:
             reason = op.compile_unsupported_reason()
             if reason is not None:
