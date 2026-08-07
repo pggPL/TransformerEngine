@@ -1739,12 +1739,14 @@ class DotProductAttention(TransformerEngineBaseModule):
                 ), "cu_seqlens_q and cu_seqlens_q must both be in dtype torch.int32!"
                 batch_size = len(cu_seqlens_q) - 1
                 if max_seqlen_q is None:
+                    dpa_utils.warn_max_seqlen_derivation_once()
                     if cu_seqlens_q_padded is not None:
                         seqlens_q = cu_seqlens_q_padded[1:] - cu_seqlens_q_padded[:-1]
                     else:
                         seqlens_q = cu_seqlens_q[1:] - cu_seqlens_q[:-1]
                     max_seqlen_q = int((seqlens_q.max().item() + 63) // 64 * 64)
                 if max_seqlen_kv is None:
+                    dpa_utils.warn_max_seqlen_derivation_once()
                     if cu_seqlens_kv_padded is not None:
                         seqlens_kv = cu_seqlens_kv_padded[1:] - cu_seqlens_kv_padded[:-1]
                     else:
