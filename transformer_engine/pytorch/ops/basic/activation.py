@@ -8,7 +8,7 @@ from __future__ import annotations
 import abc
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 

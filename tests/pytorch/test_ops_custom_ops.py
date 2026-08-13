@@ -74,6 +74,35 @@ def _build_bias():
     return op
 
 
+def _build_layer_norm():
+    return te.ops.LayerNorm(_HIDDEN, device=_device, dtype=_dtype)
+
+
+def _build_rmsnorm():
+    return te.ops.RMSNorm(_HIDDEN, device=_device, dtype=_dtype)
+
+
+def _build_basic_linear():
+    torch.manual_seed(0)
+    return te.ops.BasicLinear(_HIDDEN, _HIDDEN, device=_device, dtype=_dtype)
+
+
+def _ensure_process_group() -> None:
+    """Single-rank default process group, for the communication operations."""
+    if not torch.distributed.is_initialized():
+        torch.distributed.init_process_group(
+            "gloo", init_method="tcp://localhost:29765", rank=0, world_size=1
+        )
+
+
+def _build_comm(cls):
+    def build():
+        _ensure_process_group()
+        return cls()
+
+    return build
+
+
 @dataclass
 class OpCase:
     """One operation and how to build it."""
@@ -91,6 +120,23 @@ _OP_CASES = [
         OpCase(name=cls.__name__, build=cls)
         for cls in (te.ops.GELU, te.ops.ReLU, te.ops.SiLU, te.ops.GEGLU, te.ops.ReGLU)
     ),
+    OpCase(name="ConstantScale", build=lambda: te.ops.ConstantScale(0.5), quantizes_output=False),
+    # p=0.0 keeps every element, so the fused RNG kernel is deterministic and
+    # the eager / compiled outputs are comparable.
+    OpCase(name="Dropout", build=lambda: te.ops.Dropout(0.0), quantizes_output=False),
+    OpCase(name="L2Normalization", build=te.ops.L2Normalization, quantizes_output=False),
+    OpCase(name="LayerNorm", build=_build_layer_norm, num_grads=3),
+    OpCase(name="RMSNorm", build=_build_rmsnorm, num_grads=2),
+    OpCase(name="SwiGLU", build=te.ops.SwiGLU),
+    OpCase(name="ClampedSwiGLU", build=te.ops.ClampedSwiGLU),
+    # Outside autocast Quantize is an identity, so this exercises the
+    # None-output ("the input, unchanged") path across the op boundary.
+    OpCase(name="Quantize", build=te.ops.Quantize, quantizes_output=False),
+    OpCase(name="BasicLinear", build=_build_basic_linear, quantizes_output=False, num_grads=2),
+    # Single rank, so the communication operations take their trivial paths.
+    OpCase(name="AllReduce", build=_build_comm(te.ops.AllReduce), quantizes_output=False),
+    OpCase(name="AllGather", build=_build_comm(te.ops.AllGather), quantizes_output=False),
+    OpCase(name="ReduceScatter", build=_build_comm(te.ops.ReduceScatter), quantizes_output=False),
 ]
 _CASE_IDS = [case.name for case in _OP_CASES]
 _QUANTIZING = [case for case in _OP_CASES if case.quantizes_output]
@@ -190,7 +236,9 @@ def test_op_fake_matches_real(case: OpCase, fp8_output: bool) -> None:
     assert set(real_attrs) == set(fake_attrs), "ctx_attrs keys disagree"
 
     _y, ctx = _forward_through_ctx(op, x, fp8_output=fp8_output)
-    dy = torch.randn(*real_out.shape, device=_device, dtype=_dtype)
+    # A None output means "the input, unchanged".
+    out_shape = real_out.shape if real_out is not None else x.shape
+    dy = torch.randn(*out_shape, device=_device, dtype=_dtype)
     bwd_args = op.resolve_bwd_args(ctx, dy)
     real_grads = _as_sequence(cls.backward_compute(bwd_args))
     fake_grads = _as_sequence(cls.backward_fake(bwd_args))
@@ -215,6 +263,9 @@ def test_op_matches_eager(case: OpCase) -> None:
     dx_ref = x.grad.clone()
 
     y, _saved, _attrs = forward_fn(_resolve(op, x.detach(), fp8_output=False))
+    if y is None:
+        # "The input, unchanged": the caller substitutes, as compiled_op_forward does.
+        y = x.detach()
     _y_eager, ctx = _forward_through_ctx(op, x.detach(), fp8_output=False)
     grads = backward_fn(op.resolve_bwd_args(ctx, dy))
     # A None gradient means "the incoming gradient, unchanged" -- a custom op may
@@ -242,6 +293,10 @@ def test_op_compiles_fullgraph(case: OpCase, fp8_output: bool) -> None:
 
     def fwd(x_):
         out, saved, _attrs = forward_fn(_resolve(op, x_, fp8_output=fp8_output))
+        if out is None:
+            # "The input, unchanged": the caller substitutes. The branch is
+            # decided by the fake at trace time, so it is Dynamo-safe.
+            out = x_
         # An FP8 output crosses the boundary as its inner buffers and is rebuilt
         # on the far side; compare the buffers, since dequantize is not traceable.
         if isinstance(out, QuantizedTensorStorage):
@@ -299,10 +354,27 @@ def test_op_is_compile_supported(case: OpCase) -> None:
 @_cuda
 def test_unconverted_op_reports_a_reason() -> None:
     """An operation without the compute halves must say so rather than compile."""
-    op = te.ops.Identity()
+    op = te.ops.ScaledSReLU()
     assert op.compile_ops is None
     reason = op.compile_unsupported_reason()
     assert reason is not None and "compute halves" in reason
+
+
+@_cuda
+def test_inline_ops_are_compile_supported() -> None:
+    """Pure-PyTorch operations opt in via compile_inline instead of custom ops."""
+    for op in (
+        te.ops.Identity(),
+        te.ops.Reshape((-1,)),
+        te.ops.AddExtraInput(),
+        te.ops.MakeExtraOutput(),
+    ):
+        assert op.compile_ops is None, type(op).__name__
+        assert op.compile_unsupported_reason() is None, type(op).__name__
+
+    # The in-place variants mutate tensors from an enclosing scope.
+    assert te.ops.AddExtraInput(in_place=True).compile_unsupported_reason() is not None
+    assert te.ops.MakeExtraOutput(in_place=True).compile_unsupported_reason() is not None
 
 
 @_cuda

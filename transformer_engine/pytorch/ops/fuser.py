@@ -142,15 +142,27 @@ class _OperationFuserAutogradFunction(torch.autograd.Function):
             if next_op is not None:
                 next_op_input_quantizer = next_op.get_input_quantizer()
 
-            if use_compiled:
-                x = op.compiled_op_forward(
-                    basic_op_ctxs[basic_op_idxs[0]],
-                    x,
-                    prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
-                    next_op_input_quantizer=next_op_input_quantizer,
-                    **basic_op_kwargs[basic_op_idxs[0]],
-                )
-                fused_op_extra_outputs = [()]
+            # An inline op's eager pass is pure PyTorch, so Dynamo traces it
+            # directly; only ops with registered custom ops are routed there.
+            if use_compiled and not op.compile_inline:
+                if op.is_fused_op:
+                    x = op.compiled_fuser_forward(
+                        [basic_op_ctxs[idx] for idx in basic_op_idxs],
+                        x,
+                        prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
+                        next_op_input_quantizer=next_op_input_quantizer,
+                        basic_op_kwargs=[basic_op_kwargs[idx] for idx in basic_op_idxs],
+                    )
+                    fused_op_extra_outputs = [() for _ in basic_op_idxs]
+                else:
+                    x = op.compiled_op_forward(
+                        basic_op_ctxs[basic_op_idxs[0]],
+                        x,
+                        prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
+                        next_op_input_quantizer=next_op_input_quantizer,
+                        **basic_op_kwargs[basic_op_idxs[0]],
+                    )
+                    fused_op_extra_outputs = [()]
             else:
                 x, fused_op_extra_outputs = op.fuser_forward(
                     [basic_op_ctxs[idx] for idx in basic_op_idxs],
@@ -283,7 +295,7 @@ class _OperationFuserAutogradFunction(torch.autograd.Function):
 
             # Backward op
             grad_extra_outputs = [basic_op_grad_extra_outputs[idx] for idx in basic_op_idxs]
-            if func_ctx.use_compiled:
+            if func_ctx.use_compiled and not op.compile_inline:
                 dx, grad_params_one = op.compiled_op_backward(basic_op_ctxs[basic_op_idxs[0]], dx)
                 fused_op_grad_params = [grad_params_one]
                 fused_op_grad_extra_inputs = [()]
@@ -547,9 +559,15 @@ class OperationFuser:
 
     def _compile_unsupported_reason(self, basic_op_kwargs: list[dict[str, Any]]) -> Optional[str]:
         """Why this group may not run through its operations' custom ops."""
-        if len(self._forward_ops) != self._num_basic_ops:
-            # A fused op covers several basic ops; only single-op groups so far.
-            return "fused operations are not supported yet"
+        for op, _ in self._forward_ops:
+            # A forward fused op compiles like a basic one, through its own
+            # registered custom op; one that has not declared the compute
+            # halves sends the group to eager.
+            if op.is_fused_op and op.compile_ops is None:
+                return f"{type(op).__name__} does not implement the compute halves"
+        for op, _ in self._backward_ops:
+            if op.is_fused_op:
+                return "backward fused operations are not supported yet"
         for op, kwargs in zip(self._basic_ops, basic_op_kwargs, strict=True):
             # A kwarg an operation declares is resolved into its args container
             # like any other config. Anything else -- notably the preallocated

@@ -19,6 +19,10 @@ from ...tensor import Quantizer
 class Identity(BasicOperation):
     """Return input tensor"""
 
+    # Pure passthrough: a custom op may not return its own input, but Dynamo
+    # can trace the eager pass directly.
+    compile_inline = True
+
     def op_forward(
         self,
         ctx: OperationContext,
