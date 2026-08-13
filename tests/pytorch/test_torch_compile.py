@@ -1766,6 +1766,24 @@ def test_te_ops_single_op_group_compiles():
     _assert_sequential_matches_eager(lambda: te.ops.Sequential(_ScaleOp()), base)
 
 
+class _EagerOnlyScaleOp(BasicOperation):
+    """Test-only operation that never declared the compute halves."""
+
+    def __init__(self, *, device: str = "cuda", dtype: torch.dtype = torch.bfloat16) -> None:
+        super().__init__()
+        self.scale = torch.nn.Parameter(torch.full((), 2.0, device=device, dtype=dtype))
+
+    def op_forward(self, ctx, input_, *, prev_op_grad_output_quantizer, next_op_input_quantizer):
+        del prev_op_grad_output_quantizer, next_op_input_quantizer
+        if ctx.requires_grad:
+            ctx.save_for_backward(input_)
+        return input_ * self.scale
+
+    def op_backward(self, ctx, grad_output):
+        (x,) = ctx.saved_tensors
+        return grad_output * self.scale, ((grad_output * x).sum(),)
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 def test_te_ops_unsupported_group_still_compiles_eagerly():
     """An operation without the compute halves runs its eager implementation.
@@ -1776,10 +1794,81 @@ def test_te_ops_unsupported_group_still_compiles_eagerly():
     mutation of anything from an enclosing scope -- have to hold on both paths.
     """
     torch._dynamo.reset()
-    assert te.ops.Identity().compile_unsupported_reason() is not None
+    assert _EagerOnlyScaleOp().compile_unsupported_reason() is not None
 
     base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
-    _assert_sequential_matches_eager(lambda: te.ops.Sequential(te.ops.Identity()), base)
+    _assert_sequential_matches_eager(lambda: te.ops.Sequential(_EagerOnlyScaleOp()), base)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_inline_op_group_compiles():
+    """A ``compile_inline`` operation's eager pass is traced directly by Dynamo."""
+    torch._dynamo.reset()
+    assert te.ops.Identity().compile_unsupported_reason() is None
+    assert te.ops.Reshape((-1,)).compile_unsupported_reason() is None
+
+    base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+    _assert_sequential_matches_eager(
+        lambda: te.ops.Sequential(te.ops.Reshape((64, 32)), _ScaleOp(), te.ops.Reshape((32, 64))),
+        base,
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_converted_pipeline_compiles():
+    """A pipeline of real converted operations runs compiled, end to end.
+
+    The operations are chosen so no fusion pattern matches: each stays its own
+    single-op group, which is what the compiled path supports so far.
+    """
+    torch._dynamo.reset()
+    base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+
+    def make_model():
+        torch.manual_seed(0)
+        return te.ops.Sequential(
+            te.ops.LayerNorm(64, device="cuda", dtype=torch.bfloat16),
+            te.ops.GELU(),
+            te.ops.Dropout(0.0),  # p=0.0 keeps the fused RNG kernel deterministic
+            te.ops.RMSNorm(64, device="cuda", dtype=torch.bfloat16),
+            te.ops.ConstantScale(0.5),
+            te.ops.SwiGLU(),
+        )
+
+    _assert_sequential_matches_eager(make_model, base)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_basic_linear_compiles():
+    """``BasicLinear`` runs through its custom op under ``fullgraph=True``."""
+    torch._dynamo.reset()
+    base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+
+    def make_model():
+        torch.manual_seed(0)
+        return te.ops.Sequential(te.ops.BasicLinear(64, 64, device="cuda", dtype=torch.bfloat16))
+
+    _assert_sequential_matches_eager(make_model, base)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_fused_linear_bias_compiles():
+    """Linear+bias fuses into ``ForwardLinearBiasActivation`` in the forward
+    grouping; the fused op runs through its own custom op while the backward
+    walks the basic operations' custom ops -- the two groupings differ, which is
+    exactly what pipeline-level autograd permits."""
+    torch._dynamo.reset()
+    base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+
+    def make_model():
+        torch.manual_seed(0)
+        return te.ops.Sequential(
+            te.ops.BasicLinear(64, 64, device="cuda", dtype=torch.bfloat16),
+            te.ops.Bias(64, device="cuda", dtype=torch.bfloat16),
+            te.ops.GELU(),
+        )
+
+    _assert_sequential_matches_eager(make_model, base)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")

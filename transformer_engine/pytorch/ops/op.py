@@ -60,6 +60,95 @@ class OperationContext:
 class FusibleOperation(torch.nn.Module, metaclass=abc.ABCMeta):
     """Tensor operation supported by the operation fuser"""
 
+    # torch.compile support, shared by basic and fused operations. An operation
+    # opts in by declaring the two arg containers and implementing the compute
+    # classmethods below; this base class then registers its custom ops.
+    fwd_args_type: Optional[type] = None
+    bwd_args_type: Optional[type] = None
+    # Gradients returned by backward_compute: the input's, then any parameters'.
+    num_grad_inputs: int = 1
+    # (forward_fn, backward_fn) pair, or None if the operation cannot be compiled.
+    compile_ops: Optional[tuple[Callable[..., Any], Callable[..., Any]]] = None
+    # An operation whose eager passes are pure PyTorch (no TE kernels, no global
+    # state) opts in with this instead of the compute halves: Dynamo traces its
+    # eager forward/backward directly, so no custom op is registered.
+    compile_inline: bool = False
+
+    # Registered op names so far. Two classes may share a name (e.g. the
+    # ``module.rmsnorm.RMSNorm`` wrapper subclasses ``ops.basic.RMSNorm``);
+    # re-registering under the same name makes ``torch.library`` destroy the
+    # first registration, leaving the base class's compile_ops holding dangling
+    # operator handles -- which surfaces later as heap-layout-dependent
+    # ``vector::reserve`` / ``bad_alloc`` errors from schema parsing.
+    _compile_op_name_counts: dict[str, int] = {}
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls.fwd_args_type is None or cls.bwd_args_type is None:
+            return
+        if getattr(cls.forward_compute, "__isabstractmethod__", False):
+            return
+        for name, arg_type in (
+            ("fwd_args_type", cls.fwd_args_type),
+            ("bwd_args_type", cls.bwd_args_type),
+        ):
+            # The op schema is built from the container's fields, so this is the
+            # framework's actual requirement -- check it where it is declared.
+            if not dataclasses.is_dataclass(arg_type):
+                raise TypeError(f"{cls.__name__}.{name} must be a dataclass")
+        # One registration per class. The compute halves are bound here, so a
+        # subclass that only swaps kernels (the activations) still gets its own
+        # op without repeating any of this. Import order is deterministic, so
+        # the deduplicated name is identical across ranks.
+        base_name = cls.__name__.lower()
+        count = FusibleOperation._compile_op_name_counts.get(base_name, 0)
+        FusibleOperation._compile_op_name_counts[base_name] = count + 1
+        cls.compile_ops = register_custom_op(
+            op_name=base_name if count == 0 else f"{base_name}_{count + 1}",
+            fwd_arg_type=cls.fwd_args_type,
+            fwd_impl=cls.forward_compute,
+            fwd_fake_impl=cls.forward_fake,
+            bwd_arg_type=cls.bwd_args_type,
+            bwd_impl=cls.backward_compute,
+            bwd_fake_impl=cls.backward_fake,
+            num_grad_inputs=cls.num_grad_inputs,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Compute halves. Classmethods, not free functions: they belong to the
+    # operation, and binding to the class is what lets a family of operations
+    # share one implementation while dispatching to per-class kernels.
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def forward_compute(cls, args: Any) -> tuple[Any, tuple, dict[str, Any]]:
+        """Pure forward: ``(output, tensors_to_save, ctx_attrs)``.
+
+        Takes everything through ``args``; must not read ``self`` or global
+        state, both of which are invisible to the compiler at this point.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def forward_fake(cls, args: Any) -> tuple[Any, tuple, dict[str, Any]]:
+        """Allocation-free twin of :meth:`forward_compute` over ``TensorSpec``.
+
+        Runs as a meta kernel, outside the traced frame, and more than once per
+        compile, so it must be a pure function of ``args`` -- a read of global
+        state here is unguarded and can silently disagree with the real impl.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def backward_compute(cls, args: Any) -> tuple:
+        """Pure backward: ``num_grad_inputs`` gradients."""
+        raise NotImplementedError
+
+    @classmethod
+    def backward_fake(cls, args: Any) -> tuple:
+        """Allocation-free twin of :meth:`backward_compute`."""
+        raise NotImplementedError
+
     @property
     @abc.abstractmethod
     def is_fused_op(self) -> bool:
@@ -185,47 +274,9 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
     # Number of extra tensor outputs
     num_extra_outputs: int = 0
 
-    # torch.compile support. An operation opts in by declaring the two arg
-    # containers and implementing the four compute classmethods below; the base
-    # class then registers its custom ops and drives them from op_forward /
-    # op_backward, so no operation writes that plumbing itself.
-    fwd_args_type: Optional[type] = None
-    bwd_args_type: Optional[type] = None
-    # Gradients returned by backward_compute: the input's, then any parameters'.
-    num_grad_inputs: int = 1
     # Forward kwargs this operation accepts, resolved into fwd_args_type like
     # any other config. A kwarg carries no gradient and must not be mutated.
     fwd_kwarg_names: tuple[str, ...] = ()
-    # (forward_fn, backward_fn) pair, or None if the operation cannot be compiled.
-    compile_ops: Optional[tuple[Callable[..., Any], Callable[..., Any]]] = None
-
-    def __init_subclass__(cls, **kwargs) -> None:
-        super().__init_subclass__(**kwargs)
-        if cls.fwd_args_type is None or cls.bwd_args_type is None:
-            return
-        if getattr(cls.forward_compute, "__isabstractmethod__", False):
-            return
-        for name, arg_type in (
-            ("fwd_args_type", cls.fwd_args_type),
-            ("bwd_args_type", cls.bwd_args_type),
-        ):
-            # The op schema is built from the container's fields, so this is the
-            # framework's actual requirement -- check it where it is declared.
-            if not dataclasses.is_dataclass(arg_type):
-                raise TypeError(f"{cls.__name__}.{name} must be a dataclass")
-        # One registration per class. The compute halves are bound here, so a
-        # subclass that only swaps kernels (the activations) still gets its own
-        # op without repeating any of this.
-        cls.compile_ops = register_custom_op(
-            op_name=cls.__name__.lower(),
-            fwd_arg_type=cls.fwd_args_type,
-            fwd_impl=cls.forward_compute,
-            fwd_fake_impl=cls.forward_fake,
-            bwd_arg_type=cls.bwd_args_type,
-            bwd_impl=cls.backward_compute,
-            bwd_fake_impl=cls.backward_fake,
-            num_grad_inputs=cls.num_grad_inputs,
-        )
 
     def __init__(self) -> None:
         super().__init__()
@@ -233,41 +284,6 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         # Objects for quantization
         self._fp8_metas: Optional[dict[str, dict[str, Any]]] = None
         self._quantizers: Optional[dict[str, list[Quantizer]]] = None
-
-    # ------------------------------------------------------------------ #
-    # Compute halves. Classmethods, not free functions: they belong to the
-    # operation, and binding to the class is what lets a family of operations
-    # share one implementation while dispatching to per-class kernels.
-    # ------------------------------------------------------------------ #
-
-    @classmethod
-    def forward_compute(cls, args: Any) -> tuple[Any, tuple, dict[str, Any]]:
-        """Pure forward: ``(output, tensors_to_save, ctx_attrs)``.
-
-        Takes everything through ``args``; must not read ``self`` or global
-        state, both of which are invisible to the compiler at this point.
-        """
-        raise NotImplementedError
-
-    @classmethod
-    def forward_fake(cls, args: Any) -> tuple[Any, tuple, dict[str, Any]]:
-        """Allocation-free twin of :meth:`forward_compute` over ``TensorSpec``.
-
-        Runs as a meta kernel, outside the traced frame, and more than once per
-        compile, so it must be a pure function of ``args`` -- a read of global
-        state here is unguarded and can silently disagree with the real impl.
-        """
-        raise NotImplementedError
-
-    @classmethod
-    def backward_compute(cls, args: Any) -> tuple:
-        """Pure backward: ``num_grad_inputs`` gradients."""
-        raise NotImplementedError
-
-    @classmethod
-    def backward_fake(cls, args: Any) -> tuple:
-        """Allocation-free twin of :meth:`backward_compute`."""
-        raise NotImplementedError
 
     def compile_unsupported_reason(self) -> Optional[str]:
         """Why this operation cannot go through its custom op, or ``None``.
@@ -277,7 +293,7 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         Recipe-level limits are not checked here -- they belong to whoever reads
         the recipe, which is the fuser.
         """
-        if self.compile_ops is None:
+        if self.compile_ops is None and not self.compile_inline:
             return f"{self.__class__.__name__} does not implement the compute halves"
         for mode in ("forward", "backward"):
             for index in range(self.num_quantizers(mode)):
@@ -607,6 +623,10 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             **kwargs,
         )
         output, saved, ctx_attrs = self.forward_compute(args)
+        if output is None:
+            # "The input, unchanged": a custom op may not return one of its own
+            # inputs, so the compute half hands back None instead.
+            output = input_
         if ctx.requires_grad:
             ctx.save_for_backward(*self.saved_for_backward(saved, input_))
             for name, value in ctx_attrs.items():
@@ -637,6 +657,8 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             **kwargs,
         )
         output, saved, ctx_attrs = self.compile_ops[0](args)
+        if output is None:
+            output = input_
         if ctx.requires_grad:
             ctx.save_for_backward(*self.saved_for_backward(saved, input_))
             for name, value in ctx_attrs.items():
@@ -970,6 +992,61 @@ class FusedOperation(FusibleOperation):
     def pre_fuser_forward(self, *, requires_grad: bool) -> None:
         for op in self.basic_ops:
             op.pre_fuser_forward(requires_grad=requires_grad)
+
+    def resolve_fuser_fwd_args(
+        self,
+        basic_op_ctxs: list[OperationContext],
+        input_: torch.Tensor,
+        *,
+        prev_op_grad_output_quantizer: Optional[Quantizer],
+        next_op_input_quantizer: Optional[Quantizer],
+        basic_op_kwargs: list[dict[str, Any]],
+    ) -> Any:
+        """Gather the fused forward's inputs into a flat, ``self``-free container.
+
+        The fused counterpart of ``BasicOperation.resolve_fwd_args``; reads the
+        basic ops' state and global state in the traced region.
+        """
+        raise NotImplementedError
+
+    def scatter_ctx(
+        self,
+        basic_op_ctxs: list[OperationContext],
+        saved: tuple,
+        ctx_attrs: dict[str, Any],
+        input_: torch.Tensor,
+    ) -> None:
+        """Distribute the forward's saved tensors and attrs onto the basic ops'
+        contexts, applying any saved-tensor substitutions (a custom op may not
+        return one of its own inputs)."""
+        raise NotImplementedError
+
+    def compiled_fuser_forward(
+        self,
+        basic_op_ctxs: list[OperationContext],
+        input_: torch.Tensor,
+        *,
+        prev_op_grad_output_quantizer: Optional[Quantizer],
+        next_op_input_quantizer: Optional[Quantizer],
+        basic_op_kwargs: list[dict[str, Any]],
+    ) -> torch.Tensor:
+        """:meth:`fuser_forward` routed through this fused operation's custom op.
+
+        Unlike a basic op, a fused op spans several contexts; the op-specific
+        ``scatter_ctx`` writes each one.
+        """
+        args = self.resolve_fuser_fwd_args(
+            basic_op_ctxs,
+            input_,
+            prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
+            next_op_input_quantizer=next_op_input_quantizer,
+            basic_op_kwargs=basic_op_kwargs,
+        )
+        output, saved, ctx_attrs = self.compile_ops[0](args)
+        if output is None:
+            output = input_
+        self.scatter_ctx(basic_op_ctxs, saved, ctx_attrs, input_)
+        return output
 
     def forward(
         self,

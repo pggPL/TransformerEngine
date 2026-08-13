@@ -43,9 +43,19 @@ class MakeExtraOutput(BasicOperation):
     # Operation expects buffer for output tensor
     num_extra_outputs: int = 1
 
+    # A passthrough plus an add in backward, traced directly by Dynamo. The
+    # in-place variant mutates the extra output's gradient, which may come from
+    # the enclosing scope, so it is gated out.
+    compile_inline = True
+
     def __init__(self, *, in_place: bool = False):
         super().__init__()
         self._in_place: bool = in_place
+
+    def compile_unsupported_reason(self) -> Optional[str]:
+        if self._in_place:
+            return f"{self.__class__.__name__}(in_place=True) mutates its extra output's gradient"
+        return super().compile_unsupported_reason()
 
     def op_forward(self, *args, **kwargs) -> None:
         raise RuntimeError(

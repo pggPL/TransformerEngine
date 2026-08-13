@@ -44,8 +44,10 @@ class BackwardAddRMSNorm(FusedOperation):
         rmsnorm_op = self.basic_ops[1]
         rmsnorm_op_ctx = basic_op_ctxs[1]
 
-        # Saved tensors from forward pass
-        x, rstdevs = rmsnorm_op_ctx.saved_tensors
+        # Saved tensors from forward pass. The forward saves the operation's raw
+        # input (a custom op may not return one of its own inputs), so rebuild
+        # the 2D view the kernel expects here.
+        saved_input, rstdevs = rmsnorm_op_ctx.saved_tensors
 
         # Tensor dims
         weight_dims = rmsnorm_op.weight.size()
@@ -53,6 +55,7 @@ class BackwardAddRMSNorm(FusedOperation):
 
         # Check input tensors
         dtype = rmsnorm_op_ctx.dtype
+        x = maybe_dequantize(saved_input.contiguous(), dtype).view((-1, inner_dim))
         extra_grad = basic_op_grad_extra_outputs[0][0]
         dy = maybe_dequantize(grad_output.contiguous(), dtype).view(x.size())
         w = maybe_dequantize(rmsnorm_op.weight, dtype).view((inner_dim,))

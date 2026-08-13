@@ -7,13 +7,13 @@
 from __future__ import annotations
 from collections.abc import Callable, Iterable
 import contextlib
+from dataclasses import dataclass
 import math
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import torch
 
 from ...cpp_extensions import general_gemm
-from ...cpu_offload import is_cpu_offload_enabled, mark_activation_offload
 from ...distributed import (
     CudaRNGStatesTracker,
     gather_along_first_dim,
@@ -32,7 +32,6 @@ from ...tensor.storage.float8_tensor_storage import Float8TensorStorage
 from ...utils import (
     canonicalize_device,
     canonicalize_dtype,
-    clear_tensor_data,
     devices_match,
 )
 from ..op import BasicOperation, OperationContext
@@ -43,12 +42,90 @@ from .._common import (
     is_quantized_tensor,
     maybe_dequantize,
 )
+from ...quantized_tensor import QuantizedTensorStorage
+from ...dynamo import TensorSpec
+
+TensorOrQuantized = Union[torch.Tensor, QuantizedTensorStorage]
 
 
 def _wait_async(handle: Optional[Any]) -> None:
     """Wait for asynchronous communication to finish, if needed"""
     if handle is not None:
         handle.wait()
+
+
+def _value_is_quantized(x: Any) -> bool:
+    """Quantized-ness of a value that may be a tensor or its ``TensorSpec``."""
+    if isinstance(x, TensorSpec):
+        return x.quantizer is not None
+    return is_quantized_tensor(x)
+
+
+@dataclass(slots=True)
+class BasicLinearFwdArgs:
+    """Flat, ``self``-free inputs to the linear forward."""
+
+    input_: TensorOrQuantized
+    weight: TensorOrQuantized
+    dtype: torch.dtype
+    tensor_parallel_mode: Optional[str]
+    tensor_parallel_group: Optional[torch.distributed.ProcessGroup]
+    sequence_parallel: bool
+    with_quantized_compute: bool
+    backward_override: Optional[str]
+    input_quantizer: Optional[Quantizer]
+    weight_quantizer: Optional[Quantizer]
+    output_quantizer: Optional[Quantizer]
+    grad_output_quantizer: Optional[Quantizer]
+    grad_input_quantizer: Optional[Quantizer]
+    input_requires_grad: bool
+    weight_requires_grad: bool
+
+
+@dataclass(slots=True)
+class BasicLinearBwdArgs:
+    """Flat inputs to the linear backward."""
+
+    grad_output: Optional[torch.Tensor] = None
+    saved_input: Optional[TensorOrQuantized] = None
+    saved_weight: Optional[TensorOrQuantized] = None
+    input_requires_grad: bool = True
+    weight_requires_grad: bool = True
+    dtype: Optional[torch.dtype] = None
+    grad_weight: Optional[torch.Tensor] = None
+    accumulate_into_grad_weight: bool = False
+    tensor_parallel_mode: Optional[str] = None
+    tensor_parallel_group: Optional[torch.distributed.ProcessGroup] = None
+    sequence_parallel: bool = False
+    with_quantized_compute: bool = False
+    input_quantizer: Optional[Quantizer] = None
+    weight_quantizer: Optional[Quantizer] = None
+    grad_output_quantizer: Optional[Quantizer] = None
+    grad_input_quantizer: Optional[Quantizer] = None
+
+
+def _saved_input_is_fresh(args: BasicLinearFwdArgs, input_is_quantized: bool) -> bool:
+    """Whether the forward's saved input is created inside the op.
+
+    Mirrors ``_functional_forward``: the input crosses back out only when it was
+    freshly quantized inside (no gather). In every other case the saved value
+    would *be* the op's input -- which a custom op may not return -- so the
+    backward rebuilds it from the operation's input instead. Static in the args,
+    so the fake can apply the same rule.
+    """
+    if not args.weight_requires_grad or args.backward_override == "high_precision":
+        return False
+    if not args.with_quantized_compute or input_is_quantized:
+        return False
+    with_x_all_gather = args.tensor_parallel_mode == "column" and args.sequence_parallel
+    return not with_x_all_gather
+
+
+def _saved_weight_is_fresh(args: BasicLinearFwdArgs, weight_is_quantized: bool) -> bool:
+    """Whether the forward's saved weight is created inside the op."""
+    if not args.input_requires_grad or args.backward_override == "high_precision":
+        return False
+    return args.with_quantized_compute and not weight_is_quantized
 
 
 class BasicLinear(BasicOperation):
@@ -990,39 +1067,196 @@ class BasicLinear(BasicOperation):
         _wait_async(dx_async)
         return dx, dw
 
-    def op_forward(
+    fwd_args_type = BasicLinearFwdArgs
+    bwd_args_type = BasicLinearBwdArgs
+    num_grad_inputs = 2  # grad input, grad weight
+
+    @classmethod
+    def forward_compute(cls, args: BasicLinearFwdArgs):
+        output, x_local, w = BasicLinear._functional_forward(
+            input=args.input_,
+            weight=args.weight,
+            dtype=args.dtype,
+            tensor_parallel_mode=args.tensor_parallel_mode,
+            tensor_parallel_group=args.tensor_parallel_group,
+            sequence_parallel=args.sequence_parallel,
+            with_quantized_compute=args.with_quantized_compute,
+            backward_override=args.backward_override,
+            input_quantizer=args.input_quantizer,
+            weight_quantizer=args.weight_quantizer,
+            output_quantizer=args.output_quantizer,
+            input_requires_grad=args.input_requires_grad,
+            weight_requires_grad=args.weight_requires_grad,
+        )
+
+        # Only tensors created inside the op may cross back out as saved
+        # tensors; in every other case the backward rebuilds them from the
+        # operation's input and weight (see ``_saved_input_is_fresh``).
+        saved_input = (
+            x_local if _saved_input_is_fresh(args, is_quantized_tensor(args.input_)) else None
+        )
+        saved_weight = w if _saved_weight_is_fresh(args, is_quantized_tensor(args.weight)) else None
+        ctx_attrs = {
+            "with_quantized_compute": (
+                args.with_quantized_compute and args.backward_override is None
+            ),
+            "backward_override": args.backward_override,
+            "input_quantizer": args.input_quantizer,
+            "weight_quantizer": args.weight_quantizer,
+            "grad_output_quantizer": args.grad_output_quantizer,
+            "grad_input_quantizer": args.grad_input_quantizer,
+            "dtype": args.dtype,
+            "input_requires_grad": args.input_requires_grad,
+            "weight_requires_grad": args.weight_requires_grad,
+        }
+        return output, (saved_input, saved_weight), ctx_attrs
+
+    @classmethod
+    def forward_fake(cls, args: BasicLinearFwdArgs):
+        x = args.input_
+        w = args.weight
+        device = x.device
+        input_dims = tuple(x.shape)
+        out_features = tuple(w.shape)[0]
+
+        # Output geometry, mirroring the gather / reduce-scatter in the real impl
+        out_rows = input_dims[0] if input_dims else 1
+        if args.tensor_parallel_mode == "column" and args.sequence_parallel:
+            out_rows *= torch.distributed.get_world_size(args.tensor_parallel_group)
+        elif args.tensor_parallel_mode == "row" and args.sequence_parallel:
+            out_rows //= torch.distributed.get_world_size(args.tensor_parallel_group)
+        out_shape = (out_rows, *input_dims[1:-1], out_features)
+
+        output_quantizer = args.output_quantizer
+        if not args.with_quantized_compute or args.tensor_parallel_mode == "row":
+            output_quantizer = None
+        out = TensorSpec(
+            shape=out_shape, dtype=args.dtype, quantizer=output_quantizer, device=device
+        )
+
+        saved_input = None
+        if _saved_input_is_fresh(args, _value_is_quantized(x)):
+            saved_input = TensorSpec(
+                shape=input_dims, dtype=args.dtype, quantizer=args.input_quantizer, device=device
+            )
+            saved_input.update_usage(rowwise_usage=False, columnwise_usage=True)
+        saved_weight = None
+        if _saved_weight_is_fresh(args, _value_is_quantized(w)):
+            saved_weight = TensorSpec(
+                shape=tuple(w.shape),
+                dtype=args.dtype,
+                quantizer=args.weight_quantizer,
+                device=device,
+            )
+            if args.input_requires_grad and args.backward_override is None:
+                saved_weight.update_usage(rowwise_usage=False, columnwise_usage=True)
+        ctx_attrs = {
+            "with_quantized_compute": (
+                args.with_quantized_compute and args.backward_override is None
+            ),
+            "backward_override": args.backward_override,
+            "input_quantizer": args.input_quantizer,
+            "weight_quantizer": args.weight_quantizer,
+            "grad_output_quantizer": args.grad_output_quantizer,
+            "grad_input_quantizer": args.grad_input_quantizer,
+            "dtype": args.dtype,
+            "input_requires_grad": args.input_requires_grad,
+            "weight_requires_grad": args.weight_requires_grad,
+        }
+        return out, (saved_input, saved_weight), ctx_attrs
+
+    @classmethod
+    def backward_compute(cls, args: BasicLinearBwdArgs):
+        grad_input, grad_weight = BasicLinear._functional_backward(
+            grad_output=args.grad_output,
+            input=args.saved_input,
+            weight=args.saved_weight,
+            input_requires_grad=args.input_requires_grad,
+            weight_requires_grad=args.weight_requires_grad,
+            dtype=args.dtype,
+            grad_weight=args.grad_weight,
+            accumulate_into_grad_weight=args.accumulate_into_grad_weight,
+            tensor_parallel_mode=args.tensor_parallel_mode,
+            tensor_parallel_group=args.tensor_parallel_group,
+            sequence_parallel=args.sequence_parallel,
+            with_quantized_compute=args.with_quantized_compute,
+            input_quantizer=args.input_quantizer,
+            weight_quantizer=args.weight_quantizer,
+            grad_output_quantizer=args.grad_output_quantizer,
+            grad_input_quantizer=args.grad_input_quantizer,
+        )
+        return grad_input, grad_weight
+
+    @classmethod
+    def backward_fake(cls, args: BasicLinearBwdArgs):
+        dy = args.grad_output
+        device = dy.device
+        dy_dims = tuple(dy.shape)
+        in_features = tuple(args.saved_weight.shape)[-1] if args.saved_weight is not None else None
+
+        grad_input = None
+        if args.input_requires_grad:
+            dx_rows = dy_dims[0] if dy_dims else 1
+            if args.tensor_parallel_mode == "row" and args.sequence_parallel:
+                dx_rows *= torch.distributed.get_world_size(args.tensor_parallel_group)
+            elif args.tensor_parallel_mode == "column" and args.sequence_parallel:
+                dx_rows //= torch.distributed.get_world_size(args.tensor_parallel_group)
+            grad_input_quantizer = args.grad_input_quantizer
+            if not args.with_quantized_compute or args.tensor_parallel_mode == "column":
+                grad_input_quantizer = None
+            grad_input = TensorSpec(
+                shape=(dx_rows, *dy_dims[1:-1], in_features),
+                dtype=args.dtype,
+                quantizer=grad_input_quantizer,
+                device=device,
+            )
+
+        grad_weight = None
+        if args.weight_requires_grad:
+            dw_dtype = args.dtype if args.grad_weight is None else args.grad_weight.dtype
+            dw_shape = (
+                tuple(args.grad_weight.shape)
+                if args.grad_weight is not None
+                else (dy_dims[-1], tuple(args.saved_input.shape)[-1])
+            )
+            grad_weight = TensorSpec(shape=dw_shape, dtype=dw_dtype, device=device)
+        return grad_input, grad_weight
+
+    def saved_for_backward(self, saved: tuple, input_: torch.Tensor) -> tuple:
+        # A None slot means the tensor was not created inside the op; the
+        # backward rebuilds it from the operation's input / weight. When the
+        # corresponding grad is not required the slot simply goes unread.
+        saved_input, saved_weight = saved
+        if saved_input is None:
+            saved_input = input_
+        if saved_weight is None:
+            saved_weight = self.weight
+        return (saved_input, saved_weight)
+
+    def resolve_fwd_args(
         self,
-        ctx: OperationContext,
         input_: torch.Tensor,
-        prev_op_grad_output_quantizer: Optional[Quantizer],
-        next_op_input_quantizer: Optional[Quantizer],
-    ) -> torch.Tensor:
+        *,
+        requires_grad: bool,
+        prev_op_grad_output_quantizer: Optional[Quantizer] = None,
+        next_op_input_quantizer: Optional[Quantizer] = None,
+    ) -> BasicLinearFwdArgs:
+        input_requires_grad = requires_grad
+        weight_requires_grad = requires_grad and self.weight.requires_grad
 
-        # Check which grads are required
-        input_requires_grad = ctx.requires_grad
-        weight_requires_grad = ctx.requires_grad and self.weight.requires_grad
-
-        # Quantizers
-        input_quantizer = self.get_quantizer("forward", 0)
-        weight_quantizer = self.get_quantizer("forward", 1)
-        output_quantizer = next_op_input_quantizer
-        grad_output_quantizer = self.get_quantizer("backward", 0)
-        grad_input_quantizer = prev_op_grad_output_quantizer
         with_quantized_compute = FP8GlobalStateManager.is_fp8_enabled()
         if with_quantized_compute:
             backward_override = FP8GlobalStateManager.get_fp8_recipe().backward_override
         else:
             backward_override = None
 
-        # Get autocast dtype if needed
         if torch.is_autocast_enabled():
             dtype = torch.get_autocast_dtype("cuda")
         else:
             dtype = self.weight.dtype
 
-        # Linear forward
-        output, x_local, w = BasicLinear._functional_forward(
-            input=input_,
+        return BasicLinearFwdArgs(
+            input_=input_,
             weight=self.weight,
             dtype=dtype,
             tensor_parallel_mode=self.tensor_parallel_mode,
@@ -1030,51 +1264,22 @@ class BasicLinear(BasicOperation):
             sequence_parallel=self.sequence_parallel,
             with_quantized_compute=with_quantized_compute,
             backward_override=backward_override,
-            input_quantizer=input_quantizer,
-            weight_quantizer=weight_quantizer,
-            output_quantizer=output_quantizer,
+            input_quantizer=self.get_quantizer("forward", 0),
+            weight_quantizer=self.get_quantizer("forward", 1),
+            output_quantizer=next_op_input_quantizer,
+            grad_output_quantizer=self.get_quantizer("backward", 0),
+            grad_input_quantizer=prev_op_grad_output_quantizer,
             input_requires_grad=input_requires_grad,
             weight_requires_grad=weight_requires_grad,
         )
 
-        # Save state for backward pass
-        if ctx.requires_grad:
-            if backward_override == "high_precision":
-                saved_input = input_ if weight_requires_grad else None
-                saved_weight = self.weight if input_requires_grad else None
-            else:
-                saved_input = x_local
-                saved_weight = w
-            if is_cpu_offload_enabled():
-                # No special CPU offloading logic is needed for weights. saved_weight is
-                # either self.weight (nn.Parameter, auto-excluded from offload) or a
-                # workspace freshly created each forward pass.
-                mark_activation_offload(saved_input)
-            ctx.save_for_backward(saved_input, saved_weight)
-            ctx.with_quantized_compute = with_quantized_compute and backward_override is None
-            ctx.backward_override = backward_override
-            ctx.input_quantizer = input_quantizer
-            ctx.weight_quantizer = weight_quantizer
-            ctx.grad_output_quantizer = grad_output_quantizer
-            ctx.grad_input_quantizer = grad_input_quantizer
-            ctx.dtype = dtype
-            ctx.input_requires_grad = input_requires_grad
-            ctx.weight_requires_grad = weight_requires_grad
+    def resolve_bwd_args(
+        self, ctx: OperationContext, grad_output: torch.Tensor
+    ) -> BasicLinearBwdArgs:
+        saved_input, saved_weight = ctx.saved_tensors
 
-        return output
-
-    def op_backward(
-        self,
-        ctx: OperationContext,
-        grad_output: torch.Tensor,
-    ) -> tuple[torch.Tensor, Iterable[Optional[torch.Tensor]]]:
-
-        # Saved tensors from forward pass
-        (x_local, w) = ctx.saved_tensors
-
-        # Megatron-LM wgrad fusion
-        # Note: Get grad tensor from param so we can accumulate
-        # directly into it.
+        # Megatron-LM wgrad fusion: accumulate directly into the param's
+        # main_grad. Gated out under compile (see compile_unsupported_reason).
         accumulate_into_main_grad = self._accumulate_into_main_grad
         grad_weight = None
         if ctx.weight_requires_grad and accumulate_into_main_grad:
@@ -1085,11 +1290,10 @@ class BasicLinear(BasicOperation):
         else:
             accumulate_into_main_grad = False
 
-        # Linear backward pass
-        grad_input, grad_weight = BasicLinear._functional_backward(
+        return BasicLinearBwdArgs(
             grad_output=grad_output,
-            input=x_local,
-            weight=w,
+            saved_input=saved_input,
+            saved_weight=saved_weight,
             input_requires_grad=ctx.input_requires_grad,
             weight_requires_grad=ctx.weight_requires_grad,
             dtype=ctx.dtype,
@@ -1105,12 +1309,24 @@ class BasicLinear(BasicOperation):
             grad_input_quantizer=ctx.grad_input_quantizer,
         )
 
-        # Clear input tensor if possible
-        clear_tensor_data(x_local)
+    def compile_unsupported_reason(self) -> Optional[str]:
+        if self._accumulate_into_main_grad:
+            # The wgrad GEMM writes into the param's main_grad, a tensor from an
+            # enclosing scope, which a custom op may not mutate.
+            return "accumulate_into_main_grad"
+        return super().compile_unsupported_reason()
 
-        # Megatron-LM wgrad fusion
-        # Note: Return dummy tensor for grad weight if needed.
-        if accumulate_into_main_grad:
+    def op_backward(
+        self,
+        ctx: OperationContext,
+        grad_output: torch.Tensor,
+    ) -> tuple[torch.Tensor, Iterable[Optional[torch.Tensor]]]:
+        args = self.resolve_bwd_args(ctx, grad_output)
+        grad_input, grad_weight = self.backward_compute(args)
+
+        # Megatron-LM wgrad fusion: the real wgrad went into main_grad, so hand
+        # autograd a dummy tensor.
+        if args.accumulate_into_grad_weight:
             grad_weight = get_dummy_wgrads_for_params([self.weight])[0]
 
         return grad_input, [grad_weight]

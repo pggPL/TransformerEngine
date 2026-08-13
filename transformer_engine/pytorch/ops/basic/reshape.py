@@ -30,6 +30,10 @@ class Reshape(BasicOperation):
 
     """
 
+    # Both passes are a single view op: a custom op may return neither its
+    # input nor a view of it, but Dynamo traces reshape natively.
+    compile_inline = True
+
     def __init__(self, shape: Iterable[int]) -> None:
         super().__init__()
         self._shape = tuple(shape)

@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 from collections.abc import Iterable
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Union
 
 import torch
 
@@ -14,11 +15,73 @@ import transformer_engine_torch as tex
 from ...constants import DType
 from ...cpu_offload import is_cpu_offload_enabled, mark_activation_offload
 from ...tensor import Float8CurrentScalingQuantizer, Quantizer
+from ...quantized_tensor import QuantizedTensorStorage
+from ...dynamo import TensorSpec
 from ...utils import clear_tensor_data
 from ..op import BasicOperation, OperationContext
 from .._common import maybe_dequantize
 
 __all__ = ["SwiGLU", "ClampedSwiGLU", "ScaledSwiGLU", "ScaledClampedQGeGLU"]
+
+TensorOrQuantized = Union[torch.Tensor, QuantizedTensorStorage]
+
+
+def _deinterleave_glu(t: torch.Tensor, interleave_size: int) -> torch.Tensor:
+    """Convert block-interleaved gates/units into the concatenated layout."""
+    shape = t.size()
+    t = t.reshape(-1, shape[-1] // (2 * interleave_size), 2, interleave_size)
+    t = t.transpose(1, 2).contiguous()
+    return t.view(shape)
+
+
+def _interleave_glu(t: torch.Tensor, interleave_size: int) -> torch.Tensor:
+    """Inverse of :func:`_deinterleave_glu`."""
+    shape = t.size()
+    t = t.reshape(-1, 2, shape[-1] // (2 * interleave_size), interleave_size)
+    t = t.transpose(1, 2).contiguous()
+    return t.view(shape)
+
+
+@dataclass(slots=True)
+class SwiGLUFwdArgs:
+    """Flat, ``self``-free inputs to the SwiGLU forward."""
+
+    input_: TensorOrQuantized
+    dtype: torch.dtype
+    output_quantizer: Optional[Quantizer]
+    cache_quantized_input: bool
+    glu_interleave_size: Optional[int]
+    requires_grad: bool
+    prev_op_grad_output_quantizer: Optional[Quantizer]
+
+
+@dataclass(slots=True)
+class SwiGLUBwdArgs:
+    """Flat inputs to the SwiGLU backward."""
+
+    grad_output: Optional[torch.Tensor] = None
+    saved_input: Optional[TensorOrQuantized] = None
+    dtype: Optional[torch.dtype] = None
+    glu_interleave_size: Optional[int] = None
+    grad_input_quantizer: Optional[Quantizer] = None
+
+
+@dataclass(slots=True)
+class ClampedSwiGLUFwdArgs(SwiGLUFwdArgs):
+    """Flat, ``self``-free inputs to the clamped-SwiGLU forward."""
+
+    limit: float = 7.0
+    alpha: float = 1.702
+    glu_linear_offset: float = 1.0
+
+
+@dataclass(slots=True)
+class ClampedSwiGLUBwdArgs(SwiGLUBwdArgs):
+    """Flat inputs to the clamped-SwiGLU backward."""
+
+    limit: Optional[float] = None
+    alpha: Optional[float] = None
+    glu_linear_offset: Optional[float] = None
 
 
 class SwiGLU(BasicOperation):
@@ -80,15 +143,98 @@ class SwiGLU(BasicOperation):
         self.cache_quantized_input: bool = cache_quantized_input
         self.glu_interleave_size: Optional[int] = glu_interleave_size
 
-    def op_forward(
-        self,
-        ctx: OperationContext,
-        input_: torch.Tensor,
-        prev_op_grad_output_quantizer: Optional[Quantizer],
-        next_op_input_quantizer: Optional[Quantizer],
-    ) -> torch.Tensor:
+    fwd_args_type = SwiGLUFwdArgs
+    bwd_args_type = SwiGLUBwdArgs
+    num_grad_inputs = 1
 
-        # Compute dtype
+    @classmethod
+    def forward_compute(cls, args: SwiGLUFwdArgs):
+        x = maybe_dequantize(args.input_.contiguous(), args.dtype)
+
+        swiglu_in = x
+        if args.glu_interleave_size is not None:
+            swiglu_in = _deinterleave_glu(swiglu_in, args.glu_interleave_size)
+
+        out = tex.swiglu(swiglu_in, args.output_quantizer)
+
+        if args.cache_quantized_input:
+            input_quantizer = Float8CurrentScalingQuantizer(DType.kFloat8E4M3, x.device)
+            input_quantizer.set_usage(rowwise=True, columnwise=False)
+            x = input_quantizer(x)
+        # Only the re-quantized input is handed back; otherwise x may *be* the
+        # input (dequantize + contiguous are no-ops for a plain contiguous
+        # tensor), which a custom op may not return. The backward rebuilds it
+        # from the operation's input instead.
+        saved = (x,) if (args.requires_grad and args.cache_quantized_input) else ()
+        return out, saved, cls._ctx_attrs(args)
+
+    @classmethod
+    def forward_fake(cls, args: SwiGLUFwdArgs):
+        x = args.input_
+        shape = tuple(x.shape)
+        out = TensorSpec(
+            shape=(*shape[:-1], shape[-1] // 2),
+            dtype=args.dtype,
+            quantizer=args.output_quantizer,
+            device=x.device,
+        )
+        saved = ()
+        if args.requires_grad and args.cache_quantized_input:
+            saved_quantizer = Float8CurrentScalingQuantizer(DType.kFloat8E4M3, x.device)
+            saved_quantizer.set_usage(rowwise=True, columnwise=False)
+            saved = (
+                TensorSpec(
+                    shape=shape, dtype=args.dtype, quantizer=saved_quantizer, device=x.device
+                ),
+            )
+        return out, saved, cls._ctx_attrs(args)
+
+    @staticmethod
+    def _ctx_attrs(args: SwiGLUFwdArgs) -> Dict[str, Any]:
+        return {
+            "dtype": args.dtype,
+            "prev_op_grad_output_quantizer": args.prev_op_grad_output_quantizer,
+        }
+
+    @classmethod
+    def backward_compute(cls, args: SwiGLUBwdArgs):
+        x = maybe_dequantize(args.saved_input.contiguous(), args.dtype)
+        dy = maybe_dequantize(args.grad_output.contiguous(), args.dtype)
+
+        swiglu_in = x
+        quantizer = args.grad_input_quantizer
+        if args.glu_interleave_size is not None:
+            swiglu_in = _deinterleave_glu(swiglu_in, args.glu_interleave_size)
+            quantizer = None
+
+        dx = tex.dswiglu(dy, swiglu_in, quantizer)
+        if args.glu_interleave_size is not None:
+            dx = _interleave_glu(dx, args.glu_interleave_size)
+        return (dx,)
+
+    @classmethod
+    def backward_fake(cls, args: SwiGLUBwdArgs):
+        x = args.saved_input
+        quantizer = args.grad_input_quantizer
+        if args.glu_interleave_size is not None:
+            quantizer = None
+        return (
+            TensorSpec(
+                shape=tuple(x.shape), dtype=args.dtype, quantizer=quantizer, device=x.device
+            ),
+        )
+
+    def saved_for_backward(self, saved: tuple, input_: torch.Tensor) -> tuple:
+        return saved or (input_,)
+
+    def resolve_fwd_args(
+        self,
+        input_: torch.Tensor,
+        *,
+        requires_grad: bool,
+        prev_op_grad_output_quantizer: Optional[Quantizer] = None,
+        next_op_input_quantizer: Optional[Quantizer] = None,
+    ) -> SwiGLUFwdArgs:
         dtype: torch.dtype
         if torch.is_autocast_enabled():
             dtype = torch.get_autocast_dtype("cuda")
@@ -96,96 +242,25 @@ class SwiGLU(BasicOperation):
             dtype = input_.dtype
         if dtype not in (torch.float32, torch.float16, torch.bfloat16):
             raise RuntimeError(f"Unsupported dtype ({dtype})")
+        return SwiGLUFwdArgs(
+            input_=input_,
+            dtype=dtype,
+            output_quantizer=next_op_input_quantizer,
+            cache_quantized_input=self.cache_quantized_input,
+            glu_interleave_size=self.glu_interleave_size,
+            requires_grad=requires_grad,
+            prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
+        )
 
-        # Check input tensor
-        input_ = maybe_dequantize(input_.contiguous(), dtype)
-
-        # Remove interleaving if needed
-        swiglu_in = input_
-        if self.glu_interleave_size is not None:
-            shape = swiglu_in.size()
-            swiglu_in = swiglu_in.reshape(
-                -1,
-                shape[-1] // (2 * self.glu_interleave_size),
-                2,
-                self.glu_interleave_size,
-            )
-            swiglu_in = swiglu_in.transpose(1, 2).contiguous()
-            swiglu_in = swiglu_in.view(shape)
-
-        # Launch kernel
-        out = tex.swiglu(swiglu_in, next_op_input_quantizer)
-
-        # Quantize input to FP8 before caching if needed
-        if self.cache_quantized_input:
-            input_quantizer = Float8CurrentScalingQuantizer(
-                DType.kFloat8E4M3,
-                input_.device,
-            )
-            input_quantizer.set_usage(rowwise=True, columnwise=False)
-            input_ = input_quantizer(input_)
-
-        # Save state for backward pass
-        if ctx.requires_grad:
-            if is_cpu_offload_enabled():
-                mark_activation_offload(input_)
-            ctx.save_for_backward(input_)
-            ctx.dtype = dtype
-            ctx.prev_op_grad_output_quantizer = prev_op_grad_output_quantizer
-
-        return out
-
-    def op_backward(
-        self,
-        ctx: OperationContext,
-        grad_output: torch.Tensor,
-    ) -> tuple[torch.Tensor, tuple[()]]:
-
-        # Saved tensors from forward pass
-        (input_,) = ctx.saved_tensors
-
-        # Make sure tensors have correct dtypes
-        x = maybe_dequantize(input_.contiguous(), ctx.dtype)
-        dy = maybe_dequantize(grad_output.contiguous(), ctx.dtype)
-
-        # Remove interleaving if needed
-        swiglu_in = x
-        if self.glu_interleave_size is not None:
-            shape = swiglu_in.size()
-            swiglu_in = swiglu_in.reshape(
-                -1,
-                shape[-1] // (2 * self.glu_interleave_size),
-                2,
-                self.glu_interleave_size,
-            )
-            swiglu_in = swiglu_in.transpose(1, 2).contiguous()
-            swiglu_in = swiglu_in.view(shape)
-
-        # Quantizer for grad input
-        quantizer = ctx.prev_op_grad_output_quantizer
-        if self.glu_interleave_size is not None:
-            quantizer = None
-
-        # Launch kernel
-        grad_swiglu_in = tex.dswiglu(dy, swiglu_in, quantizer)
-
-        # Apply interleaving if needed
-        dx = grad_swiglu_in
-        if self.glu_interleave_size is not None:
-            shape = dx.size()
-            dx = dx.reshape(
-                -1,
-                2,
-                shape[-1] // (2 * self.glu_interleave_size),
-                self.glu_interleave_size,
-            )
-            dx = dx.transpose(1, 2).contiguous()
-            dx = dx.view(shape)
-
-        # Clear input tensor if possible
-        clear_tensor_data(input_)
-
-        return dx, ()
+    def resolve_bwd_args(self, ctx: OperationContext, grad_output: torch.Tensor) -> SwiGLUBwdArgs:
+        (saved_input,) = ctx.saved_tensors
+        return SwiGLUBwdArgs(
+            grad_output=grad_output,
+            saved_input=saved_input,
+            dtype=ctx.dtype,
+            glu_interleave_size=self.glu_interleave_size,
+            grad_input_quantizer=ctx.prev_op_grad_output_quantizer,
+        )
 
 
 class ClampedSwiGLU(BasicOperation):
@@ -267,15 +342,77 @@ class ClampedSwiGLU(BasicOperation):
             self.glu_linear_offset,
         )
 
-    def op_forward(
-        self,
-        ctx: OperationContext,
-        input_: torch.Tensor,
-        prev_op_grad_output_quantizer: Optional[Quantizer],
-        next_op_input_quantizer: Optional[Quantizer],
-    ) -> torch.Tensor:
+    fwd_args_type = ClampedSwiGLUFwdArgs
+    bwd_args_type = ClampedSwiGLUBwdArgs
+    num_grad_inputs = 1
 
-        # Compute dtype
+    @classmethod
+    def forward_compute(cls, args: ClampedSwiGLUFwdArgs):
+        x = maybe_dequantize(args.input_.contiguous(), args.dtype)
+
+        swiglu_in = x
+        if args.glu_interleave_size is not None:
+            swiglu_in = _deinterleave_glu(swiglu_in, args.glu_interleave_size)
+
+        out = tex.clamped_swiglu(
+            swiglu_in,
+            args.output_quantizer,
+            args.limit,
+            args.alpha,
+            args.glu_linear_offset,
+        )
+
+        if args.cache_quantized_input:
+            input_quantizer = Float8CurrentScalingQuantizer(DType.kFloat8E4M3, x.device)
+            input_quantizer.set_usage(rowwise=True, columnwise=False)
+            x = input_quantizer(x)
+        # Same saved-tensor rule as SwiGLU: only a freshly quantized input may
+        # be handed back; otherwise the backward rebuilds it from the op input.
+        saved = (x,) if (args.requires_grad and args.cache_quantized_input) else ()
+        return out, saved, SwiGLU._ctx_attrs(args)
+
+    @classmethod
+    def forward_fake(cls, args: ClampedSwiGLUFwdArgs):
+        return SwiGLU.forward_fake(args)
+
+    @classmethod
+    def backward_compute(cls, args: ClampedSwiGLUBwdArgs):
+        x = maybe_dequantize(args.saved_input.contiguous(), args.dtype)
+        dy = maybe_dequantize(args.grad_output.contiguous(), args.dtype)
+
+        swiglu_in = x
+        quantizer = args.grad_input_quantizer
+        if args.glu_interleave_size is not None:
+            swiglu_in = _deinterleave_glu(swiglu_in, args.glu_interleave_size)
+            quantizer = None
+
+        dx = tex.clamped_dswiglu(
+            dy,
+            swiglu_in,
+            quantizer,
+            args.limit,
+            args.alpha,
+            args.glu_linear_offset,
+        )
+        if args.glu_interleave_size is not None:
+            dx = _interleave_glu(dx, args.glu_interleave_size)
+        return (dx,)
+
+    @classmethod
+    def backward_fake(cls, args: ClampedSwiGLUBwdArgs):
+        return SwiGLU.backward_fake(args)
+
+    def saved_for_backward(self, saved: tuple, input_: torch.Tensor) -> tuple:
+        return saved or (input_,)
+
+    def resolve_fwd_args(
+        self,
+        input_: torch.Tensor,
+        *,
+        requires_grad: bool,
+        prev_op_grad_output_quantizer: Optional[Quantizer] = None,
+        next_op_input_quantizer: Optional[Quantizer] = None,
+    ) -> ClampedSwiGLUFwdArgs:
         dtype: torch.dtype
         if torch.is_autocast_enabled():
             dtype = torch.get_autocast_dtype("cuda")
@@ -283,93 +420,33 @@ class ClampedSwiGLU(BasicOperation):
             dtype = input_.dtype
         if dtype not in (torch.float32, torch.float16, torch.bfloat16):
             raise RuntimeError(f"Unsupported dtype ({dtype})")
+        return ClampedSwiGLUFwdArgs(
+            input_=input_,
+            dtype=dtype,
+            output_quantizer=next_op_input_quantizer,
+            cache_quantized_input=self.cache_quantized_input,
+            glu_interleave_size=self.glu_interleave_size,
+            requires_grad=requires_grad,
+            prev_op_grad_output_quantizer=prev_op_grad_output_quantizer,
+            limit=self.limit,
+            alpha=self.alpha,
+            glu_linear_offset=self.glu_linear_offset,
+        )
 
-        # Check input tensor
-        x = maybe_dequantize(input_.contiguous(), dtype)
-
-        # Remove interleaving if needed
-        swiglu_in = x
-        if self.glu_interleave_size is not None:
-            shape = swiglu_in.size()
-            swiglu_in = swiglu_in.reshape(
-                -1,
-                shape[-1] // (2 * self.glu_interleave_size),
-                2,
-                self.glu_interleave_size,
-            )
-            swiglu_in = swiglu_in.transpose(1, 2).contiguous()
-            swiglu_in = swiglu_in.view(shape)
-
-        # Launch kernel
-        out = self._tex_clamped_swiglu_forward(swiglu_in, next_op_input_quantizer)
-
-        # Quantize input to FP8 before caching if needed
-        if self.cache_quantized_input:
-            input_quantizer = Float8CurrentScalingQuantizer(DType.kFloat8E4M3, x.device)
-            input_quantizer.set_usage(rowwise=True, columnwise=False)
-            x = input_quantizer(x)
-
-        # Save state for backward pass
-        if ctx.requires_grad:
-            if is_cpu_offload_enabled():
-                mark_activation_offload(x)
-            ctx.save_for_backward(x)
-            ctx.dtype = dtype
-            ctx.prev_op_grad_output_quantizer = prev_op_grad_output_quantizer
-
-        return out
-
-    def op_backward(
-        self,
-        ctx: OperationContext,
-        grad_output: torch.Tensor,
-    ) -> tuple[torch.Tensor, tuple[()]]:
-
-        # Saved tensors from forward pass
-        (input_,) = ctx.saved_tensors
-
-        # Make sure tensors have correct dtypes
-        x = maybe_dequantize(input_.contiguous(), ctx.dtype)
-        dy = maybe_dequantize(grad_output.contiguous(), ctx.dtype)
-
-        # Remove interleaving if needed
-        swiglu_in = x
-        if self.glu_interleave_size is not None:
-            shape = swiglu_in.size()
-            swiglu_in = swiglu_in.reshape(
-                -1,
-                shape[-1] // (2 * self.glu_interleave_size),
-                2,
-                self.glu_interleave_size,
-            )
-            swiglu_in = swiglu_in.transpose(1, 2).contiguous()
-            swiglu_in = swiglu_in.view(shape)
-
-        # Quantizer for grad input
-        quantizer = ctx.prev_op_grad_output_quantizer
-        if self.glu_interleave_size is not None:
-            quantizer = None
-
-        # Launch kernel
-        grad_swiglu_in = self._tex_clamped_dswiglu(dy, swiglu_in, quantizer)
-
-        # Apply interleaving if needed
-        dx = grad_swiglu_in
-        if self.glu_interleave_size is not None:
-            shape = dx.size()
-            dx = dx.reshape(
-                -1,
-                2,
-                shape[-1] // (2 * self.glu_interleave_size),
-                self.glu_interleave_size,
-            )
-            dx = dx.transpose(1, 2).contiguous()
-            dx = dx.view(shape)
-
-        # Clear input tensor if possible
-        clear_tensor_data(input_)
-
-        return dx, ()
+    def resolve_bwd_args(
+        self, ctx: OperationContext, grad_output: torch.Tensor
+    ) -> ClampedSwiGLUBwdArgs:
+        (saved_input,) = ctx.saved_tensors
+        return ClampedSwiGLUBwdArgs(
+            grad_output=grad_output,
+            saved_input=saved_input,
+            dtype=ctx.dtype,
+            glu_interleave_size=self.glu_interleave_size,
+            grad_input_quantizer=ctx.prev_op_grad_output_quantizer,
+            limit=self.limit,
+            alpha=self.alpha,
+            glu_linear_offset=self.glu_linear_offset,
+        )
 
 
 class _ScaledGLU(BasicOperation):
