@@ -1944,6 +1944,71 @@ def test_te_grouped_linear_compile_save_original_input():
         _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
 
 
+_fused_grouped_cc_ok = torch.cuda.is_available() and (
+    (9, 0) <= torch.cuda.get_device_capability() <= (11, 0)
+)
+_fused_grouped_cublas_ok = _fused_grouped_cc_ok and tex.get_cublasLt_version() >= (
+    130400 if torch.cuda.get_device_capability() < (10, 0) else 130300
+)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(
+    not _fused_grouped_cublas_ok,
+    reason="fused grouped GEMM needs Hopper/Blackwell and a recent cuBLASLt",
+)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+@pytest.mark.parametrize(
+    "fp8_recipe",
+    [None] + ([recipe.Float8CurrentScaling()] if fp8_available else []),
+    ids=lambda r: "bf16" if r is None else type(r).__name__,
+)
+def test_te_grouped_linear_fused_compiles(fp8_recipe, compile_mode, monkeypatch):
+    """torch.compile(fullgraph=True) of the fused GroupedTensor path
+    (``NVTE_GROUPED_LINEAR_USE_FUSED_GROUPED_GEMM=1``): ``m_splits`` stays a
+    device tensor, so changing the split distribution in place reuses the very
+    same graph -- no recompiles, no host sync."""
+    if fp8_recipe is not None and torch.cuda.get_device_capability() < (10, 0):
+        if tex.get_cublasLt_version() < 130500:
+            pytest.skip("FP8 current-scaling fused grouped GEMM on Hopper needs cuBLASLt 13.5+")
+    monkeypatch.setenv("NVTE_GROUPED_LINEAR_USE_FUSED_GROUPED_GEMM", "1")
+    dtype = torch.bfloat16
+    device = "cuda"
+    model = te.GroupedLinear(
+        _GROUPED_NUM_GEMMS, _GROUPED_IN, _GROUPED_OUT, params_dtype=dtype, device=device
+    )
+    m_splits_dev = torch.tensor(_GROUPED_M_SPLITS, dtype=torch.int64, device=device)
+
+    def fn(inp):
+        if fp8_recipe is None:
+            return model(inp, m_splits_dev)
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, m_splits_dev)
+
+    torch._dynamo.reset()
+    if compile_mode == "reduce-overhead":
+        _cudagraph_warmup(fn, _grouped_input(dtype, device, requires_grad=True), backward=True)
+        model.zero_grad(set_to_none=True)
+    compiled = torch.compile(fn, fullgraph=True, mode=compile_mode)
+
+    with _assert_no_cudagraph_skips(compile_mode == "reduce-overhead"):
+        # Two warmup calls absorb the one-time recompile from lazily created
+        # module attributes.
+        for _ in range(2):
+            _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+        baseline = _dynamo_counter("stats", "unique_graphs")
+
+        # Change the split distribution IN PLACE: same graph, no recompile.
+        m_splits_dev.copy_(torch.tensor([16, 32, 40, 40], dtype=torch.int64, device=device))
+        _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+        m_splits_dev.copy_(torch.tensor([64, 8, 32, 24], dtype=torch.int64, device=device))
+        _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+        if baseline:
+            assert (
+                _dynamo_counter("stats", "unique_graphs") == baseline
+            ), "changing device-tensor m_splits values must not recompile"
+
+
 # ---------------------------------------------------------------------------
 # Custom-op list adapters (framework unit test via a toy op)
 # ---------------------------------------------------------------------------
