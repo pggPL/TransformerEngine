@@ -1436,7 +1436,10 @@ def test_te_linear_compile_is_first_microbatch(compile_mode):
             torch.testing.assert_close(out, out_ref.detach(), atol=_EAGER_ATOL, rtol=_EAGER_RTOL)
             torch.testing.assert_close(inp.grad, inp_ref.grad, atol=_EAGER_ATOL, rtol=_EAGER_RTOL)
             torch.testing.assert_close(
-                model.weight.grad, ref_model.weight.grad, atol=_EAGER_ATOL, rtol=_EAGER_RTOL
+                model.weight.grad,
+                ref_model.weight.grad,
+                atol=_EAGER_ATOL,
+                rtol=_EAGER_RTOL,
             )
 
             workspace = model._fp8_workspaces.get("weight")
@@ -1560,3 +1563,502 @@ def test_te_linear_dynamic_shapes():
             "Unexpected recompilation(s) across different batch sizes: "
             f"{unique_graphs_after - unique_graphs_baseline} extra graph(s) compiled"
         )
+
+
+# ---------------------------------------------------------------------------
+# te.GroupedLinear
+# ---------------------------------------------------------------------------
+
+_GROUPED_M_SPLITS = [32, 16, 48, 32]  # FP8-legal splits (each divisible by 8)
+_GROUPED_NUM_GEMMS = len(_GROUPED_M_SPLITS)
+_GROUPED_IN, _GROUPED_OUT = 64, 32
+
+
+def _grouped_input(dtype, device, requires_grad=False):
+    return torch.randn(
+        sum(_GROUPED_M_SPLITS),
+        _GROUPED_IN,
+        dtype=dtype,
+        device=device,
+        requires_grad=requires_grad,
+    )
+
+
+def _assert_close_grouped(fn, compiled, model, base):
+    """Run ``fn`` eagerly and ``compiled`` on identical inputs; assert the
+    forward output, the input gradient and every expert's weight / bias
+    gradients match."""
+    num_gemms = model.num_gemms
+    inp_eager = base.detach().clone().requires_grad_(True)
+    model.zero_grad(set_to_none=True)
+    out_eager = fn(inp_eager)
+    out_eager.sum().backward()
+    ref_out = out_eager.detach().clone()
+    ref_igrad = inp_eager.grad.detach().clone()
+    ref_wgrads = [getattr(model, f"weight{i}").grad.detach().clone() for i in range(num_gemms)]
+    ref_bgrads = [getattr(model, f"bias{i}").grad.detach().clone() for i in range(num_gemms)]
+
+    inp_compiled = base.detach().clone().requires_grad_(True)
+    model.zero_grad(set_to_none=True)
+    # Clone before a later cuda-graph replay overwrites the static output buffer.
+    out_compiled = compiled(inp_compiled).clone()
+    out_compiled.sum().backward()
+
+    torch.testing.assert_close(out_compiled, ref_out, atol=_EAGER_ATOL, rtol=_EAGER_RTOL)
+    torch.testing.assert_close(inp_compiled.grad, ref_igrad, atol=_EAGER_ATOL, rtol=_EAGER_RTOL)
+    for i in range(num_gemms):
+        torch.testing.assert_close(
+            getattr(model, f"weight{i}").grad,
+            ref_wgrads[i],
+            atol=_EAGER_ATOL,
+            rtol=_EAGER_RTOL,
+            msg=f"wgrad mismatch for expert {i}",
+        )
+        torch.testing.assert_close(
+            getattr(model, f"bias{i}").grad,
+            ref_bgrads[i],
+            atol=_EAGER_ATOL,
+            rtol=_EAGER_RTOL,
+            msg=f"bias grad mismatch for expert {i}",
+        )
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+@pytest.mark.parametrize(
+    "fp8_recipe",
+    [None, *_all_recipes],
+    ids=lambda r: "bf16" if r is None else type(r).__name__,
+)
+def test_te_grouped_linear_compiles(fp8_recipe, compile_mode):
+    """
+    torch.compile(fullgraph=True) of ``te.GroupedLinear`` under every built-in
+    recipe (plus the bf16-only baseline), for both the default backend and
+    ``mode="reduce-overhead"`` (CUDA-graph trees).
+    """
+    dtype = torch.bfloat16
+    device = "cuda"
+    model = te.GroupedLinear(
+        _GROUPED_NUM_GEMMS, _GROUPED_IN, _GROUPED_OUT, params_dtype=dtype, device=device
+    )
+
+    def fn(inp):
+        if fp8_recipe is None:
+            return model(inp, _GROUPED_M_SPLITS)
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, _GROUPED_M_SPLITS)
+
+    torch._dynamo.reset()
+    if compile_mode == "reduce-overhead":
+        _cudagraph_warmup(fn, _grouped_input(dtype, device, requires_grad=True), backward=True)
+        model.zero_grad(set_to_none=True)
+    compiled = torch.compile(fn, fullgraph=True, mode=compile_mode)
+
+    n_iters = 3 if compile_mode == "reduce-overhead" else 1
+    with _assert_no_cudagraph_skips(compile_mode == "reduce-overhead"):
+        for _ in range(n_iters):
+            _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+def test_te_grouped_linear_compile_with_quantized_fp8_weight(compile_mode):
+    """torch.compile of GroupedLinear with the weights initialized as FP8
+    tensors (exercises the wrapper op's input flattening inside a ``Tensor[]``
+    slot group)."""
+    dtype = torch.bfloat16
+    device = "cuda"
+    fp8_recipe = recipe.Float8CurrentScaling()
+
+    with te.quantized_model_init(enabled=True, recipe=fp8_recipe):
+        model = te.GroupedLinear(
+            _GROUPED_NUM_GEMMS,
+            _GROUPED_IN,
+            _GROUPED_OUT,
+            params_dtype=dtype,
+            device=device,
+        )
+    assert isinstance(model.weight0, te.Float8Tensor)
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, _GROUPED_M_SPLITS)
+
+    torch._dynamo.reset()
+    if compile_mode == "reduce-overhead":
+        _cudagraph_warmup(fn, _grouped_input(dtype, device, requires_grad=True), backward=True)
+        model.zero_grad(set_to_none=True)
+    compiled = torch.compile(fn, fullgraph=True, mode=compile_mode)
+
+    n_iters = 3 if compile_mode == "reduce-overhead" else 1
+    with _assert_no_cudagraph_skips(compile_mode == "reduce-overhead"):
+        for _ in range(n_iters):
+            _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+def test_te_grouped_linear_compile_is_first_microbatch(compile_mode):
+    """torch.compile of ``te.GroupedLinear`` across a microbatch schedule:
+    ``is_first_microbatch=True`` caches every expert's FP8 weight, later steps
+    must reuse the caches and stay numerically aligned with eager."""
+    dtype = torch.bfloat16
+    device = "cuda"
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.GroupedLinear(
+        _GROUPED_NUM_GEMMS, _GROUPED_IN, _GROUPED_OUT, params_dtype=dtype, device=device
+    )
+    ref_model = te.GroupedLinear(
+        _GROUPED_NUM_GEMMS, _GROUPED_IN, _GROUPED_OUT, params_dtype=dtype, device=device
+    )
+    with torch.no_grad():
+        for i in range(_GROUPED_NUM_GEMMS):
+            getattr(ref_model, f"weight{i}").copy_(getattr(model, f"weight{i}"))
+            getattr(ref_model, f"bias{i}").copy_(getattr(model, f"bias{i}"))
+
+    schedule = [True, False, False]
+    is_first = schedule[0]  # rebound each step; closed over by the fns.
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, _GROUPED_M_SPLITS, is_first_microbatch=is_first)
+
+    def ref_fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return ref_model(inp, _GROUPED_M_SPLITS, is_first_microbatch=is_first)
+
+    # Eager priming: FP8 state must exist before tracing (creating quantizers
+    # in-graph breaks later recompiles; upstream Dynamo bug).
+    is_first = None
+    fn(_grouped_input(dtype, device, requires_grad=True))
+    is_first = schedule[0]
+
+    torch._dynamo.reset()
+    if compile_mode == "reduce-overhead":
+        _cudagraph_warmup(fn, _grouped_input(dtype, device, requires_grad=True), backward=True)
+        model.zero_grad(set_to_none=True)
+    compiled = torch.compile(fn, fullgraph=True, mode=compile_mode)
+
+    cached_workspaces = None
+    with _assert_no_cudagraph_skips(compile_mode == "reduce-overhead"):
+        for step, is_first in enumerate(schedule):
+            base = _grouped_input(dtype, device)
+
+            inp_ref = base.detach().clone().requires_grad_(True)
+            ref_model.zero_grad(set_to_none=True)
+            out_ref = ref_fn(inp_ref)
+            out_ref.sum().backward()
+
+            inp = base.detach().clone().requires_grad_(True)
+            model.zero_grad(set_to_none=True)
+            out = compiled(inp).clone()
+            out.sum().backward()
+
+            torch.testing.assert_close(out, out_ref.detach(), atol=_EAGER_ATOL, rtol=_EAGER_RTOL)
+            torch.testing.assert_close(inp.grad, inp_ref.grad, atol=_EAGER_ATOL, rtol=_EAGER_RTOL)
+            for i in range(_GROUPED_NUM_GEMMS):
+                torch.testing.assert_close(
+                    getattr(model, f"weight{i}").grad,
+                    getattr(ref_model, f"weight{i}").grad,
+                    atol=_EAGER_ATOL,
+                    rtol=_EAGER_RTOL,
+                )
+
+            workspaces = [
+                model._fp8_workspaces.get(f"weight{i}") for i in range(_GROUPED_NUM_GEMMS)
+            ]
+            assert all(
+                ws is not None for ws in workspaces
+            ), f"missing cached FP8 weight(s) after step {step}"
+            if step == 0:
+                cached_workspaces = workspaces
+            else:
+                for i in range(_GROUPED_NUM_GEMMS):
+                    assert (
+                        workspaces[i] is cached_workspaces[i]
+                    ), f"cache for expert {i} rebuilt at step {step}"
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+def test_te_grouped_linear_m_splits_change():
+    """Unchanged ``m_splits`` reuse the graph. A changed distribution makes
+    Dynamo mark the values dynamic; they cross the op boundary as a
+    ``SymInt[]`` slot, so the (recompiled, now symbolic) graph still runs the
+    compiled path with eager numerics -- for any later distribution too."""
+    dtype = torch.bfloat16
+    device = "cuda"
+    model = te.GroupedLinear(
+        _GROUPED_NUM_GEMMS, _GROUPED_IN, _GROUPED_OUT, params_dtype=dtype, device=device
+    )
+    m_splits = list(_GROUPED_M_SPLITS)
+
+    def fn(inp):
+        return model(inp, m_splits)
+
+    torch._dynamo.reset()
+    compiled = torch.compile(fn, fullgraph=True)
+
+    # Two warmup calls: the second absorbs the one-time recompile from module
+    # attributes lazily created during call one.
+    for _ in range(2):
+        compiled(_grouped_input(dtype, device, requires_grad=True)).sum().backward()
+    model.zero_grad(set_to_none=True)
+    baseline = _dynamo_counter("stats", "unique_graphs")
+
+    # Same splits: no recompile.
+    compiled(_grouped_input(dtype, device, requires_grad=True)).sum().backward()
+    model.zero_grad(set_to_none=True)
+    if baseline:
+        assert _dynamo_counter("stats", "unique_graphs") == baseline
+
+    # New split distributions (same total): compiled path, same numerics.
+    m_splits[:2] = [16, 32]
+    _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+    m_splits[2:] = [40, 40]
+    _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.xfail(reason="waiting for a PyTorch fix", strict=False)
+def test_te_grouped_linear_compile_train_eval_switch():
+    """train -> eval -> train on the same compiled ``te.GroupedLinear``, vs eager."""
+    dtype = torch.bfloat16
+    device = "cuda"
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.GroupedLinear(
+        _GROUPED_NUM_GEMMS, _GROUPED_IN, _GROUPED_OUT, params_dtype=dtype, device=device
+    )
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, _GROUPED_M_SPLITS, is_first_microbatch=True)
+
+    torch._dynamo.reset()
+    compiled = torch.compile(fn, fullgraph=True)
+
+    def train_step():
+        _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+        model.zero_grad(set_to_none=True)
+
+    train_step()
+
+    model.eval()
+    x = _grouped_input(dtype, device)
+    with torch.no_grad():
+        out_eval = compiled(x)
+        ref_eval = fn(x)
+    torch.testing.assert_close(out_eval, ref_eval, atol=_EAGER_ATOL, rtol=_EAGER_RTOL)
+
+    model.train()
+    train_step()
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+def test_te_grouped_linear_compile_m_splits_tensor_falls_back():
+    """A device-tensor ``m_splits`` inside the compiled region cannot cross the
+    op boundary (its values would be unbacked); the module must warn and fall
+    back to eager (a graph break)."""
+    dtype = torch.bfloat16
+    device = "cuda"
+    model = te.GroupedLinear(
+        _GROUPED_NUM_GEMMS, _GROUPED_IN, _GROUPED_OUT, params_dtype=dtype, device=device
+    )
+    m_splits_tensor = torch.tensor(_GROUPED_M_SPLITS, dtype=torch.int64, device="cpu")
+
+    def fn(inp):
+        return model(inp, m_splits_tensor)
+
+    torch._dynamo.reset()
+    # Graph-break fallback: numerics must match eager.
+    compiled = torch.compile(fn)
+    _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+
+    # fullgraph=True: the explicit graph break surfaces the reason.
+    torch._dynamo.reset()
+    strict = torch.compile(fn, fullgraph=True)
+    with pytest.raises(Exception, match="falling back to eager"):
+        strict(_grouped_input(dtype, device, requires_grad=True))
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_te_grouped_linear_compile_delayed_scaling_falls_back():
+    """Delayed-scaling quantizers are not value-opaque; under torch.compile the
+    module must fall back to eager (a graph break) with eager numerics."""
+    dtype = torch.bfloat16
+    device = "cuda"
+    model = te.GroupedLinear(
+        _GROUPED_NUM_GEMMS, _GROUPED_IN, _GROUPED_OUT, params_dtype=dtype, device=device
+    )
+    fp8_recipe = recipe.DelayedScaling()
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, _GROUPED_M_SPLITS)
+
+    torch._dynamo.reset()
+    compiled = torch.compile(fn)  # no fullgraph: the fallback graph-breaks
+    # Functional smoke only: delayed scaling advances amax history every call,
+    # so eager-vs-compiled outputs are not bit-comparable across calls.
+    try:
+        inp = _grouped_input(dtype, device, requires_grad=True)
+        out = compiled(inp)
+        out.sum().backward()
+        assert out.shape == (sum(_GROUPED_M_SPLITS), _GROUPED_OUT)
+        assert inp.grad is not None
+        for i in range(_GROUPED_NUM_GEMMS):
+            assert getattr(model, f"weight{i}").grad is not None
+    finally:
+        # Drop the delayed-scaling amax-reduction registrations, or every later
+        # autocast exit would run the (untraceable) fused amax reduction.
+        te.quantization.FP8GlobalStateManager.reset()
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_te_grouped_linear_compile_save_original_input():
+    """torch.compile with ``save_original_input=True``: the op saves the input
+    by alias and re-splits/re-quantizes it in backward."""
+    dtype = torch.bfloat16
+    device = "cuda"
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.GroupedLinear(
+        _GROUPED_NUM_GEMMS,
+        _GROUPED_IN,
+        _GROUPED_OUT,
+        params_dtype=dtype,
+        device=device,
+        save_original_input=True,
+    )
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, _GROUPED_M_SPLITS)
+
+    torch._dynamo.reset()
+    compiled = torch.compile(fn, fullgraph=True)
+    for _ in range(2):
+        _assert_close_grouped(fn, compiled, model, _grouped_input(dtype, device))
+
+
+# ---------------------------------------------------------------------------
+# Custom-op list adapters (framework unit test via a toy op)
+# ---------------------------------------------------------------------------
+
+
+if _opaque_available:
+    from dataclasses import dataclass
+    from typing import List, Optional, Tuple
+
+    from transformer_engine.pytorch.dynamo import register_custom_op
+
+    @dataclass
+    class _ToyListFwdArgs:
+        inp: torch.Tensor
+        weights: List[Optional[torch.Tensor]]
+        scales: Tuple[float, ...]
+
+    @dataclass
+    class _ToyListBwdArgs:
+        grad_output: Optional[torch.Tensor] = None
+        inp: Optional[torch.Tensor] = None
+        weights: List[Optional[torch.Tensor]] = None
+        scales: Tuple[float, ...] = ()
+
+    def _toy_list_fwd(args):
+        out = torch.zeros_like(args.inp)
+        for w, s in zip(args.weights, args.scales):
+            if w is not None:
+                out = out + args.inp * w * s
+        return (out, None, None)
+
+    def _toy_list_fwd_fake(args):
+        out = TensorSpec(
+            shape=tuple(args.inp.shape),
+            dtype=args.inp.dtype,
+            requires_grad=True,
+            device=args.inp.device,
+        )
+        return (out, None, None)
+
+    def _toy_list_setup_ctx(bwd_args, fwd_args, outputs, ctx_attrs, saved):
+        del outputs, ctx_attrs, saved
+        bwd_args.inp = fwd_args.inp
+        bwd_args.weights = fwd_args.weights
+        bwd_args.scales = fwd_args.scales
+        return ()
+
+    def _toy_list_bwd(args):
+        dgrad = torch.zeros_like(args.inp)
+        wgrads = []
+        for w, s in zip(args.weights, args.scales):
+            if w is None:
+                wgrads.append(None)
+                continue
+            dgrad = dgrad + args.grad_output * w * s
+            wgrads.append(args.grad_output * args.inp * s)
+        return (dgrad, wgrads)
+
+    def _toy_list_bwd_fake(args):
+        spec = lambda t: TensorSpec(shape=tuple(t.shape), dtype=t.dtype, device=t.device)
+        dgrad = spec(args.inp)
+        wgrads = [None if w is None else spec(w) for w in args.weights]
+        return (dgrad, wgrads)
+
+    _toy_list_op = register_custom_op(
+        op_name="toy_list_op_test",
+        input_tensors_for_grad=["inp", "weights"],
+        fwd_arg_type=_ToyListFwdArgs,
+        fwd_impl=_toy_list_fwd,
+        fwd_fake_impl=_toy_list_fwd_fake,
+        setup_context=_toy_list_setup_ctx,
+        bwd_arg_type=_ToyListBwdArgs,
+        bwd_impl=_toy_list_bwd,
+        bwd_fake_impl=_toy_list_bwd_fake,
+    )
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+def test_custom_op_tensor_list_grads():
+    """A toy op with a ``List[Optional[Tensor]]`` input (including a ``None``
+    entry riding the sentinel) compiles fullgraph and routes one gradient per
+    list element."""
+    assert _toy_list_op is not None
+    device = "cuda"
+    scales = (2.0, 3.0, 0.5)
+
+    def run(fn):
+        torch.manual_seed(7)
+        inp = torch.randn(8, 4, device=device, requires_grad=True)
+        w0 = torch.randn(8, 4, device=device, requires_grad=True)
+        w2 = torch.randn(8, 4, device=device, requires_grad=True)
+        out = fn(inp, w0, w2)
+        out.sum().backward()
+        return out.detach().clone(), inp.grad, w0.grad, w2.grad
+
+    def fn(inp, w0, w2):
+        args = _ToyListFwdArgs(inp=inp, weights=[w0, None, w2], scales=scales)
+        return _toy_list_op(args)
+
+    def ref_fn(inp, w0, w2):
+        return inp * w0 * scales[0] + inp * w2 * scales[2]
+
+    torch._dynamo.reset()
+    compiled = torch.compile(fn, fullgraph=True)
+
+    out_ref, igrad_ref, w0grad_ref, w2grad_ref = run(ref_fn)
+    out, igrad, w0grad, w2grad = run(compiled)
+    torch.testing.assert_close(out, out_ref)
+    torch.testing.assert_close(igrad, igrad_ref)
+    torch.testing.assert_close(w0grad, w0grad_ref)
+    torch.testing.assert_close(w2grad, w2grad_ref)
+
+    # Eager through the same op (no compile) must agree too.
+    out_e, igrad_e, w0grad_e, w2grad_e = run(fn)
+    torch.testing.assert_close(out_e, out_ref)
+    torch.testing.assert_close(igrad_e, igrad_ref)
+    torch.testing.assert_close(w0grad_e, w0grad_ref)
+    torch.testing.assert_close(w2grad_e, w2grad_ref)

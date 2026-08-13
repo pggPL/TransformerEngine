@@ -4,7 +4,8 @@
 
 """GroupedLinear API"""
 
-from typing import Union, Optional, Callable, Tuple, List, Sequence
+from dataclasses import dataclass
+from typing import Any, Union, Optional, Callable, Dict, Tuple, List, Sequence
 from itertools import chain
 import os
 import warnings
@@ -42,6 +43,9 @@ from ..utils import (
     requires_grad,
     resolve_grouped_linear_single_param_flags,
     get_nvtx_range_context,
+    warn_compile_eager_fallback,
+    warn_if_compile_disabled,
+    check_grouped_gemm_dims,
 )
 from ..distributed import (
     set_tensor_model_parallel_attributes,
@@ -59,6 +63,14 @@ from ..cpp_extensions import (
     general_grouped_gemm,
     general_grouped_gemm_for_grouped_tensor,
 )
+from ..cpp_extensions.gemm import get_cublas_workspace
+from ..dynamo import (
+    TensorSpec,
+    TensorOrQuantized,
+    register_custom_op,
+    is_value_opaque_quantizer,
+)
+from .linear import _fake_workspace_valid
 from ..constants import GemmParallelModes, dist_group_type
 from ..jit import no_torch_dynamo
 from ..cpu_offload import is_cpu_offload_enabled, mark_not_offload, start_offload
@@ -292,7 +304,9 @@ def _split_quantize_hybrid(
     disable_bulk_allocation=False,
 ):
     """Grouped split+quantize for an all-hybrid, generation-validated operand."""
-    from ..tensor.storage.hybrid_tensor_storage import HybridQuantizedTensorStorage as HybridStorage
+    from ..tensor.storage.hybrid_tensor_storage import (
+        HybridQuantizedTensorStorage as HybridStorage,
+    )
 
     reference = quantizers[0]
     rowwise_enabled = reference.rowwise_usage
@@ -399,7 +413,7 @@ def _split_quantize_and_bias(
     quantizers: Optional[List[Quantizer]],
     dtype: torch.dtype,
     use_bias: bool,
-    recipe: Recipe,
+    recipe_supports_native_bgrad: bool,
     disable_bulk_allocation: bool,
 ) -> Tuple[
     Sequence[Union[torch.Tensor, QuantizedTensorStorage]],
@@ -418,7 +432,7 @@ def _split_quantize_and_bias(
         and not hybrid
         and use_bias
         and not identity
-        and (recipe.delayed() or recipe.float8_current_scaling() or recipe.mxfp8())
+        and recipe_supports_native_bgrad
     )
     if use_native_bgrad_quantize:
         outputs = [None] * num_splits
@@ -444,6 +458,1041 @@ def _split_quantize_and_bias(
         disable_bulk_allocation=disable_bulk_allocation,
     )
     return outputs, grad_biases
+
+
+@dataclass(slots=True)
+class GroupedLinearFwdArgs:
+    """Single-argument bag for the forward path of :class:`_GroupedLinear`."""
+
+    # --- Differentiable tensors (also passed positionally to autograd) ---
+    inp: torch.Tensor
+    weights: List[TensorOrQuantized]
+    biases: List[torch.Tensor]
+
+    # --- Non-differentiable cached / user-provided tensors ---
+    # TensorOrQuantized entries so cached quantized workspaces can cross the op
+    # boundary; ``None`` entries mark cache misses.
+    weight_workspaces: List[TensorOrQuantized]
+    out: Optional[torch.Tensor]
+    dgrad_out: Optional[torch.Tensor]
+    skip_fp8_weight_update: Optional[torch.Tensor]
+    # Device-tensor form of the splits, used only by the fused GroupedTensor
+    # path (gated off the compiled path, where this is None).
+    m_splits_tensor: Optional[torch.Tensor]
+
+    # --- requires_grad flags (cached so backward does not re-query) ---
+    input_requires_grad: bool
+    weights_requires_grad: bool
+    bias_requires_grad: bool
+
+    # --- Quantizers (one per GEMM) ---
+    input_quantizers: List[Quantizer]
+    weight_quantizers: List[Quantizer]
+    output_quantizers: List[Quantizer]
+    grad_input_quantizers: List[Quantizer]
+    grad_weight_quantizers: List[Quantizer]
+    grad_output_quantizers: List[Quantizer]
+
+    # --- Split geometry ---
+    # Host-side ints, carried through the op as a ``SymInt[]`` slot (so splits
+    # Dynamo marks dynamic still compile). ``None`` only transiently, when the
+    # caller passed a device tensor under compile (an eager-fallback reason);
+    # the eager wrapper fills it from the tensor.
+    m_splits: Optional[List[int]]
+    num_gemms: int
+
+    # --- Numerical / dtype config ---
+    activation_dtype: torch.dtype
+    fp8: bool
+    fp8_calibration: bool
+    save_original_input: bool
+    backward_override: Optional[str]
+    fprop_use_split_accumulator: bool
+    dgrad_use_split_accumulator: bool
+    wgrad_use_split_accumulator: bool
+    native_bgrad_recipe_ok: bool
+    debug: bool
+
+    # --- Weight-workspace caching ---
+    is_first_microbatch: Optional[bool]
+    cache_weight: bool
+
+    # --- Fused GroupedTensor path (dispatched in the autograd wrapper) ---
+    use_grouped_tensor_path: bool
+    single_grouped_param: bool
+
+    # --- Misc ---
+    use_bias: bool
+    sequence_parallel: bool
+    fuse_wgrad_accumulation: bool
+    wgrad_store: Optional[Any]
+    cpu_offloading: bool
+    is_grad_enabled: bool
+    # True only when running as the torch.compile custom op: disables bulk
+    # allocation and packed-buffer tricks whose outputs would alias each other
+    # (a custom op may not return aliasing tensors).
+    compiled_op: bool = False
+
+    def compile_unsupported_reason(self) -> Optional[str]:
+        """Reason this config can't use the torch.compile custom-op path (else None)."""
+        if self.debug:
+            return "debug instrumentation (nvidia-dlfw-inspect)"
+        if is_distributed_weight(self.weights[0]):
+            return "a DistributedWeight (custom weight parallelism, e.g. GTP)"
+        if self.m_splits is None:
+            return "m_splits passed as a device tensor inside the compiled region"
+        if self.out is not None or self.dgrad_out is not None:
+            return "a user-provided out/dgrad_out buffer (the op would return an input alias)"
+        if self.use_grouped_tensor_path:
+            return "the fused GroupedTensor path (NVTE_GROUPED_LINEAR_USE_FUSED_GROUPED_GEMM)"
+        if self.single_grouped_param:
+            return "single_grouped_weight/single_grouped_bias parameter views"
+        if self.cpu_offloading:
+            return "CPU activation offloading"
+        if self.wgrad_store is not None:
+            # Non-None only when delayed wgrad compute is on (see GroupedLinear.forward).
+            return "delayed wgrad compute (wgrad_store)"
+        if self.fuse_wgrad_accumulation:
+            return "fuse_wgrad_accumulation (main_grad)"
+        if self.fp8_calibration:
+            # calibrate() inside the op would mutate quantizers rebuilt from
+            # graph constants, losing the amax updates.
+            return "fp8_calibration"
+        if any(w.requires_grad != self.weights_requires_grad for w in self.weights):
+            return "mixed requires_grad across the weights list"
+        for quantizer_list in (
+            self.input_quantizers,
+            self.weight_quantizers,
+            self.output_quantizers,
+            self.grad_input_quantizers,
+            self.grad_weight_quantizers,
+            self.grad_output_quantizers,
+        ):
+            for quantizer in quantizer_list:
+                # e.g. delayed-scaling Float8Quantizer and unregistered
+                # custom-recipe quantizers are not value-opaque and can't cross
+                # the custom-op boundary.
+                if quantizer is not None and not is_value_opaque_quantizer(quantizer):
+                    return "a quantizer not registered as a torch.compile value-opaque type"
+        return None
+
+
+@dataclass(slots=True)
+class GroupedLinearBwdArgs:
+    """Single-argument bag for the backward path of :class:`_GroupedLinear`."""
+
+    # --- Saved / restored tensors (populated at backward entry) ---
+    grad_output: Optional[torch.Tensor] = None
+    # Full (2D-viewable) input saved once when backward re-splits it itself:
+    # the plain (non-quantized) path and ``save_original_input``.
+    inputmat_full: Optional[torch.Tensor] = None
+    inputmats: List[TensorOrQuantized] = None
+    weights_fp8: List[TensorOrQuantized] = None
+    saved_weights: List[TensorOrQuantized] = None
+    biases: List[torch.Tensor] = None
+    dgrad_out: Optional[torch.Tensor] = None
+
+    # --- Quantizers (one per GEMM) ---
+    input_quantizers: List[Quantizer] = None
+    weight_quantizers: List[Quantizer] = None
+    grad_input_quantizers: List[Quantizer] = None
+    grad_weight_quantizers: List[Quantizer] = None
+    grad_output_quantizers: List[Quantizer] = None
+
+    # --- Split geometry ---
+    # ``SymInt[]`` slot, see ``GroupedLinearFwdArgs.m_splits``.
+    m_splits: Optional[List[int]] = None
+    num_gemms: int = 0
+    weights_shape_1: int = 0
+
+    # --- Differentiability summary ---
+    use_bias: bool = False
+    requires_dgrad: bool = False
+    weights_requires_grad: bool = False
+
+    # --- Numerical / dtype config ---
+    activation_dtype: Optional[torch.dtype] = None
+    fp8: bool = False
+    backward_override: Optional[str] = None
+    dgrad_use_split_accumulator: bool = _2X_ACC_DGRAD
+    wgrad_use_split_accumulator: bool = _2X_ACC_WGRAD
+    native_bgrad_recipe_ok: bool = False
+    save_original_input: bool = False
+    debug: bool = False
+
+    # --- Weight-grad scheduling / accumulation (eager-only, gated off compile) ---
+    is_first_microbatch: Optional[bool] = None
+    fuse_wgrad_accumulation: bool = False
+    wgrad_store: Optional[Any] = None
+    origin_weight_refs: Optional[Any] = None
+    origin_weights_overwrite_main_grad: bool = False
+    main_grad_funcs: Optional[Any] = None
+
+    # --- FP8 reduce-and-update bookkeeping (eager wrapper only) ---
+    reduce_and_update_bwd_fp8_tensors: bool = False
+
+    # --- Misc ---
+    cpu_offloading: bool = False
+    compiled_op: bool = False
+
+    def setup_saved_tensors(self, ctx: torch.autograd.function.FunctionCtx) -> None:
+        """Pull saved tensors from ``ctx`` into the fields backward consumes."""
+        saved = restore_from_func_ctx(ctx)
+        n = self.num_gemms
+        self.inputmat_full = saved[0]
+        self.inputmats = list(saved[1 : 1 + n])
+        self.weights_fp8 = list(saved[1 + n : 1 + 2 * n])
+        self.saved_weights = list(saved[1 + 2 * n : 1 + 3 * n])
+        self.biases = list(saved[1 + 3 * n : 1 + 4 * n])
+
+
+def _grouped_linear_forward_impl(
+    args: GroupedLinearFwdArgs,
+) -> Tuple[Any, ...]:
+    """Forward implementation for the grouped linear layer (legacy, non-fused path).
+
+    Returns ``(out, *new_workspaces, tensors_to_save, ctx_attrs)``.
+    ``new_workspaces`` are the freshly produced FP8 weight workspaces (returned
+    alongside ``out`` so the caller can refresh its cache). The trailing two are
+    ``None`` when gradients are disabled.
+    """
+    inp = args.inp
+    weights = list(args.weights)
+    biases = list(args.biases)
+    num_gemms = args.num_gemms
+    m_splits = list(args.m_splits)
+    input_quantizers = args.input_quantizers
+    weight_quantizers = args.weight_quantizers
+    output_quantizers = args.output_quantizers
+    activation_dtype = args.activation_dtype
+    fp8 = args.fp8
+    debug = args.debug
+    use_bias = args.use_bias
+    is_grad_enabled = args.is_grad_enabled
+    save_original_input = args.save_original_input
+    backward_override = args.backward_override
+    cpu_offloading = args.cpu_offloading
+    device = inp.device
+    weight_requires_grad = args.weights_requires_grad
+
+    is_dist_weight = is_distributed_weight(weights[0])
+    if is_dist_weight:
+        weights = materialize_weight_for_forward(weights)
+
+    # Configure quantizers
+    if input_quantizers[0] is not None:
+        for input_quantizer in input_quantizers:
+            input_quantizer.set_usage(
+                rowwise=True,
+                columnwise=(
+                    is_grad_enabled
+                    and weight_requires_grad
+                    and not save_original_input
+                    and backward_override is None
+                ),
+            )
+        columnwise_usage = is_grad_enabled and args.input_requires_grad
+        if backward_override is not None:
+            columnwise_usage = False
+        if not columnwise_usage:
+            columnwise_usage = (
+                is_fp8_activation_recompute_enabled() and not in_fp8_activation_recompute_phase()
+            )
+        # No need to set the quantizer states if weight is already quantized
+        # for debug mode we create quantizer every iteration, thus we need to set the quantizer states
+        if weight_quantizers[0] is not None and (
+            not isinstance(weights[0], QuantizedTensorStorage) or debug
+        ):
+            for weight_quantizer in weight_quantizers:
+                weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
+        elif isinstance(weights[0], QuantizedTensorStorage):
+            # If weights are already quantized, no need to set quantizer states
+            weight_quantizers = [weight._quantizer for weight in weights]
+    if output_quantizers[0] is not None:
+        for output_quantizer in output_quantizers:
+            output_quantizer.set_usage(rowwise=True, columnwise=False)
+
+    # Initialize input tensors
+    in_features = weights[0].size(-1)
+    if inp.size(-1) != in_features:
+        raise ValueError(
+            f"Input tensor (shape={tuple(inp.size())}) is not compatible with "
+            f"weight tensor (shape={tuple(weights[0].size())})"
+        )
+
+    inp_view = inp.reshape(-1, in_features)
+    fp8_or_debug = fp8 or debug
+    inputmat_full = None
+    if fp8_or_debug:
+        # Disable bulk allocation when CPU offloading is active: offloading skips small
+        # tensors (like scales), but bulk allocation shares storage across all tensors,
+        # so if scales can't be offloaded, nothing in the group can be offloaded.
+        # The compiled op also disables it: bulk-allocated storages alias each
+        # other, and the op returns them as saved tensors.
+        inputmats = _split_quantize(
+            inp_view,
+            m_splits,
+            with_quantized_output=True,
+            quantizers=input_quantizers,
+            dtype=activation_dtype,
+            with_debug_quantizers=debug,
+            disable_bulk_allocation=cpu_offloading or args.compiled_op,
+        )
+    else:
+        # Plain path: split views of one (possibly cast) buffer. Save that
+        # buffer once (backward re-splits it) instead of N aliasing views --
+        # except under CPU offloading, which marks the individual views.
+        inputmat_full = cast_if_needed(inp_view, activation_dtype)
+        inputmats = torch.split(inputmat_full, m_splits)
+        if cpu_offloading:
+            inputmat_full = None
+
+    if cpu_offloading:
+        start_offload(*inputmats)
+
+    # Initialize weights
+    weights_fp8: list
+    new_workspaces = [None] * num_gemms
+    if fp8_or_debug:
+        weights_fp8 = []
+        update_ws = args.is_first_microbatch is None or args.is_first_microbatch
+        for i in range(num_gemms):
+            weight_fp8, new_workspaces[i] = quantize_weight(
+                tensor=weights[i],
+                quantizer=weight_quantizers[i],
+                workspace=args.weight_workspaces[i] if args.weight_workspaces else None,
+                update_workspace=update_ws,
+                skip_update_flag=args.skip_fp8_weight_update,
+                workspace_dtype=activation_dtype,
+                cache=args.cache_weight,
+            )
+            weights_fp8.append(weight_fp8)
+    else:
+        weights_fp8 = [cast_if_needed(weight, activation_dtype) for weight in weights]
+
+    # Initialize biases
+    bias_dtype = activation_dtype
+    if fp8 and activation_dtype == torch.float32:
+        bias_dtype = torch.bfloat16  # FP8 GEMM only supports BF16/FP16 bias
+    biases = [cast_if_needed(bias, bias_dtype) for bias in biases] if use_bias else biases
+    # Initialize output tensor
+    out = _GroupedLinear._validate_or_alloc_output(
+        args.out,
+        sum(m_splits),
+        weights_fp8[0].size(0),
+        activation_dtype,
+        device,
+    )
+
+    # Perform GEMM
+    general_grouped_gemm(
+        weights_fp8,
+        inputmats,
+        [out],
+        output_quantizers,
+        activation_dtype,
+        single_output=True,
+        m_splits=m_splits,
+        bias=biases,
+        use_bias=use_bias,
+        use_split_accumulator=args.fprop_use_split_accumulator,
+    )
+
+    if args.fp8_calibration:
+        for i in range(num_gemms):
+            input_quantizers[i].calibrate(inputmats[i])
+            weight_quantizers[i].calibrate(weights[i])
+
+    if cpu_offloading:
+        mark_not_offload(*weights_fp8, *weights)
+
+    tensors_to_save = None
+    ctx_attrs = None
+    if is_grad_enabled:
+        # Saved-tensor layout: ``(inputmat_full, *inputmats, *weights_fp8,
+        # *saved_weights, *biases)`` -- 1 + 4N slots. Slots that alias a forward
+        # input or another op return are deduped through name-based alias tags
+        # (rebuilt in ``_grouped_linear_setup_ctx``): a custom op may not return
+        # aliasing tensors.
+        aliases: List[Optional[Tuple]] = [None] * (1 + 4 * num_gemms)
+
+        # TODO: update after #1638 is merged. # pylint: disable=fixme
+        if weight_requires_grad:
+            if save_original_input:
+                inputmat_full = None
+                inputmats = [None] * num_gemms
+                aliases[0] = ("inp",)
+            else:
+                for inputmat in inputmats:
+                    if isinstance(inputmat, QuantizedTensorStorage):
+                        if backward_override is not None:
+                            # In dequantized mode we should dequantize directly from
+                            # fprop quantized layouts without retargeting usage.
+                            inputmat.update_usage(rowwise_usage=True, columnwise_usage=False)
+                        else:
+                            inputmat.update_usage(rowwise_usage=False, columnwise_usage=True)
+                if inputmat_full is not None:
+                    # Plain path: the views in ``inputmats`` are not saved.
+                    inputmats = [None] * num_gemms
+                    if inputmat_full is inp_view:
+                        # No-op cast: inp_view is inp itself or a view of it.
+                        inputmat_full = None
+                        aliases[0] = ("inp",)
+        else:
+            inputmat_full = None
+            inputmats = [None] * num_gemms
+
+        # Original weights are only needed by high_precision dgrad. The weakrefs
+        # used for fused wgrad accumulation serve a different purpose: restoring
+        # Python parameter attributes without keeping the parameter alive here.
+        save_origin_weights = backward_override == "high_precision" and args.input_requires_grad
+        saved_weights = [None] * num_gemms
+        wt_saves = list(weights_fp8)
+        for i in range(num_gemms):
+            slot = 1 + num_gemms + i
+            if wt_saves[i] is weights[i]:
+                aliases[slot] = ("weights", i)
+                wt_saves[i] = None
+            elif new_workspaces[i] is not None and wt_saves[i] is new_workspaces[i]:
+                aliases[slot] = ("new_weight_workspaces", i)
+                wt_saves[i] = None
+            elif (
+                args.weight_workspaces
+                and args.weight_workspaces[i] is not None
+                and wt_saves[i] is args.weight_workspaces[i]
+            ):
+                aliases[slot] = ("weight_workspaces", i)
+                wt_saves[i] = None
+            if save_origin_weights:
+                aliases[1 + 2 * num_gemms + i] = ("weights", i)
+        if is_dist_weight:
+            # GTP: gathered workspace is transient (re-gathered in backward), don't save it.
+            wt_saves = [None] * num_gemms
+            for i in range(num_gemms):
+                aliases[1 + num_gemms + i] = None
+                aliases[1 + 2 * num_gemms + i] = ("weights", i)
+
+        saved_biases = list(biases)
+        for i in range(num_gemms):
+            if saved_biases[i] is not None and saved_biases[i] is args.biases[i]:
+                aliases[1 + 3 * num_gemms + i] = ("biases", i)
+                saved_biases[i] = None
+
+        tensors_to_save = (
+            inputmat_full,
+            *inputmats,
+            *wt_saves,
+            *saved_weights,
+            *saved_biases,
+        )
+        ctx_attrs = {"saved_tensor_aliases": tuple(aliases)}
+
+    # [*, in_features] -> [*, out_features]
+    out = out.view(-1, *inp.shape[1:-1], out.shape[-1])
+    return (out, *new_workspaces, tensors_to_save, ctx_attrs)
+
+
+def _grouped_linear_forward_fake(
+    args: GroupedLinearFwdArgs,
+) -> Tuple[Any, ...]:
+    """Shape/metadata-only twin of :func:`_grouped_linear_forward_impl` for
+    torch.compile. Only mirrors configs the compiled path admits (see
+    ``compile_unsupported_reason``): no debug, offloading, distributed weights,
+    calibration, or fused GroupedTensor path.
+    """
+    inp = args.inp
+    weights = list(args.weights)
+    num_gemms = args.num_gemms
+    m_splits = list(args.m_splits)
+    input_quantizers = args.input_quantizers
+    weight_quantizers = args.weight_quantizers
+    output_quantizers = args.output_quantizers
+    activation_dtype = args.activation_dtype
+    fp8 = args.fp8
+    is_grad_enabled = args.is_grad_enabled
+    save_original_input = args.save_original_input
+    backward_override = args.backward_override
+    weight_requires_grad = args.weights_requires_grad
+    in_features = weights[0].shape[-1]
+    out_features = weights[0].shape[0]
+
+    # Mirror the impl's quantizer usage setup exactly (buffer layouts must agree).
+    if input_quantizers[0] is not None:
+        for input_quantizer in input_quantizers:
+            input_quantizer.set_usage(
+                rowwise=True,
+                columnwise=(
+                    is_grad_enabled
+                    and weight_requires_grad
+                    and not save_original_input
+                    and backward_override is None
+                ),
+            )
+        columnwise_usage = is_grad_enabled and args.input_requires_grad
+        if backward_override is not None:
+            columnwise_usage = False
+        if not columnwise_usage:
+            columnwise_usage = (
+                is_fp8_activation_recompute_enabled() and not in_fp8_activation_recompute_phase()
+            )
+        if weight_quantizers[0] is not None and not weights[0].is_quantized:
+            for weight_quantizer in weight_quantizers:
+                weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
+        elif weights[0].is_quantized:
+            weight_quantizers = [weight.quantizer for weight in weights]
+    if output_quantizers[0] is not None:
+        for output_quantizer in output_quantizers:
+            output_quantizer.set_usage(rowwise=True, columnwise=False)
+
+    # Input pipeline: quantized per-split storages (fp8) or one full cast buffer.
+    inputmat_full = None
+    inputmats: List[Optional[TensorSpec]] = [None] * num_gemms
+    inputmat_full_aliases_inp = False
+    if fp8:
+        inputmats = [
+            TensorSpec(
+                shape=(m_splits[i], in_features),
+                dtype=activation_dtype,
+                quantizer=input_quantizers[i],
+                device=inp.device,
+            )
+            for i in range(num_gemms)
+        ]
+    else:
+        inputmat_full_aliases_inp = inp.dtype == activation_dtype
+        inputmat_full = TensorSpec(
+            shape=(sum(m_splits), in_features),
+            dtype=activation_dtype,
+            device=inp.device,
+        )
+
+    # Weight pipeline -- mirror ``quantize_weight`` / ``cast_if_needed`` per GEMM.
+    new_workspaces: List[Optional[TensorSpec]] = [None] * num_gemms
+    weights_fp8: List[Optional[TensorSpec]] = [None] * num_gemms
+    weight_aliases: List[Optional[Tuple]] = [None] * num_gemms
+    for i in range(num_gemms):
+        if fp8:
+            if weights[i].is_quantized:
+                weight_aliases[i] = ("weights", i)
+                continue
+            workspace = args.weight_workspaces[i]
+            if workspace is not None and not _fake_workspace_valid(workspace, weight_quantizers[i]):
+                # quantize_weight drops a stale workspace and builds a new one.
+                workspace = None
+            if workspace is not None:
+                weight_aliases[i] = ("weight_workspaces", i)
+                continue
+            weightmat = TensorSpec(
+                shape=tuple(weights[i].shape),
+                dtype=activation_dtype,
+                quantizer=weight_quantizers[i],
+                device=weights[i].device,
+            )
+            if args.cache_weight:
+                # Persistent cache entries are wrappers, not bare storages.
+                if weightmat.quantizer is not None:
+                    weightmat.quantizer.internal = False
+                new_workspaces[i] = weightmat
+                weight_aliases[i] = ("new_weight_workspaces", i)
+            else:
+                weights_fp8[i] = weightmat
+        else:
+            if weights[i].dtype == activation_dtype:
+                weight_aliases[i] = ("weights", i)
+            else:
+                weights_fp8[i] = TensorSpec(
+                    shape=tuple(weights[i].shape),
+                    dtype=activation_dtype,
+                    device=weights[i].device,
+                )
+
+    # Bias pipeline.
+    bias_dtype = activation_dtype
+    if fp8 and activation_dtype == torch.float32:
+        bias_dtype = torch.bfloat16
+    saved_biases: List[Optional[TensorSpec]] = [None] * num_gemms
+    bias_aliases: List[Optional[Tuple]] = [None] * num_gemms
+    for i in range(num_gemms):
+        bias = args.biases[i]
+        if bias is None:
+            continue
+        if not args.use_bias or bias.dtype == bias_dtype:
+            bias_aliases[i] = ("biases", i)
+        else:
+            saved_biases[i] = TensorSpec(
+                shape=tuple(bias.shape), dtype=bias_dtype, device=bias.device
+            )
+
+    out = TensorSpec(
+        shape=(*tuple(inp.shape[:-1]), out_features),
+        dtype=activation_dtype,
+        quantizer=None,
+        requires_grad=is_grad_enabled
+        and (args.input_requires_grad or weight_requires_grad or args.bias_requires_grad),
+        device=inp.device,
+    )
+
+    tensors_to_save = None
+    ctx_attrs = None
+    if is_grad_enabled:
+        aliases: List[Optional[Tuple]] = [None] * (1 + 4 * num_gemms)
+        if weight_requires_grad:
+            if save_original_input:
+                inputmat_full = None
+                inputmats = [None] * num_gemms
+                aliases[0] = ("inp",)
+            else:
+                if fp8:
+                    for inputmat in inputmats:
+                        if backward_override is not None:
+                            inputmat.update_usage(rowwise_usage=True, columnwise_usage=False)
+                        else:
+                            inputmat.update_usage(rowwise_usage=False, columnwise_usage=True)
+                elif inputmat_full_aliases_inp:
+                    inputmat_full = None
+                    aliases[0] = ("inp",)
+        else:
+            inputmat_full = None
+            inputmats = [None] * num_gemms
+
+        saved_weights = [None] * num_gemms
+        save_origin_weights = backward_override == "high_precision" and args.input_requires_grad
+        for i in range(num_gemms):
+            aliases[1 + num_gemms + i] = weight_aliases[i]
+            if save_origin_weights:
+                aliases[1 + 2 * num_gemms + i] = ("weights", i)
+            aliases[1 + 3 * num_gemms + i] = bias_aliases[i]
+
+        tensors_to_save = (
+            inputmat_full,
+            *inputmats,
+            *weights_fp8,
+            *saved_weights,
+            *saved_biases,
+        )
+        ctx_attrs = {"saved_tensor_aliases": tuple(aliases)}
+
+    return (out, *new_workspaces, tensors_to_save, ctx_attrs)
+
+
+def _grouped_linear_setup_ctx(
+    bwd_args: GroupedLinearBwdArgs,
+    fwd_args: GroupedLinearFwdArgs,
+    fwd_outputs: Tuple[Any, ...],
+    ctx_attrs: Dict,
+    tensors_to_save_from_forward: Tuple[Any, ...],
+) -> Tuple[Any, ...]:
+    """Populate ``bwd_args`` from forward state and return the tensors to persist
+    (alias-tagged slots rebuilt from ``fwd_args`` / ``fwd_outputs``)."""
+    num_gemms = fwd_args.num_gemms
+    new_workspaces = list(fwd_outputs[1:])
+
+    weights = fwd_args.weights
+    weight_quantizers = fwd_args.weight_quantizers
+    if isinstance(weights[0], QuantizedTensorStorage) and not fwd_args.debug:
+        weight_quantizers = [weight._quantizer for weight in weights]
+
+    bwd_args.input_quantizers = fwd_args.input_quantizers
+    bwd_args.weight_quantizers = weight_quantizers
+    bwd_args.grad_input_quantizers = fwd_args.grad_input_quantizers
+    bwd_args.grad_weight_quantizers = fwd_args.grad_weight_quantizers
+    bwd_args.grad_output_quantizers = fwd_args.grad_output_quantizers
+
+    bwd_args.m_splits = fwd_args.m_splits
+    bwd_args.num_gemms = num_gemms
+    bwd_args.weights_shape_1 = weights[0].shape[1]
+
+    bwd_args.use_bias = fwd_args.use_bias
+    bwd_args.requires_dgrad = fwd_args.input_requires_grad
+    bwd_args.weights_requires_grad = fwd_args.weights_requires_grad
+
+    bwd_args.activation_dtype = fwd_args.activation_dtype
+    bwd_args.fp8 = fwd_args.fp8
+    bwd_args.backward_override = fwd_args.backward_override
+    bwd_args.dgrad_use_split_accumulator = fwd_args.dgrad_use_split_accumulator
+    bwd_args.wgrad_use_split_accumulator = fwd_args.wgrad_use_split_accumulator
+    bwd_args.native_bgrad_recipe_ok = fwd_args.native_bgrad_recipe_ok
+    bwd_args.save_original_input = fwd_args.save_original_input
+    bwd_args.debug = fwd_args.debug
+
+    bwd_args.is_first_microbatch = fwd_args.is_first_microbatch
+    bwd_args.fuse_wgrad_accumulation = fwd_args.fuse_wgrad_accumulation
+    bwd_args.wgrad_store = fwd_args.wgrad_store
+    bwd_args.cpu_offloading = fwd_args.cpu_offloading
+    bwd_args.dgrad_out = fwd_args.dgrad_out
+    bwd_args.compiled_op = fwd_args.compiled_op
+
+    if fwd_args.fuse_wgrad_accumulation and fwd_args.weights_requires_grad:
+        # Keep weakrefs to weights to preserve attributes like main_grad
+        # when we need to modify the weight python objects
+        bwd_args.origin_weight_refs = [weakref.ref(w) for w in weights]
+        bwd_args.origin_weights_overwrite_main_grad = getattr(
+            weights[0], "overwrite_main_grad", False
+        )
+        # MCore FSDP creates main_grad lazily before backward
+        if hasattr(weights[0], "__fsdp_param__"):
+            bwd_args.main_grad_funcs = [weights[i].get_main_grad for i in range(num_gemms)]
+        elif is_distributed_weight(weights[0]):
+            bwd_args.main_grad_funcs = [weights[i].grad_buffer for i in range(num_gemms)]
+        else:
+            bwd_args.main_grad_funcs = [lambda j=i: weights[j].main_grad for i in range(num_gemms)]
+
+    if fwd_args.backward_override is not None:
+        bwd_args.fp8 = False
+        bwd_args.debug = False
+        bwd_args.grad_input_quantizers = [None] * num_gemms
+        bwd_args.grad_weight_quantizers = [None] * num_gemms
+        bwd_args.grad_output_quantizers = [None] * num_gemms
+
+    # Rebuild alias-deduped save slots.
+    saved = list(tensors_to_save_from_forward)
+    aliases = ctx_attrs["saved_tensor_aliases"]
+    for slot, alias in enumerate(aliases):
+        if alias is None:
+            continue
+        if alias[0] == "inp":
+            saved[slot] = fwd_args.inp
+        elif alias[0] == "weights":
+            saved[slot] = weights[alias[1]]
+        elif alias[0] == "new_weight_workspaces":
+            saved[slot] = new_workspaces[alias[1]]
+        elif alias[0] == "weight_workspaces":
+            saved[slot] = fwd_args.weight_workspaces[alias[1]]
+        elif alias[0] == "biases":
+            saved[slot] = fwd_args.biases[alias[1]]
+    return tuple(saved)
+
+
+def _grouped_linear_backward_impl(
+    args: GroupedLinearBwdArgs,
+) -> Tuple[Optional[torch.Tensor], List[Optional[torch.Tensor]], List[Optional[torch.Tensor]]]:
+    """Backward implementation for the grouped linear layer.
+
+    Caller must have populated ``args.grad_output`` and run
+    ``args.setup_saved_tensors(ctx)`` before invocation. Returns
+    ``(dgrad, wgrad_list, grad_biases)``.
+    """
+    grad_output = args.grad_output
+    num_gemms = args.num_gemms
+    m_splits = list(args.m_splits)
+    inputmats = list(args.inputmats)
+    weights = list(args.weights_fp8)
+    saved_weights = list(args.saved_weights)
+    biases = list(args.biases)
+    device = grad_output.device
+    in_features = args.weights_shape_1
+    dgrad = None
+
+    # Plain (non-quantized) inputs are saved as one full buffer; re-split it.
+    if args.inputmat_full is not None and not args.save_original_input:
+        inputmats = list(torch.split(args.inputmat_full.reshape(-1, in_features), m_splits))
+
+    # Restore from weakrefs to get original weight python objects
+    # (preserves attributes like main_grad, grad_added_to_main_grad, etc.)
+    # Only needed when fuse_wgrad_accumulation is enabled.
+    origin_weights = [None] * num_gemms
+    main_grads = [None] * num_gemms
+    is_dist_weight = is_distributed_weight(saved_weights[0])
+    if is_dist_weight:
+        origin_weights = saved_weights
+        if args.fuse_wgrad_accumulation and args.weights_requires_grad:
+            main_grads = [main_grad_func() for main_grad_func in args.main_grad_funcs]
+    elif args.fuse_wgrad_accumulation and args.weights_requires_grad:
+        origin_weight_refs = args.origin_weight_refs
+        args.origin_weight_refs = None
+        origin_weights = [ref() if ref is not None else None for ref in origin_weight_refs]
+        assert all(
+            w is not None for w in origin_weights
+        ), "weight was removed while fuse_wgrad_accumulation=True"
+        main_grads = [main_grad_func() for main_grad_func in args.main_grad_funcs]
+        for origin_weight, main_grad in zip(origin_weights, main_grads):
+            if main_grad is not None:
+                origin_weight.main_grad = main_grad
+
+    # Preprocess grad output
+    grad_output_view = grad_output.contiguous().view(-1, grad_output.shape[-1])
+    out_features = grad_output_view.shape[-1]
+    grad_output_reference = args.grad_output_quantizers[0]
+    if args.fp8 and isinstance(grad_output_reference, HybridQuantizer):
+        # Usage is a runtime decision, not part of generation validation.
+        # Apply it uniformly so dispatch can read the first parent without
+        # rescanning every expert.
+        for grad_output_quantizer in args.grad_output_quantizers:
+            grad_output_quantizer.set_usage(
+                rowwise=args.requires_dgrad,
+                columnwise=args.weights_requires_grad,
+            )
+    grad_output, grad_biases = _split_quantize_and_bias(
+        grad_output_view,
+        m_splits,
+        fp8=args.fp8,
+        debug=args.debug,
+        quantizers=args.grad_output_quantizers,
+        dtype=args.activation_dtype,
+        use_bias=args.use_bias,
+        recipe_supports_native_bgrad=args.native_bgrad_recipe_ok,
+        disable_bulk_allocation=args.cpu_offloading,
+    )
+
+    if is_dist_weight:
+        accumulate_wgrad_into_param_main_grad = False
+    elif args.is_first_microbatch is not None:
+        accumulate_wgrad_into_param_main_grad = (
+            args.fuse_wgrad_accumulation and not args.is_first_microbatch
+        )
+    else:
+        accumulate_wgrad_into_param_main_grad = args.fuse_wgrad_accumulation
+
+    if is_dist_weight:
+        weights = materialize_weight_for_backward(origin_weights)
+
+    if args.requires_dgrad:
+        dgrad = _GroupedLinear._validate_or_alloc_output(
+            args.dgrad_out,
+            sum(m_splits),
+            in_features,
+            args.activation_dtype,
+            device,
+        )
+        weights_for_dgrad = weights
+        if args.backward_override == "dequantized":
+            weights_for_dgrad = [
+                _GroupedLinear._maybe_dequantize(weight, args.activation_dtype)
+                for weight in weights
+            ]
+        elif args.backward_override == "high_precision":
+            weights_for_dgrad = [
+                _GroupedLinear._maybe_dequantize(weight, args.activation_dtype)
+                for weight in saved_weights
+            ]
+        # Make sure weights are available in column-wise format
+        # for dgrad computation.
+        for weight in weights_for_dgrad:
+            if isinstance(weight, QuantizedTensorStorage):
+                weight.update_usage(columnwise_usage=True)
+        general_grouped_gemm(
+            weights_for_dgrad,
+            grad_output,
+            [dgrad],
+            args.grad_input_quantizers,
+            args.activation_dtype,
+            single_output=True,
+            layout="NN",
+            m_splits=m_splits,
+            grad=True,
+            use_split_accumulator=args.dgrad_use_split_accumulator,
+        )
+
+    if args.weights_requires_grad:
+        if args.fuse_wgrad_accumulation:
+            wgrad_list = main_grads
+        elif args.compiled_op:
+            # Packed allocation would make the returned wgrads alias each other.
+            wgrad_list = [
+                torch.empty(
+                    (out_features, in_features),
+                    dtype=args.activation_dtype,
+                    device=device,
+                )
+                for _ in range(num_gemms)
+            ]
+        else:
+            wgrad_packed = torch.empty(
+                num_gemms,
+                out_features,
+                in_features,
+                dtype=args.activation_dtype,
+                device=device,
+            )
+            wgrad_list = [wgrad_packed[i] for i in range(num_gemms)]
+            if is_dist_weight:
+                # Gathered weights are no longer needed after dgrad GEMM.
+                del weights
+
+        if args.save_original_input:
+            inp = args.inputmat_full
+            inp_view = inp.reshape(-1, in_features)
+            if args.input_quantizers[0] is not None:
+                for input_quantizer in args.input_quantizers:
+                    if isinstance(
+                        input_quantizer,
+                        (Float8Quantizer, Float8CurrentScalingQuantizer),
+                    ):
+                        input_quantizer.set_usage(rowwise=True, columnwise=True)
+                    else:
+                        input_quantizer.set_usage(rowwise=False, columnwise=True)
+            inputmats = _split_quantize(
+                inp_view,
+                m_splits,
+                with_quantized_output=args.fp8 or args.debug,
+                quantizers=args.input_quantizers,
+                dtype=args.activation_dtype,
+                with_debug_quantizers=args.debug,
+                disable_bulk_allocation=args.cpu_offloading,
+            )
+        elif args.backward_override == "dequantized":
+            inputmats = [
+                _GroupedLinear._maybe_dequantize(inputmat, args.activation_dtype)
+                for inputmat in inputmats
+            ]
+        grouped_gemm_wgrad = functools.partial(
+            general_grouped_gemm,
+            quantization_params=args.grad_weight_quantizers,
+            out_dtype=args.activation_dtype,
+            layout="NT",
+            grad=True,
+            m_splits=m_splits,
+            use_bias=args.use_bias if grad_biases[0] is None else None,
+            bias=biases,
+            use_split_accumulator=args.wgrad_use_split_accumulator,
+            accumulate=(
+                accumulate_wgrad_into_param_main_grad
+                if not is_dist_weight and not args.origin_weights_overwrite_main_grad
+                else False
+            ),
+        )
+        # WGRAD
+        if args.wgrad_store is not None and args.wgrad_store.delay_wgrad_compute():
+            args.wgrad_store.put([inputmats, grad_output, wgrad_list], grouped_gemm_wgrad)
+        else:
+            _, grad_biases_, _ = grouped_gemm_wgrad(inputmats, grad_output, wgrad_list)
+
+            for i in range(num_gemms):
+                if grad_biases[i] is None:
+                    grad_biases[i] = grad_biases_[i]
+            del grad_biases_
+
+            # Deallocate input tensor (in-place storage resize: not allowed on
+            # the compiled path, where the inputs belong to the op caller).
+            if not args.compiled_op:
+                clear_tensor_data(*inputmats)
+
+        def handle_custom_ddp_from_mcore(weight, main_grad, wgrad):
+            if args.weights_requires_grad:
+                # Handle custom DDP from mcore.
+                if args.fuse_wgrad_accumulation and hasattr(weight, "grad_added_to_main_grad"):
+                    weight.grad_added_to_main_grad = True
+                    if getattr(weight, "zero_out_wgrad", False):
+                        wgrad = get_dummy_wgrad(
+                            list(main_grad.shape),
+                            weight.dtype,
+                            zero=True,
+                        )
+                    else:
+                        wgrad = get_dummy_wgrad(
+                            list(main_grad.shape),
+                            weight.dtype,
+                        )
+                elif args.fuse_wgrad_accumulation:
+                    wgrad = None
+            else:
+                wgrad = None
+            return wgrad
+
+        if is_dist_weight:
+            wgrad_list = finalize_weight_grads(origin_weights, wgrad_list)
+        else:
+            wgrad_list = [
+                handle_custom_ddp_from_mcore(weight, main_grad, wgrad)
+                for weight, main_grad, wgrad in zip(origin_weights, main_grads, wgrad_list)
+            ]
+    else:
+        wgrad_list = [None] * num_gemms
+
+    if not args.use_bias or (
+        args.wgrad_store is not None and args.wgrad_store.delay_wgrad_compute() and not args.fp8
+    ):
+        grad_biases = [None] * num_gemms
+
+    dgrad_out = None
+    if args.requires_dgrad:
+        # Input shape rederived from grad_output (out.shape == (*inp.shape[:-1], out_features)).
+        dgrad_out = dgrad.view(*args.grad_output.shape[:-1], in_features)
+    return (dgrad_out, wgrad_list, list(grad_biases))
+
+
+def _grouped_linear_backward_fake(
+    args: GroupedLinearBwdArgs,
+) -> Tuple[Optional[TensorSpec], List[Optional[TensorSpec]], List[Optional[TensorSpec]]]:
+    """Allocation-free fake of :func:`_grouped_linear_backward_impl` on ``TensorSpec``."""
+    num_gemms = args.num_gemms
+    grad_output = args.grad_output
+    in_features = args.weights_shape_1
+    out_features = grad_output.shape[-1]
+
+    # Mirror the impl's hybrid grad-output usage retarget.
+    grad_output_reference = args.grad_output_quantizers[0]
+    if args.fp8 and isinstance(grad_output_reference, HybridQuantizer):
+        for grad_output_quantizer in args.grad_output_quantizers:
+            grad_output_quantizer.set_usage(
+                rowwise=args.requires_dgrad,
+                columnwise=args.weights_requires_grad,
+            )
+
+    dgrad = None
+    if args.requires_dgrad:
+        dgrad = TensorSpec(
+            shape=(*tuple(grad_output.shape[:-1]), in_features),
+            dtype=args.activation_dtype,
+            device=grad_output.device,
+        )
+
+    wgrad_list: List[Optional[TensorSpec]] = [None] * num_gemms
+    if args.weights_requires_grad and not args.fuse_wgrad_accumulation:
+        wgrad_list = [
+            TensorSpec(
+                shape=(out_features, in_features),
+                dtype=args.activation_dtype,
+                device=grad_output.device,
+            )
+            for _ in range(num_gemms)
+        ]
+
+    # FP8 backward computes bgrad while splitting grad_output whenever bias is
+    # used; in high precision it is fused into the wgrad GEMM, so it only
+    # exists when wgrad runs.
+    grad_biases: List[Optional[TensorSpec]] = [None] * num_gemms
+    if args.use_bias and (args.weights_requires_grad or args.fp8):
+        grad_biases = [
+            TensorSpec(
+                shape=(out_features,),
+                dtype=args.activation_dtype,
+                device=grad_output.device,
+            )
+            for _ in range(num_gemms)
+        ]
+
+    return (dgrad, wgrad_list, grad_biases)
+
+
+# Custom op used under ``torch.compile``.
+_grouped_linear_op = register_custom_op(
+    op_name="grouped_linear",
+    input_tensors_for_grad=["inp", "weights", "biases"],
+    fwd_arg_type=GroupedLinearFwdArgs,
+    fwd_impl=_grouped_linear_forward_impl,
+    fwd_fake_impl=_grouped_linear_forward_fake,
+    setup_context=_grouped_linear_setup_ctx,
+    bwd_arg_type=GroupedLinearBwdArgs,
+    bwd_impl=_grouped_linear_backward_impl,
+    bwd_fake_impl=_grouped_linear_backward_fake,
+)
+
+
+@no_torch_dynamo()
+def _grouped_linear_eager(
+    inp: torch.Tensor,
+    m_splits: torch.Tensor,
+    fwd_args: GroupedLinearFwdArgs,
+    weights_and_biases: Tuple[torch.Tensor, ...],
+    is_grad_enabled: bool,
+) -> Tuple[torch.Tensor, list]:
+    """Run ``_GroupedLinear`` eagerly, bypassing Dynamo."""
+    if fwd_args.m_splits is None:
+        fwd_args.m_splits = tuple(m_splits.tolist())
+    if is_grad_enabled:
+        return _GroupedLinear.apply(inp, fwd_args, *weights_and_biases)
+    return _GroupedLinear.forward(None, inp, fwd_args, *weights_and_biases)
 
 
 __all__ = ["GroupedLinear"]
@@ -846,364 +1895,77 @@ class _GroupedLinear(torch.autograd.Function):
 
         return out.view(-1, *inp.shape[1:-1], out.shape[-1]), new_workspaces
 
-    # pylint: disable=keyword-arg-before-vararg
     @staticmethod
     def forward(
         ctx,
         inp: torch.Tensor,
-        m_splits: torch.Tensor,
-        non_tensor_args: Tuple,
-        out: Optional[torch.Tensor],
-        dgrad_out: Optional[torch.Tensor],
+        fwd_args: GroupedLinearFwdArgs,
         *weights_and_biases,
     ) -> Tuple[torch.Tensor, list]:
-        # pylint: disable=missing-function-docstring
+        """Forward pass: compute grouped linear output and set up autograd context.
 
-        # Reduce number of arguments to autograd function in order
-        # to reduce CPU overhead due to pytorch arg checking.
-        (
-            use_bias,
-            is_first_microbatch,
-            fp8,
-            fp8_calibration,
-            wgrad_store,
-            input_quantizers,
-            weight_quantizers,
-            output_quantizers,
-            grad_input_quantizers,
-            grad_weight_quantizers,
-            grad_output_quantizers,
-            fuse_wgrad_accumulation,
-            cpu_offloading,
-            sequence_parallel,
-            activation_dtype,
-            is_grad_enabled,
-            weight_workspaces,
-            cache_weight,
-            skip_fp8_weight_update,
-            save_original_input,
-            delayed_scaling_input_quantizer,
-            unsafe_requantization_input_quantizer,
-            debug,
-        ) = non_tensor_args
-        if fp8:
-            backward_override = FP8GlobalStateManager.get_fp8_recipe().backward_override
-        else:
-            backward_override = None
-        if backward_override == "high_precision":
-            save_original_input = True
-        elif backward_override == "dequantized":
-            save_original_input = False
+        ``inp`` and the weights / biases are positional Tensor arguments so
+        autograd tracks them; they are immediately re-attached to ``fwd_args``
+        so every downstream helper can be invoked with a single argument.
+        """
+        num_gemms = fwd_args.num_gemms
+        fwd_args.inp = inp
+        fwd_args.weights = list(weights_and_biases[:num_gemms])
+        fwd_args.biases = list(weights_and_biases[num_gemms:])
 
-        num_gemms = len(m_splits)
-        weights = weights_and_biases[:num_gemms]
-        biases = weights_and_biases[num_gemms:]
-        device = inp.device
-        weight_requires_grad = weights[0].requires_grad
-
-        origin_weights = weights
-        is_dist_weight = is_distributed_weight(weights[0])
-        if is_dist_weight:
-            weights = materialize_weight_for_forward(weights)
-
-        backward_needs_input = is_grad_enabled and weight_requires_grad
-        if backward_override is None and save_original_input and backward_needs_input:
-            if delayed_scaling_input_quantizer is not None:
-                if FP8GlobalStateManager.get_fp8_recipe().custom():
-                    warnings.warn(
-                        "save_original_input is incompatible with delayed-scaling quantizers "
-                        "(Float8Quantizer). Disabling save_original_input for this module.",
-                        stacklevel=2,
-                    )
-                    save_original_input = False
-                else:
-                    raise ValueError(
-                        "DelayedScaling recipe is not supported with save_original_input"
-                    )
-
-            # Megatron-Core may enable this automatically to reuse an activation
-            # already retained by an upstream operation. The resolved quantizer
-            # generation is classified once in ``_validate_quantizer_generation``.
-            if save_original_input and unsafe_requantization_input_quantizer is not None:
-                warnings.warn(
-                    "Ignoring save_original_input=True because the input quantizer cannot "
-                    "safely reconstruct the backward operand from the original input "
-                    f"({unsafe_requantization_input_quantizer}).",
-                    stacklevel=2,
-                )
-                save_original_input = False
-
-        # Configure quantizers
-        if input_quantizers[0] is not None:
-            for input_quantizer in input_quantizers:
-                input_quantizer.set_usage(
-                    rowwise=True,
-                    columnwise=(
-                        is_grad_enabled
-                        and weight_requires_grad
-                        and not save_original_input
-                        and backward_override is None
-                    ),
-                )
-            columnwise_usage = is_grad_enabled and inp.requires_grad
-            if backward_override is not None:
-                columnwise_usage = False
-            if not columnwise_usage:
-                columnwise_usage = (
-                    is_fp8_activation_recompute_enabled()
-                    and not in_fp8_activation_recompute_phase()
-                )
-            # No need to set the quantizer states if weight is already quantized
-            # for debug mode we create quantizer every iteration, thus we need to set the quantizer states
-            if weight_quantizers[0] is not None and (
-                not isinstance(weights[0], QuantizedTensorStorage) or debug
-            ):
-                for weight_quantizer in weight_quantizers:
-                    weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
-            elif isinstance(weights[0], QuantizedTensorStorage):
-                # If weights are already quantized, no need to set quantizer states
-                weight_quantizers = [weight._quantizer for weight in weights]
-        if output_quantizers[0] is not None:
-            for output_quantizer in output_quantizers:
-                output_quantizer.set_usage(rowwise=True, columnwise=False)
-
-        # Initialize input tensors
-        in_features = weights[0].size(-1)
-        if inp.size(-1) != in_features:
-            raise ValueError(
-                f"Input tensor (shape={tuple(inp.size())}) is not compatible with "
-                f"weight tensor (shape={tuple(weights[0].size())})"
-            )
-
-        if _GroupedLinear._is_grouped_tensor_path_supported(
-            fp8=fp8,
-            fp8_calibration=fp8_calibration,
-            debug=debug,
-            cpu_offloading=cpu_offloading,
-            backward_override=backward_override,
-            save_original_input=save_original_input,
-            activation_dtype=activation_dtype,
-            input_quantizers=input_quantizers,
-            output_quantizers=output_quantizers,
-        ):
+        if fwd_args.use_grouped_tensor_path:
             return _GroupedLinear._forward_grouped_tensor(
                 ctx,
                 inp=inp,
-                m_splits=m_splits,
-                use_bias=use_bias,
-                is_first_microbatch=is_first_microbatch,
-                fp8=fp8,
-                wgrad_store=wgrad_store,
-                input_quantizers=input_quantizers,
-                weight_quantizers=weight_quantizers,
-                grad_input_quantizers=grad_input_quantizers,
-                grad_weight_quantizers=grad_weight_quantizers,
-                grad_output_quantizers=grad_output_quantizers,
-                fuse_wgrad_accumulation=fuse_wgrad_accumulation,
-                activation_dtype=activation_dtype,
-                is_grad_enabled=is_grad_enabled,
-                weight_workspaces=weight_workspaces,
-                cache_weight=cache_weight,
-                skip_fp8_weight_update=skip_fp8_weight_update,
-                weights=weights,
-                biases=biases,
-                out=out,
-                dgrad_out=dgrad_out,
+                m_splits=fwd_args.m_splits_tensor,
+                use_bias=fwd_args.use_bias,
+                is_first_microbatch=fwd_args.is_first_microbatch,
+                fp8=fwd_args.fp8,
+                wgrad_store=fwd_args.wgrad_store,
+                input_quantizers=fwd_args.input_quantizers,
+                weight_quantizers=fwd_args.weight_quantizers,
+                grad_input_quantizers=fwd_args.grad_input_quantizers,
+                grad_weight_quantizers=fwd_args.grad_weight_quantizers,
+                grad_output_quantizers=fwd_args.grad_output_quantizers,
+                fuse_wgrad_accumulation=fwd_args.fuse_wgrad_accumulation,
+                activation_dtype=fwd_args.activation_dtype,
+                is_grad_enabled=fwd_args.is_grad_enabled,
+                weight_workspaces=fwd_args.weight_workspaces,
+                cache_weight=fwd_args.cache_weight,
+                skip_fp8_weight_update=fwd_args.skip_fp8_weight_update,
+                weights=fwd_args.weights,
+                biases=fwd_args.biases,
+                out=fwd_args.out,
+                dgrad_out=fwd_args.dgrad_out,
             )
 
-        # Convert splits to list of ints for compatibility with split functions
-        m_splits = m_splits.tolist()
+        outputs = _grouped_linear_forward_impl(fwd_args)
+        out = outputs[0]
+        new_workspaces = list(outputs[1 : 1 + num_gemms])
+        tensors_to_save_from_forward, ctx_attrs = outputs[-2], outputs[-1]
 
-        inp_view = inp.reshape(-1, in_features)
-        # Disable bulk allocation when CPU offloading is active: offloading skips small
-        # tensors (like scales), but bulk allocation shares storage across all tensors,
-        # so if scales can't be offloaded, nothing in the group can be offloaded.
-        inputmats = _split_quantize(
-            inp_view,
-            m_splits,
-            with_quantized_output=fp8 or debug,
-            quantizers=input_quantizers,
-            dtype=activation_dtype,
-            with_debug_quantizers=debug,
-            disable_bulk_allocation=cpu_offloading,
-        )
-
-        if cpu_offloading:
-            start_offload(*inputmats)
-
-        # Initialize weights
-        weights_fp8: list
-        new_workspaces = [None] * num_gemms
-        if fp8 or debug:
-            weights_fp8 = []
-            update_ws = is_first_microbatch is None or is_first_microbatch
-            for i in range(num_gemms):
-                weight_fp8, new_workspaces[i] = quantize_weight(
-                    tensor=weights[i],
-                    quantizer=weight_quantizers[i],
-                    workspace=weight_workspaces[i] if weight_workspaces else None,
-                    update_workspace=update_ws,
-                    skip_update_flag=skip_fp8_weight_update,
-                    workspace_dtype=activation_dtype,
-                    cache=cache_weight,
-                )
-                weights_fp8.append(weight_fp8)
-
-        else:
-            weights_fp8 = [cast_if_needed(weight, activation_dtype) for weight in weights]
-
-        # Initialize biases
-        bias_dtype = activation_dtype
-        if fp8 and activation_dtype == torch.float32:
-            bias_dtype = torch.bfloat16  # FP8 GEMM only supports BF16/FP16 bias
-        biases = [cast_if_needed(bias, bias_dtype) for bias in biases] if use_bias else biases
-        # Initialize output tensor
-        out = _GroupedLinear._validate_or_alloc_output(
-            out,
-            sum(m_splits),
-            weights_fp8[0].size(0),
-            activation_dtype,
-            device,
-        )
-
-        # Choose whether to use split accumulator
-        use_split_accumulator = _2X_ACC_FPROP
-        if fp8:
-            recipe = FP8GlobalStateManager.get_fp8_recipe()
-            if hasattr(recipe, "fp8_gemm_fprop"):
-                use_split_accumulator = recipe.fp8_gemm_fprop.use_split_accumulator
-
-        # Perform GEMM
-        general_grouped_gemm(
-            weights_fp8,
-            inputmats,
-            [out],
-            output_quantizers,
-            activation_dtype,
-            single_output=True,
-            m_splits=m_splits,
-            bias=biases,
-            use_bias=use_bias,
-            use_split_accumulator=use_split_accumulator,
-        )
-
-        if fp8_calibration:
-            for i in range(num_gemms):
-                input_quantizers[i].calibrate(inputmats[i])
-                weight_quantizers[i].calibrate(weights[i])
-
-        if cpu_offloading:
-            mark_not_offload(*weights_fp8, *weights)
-
-        if is_grad_enabled:
+        if ctx is not None:
             ctx.use_grouped_tensor_path = False
-            ctx.weight_quantizers = weight_quantizers
-            ctx.weights_shape_1 = weights[0].shape[1]
-
-            # TODO: update after #1638 is merged. # pylint: disable=fixme
-            if weight_requires_grad:
-                if save_original_input:
-                    inputmats = [None] * num_gemms
-                    inputmats[0] = inp
-                else:
-                    for inputmat in inputmats:
-                        if isinstance(inputmat, QuantizedTensorStorage):
-                            if backward_override is not None:
-                                # In dequantized mode we should dequantize directly from
-                                # fprop quantized layouts without retargeting usage.
-                                inputmat.update_usage(rowwise_usage=True, columnwise_usage=False)
-                            else:
-                                inputmat.update_usage(rowwise_usage=False, columnwise_usage=True)
-            else:
-                inputmats = [None] * num_gemms
-
-            # Original weights are only needed by high_precision dgrad. The weakrefs
-            # used for fused wgrad accumulation serve a different purpose: restoring
-            # Python parameter attributes without keeping the parameter alive here.
-            saved_weights = (
-                weights
-                if backward_override == "high_precision" and inp.requires_grad
-                else [None] * num_gemms
+            bwd_args = GroupedLinearBwdArgs()
+            tensors_to_save_from_setup = _grouped_linear_setup_ctx(
+                bwd_args,
+                fwd_args,
+                (out, *new_workspaces),
+                ctx_attrs,
+                tensors_to_save_from_forward,
             )
-            if is_dist_weight:
-                # GTP: gathered workspace is transient (re-gathered in backward), don't save it.
-                weights_fp8 = [None] * num_gemms
-                saved_weights = origin_weights
-            tensors_to_save, tensor_objects = prepare_for_saving(
-                *inputmats,
-                *weights_fp8,
-                *saved_weights,
-                *biases,
-            )
+            tensors_to_save, tensor_objects = prepare_for_saving(*tensors_to_save_from_setup)
             ctx.save_for_backward(*tensors_to_save)
             ctx.tensor_objects = tensor_objects
-
-            ctx.grad_input_quantizers = grad_input_quantizers
-            ctx.grad_output_quantizers = grad_output_quantizers
-            ctx.grad_weight_quantizers = grad_weight_quantizers
-
-            ctx.weights_requires_grad = weights[0].requires_grad
-            if fuse_wgrad_accumulation and ctx.weights_requires_grad:
-                # Keep weakrefs to weights to preserve attributes like main_grad
-                # when we need to modify the weight python objects
-                ctx.origin_weight_refs = [weakref.ref(w) for w in weights]
-                ctx.origin_weights_overwrite_main_grad = getattr(
-                    weights[0], "overwrite_main_grad", False
+            ctx.backward_objects = bwd_args
+            if fwd_args.fp8 and requires_grad(inp, fwd_args.weights[0], fwd_args.biases[0]):
+                bwd_args.reduce_and_update_bwd_fp8_tensors = (
+                    FP8GlobalStateManager.is_first_fp8_module()
                 )
-                # This check is needed to ensure that main_grad is not created
-                # during the forward pass when using MCore FSDP as it creates
-                # the main_grad buffer lazily before backprop
-                if hasattr(weights[0], "__fsdp_param__"):
-                    # MCore FSDP creates main_grad lazily before backward
-                    ctx.main_grad_funcs = [weights[i].get_main_grad for i in range(num_gemms)]
-                elif is_dist_weight:
-                    ctx.main_grad_funcs = [origin_weights[i].grad_buffer for i in range(num_gemms)]
-                else:
-                    ctx.main_grad_funcs = [
-                        lambda j=i: weights[j].main_grad for i in range(num_gemms)
-                    ]
-            ctx.device = device
-            ctx.output_quantizers = output_quantizers
-            ctx.m_splits = m_splits
-            ctx.num_gemms = num_gemms
-            ctx.activation_dtype = activation_dtype
-            ctx.fp8 = fp8
-            ctx.fp8_recipe = FP8GlobalStateManager.get_fp8_recipe() if fp8 else None
-            ctx.backward_override = backward_override
-            ctx.fuse_wgrad_accumulation = fuse_wgrad_accumulation
-            ctx.cpu_offloading = cpu_offloading
-            ctx.is_first_microbatch = is_first_microbatch
-            ctx.use_bias = use_bias
-            ctx.sequence_parallel = sequence_parallel
-            ctx.inp_shape = inp.shape
-            ctx.requires_dgrad = inp.requires_grad
-            ctx.reduce_and_update_bwd_fp8_tensors = False
-            if ctx.fp8 and requires_grad(inp, weights[0], biases[0]):
-                ctx.reduce_and_update_bwd_fp8_tensors = (
-                    ctx.reduce_and_update_bwd_fp8_tensors
-                    or FP8GlobalStateManager.is_first_fp8_module()
-                )
-            ctx.wgrad_store = wgrad_store
-            ctx.debug = debug
-            ctx.save_original_input = save_original_input
-            ctx.input_quantizers = input_quantizers
-            ctx.dgrad_out = dgrad_out
+            if fwd_args.backward_override is not None:
+                bwd_args.reduce_and_update_bwd_fp8_tensors = False
 
-            # backward overrides
-            if backward_override is not None:
-                ctx.fp8 = False
-                ctx.debug = False
-                ctx.ub_overlap_ag = False
-                ctx.ub_overlap_rs_dgrad = False
-                ctx.ub_bulk_dgrad = False
-                ctx.ub_bulk_wgrad = False
-                ctx.grad_input_quantizers = [None] * num_gemms
-                ctx.grad_weight_quantizers = [None] * num_gemms
-                ctx.grad_output_quantizers = [None] * num_gemms
-                ctx.reduce_and_update_bwd_fp8_tensors = False
-
-        # [*, in_features] -> [*, out_features] except first dimension changes for SP
-        return out.view(-1, *inp.shape[1:-1], out.shape[-1]), new_workspaces
+        return out, new_workspaces
 
     @staticmethod
     def _backward_grouped_tensor(
@@ -1407,262 +2169,25 @@ class _GroupedLinear(torch.autograd.Function):
         # pylint: disable=missing-function-docstring
         with get_nvtx_range_context("_GroupedLinear_backward"):
             if ctx.use_grouped_tensor_path:
-                return _GroupedLinear._backward_grouped_tensor(ctx, grad_output)
+                result = _GroupedLinear._backward_grouped_tensor(ctx, grad_output)
+                # Legacy return layout: (dgrad, m_splits, non_tensor_args, out,
+                # dgrad_out, *wgrads, *grad_biases) -> map onto (inp, fwd_args,
+                # *weights_and_biases).
+                return (result[0], None, *result[5:])
 
-            saved_tensors = restore_from_func_ctx(ctx)
-            N = ctx.num_gemms
-            inputmats = saved_tensors[:N]
-            weights = saved_tensors[N : 2 * N]
-            saved_weights = saved_tensors[2 * N : 3 * N]
-            biases = saved_tensors[3 * N : 4 * N]
+            bwd_args: GroupedLinearBwdArgs = ctx.backward_objects
+            bwd_args.grad_output = grad_output
+            bwd_args.setup_saved_tensors(ctx)
+            dgrad, wgrad_list, grad_biases = _grouped_linear_backward_impl(bwd_args)
+            reduce_and_update_bwd_fp8_tensors = bwd_args.reduce_and_update_bwd_fp8_tensors
+            # Drop all references held by bwd_args (saved tensors, quantizers,
+            # weakrefs) so they don't outlive backward via ctx under retain_graph.
+            ctx.backward_objects = None
+            del bwd_args
 
-            # Restore from weakrefs to get original weight python objects
-            # (preserves attributes like main_grad, grad_added_to_main_grad, etc.)
-            # Only needed when fuse_wgrad_accumulation is enabled.
-            origin_weights = [None] * N
-            main_grads = [None] * N
-            is_dist_weight = is_distributed_weight(saved_weights[0])
-            if is_dist_weight:
-                origin_weights = saved_weights
-                if ctx.fuse_wgrad_accumulation and ctx.weights_requires_grad:
-                    main_grads = [main_grad_func() for main_grad_func in ctx.main_grad_funcs]
-            elif ctx.fuse_wgrad_accumulation and ctx.weights_requires_grad:
-                origin_weight_refs = ctx.origin_weight_refs
-                ctx.origin_weight_refs = None
-                origin_weights = [ref() if ref is not None else None for ref in origin_weight_refs]
-                assert all(
-                    w is not None for w in origin_weights
-                ), "weight was removed while fuse_wgrad_accumulation=True"
-                main_grads = [main_grad_func() for main_grad_func in ctx.main_grad_funcs]
-                for origin_weight, main_grad in zip(origin_weights, main_grads):
-                    if main_grad is not None:
-                        origin_weight.main_grad = main_grad
-
-            # Preprocess grad output
-            grad_output_view = grad_output.contiguous().view(-1, grad_output.shape[-1])
-            grad_output_reference = ctx.grad_output_quantizers[0]
-            if ctx.fp8 and isinstance(grad_output_reference, HybridQuantizer):
-                # Usage is a runtime decision, not part of generation validation.
-                # Apply it uniformly so dispatch can read the first parent without
-                # rescanning every expert.
-                for grad_output_quantizer in ctx.grad_output_quantizers:
-                    grad_output_quantizer.set_usage(
-                        rowwise=ctx.requires_dgrad,
-                        columnwise=ctx.weights_requires_grad,
-                    )
-            grad_output, grad_biases = _split_quantize_and_bias(
-                grad_output_view,
-                ctx.m_splits,
-                fp8=ctx.fp8,
-                debug=ctx.debug,
-                quantizers=ctx.grad_output_quantizers,
-                dtype=ctx.activation_dtype,
-                use_bias=ctx.use_bias,
-                recipe=ctx.fp8_recipe,
-                disable_bulk_allocation=ctx.cpu_offloading,
-            )
-
-            if is_dist_weight:
-                accumulate_wgrad_into_param_main_grad = False
-            elif ctx.is_first_microbatch is not None:
-                accumulate_wgrad_into_param_main_grad = (
-                    ctx.fuse_wgrad_accumulation and not ctx.is_first_microbatch
-                )
-            else:
-                accumulate_wgrad_into_param_main_grad = ctx.fuse_wgrad_accumulation
-
-            if is_dist_weight:
-                weights = materialize_weight_for_backward(origin_weights)
-
-            if ctx.requires_dgrad:
-                dgrad_gemm_use_split_accumulator = _2X_ACC_DGRAD
-                if ctx.fp8 or ctx.debug:
-                    recipe = ctx.fp8_recipe
-                    if hasattr(recipe, "fp8_gemm_dgrad"):
-                        dgrad_gemm_use_split_accumulator = (
-                            recipe.fp8_gemm_dgrad.use_split_accumulator
-                        )
-                dgrad = _GroupedLinear._validate_or_alloc_output(
-                    ctx.dgrad_out,
-                    sum(ctx.m_splits),
-                    ctx.weights_shape_1,
-                    ctx.activation_dtype,
-                    ctx.device,
-                )
-                weights_for_dgrad = weights
-                if ctx.backward_override == "dequantized":
-                    weights_for_dgrad = [
-                        (
-                            weight.dequantize(dtype=ctx.activation_dtype)
-                            if isinstance(weight, QuantizedTensorStorage)
-                            else cast_if_needed(weight, ctx.activation_dtype)
-                        )
-                        for weight in weights
-                    ]
-                elif ctx.backward_override == "high_precision":
-                    weights_for_dgrad = [
-                        (
-                            weight.dequantize(dtype=ctx.activation_dtype)
-                            if isinstance(weight, QuantizedTensorStorage)
-                            else cast_if_needed(weight, ctx.activation_dtype)
-                        )
-                        for weight in saved_weights
-                    ]
-                # Make sure weights are available in column-wise format
-                # for dgrad computation.
-                for weight in weights_for_dgrad:
-                    if isinstance(weight, QuantizedTensorStorage):
-                        weight.update_usage(columnwise_usage=True)
-                general_grouped_gemm(
-                    weights_for_dgrad,
-                    grad_output,
-                    [dgrad],
-                    ctx.grad_input_quantizers,
-                    ctx.activation_dtype,
-                    single_output=True,
-                    layout="NN",
-                    m_splits=ctx.m_splits,
-                    grad=True,
-                    use_split_accumulator=dgrad_gemm_use_split_accumulator,
-                )
-
-            if ctx.weights_requires_grad:
-                wgrad_gemm_use_split_accumulator = _2X_ACC_WGRAD
-                if ctx.fp8:
-                    recipe = ctx.fp8_recipe
-                    if hasattr(recipe, "fp8_gemm_wgrad"):
-                        wgrad_gemm_use_split_accumulator = (
-                            recipe.fp8_gemm_wgrad.use_split_accumulator
-                        )
-                if ctx.fuse_wgrad_accumulation:
-                    wgrad_list = main_grads
-                else:
-                    wgrad_packed = torch.empty(
-                        ctx.num_gemms,
-                        *weights[0].size(),
-                        dtype=ctx.activation_dtype,
-                        device=ctx.device,
-                    )
-                    wgrad_list = [wgrad_packed[i] for i in range(ctx.num_gemms)]
-                    if is_dist_weight:
-                        # Gathered weights are no longer needed after dgrad GEMM.
-                        del weights
-
-                if ctx.save_original_input:
-                    inp = inputmats[0]
-                    in_features = inp.shape[-1]
-                    inp_view = inp.reshape(-1, in_features)
-                    if ctx.input_quantizers[0] is not None:
-                        for input_quantizer in ctx.input_quantizers:
-                            if isinstance(
-                                input_quantizer,
-                                (Float8Quantizer, Float8CurrentScalingQuantizer),
-                            ):
-                                input_quantizer.set_usage(rowwise=True, columnwise=True)
-                            else:
-                                input_quantizer.set_usage(rowwise=False, columnwise=True)
-                    inputmats = _split_quantize(
-                        inp_view,
-                        ctx.m_splits,
-                        with_quantized_output=ctx.fp8 or ctx.debug,
-                        quantizers=ctx.input_quantizers,
-                        dtype=ctx.activation_dtype,
-                        with_debug_quantizers=ctx.debug,
-                        disable_bulk_allocation=ctx.cpu_offloading,
-                    )
-                elif ctx.backward_override == "dequantized":
-                    inputmats_dequant = []
-                    for inputmat in inputmats:
-                        if isinstance(inputmat, QuantizedTensorStorage):
-                            inputmats_dequant.append(
-                                inputmat.dequantize(dtype=ctx.activation_dtype)
-                            )
-                        else:
-                            inputmats_dequant.append(cast_if_needed(inputmat, ctx.activation_dtype))
-                    inputmats = inputmats_dequant
-                grouped_gemm_wgrad = functools.partial(
-                    general_grouped_gemm,
-                    quantization_params=ctx.grad_weight_quantizers,
-                    out_dtype=ctx.activation_dtype,
-                    layout="NT",
-                    grad=True,
-                    m_splits=ctx.m_splits,
-                    use_bias=ctx.use_bias if grad_biases[0] is None else None,
-                    bias=biases,
-                    use_split_accumulator=wgrad_gemm_use_split_accumulator,
-                    accumulate=(
-                        accumulate_wgrad_into_param_main_grad
-                        if not is_dist_weight
-                        and not getattr(ctx, "origin_weights_overwrite_main_grad", False)
-                        else False
-                    ),
-                )
-                # WGRAD
-                if ctx.wgrad_store is not None and ctx.wgrad_store.delay_wgrad_compute():
-                    ctx.wgrad_store.put([inputmats, grad_output, wgrad_list], grouped_gemm_wgrad)
-                else:
-                    _, grad_biases_, _ = grouped_gemm_wgrad(inputmats, grad_output, wgrad_list)
-
-                    for i in range(ctx.num_gemms):
-                        if grad_biases[i] is None:
-                            grad_biases[i] = grad_biases_[i]
-                    del grad_biases_
-
-                    # Deallocate input tensor
-                    clear_tensor_data(*inputmats)
-
-                def handle_custom_ddp_from_mcore(weight, main_grad, wgrad):
-                    if ctx.weights_requires_grad:
-                        # Handle custom DDP from mcore.
-                        if ctx.fuse_wgrad_accumulation and hasattr(
-                            weight, "grad_added_to_main_grad"
-                        ):
-                            weight.grad_added_to_main_grad = True
-                            if getattr(weight, "zero_out_wgrad", False):
-                                wgrad = get_dummy_wgrad(
-                                    list(main_grad.shape),
-                                    weight.dtype,
-                                    zero=True,
-                                )
-                            else:
-                                wgrad = get_dummy_wgrad(
-                                    list(main_grad.shape),
-                                    weight.dtype,
-                                )
-                        elif ctx.fuse_wgrad_accumulation:
-                            wgrad = None
-                    else:
-                        wgrad = None
-                    return wgrad
-
-                if is_dist_weight:
-                    wgrad_list = finalize_weight_grads(origin_weights, wgrad_list)
-                else:
-                    wgrad_list = [
-                        handle_custom_ddp_from_mcore(weight, main_grad, wgrad)
-                        for weight, main_grad, wgrad in zip(origin_weights, main_grads, wgrad_list)
-                    ]
-            else:
-                wgrad_list = [None] * ctx.num_gemms
-
-            if not ctx.use_bias or (
-                ctx.wgrad_store is not None
-                and ctx.wgrad_store.delay_wgrad_compute()
-                and not ctx.fp8
-            ):
-                grad_biases = [None] * ctx.num_gemms
-
-        if ctx.reduce_and_update_bwd_fp8_tensors:
+        if reduce_and_update_bwd_fp8_tensors:
             FP8GlobalStateManager.reduce_and_update_fp8_tensors(forward=False)
-        return (
-            dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
-            None,  # m_splits
-            None,  # non_tensor_args
-            None,  # out
-            None,  # dgrad_out
-            *wgrad_list,
-            *grad_biases,
-        )
+        return (dgrad, None, *wgrad_list, *grad_biases)
 
 
 class GroupedLinear(TransformerEngineBaseModule):
@@ -2088,6 +2613,16 @@ class GroupedLinear(TransformerEngineBaseModule):
             self.make_grouped_weights(defer_init=defer_init)
         elif self.single_grouped_bias:
             self._make_grouped_biases()
+        if not defer_init:
+            # Allocate the process-global grouped cuBLAS workspace eagerly:
+            # under torch.compile the first grouped GEMM can run inside
+            # CUDA-graph capture, and a workspace first allocated there would
+            # live in the graph pool.
+            weight = getattr(self, "weight0", None)
+            if weight is None:
+                weight = getattr(self, "weight", None)
+            if weight is not None and weight.device.type == "cuda":
+                get_cublas_workspace(weight.device.index, False, True)
 
     def set_tensor_parallel_attributes(self, defer_init=False) -> None:
         """Set attributes needed for TP"""
@@ -2146,7 +2681,7 @@ class GroupedLinear(TransformerEngineBaseModule):
             if not has_grouped_weight and has_per_gemm_weights:
                 per_gemm_weights = [state_dict.pop(key) for key in per_gemm_weight_keys]
                 per_gemm_weights = [
-                    weight.dequantize() if isinstance(weight, QuantizedTensorStorage) else weight
+                    (weight.dequantize() if isinstance(weight, QuantizedTensorStorage) else weight)
                     for weight in per_gemm_weights
                 ]
                 state_dict[grouped_weight_key] = torch.stack(per_gemm_weights, dim=0)
@@ -2229,17 +2764,29 @@ class GroupedLinear(TransformerEngineBaseModule):
         return super().load_state_dict(state_dict_copy, strict=strict, assign=assign)
 
     def _load_from_state_dict(
-        self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
     ):
         """Load state, including compatibility across grouped-weight checkpoint formats."""
         self._remap_grouped_weight_state_dict_keys(state_dict, prefix)
         self._remap_grouped_bias_state_dict_keys(state_dict, prefix)
 
         super()._load_from_state_dict(
-            state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
         )
 
-    @no_torch_dynamo()
     def forward(
         self,
         inp: torch.Tensor,
@@ -2298,11 +2845,15 @@ class GroupedLinear(TransformerEngineBaseModule):
             is_first_microbatch = False
 
         # Make sure splits are in expected format
+        m_splits_host: Optional[Tuple[int, ...]] = None
         if not isinstance(m_splits, torch.Tensor):
+            m_splits_host = tuple(int(s) for s in m_splits)
             # Convert list of ints to tensor for backward compatibility
             m_splits = torch.tensor(m_splits, dtype=torch.int64, device="cpu")
         elif m_splits.dtype != torch.int64:
             m_splits = m_splits.to(dtype=torch.int64)
+        if m_splits_host is None and not torch.compiler.is_compiling():
+            m_splits_host = tuple(m_splits.tolist())
         if m_splits.size() != (num_gemms,):
             raise ValueError(
                 f"Shape of splits tensor ({tuple(m_splits.size())}) "
@@ -2350,12 +2901,9 @@ class GroupedLinear(TransformerEngineBaseModule):
                 for q in weight_quantizers:
                     q.optimize_for_gemm = optimize_for_gemm
 
-            if is_grad_enabled:
-                linear_fn = _GroupedLinear.apply
-                autograd_ctx = []
-            else:
-                linear_fn = _GroupedLinear.forward
-                autograd_ctx = [None]
+            use_compiled_op = torch.compiler.is_compiling() and _grouped_linear_op is not None
+            if _grouped_linear_op is None and torch.compiler.is_compiling():
+                warn_if_compile_disabled()
 
             cache_weight = is_first_microbatch is not None
             weight_workspaces = (
@@ -2364,41 +2912,154 @@ class GroupedLinear(TransformerEngineBaseModule):
                 else [None] * num_gemms
             )
 
-            non_tensor_args = (
-                self.apply_bias,
-                is_first_microbatch,
-                self.fp8,
-                self.fp8_calibration,
-                self.wgrad_store,
-                input_quantizers,
-                weight_quantizers,
-                output_quantizers,
-                grad_input_quantizers,
-                grad_weight_quantizers,
-                grad_output_quantizers,
-                self.fuse_wgrad_accumulation,
-                is_cpu_offload_enabled(),
-                self.sequence_parallel,
-                self.activation_dtype,
-                is_grad_enabled,
-                weight_workspaces,
-                cache_weight,
-                skip_fp8_weight_update,
-                self.save_original_input,
-                self._delayed_scaling_input_quantizer,
-                self._unsafe_requantization_input_quantizer,
-                debug,
+            weight_requires_grad = weight_tensors[0].requires_grad
+            fprop_use_split_accumulator = _2X_ACC_FPROP
+            dgrad_use_split_accumulator = _2X_ACC_DGRAD
+            wgrad_use_split_accumulator = _2X_ACC_WGRAD
+            native_bgrad_recipe_ok = False
+            if self.fp8:
+                _recipe = FP8GlobalStateManager.get_fp8_recipe()
+                backward_override = _recipe.backward_override
+                if hasattr(_recipe, "fp8_gemm_fprop"):
+                    fprop_use_split_accumulator = _recipe.fp8_gemm_fprop.use_split_accumulator
+                if hasattr(_recipe, "fp8_gemm_dgrad"):
+                    dgrad_use_split_accumulator = _recipe.fp8_gemm_dgrad.use_split_accumulator
+                if hasattr(_recipe, "fp8_gemm_wgrad"):
+                    wgrad_use_split_accumulator = _recipe.fp8_gemm_wgrad.use_split_accumulator
+                native_bgrad_recipe_ok = (
+                    _recipe.delayed() or _recipe.float8_current_scaling() or _recipe.mxfp8()
+                )
+            else:
+                backward_override = None
+
+            # Resolve the save_original_input runtime flips before building the
+            # args, so the impl and the compile-time fake see one final flag.
+            save_original_input = self.save_original_input
+            if backward_override == "high_precision":
+                save_original_input = True
+            elif backward_override == "dequantized":
+                save_original_input = False
+            backward_needs_input = is_grad_enabled and weight_requires_grad
+            if backward_override is None and save_original_input and backward_needs_input:
+                if self._delayed_scaling_input_quantizer is not None:
+                    if FP8GlobalStateManager.get_fp8_recipe().custom():
+                        warnings.warn(
+                            "save_original_input is incompatible with delayed-scaling quantizers "
+                            "(Float8Quantizer). Disabling save_original_input for this module.",
+                            stacklevel=2,
+                        )
+                        save_original_input = False
+                    else:
+                        raise ValueError(
+                            "DelayedScaling recipe is not supported with save_original_input"
+                        )
+
+                # Megatron-Core may enable this automatically to reuse an activation
+                # already retained by an upstream operation. The resolved quantizer
+                # generation is classified once in ``_validate_quantizer_generation``.
+                if save_original_input and self._unsafe_requantization_input_quantizer is not None:
+                    warnings.warn(
+                        "Ignoring save_original_input=True because the input quantizer cannot "
+                        "safely reconstruct the backward operand from the original input "
+                        f"({self._unsafe_requantization_input_quantizer}).",
+                        stacklevel=2,
+                    )
+                    save_original_input = False
+
+            cpu_offloading = is_cpu_offload_enabled()
+            use_grouped_tensor_path = _GroupedLinear._is_grouped_tensor_path_supported(
+                fp8=self.fp8,
+                fp8_calibration=self.fp8_calibration,
+                debug=debug,
+                cpu_offloading=cpu_offloading,
+                backward_override=backward_override,
+                save_original_input=save_original_input,
+                activation_dtype=self.activation_dtype,
+                input_quantizers=input_quantizers,
+                output_quantizers=output_quantizers,
             )
-            out, new_workspaces = linear_fn(
-                *autograd_ctx,
-                inp,
-                m_splits,
-                non_tensor_args,
-                out,
-                dgrad_out,
-                *weight_tensors,
-                *bias_tensors,
+            wgrad_store = (
+                self.wgrad_store
+                if self.wgrad_store is not None and self.wgrad_store.delay_wgrad_compute()
+                else None
             )
+
+            fwd_args = GroupedLinearFwdArgs(
+                # tensors
+                inp=inp,
+                weights=list(weight_tensors),
+                biases=list(bias_tensors),
+                weight_workspaces=weight_workspaces,
+                out=out,
+                dgrad_out=dgrad_out,
+                skip_fp8_weight_update=skip_fp8_weight_update,
+                m_splits_tensor=m_splits,
+                # requires_grad flags
+                input_requires_grad=inp.requires_grad,
+                weights_requires_grad=weight_requires_grad,
+                bias_requires_grad=(bias_tensors[0].requires_grad if self.apply_bias else False),
+                # quantizers
+                input_quantizers=input_quantizers,
+                weight_quantizers=weight_quantizers,
+                output_quantizers=output_quantizers,
+                grad_input_quantizers=grad_input_quantizers,
+                grad_weight_quantizers=grad_weight_quantizers,
+                grad_output_quantizers=grad_output_quantizers,
+                # split geometry
+                m_splits=m_splits_host,
+                num_gemms=num_gemms,
+                # numerical / dtype config
+                activation_dtype=self.activation_dtype,
+                fp8=self.fp8,
+                fp8_calibration=self.fp8_calibration,
+                save_original_input=save_original_input,
+                backward_override=backward_override,
+                fprop_use_split_accumulator=fprop_use_split_accumulator,
+                dgrad_use_split_accumulator=dgrad_use_split_accumulator,
+                wgrad_use_split_accumulator=wgrad_use_split_accumulator,
+                native_bgrad_recipe_ok=native_bgrad_recipe_ok,
+                debug=debug,
+                # weight-workspace caching
+                is_first_microbatch=is_first_microbatch,
+                cache_weight=cache_weight,
+                # fused GroupedTensor path
+                use_grouped_tensor_path=use_grouped_tensor_path,
+                single_grouped_param=self.single_grouped_weight or self.single_grouped_bias,
+                # misc
+                use_bias=self.apply_bias,
+                sequence_parallel=self.sequence_parallel,
+                fuse_wgrad_accumulation=self.fuse_wgrad_accumulation,
+                wgrad_store=wgrad_store,
+                cpu_offloading=cpu_offloading,
+                is_grad_enabled=is_grad_enabled,
+            )
+
+            if use_compiled_op:
+                fallback_reason = fwd_args.compile_unsupported_reason()
+                if fallback_reason is not None:
+                    # Explicit break so fullgraph=True errors show the reason
+                    # (warnings.warn below would break the graph inscrutably).
+                    torch._dynamo.graph_break(
+                        msg=f"te.GroupedLinear falling back to eager: {fallback_reason}"
+                    )
+                    warn_compile_eager_fallback(fallback_reason)
+                    use_compiled_op = False
+
+            if use_compiled_op:
+                fwd_args.compiled_op = True
+                fwd_args.m_splits_tensor = None
+                check_grouped_gemm_dims(inp, weight_tensors[0], fwd_args.m_splits, self.fp8)
+                outputs = _grouped_linear_op(fwd_args)
+                out = outputs[0]
+                new_workspaces = list(outputs[1:])
+            else:
+                out, new_workspaces = _grouped_linear_eager(
+                    inp,
+                    m_splits,
+                    fwd_args,
+                    (*weight_tensors, *bias_tensors),
+                    is_grad_enabled,
+                )
 
             if cache_weight:
                 for i, ws in enumerate(new_workspaces):
