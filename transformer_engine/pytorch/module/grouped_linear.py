@@ -369,6 +369,13 @@ def _split_quantize_hybrid(
     ]
 
 
+@torch.compiler.assume_constant_result
+@functools.lru_cache(maxsize=None)
+def _get_cublaslt_version() -> int:
+    """Cached, Dynamo-constant cuBLASLt version (the pybind call is untraceable)."""
+    return tex.get_cublasLt_version()
+
+
 def _split_quantize(
     tensor: torch.Tensor,
     split_sizes: List[int],
@@ -2223,7 +2230,7 @@ class _GroupedLinear(torch.autograd.Function):
         device_capability = get_device_compute_capability()
         if not (9, 0) <= device_capability <= (11, 0):
             return False
-        cublaslt_version = tex.get_cublasLt_version()
+        cublaslt_version = _get_cublaslt_version()
         if cublaslt_version < 130300:
             return False
         if device_capability < (10, 0) and cublaslt_version < 130400:
