@@ -410,6 +410,11 @@ class OperationFuser:
         self.backward_override = None
         self._last_amax_history_len = 0
 
+        # Why the group cannot run through its custom ops, ignoring per-call
+        # kwargs. Depends only on the fusion layout and the operations' state,
+        # so it is recomputed with them in maybe_fuse_ops rather than per call.
+        self._static_compile_unsupported_reason: Optional[str] = None
+
         # Flatten list of parameters
         self._basic_op_params = [list(op.parameters()) for op in self._basic_ops]
         self._basic_op_num_params = list(map(len, self._basic_op_params))
@@ -551,14 +556,18 @@ class OperationFuser:
         # Save current fusion params
         self.recipe_type, self.first_op_requiring_backward, self.backward_override = fusion_params
 
+        # The gate's static half follows the fusion layout and recipe state,
+        # both of which were just rebuilt.
+        self._static_compile_unsupported_reason = self._compute_static_unsupported_reason()
+
         # Save amax history length
         if isinstance(recipe, DelayedScaling):
             self._last_amax_history_len = recipe.amax_history_len
         else:
             self._last_amax_history_len = 0
 
-    def _compile_unsupported_reason(self, basic_op_kwargs: list[dict[str, Any]]) -> Optional[str]:
-        """Why this group may not run through its operations' custom ops."""
+    def _compute_static_unsupported_reason(self) -> Optional[str]:
+        """The gate's per-configuration half; cached by ``maybe_fuse_ops``."""
         for op, _ in self._forward_ops:
             # A forward fused op compiles like a basic one, through its own
             # registered custom op; one that has not declared the compute
@@ -568,7 +577,26 @@ class OperationFuser:
         for op, _ in self._backward_ops:
             if op.is_fused_op:
                 return "backward fused operations are not supported yet"
+        for op in self._basic_ops:
+            reason = op.compile_unsupported_reason()
+            if reason is not None:
+                return reason
+        return None
+
+    def _compile_unsupported_reason(self, basic_op_kwargs: list[dict[str, Any]]) -> Optional[str]:
+        """Why this group may not run through its operations' custom ops.
+
+        The configuration-dependent half is cached (recomputed only when
+        ``maybe_fuse_ops`` resets the fusion layout or recipe state); only the
+        per-call kwargs are checked here, and calls without kwargs skip even
+        that.
+        """
+        reason = self._static_compile_unsupported_reason
+        if reason is not None:
+            return reason
         for op, kwargs in zip(self._basic_ops, basic_op_kwargs, strict=True):
+            if not kwargs:
+                continue
             # A kwarg an operation declares is resolved into its args container
             # like any other config. Anything else -- notably the preallocated
             # buffers of the grouped operations -- is written to by the op, and a
@@ -584,10 +612,6 @@ class OperationFuser:
             values = sorted(name for name, v in kwargs.items() if not isinstance(v, torch.Tensor))
             if values:
                 return f"{type(op).__name__} keyword arguments {values} are not tensors"
-        for op in self._basic_ops:
-            reason = op.compile_unsupported_reason()
-            if reason is not None:
-                return reason
         return None
 
     def _use_compiled(self, basic_op_kwargs: list[dict[str, Any]]) -> bool:
