@@ -697,6 +697,45 @@ def check_gemm_dims(inp: torch.Tensor, weight: torch.Tensor, fp8: bool) -> None:
         )
 
 
+def check_grouped_gemm_dims(
+    inp: torch.Tensor,
+    weight: torch.Tensor,
+    m_splits: Sequence[int],
+    fp8: bool,
+) -> None:
+    """Grouped analog of :func:`check_gemm_dims`: emit the grouped TN GEMM dim
+    constraints as ``torch._check`` guards at trace time. torch.compile path
+    only (``m_splits`` entries are host-side ints there); eager validation
+    lives in the op impl.
+    """
+    # pylint: disable=protected-access
+    torch._check(
+        inp.shape[-1] == weight.shape[-1],
+        lambda: "GEMM not possible: input last dim must equal in_features",
+    )
+    torch._check(
+        math.prod(inp.shape[:-1]) == sum(m_splits),
+        lambda: "GEMM not possible: m_splits must sum to the input's token count",
+    )
+    if not fp8:
+        return
+    torch._check(
+        weight.shape[0] % 8 == 0 and weight.shape[-1] % 16 == 0,
+        lambda: (
+            "FP8 execution requires the weight's out_features to be divisible by 8"
+            " and in_features to be divisible by 16"
+        ),
+    )
+    torch._check(
+        inp.shape[-1] % 16 == 0,
+        lambda: "FP8 execution requires the input's last dimension to be divisible by 16",
+    )
+    torch._check(
+        all(m % 8 == 0 for m in m_splits),
+        lambda: "FP8 execution requires every m_splits entry to be divisible by 8",
+    )
+
+
 def is_bf16_compatible() -> bool:
     """Replaces torch.cuda.is_bf16_compatible() with an explicit
     check on device compute capability to enforce sm_80 or higher.
