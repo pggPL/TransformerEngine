@@ -34,6 +34,9 @@ as op inputs:
     buffers, and a ``__kind__`` tag) so a quantized tensor crosses as its buffers.
   * ``_QuantizerAdapter`` -- a quantizer, baked into the graph as a value-opaque
     constant.
+  * ``_TensorListAdapter`` / ``_TensorOrQuantizedListAdapter`` /
+    ``_QuantizerListAdapter`` -- list analogs of the above (one slot group for
+    the whole list); their gradients are list-shaped, one grad per element.
   * ``_ProcessGroupAdapter`` -- a ProcessGroup, carried as its c10d registry
     name and re-resolved inside the op.
   * ``_SimpleBundleAdapter`` -- every remaining simple value (scalars, enums,
@@ -335,25 +338,33 @@ except ImportError:  # pragma: no cover
 # --------------------------------------------------------------------------- #
 
 
-def _storage_flatten(
-    value: Any, extra_meta: Optional[Dict[str, Any]] = None
-) -> Tuple["OpaqueValueBundle", List[torch.Tensor]]:
-    """Split a ``QuantizedTensor`` / bare storage into ``(meta, Tensor[])``.
+def _storage_flatten_dict(value: Any) -> Tuple[Dict[str, Any], List[torch.Tensor]]:
+    """Split a ``QuantizedTensor`` / bare storage into ``(meta_dict, Tensor[])``.
 
     The flatten context (embedding the value-opaque quantizer) plus inner names
-    and -- for a wrapper subclass -- the outer geometry are stashed in the bundle
+    and -- for a wrapper subclass -- the outer geometry are stashed in the dict
     so :func:`_storage_unflatten` can rebuild without PyTorch's ``outer_size``.
-    ``extra_meta`` is merged in before the bundle is built (so its ``_frozen``
-    hash key stays consistent) -- used to tag the tensor-or-quantized slot ``__kind__``.
     """
     inner_names, ctx = value.__tensor_flatten__()
     meta = dict(ctx)
     meta["_inner_names"] = list(inner_names)
     if isinstance(value, torch.Tensor):
         meta["_outer_shape"] = torch.Size(value.shape)
+    tensors = [getattr(value, name) for name in inner_names]
+    return meta, tensors
+
+
+def _storage_flatten(
+    value: Any, extra_meta: Optional[Dict[str, Any]] = None
+) -> Tuple["OpaqueValueBundle", List[torch.Tensor]]:
+    """:func:`_storage_flatten_dict` with the metadata wrapped in a bundle.
+
+    ``extra_meta`` is merged in before the bundle is built (so its ``_frozen``
+    hash key stays consistent) -- used to tag the tensor-or-quantized slot ``__kind__``.
+    """
+    meta, tensors = _storage_flatten_dict(value)
     if extra_meta:
         meta.update(extra_meta)
-    tensors = [getattr(value, name) for name in inner_names]
     return OpaqueValueBundle(meta), tensors
 
 
@@ -403,6 +414,10 @@ class _Adapter:
     registration (to build the op's schema); ``to_slots`` and ``from_slots`` run
     on each call and must agree on the slot layout that ``schema_slots`` declares.
     """
+
+    # True when the field is list-valued and its grad slot is a ``Tensor[]``
+    # slot, so its gradient is a *list* of tensors (one per element).
+    is_list: bool = False
 
     @classmethod
     def try_build(cls, name: str, annot: Any) -> Optional["_Adapter"]:
@@ -557,6 +572,122 @@ class _TensorOrQuantizedAdapter(_Adapter):
         return 0
 
 
+class _TensorOrQuantizedListAdapter(_Adapter):
+    """``List[Tensor | QuantizedTensorStorage | None]`` field.
+
+    The list analog of :class:`_TensorOrQuantizedAdapter`: the same three slots,
+    but shared by the whole list. ``<name>`` (``Tensor[]``) holds one entry per
+    element -- plain / subclass tensors pass through, a 0-element sentinel stands
+    in for storage / ``None`` elements; ``<name>__tensors`` (``Tensor[]``) holds
+    the storage elements' inner tensors concatenated in element order;
+    ``<name>__meta`` (``OpaqueValueBundle``) carries the per-element kind tags,
+    flatten metadata and inner-tensor counts.
+    """
+
+    is_list = True
+
+    KINDS_KEY = "kinds"
+    METAS_KEY = "metas"
+    COUNTS_KEY = "counts"
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def tensor_slot(self) -> str:
+        """Per-element plain / subclass tensor slot name."""
+        return self.name
+
+    def inner_slot(self) -> str:
+        """Concatenated inner-tensor slot name."""
+        return self.name + "__tensors"
+
+    def meta_slot(self) -> str:
+        """Per-element flatten-metadata slot name."""
+        return self.name + "__meta"
+
+    def schema_slots(self) -> List[Tuple[str, str]]:
+        return [
+            (self.tensor_slot(), "Tensor[]"),
+            (self.inner_slot(), "Tensor[]"),
+            (self.meta_slot(), _OPAQUE_VALUE_BUNDLE_TYPE_NAME),
+        ]
+
+    @classmethod
+    def try_build(cls, name: str, annot: Any) -> Optional["_TensorOrQuantizedListAdapter"]:
+        if get_origin(annot) is not list:
+            return None
+        entry_args = get_args(annot)
+        if len(entry_args) != 1:
+            return None
+        # pylint: disable=protected-access
+        if _TensorOrQuantizedAdapter._is_tensor_storage_union(entry_args[0]):
+            return cls(name)
+        return None
+
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
+        outer: List[torch.Tensor] = []
+        inner: List[torch.Tensor] = []
+        kinds: List[_TensorOrQuantizedKind] = []
+        metas: List[Optional[Dict[str, Any]]] = []
+        counts: List[int] = []
+        for value in getattr(owner, self.name):
+            if value is None:
+                outer.append(_encode_none(None))
+                kinds.append(_TensorOrQuantizedKind.NONE)
+                metas.append(None)
+                counts.append(0)
+            elif isinstance(value, torch.Tensor):
+                # Plain tensor *and* subclass pass through; subclass flattening
+                # (if any) is done by the wrapper op's dispatch rule.
+                outer.append(value)
+                kinds.append(_TensorOrQuantizedKind.TENSOR)
+                metas.append(None)
+                counts.append(0)
+            elif isinstance(value, QuantizedTensorStorage):
+                meta, tensors = _storage_flatten_dict(value)
+                outer.append(_encode_none(None))
+                inner.extend(tensors)
+                kinds.append(_TensorOrQuantizedKind.STORAGE)
+                metas.append(meta)
+                counts.append(len(tensors))
+            else:
+                raise TypeError(
+                    f"field {self.name!r} expected list entries of None, "
+                    f"torch.Tensor, or QuantizedTensorStorage, got {type(value).__name__}"
+                )
+        return {
+            self.tensor_slot(): outer,
+            self.inner_slot(): inner,
+            self.meta_slot(): OpaqueValueBundle(
+                {self.KINDS_KEY: kinds, self.METAS_KEY: metas, self.COUNTS_KEY: counts}
+            ),
+        }
+
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+        meta = args[self.meta_slot()]
+        kinds = meta[self.KINDS_KEY]
+        metas = meta[self.METAS_KEY]
+        counts = meta[self.COUNTS_KEY]
+        outer = args[self.tensor_slot()]
+        inner = args[self.inner_slot()]
+        values: List[Any] = []
+        cursor = 0
+        for i, kind in enumerate(kinds):
+            if kind == _TensorOrQuantizedKind.NONE:
+                values.append(None)
+            elif kind == _TensorOrQuantizedKind.TENSOR:
+                values.append(outer[i])
+            else:
+                values.append(_storage_unflatten(metas[i], inner[cursor : cursor + counts[i]]))
+            cursor += counts[i]
+        kwargs[self.name] = values
+
+    def grad_slot(self) -> Optional[int]:
+        # Gradients flow to the per-element tensor slot, one grad per element
+        # (sentinel positions get None).
+        return 0
+
+
 class _TensorAdapter(_Adapter):
     """``Tensor`` / ``Optional[Tensor]`` -> single ``Tensor`` / ``Tensor?`` slot."""
 
@@ -582,6 +713,75 @@ class _TensorAdapter(_Adapter):
 
     def grad_slot(self) -> Optional[int]:
         return 0
+
+
+class _TensorListAdapter(_Adapter):
+    """``List[Tensor]`` / ``List[Optional[Tensor]]`` -> one ``Tensor[]`` slot.
+
+    ``None`` entries ride the 0-element sentinel (a ``Tensor[]`` schema slot is
+    non-nullable).
+    """
+
+    is_list = True
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    @classmethod
+    def try_build(cls, name: str, annot: Any) -> Optional["_TensorListAdapter"]:
+        if get_origin(annot) is not list:
+            return None
+        entry_args = get_args(annot)
+        if len(entry_args) != 1:
+            return None
+        entry, _ = _strip_optional(entry_args[0])
+        if entry is torch.Tensor:
+            return cls(name)
+        return None
+
+    def schema_slots(self) -> List[Tuple[str, str]]:
+        return [(self.name, "Tensor[]")]
+
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
+        return {self.name: [_encode_none(t) for t in getattr(owner, self.name)]}
+
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+        kwargs[self.name] = [_decode_none(t) for t in args[self.name]]
+
+    def grad_slot(self) -> Optional[int]:
+        return 0
+
+
+class _SymIntListAdapter(_Adapter):
+    """``List[int]`` -> one ``SymInt[]`` slot.
+
+    Host-side ints that may become symbolic under torch.compile (e.g. MoE split
+    sizes marked dynamic across calls): carried as op inputs rather than baked
+    into a value bundle, so one symbolic graph serves every value set. The real
+    impl receives plain ints; the fake may see ``SymInt``s.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    @classmethod
+    def try_build(cls, name: str, annot: Any) -> Optional["_SymIntListAdapter"]:
+        annot, _ = _strip_optional(annot)
+        if get_origin(annot) is not list:
+            return None
+        entry_args = get_args(annot)
+        if len(entry_args) == 1 and entry_args[0] is int:
+            return cls(name)
+        return None
+
+    def schema_slots(self) -> List[Tuple[str, str]]:
+        return [(self.name, "SymInt[]")]
+
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
+        return {self.name: list(getattr(owner, self.name))}
+
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+        kwargs[self.name] = list(args[self.name])
 
 
 class _QuantizerAdapter(_Adapter):
@@ -618,6 +818,49 @@ class _QuantizerAdapter(_Adapter):
 
     def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         kwargs[self.name] = args[self.meta_slot()][self.QUANTIZER_KEY]
+
+
+class _QuantizerListAdapter(_Adapter):
+    """``List[Quantizer]`` (entries may be ``None``) -> one ``OpaqueValueBundle`` slot.
+
+    The whole list is carried as a tuple inside the bundle; every non-``None``
+    entry must be a registered value-opaque quantizer (the bundle constructor
+    enforces it).
+    """
+
+    QUANTIZERS_KEY = "qs"
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def meta_slot(self) -> str:
+        """Opaque quantizer-list metadata slot name."""
+        return self.name + "__q"
+
+    @classmethod
+    def try_build(cls, name: str, annot: Any) -> Optional["_QuantizerListAdapter"]:
+        if get_origin(annot) is not list:
+            return None
+        entry_args = get_args(annot)
+        if len(entry_args) != 1:
+            return None
+        entry, _ = _strip_optional(entry_args[0])
+        if isinstance(entry, type) and issubclass(entry, Quantizer):
+            return cls(name)
+        return None
+
+    def schema_slots(self) -> List[Tuple[str, str]]:
+        return [(self.meta_slot(), _OPAQUE_VALUE_BUNDLE_TYPE_NAME)]
+
+    def to_slots(self, owner: Any) -> Dict[str, Any]:
+        return {
+            self.meta_slot(): OpaqueValueBundle(
+                {self.QUANTIZERS_KEY: tuple(getattr(owner, self.name))}
+            )
+        }
+
+    def from_slots(self, args: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+        kwargs[self.name] = list(args[self.meta_slot()][self.QUANTIZERS_KEY])
 
 
 class _ProcessGroupAdapter(_Adapter):
@@ -757,9 +1000,13 @@ class _UnsupportedAdapter(_Adapter):
 # exclusive on annotations, so the order is not a ranking.
 _FIELD_ADAPTERS: Tuple[type, ...] = (
     _TensorOrQuantizedAdapter,
+    _TensorOrQuantizedListAdapter,
     _TensorAdapter,
+    _TensorListAdapter,
+    _SymIntListAdapter,
     _ProcessGroupAdapter,
     _QuantizerAdapter,
+    _QuantizerListAdapter,
 )
 
 
@@ -803,7 +1050,13 @@ def _get_adapters(cls: type) -> List[_Adapter]:
 
 def _tensor_field_names(adapters: List[_Adapter]) -> List[str]:
     """Names of fields carrying tensors (for building the spec view)."""
-    return [b.name for b in adapters if isinstance(b, (_TensorAdapter, _TensorOrQuantizedAdapter))]
+    tensor_adapter_types = (
+        _TensorAdapter,
+        _TensorOrQuantizedAdapter,
+        _TensorListAdapter,
+        _TensorOrQuantizedListAdapter,
+    )
+    return [b.name for b in adapters if isinstance(b, tensor_adapter_types)]
 
 
 def _build_schema(adapters: List[_Adapter]) -> Tuple[str, List[str]]:
@@ -850,7 +1103,12 @@ def _spec_view(obj: Any, tensor_field_names: Sequence[str]) -> Any:
     overrides: Dict[str, Any] = {}
     for name in tensor_field_names:
         value = getattr(obj, name, None)
-        if value is not None and not isinstance(value, TensorSpec):
+        if isinstance(value, (list, tuple)):
+            overrides[name] = [
+                (to_tensor_spec(v) if v is not None and not isinstance(v, TensorSpec) else v)
+                for v in value
+            ]
+        elif value is not None and not isinstance(value, TensorSpec):
             overrides[name] = to_tensor_spec(value)
     if not overrides:
         return obj
@@ -977,8 +1235,10 @@ def _pack_fwd_result(result: Any) -> List[torch.Tensor]:
 def _pack_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> List[torch.Tensor]:
     """Pack a backward-impl return tuple into the op's ``Tensor[]`` payload.
 
-    Each grad occupies exactly one slot (validated against ``num_grad_inputs``);
-    a :class:`TensorSpec` grad is materialized into a single tensor.
+    Each grad occupies one slot -- or, for a list-shaped grad (list-typed
+    differentiable input), one slot per element -- with the top-level count
+    validated against ``num_grad_inputs``. A :class:`TensorSpec` grad is
+    materialized into a single tensor.
     """
     grads = list(grads)
     if len(grads) != num_grad_inputs:
@@ -986,12 +1246,18 @@ def _pack_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> List
             f"{op_qualname} expected bwd_impl to return {num_grad_inputs} grads "
             f"(one per input_tensors_for_grad entry), got {len(grads)}"
         )
+
+    def _one(g: Any) -> torch.Tensor:
+        if isinstance(g, TensorSpec):
+            return _encode_none(g.create_tensor())
+        return _encode_none(g)
+
     out: List[torch.Tensor] = []
     for g in grads:
-        if isinstance(g, TensorSpec):
-            out.append(_encode_none(g.create_tensor()))
+        if isinstance(g, (list, tuple)):
+            out.extend(_one(v) for v in g)
         else:
-            out.append(_encode_none(g))
+            out.append(_one(g))
     return out
 
 
@@ -1017,23 +1283,24 @@ def _unpack_fwd_fake_result(
 def _resolve_grad_targets(
     fwd_adapters: List[_Adapter],
     input_tensors_for_grad: List[str],
-) -> Tuple[int, List[int]]:
+) -> Tuple[int, List[Tuple[int, bool]]]:
     """Validate ``input_tensors_for_grad`` and resolve the grad-output layout.
 
     ``fwd_adapters`` already encode the arg dataclass's fields (they are built
     from it), so the type itself is not needed here.
 
     Returns ``(slot_count, grad_targets)``: the total number of input schema
-    slots and, for each requested input name, the schema-slot index its gradient
-    maps to.
+    slots and, for each requested input name, an ``(index, is_list)`` pair --
+    the schema-slot index its gradient maps to and whether that gradient is
+    list-shaped (one grad per list element).
     """
-    name_to_slot: Dict[str, int] = {}
+    name_to_slot: Dict[str, Tuple[int, bool]] = {}
     slot_offset = 0
     for adapter in fwd_adapters:
         slots = adapter.schema_slots()
         grad_slot = adapter.grad_slot()
         if grad_slot is not None:
-            name_to_slot[adapter.name] = slot_offset + grad_slot
+            name_to_slot[adapter.name] = (slot_offset + grad_slot, adapter.is_list)
         slot_offset += len(slots)
 
     non_differentiable = [n for n in input_tensors_for_grad if n not in name_to_slot]
@@ -1107,8 +1374,12 @@ def _register_autograd_for_op(
     """
 
     def _setup_context(ctx, inputs, output):
+        # Tensor lists only: a SymInt[] slot is also a list but takes a plain
+        # ``None`` grad, not a list-shaped one.
         ctx.fwd_tensor_list_lengths = {
-            i: len(value) for i, value in enumerate(inputs) if isinstance(value, list)
+            i: len(value)
+            for i, value in enumerate(inputs)
+            if isinstance(value, list) and all(isinstance(v, torch.Tensor) for v in value)
         }
         kwargs = dict(zip(fwd_arg_names, inputs))
         fwd_obj = _args_from_slots(fwd_arg_type, kwargs, fwd_adapters)
@@ -1149,31 +1420,84 @@ def _register_autograd_for_op(
         out: List[Any] = [None] * slot_count
         for pos, length in ctx.fwd_tensor_list_lengths.items():
             out[pos] = [None] * length
-        for pos, g in zip(grad_targets, grads):
-            out[pos] = g
+        # The bwd op's flat return packs a list-shaped grad as one slot per
+        # element (see ``_pack_bwd_result``); walk it with a cursor.
+        cursor = 0
+        for pos, is_list in grad_targets:
+            if is_list:
+                length = ctx.fwd_tensor_list_lengths[pos]
+                out[pos] = list(grads[cursor : cursor + length])
+                cursor += length
+            else:
+                out[pos] = grads[cursor]
+                cursor += 1
+        if cursor != len(grads):
+            raise RuntimeError(
+                f"bwd op returned {len(grads)} flat grads, expected {cursor}: a "
+                "list-shaped grad must have exactly one entry per input list element"
+            )
         return tuple(out)
 
     fwd_op.register_autograd(_autograd_backward, setup_context=_setup_context)
 
 
-def _tensor_or_quantized_offsets(adapters: List[_Adapter]) -> List[int]:
-    """Start index of each ``_TensorOrQuantizedAdapter`` group in the flat args."""
-    offsets: List[int] = []
+def _tensor_or_quantized_offsets(adapters: List[_Adapter]) -> List[Tuple[int, bool]]:
+    """``(start index, is_list)`` of each tensor-or-quantized group in the flat args."""
+    offsets: List[Tuple[int, bool]] = []
     pos = 0
     for adapter in adapters:
-        if isinstance(adapter, _TensorOrQuantizedAdapter):
-            offsets.append(pos)
+        if isinstance(adapter, (_TensorOrQuantizedAdapter, _TensorOrQuantizedListAdapter)):
+            offsets.append((pos, adapter.is_list))
         pos += len(adapter.schema_slots())
     return offsets
 
 
-def _flatten_subclass_into_slots(
-    new_args: List[Any], slot_offsets: List[int], subclass: type
-) -> None:
-    """Rewrite each tensor-or-quantized-adapter group whose ``Tensor?`` slot holds an
-    instance of ``subclass`` into the storage layout (3 slots: name / tensors / meta).
+def _flatten_list_subclasses(new_args: List[Any], offset: int, subclass: type) -> None:
+    """Rewrite ``subclass`` entries of the list group at ``offset`` into its
+    storage layout: the entry's inner tensors are spliced into the concatenated
+    ``__tensors`` slot (in element order) and the ``__meta`` bundle is rebuilt
+    with the entry retagged as storage.
     """
-    for offset in slot_offsets:
+    outer = list(new_args[offset])
+    if not any(isinstance(v, subclass) for v in outer):
+        return
+    meta = new_args[offset + 2]
+    kinds = list(meta[_TensorOrQuantizedListAdapter.KINDS_KEY])
+    metas = list(meta[_TensorOrQuantizedListAdapter.METAS_KEY])
+    counts = list(meta[_TensorOrQuantizedListAdapter.COUNTS_KEY])
+    inner = list(new_args[offset + 1])
+    for i, val in enumerate(outer):
+        if not isinstance(val, subclass):
+            continue
+        meta_dict, tensors = _storage_flatten_dict(val)
+        insert_at = sum(counts[:i])
+        inner[insert_at:insert_at] = tensors
+        outer[i] = _encode_none(None)
+        kinds[i] = _TensorOrQuantizedKind.STORAGE
+        metas[i] = meta_dict
+        counts[i] = len(tensors)
+    new_args[offset] = outer
+    new_args[offset + 1] = inner
+    new_args[offset + 2] = OpaqueValueBundle(
+        {
+            _TensorOrQuantizedListAdapter.KINDS_KEY: kinds,
+            _TensorOrQuantizedListAdapter.METAS_KEY: metas,
+            _TensorOrQuantizedListAdapter.COUNTS_KEY: counts,
+        }
+    )
+
+
+def _flatten_subclass_into_slots(
+    new_args: List[Any], slot_offsets: List[Tuple[int, bool]], subclass: type
+) -> None:
+    """Rewrite each tensor-or-quantized group whose tensor slot holds (an)
+    instance(s) of ``subclass`` into the storage layout (3 slots: name / tensors
+    / meta); list groups are rewritten per element.
+    """
+    for offset, is_list in slot_offsets:
+        if is_list:
+            _flatten_list_subclasses(new_args, offset, subclass)
+            continue
         val = new_args[offset]
         if not isinstance(val, subclass):
             continue
@@ -1186,7 +1510,7 @@ def _flatten_subclass_into_slots(
 
 
 def _make_slot_forwarder(
-    base_op: Any, slot_offsets: Sequence[int], subclasses: Sequence[type]
+    base_op: Any, slot_offsets: Sequence[Tuple[int, bool]], subclasses: Sequence[type]
 ) -> Callable[[Sequence[Any]], List[torch.Tensor]]:
     """Return ``call(args)`` forwarding to ``base_op``, first flattening any
     ``subclasses`` instance sitting in the tensor-or-quantized slot groups at
@@ -1227,7 +1551,7 @@ def _register_wrapper_op(
     wrapper_op_name: str,
     schema_str: str,
     base_op: Any,
-    slot_offsets: Sequence[int] = (),
+    slot_offsets: Sequence[Tuple[int, bool]] = (),
     subclasses: Sequence[type] = (),
 ) -> Any:
     """Define the wrapper op via ``torch.library.custom_op``: forward to the base
@@ -1239,7 +1563,10 @@ def _register_wrapper_op(
         return forward(flat)
 
     op_def = torch.library.custom_op(
-        f"{_TE_OP_NAMESPACE}::{wrapper_op_name}", _forward, mutates_args=(), schema=schema_str
+        f"{_TE_OP_NAMESPACE}::{wrapper_op_name}",
+        _forward,
+        mutates_args=(),
+        schema=schema_str,
     )
     op_def.register_fake(_forward)
     return op_def
