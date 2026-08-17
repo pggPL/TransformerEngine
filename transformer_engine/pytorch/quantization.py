@@ -401,7 +401,7 @@ class FP8GlobalState:
     high_precision_init_val: bool = False
     is_first_fp8_module: bool = False
     pending_backward_quantization_update: bool = False
-    activation_recompute_enabled: bool = False
+    in_activation_recompute_region: bool = False
     activation_recompute_phase: bool = False
     fp8_graph_capturing: bool = False
     autocast_depth: int = 0
@@ -1579,7 +1579,23 @@ class MXFP8BlockScalingRecipeState(RecipeState):
         # TODO(ksivamani); Find better design for this, adding here to avoid circular import.
         from .tensor.mxfp8_tensor import MXFP8Quantizer
 
-        return [MXFP8Quantizer(self.dtype) for i in range(self.num_quantizers)]
+        if self.mode not in ("forward", "backward"):
+            raise RuntimeError(f"Unexpected recipe mode ({self.mode})")
+
+        if self.mode == "backward" or not self.recipe.enable_2d_quantization:
+            return [MXFP8Quantizer(self.dtype) for i in range(self.num_quantizers)]
+
+        def _use_2d_quantization(idx: int) -> bool:
+            role = self._slot_role(idx)
+            return role.module_type in ("linear", "grouped_linear") and role.tensor_type == "weight"
+
+        return [
+            MXFP8Quantizer(
+                self.dtype,
+                with_2d_quantization=_use_2d_quantization(idx),
+            )
+            for idx in range(self.num_quantizers)
+        ]
 
 
 class Float8BlockScalingRecipeState(RecipeState):
