@@ -907,7 +907,7 @@ class _LayerNormMLP(torch.autograd.Function):
                 inp.requires_grad or ln_weight.requires_grad or ln_bias.requires_grad
             )
             ctx.normalization = normalization
-            ctx.schedule_backward_quantization_update = ctx.fp8 and requires_grad(
+            ctx.should_request_backward_quantization_update = ctx.fp8 and requires_grad(
                 inp, ln_weight, ln_bias, fc1_weight, fc2_weight, fc1_bias, fc2_bias
             )
 
@@ -1799,8 +1799,8 @@ class _LayerNormMLP(torch.autograd.Function):
         else:
             fc2_wgrad = None
 
-        if ctx.schedule_backward_quantization_update and not is_graph_capturing():
-            FP8GlobalStateManager.schedule_backward_quantization_update()
+        if ctx.should_request_backward_quantization_update and not is_graph_capturing():
+            FP8GlobalStateManager.request_backward_quantization_update()
 
         # FIX THIS
         # Scatter Fp8 tranposed-weight buffers

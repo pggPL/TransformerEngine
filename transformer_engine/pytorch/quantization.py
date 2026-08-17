@@ -713,11 +713,11 @@ class FP8GlobalStateManager:
                         amax_history, scale, get_fp8_max(recipe, forward), recipe
                     )
 
-    # Deprecated alias.
+    # Compatibility alias (used by Megatron-Core).
     reduce_and_update_fp8_tensors = reduce_and_update_quantization_state
 
     @classmethod
-    def schedule_backward_quantization_update(cls) -> None:
+    def request_backward_quantization_update(cls) -> None:
         """Request a backward quantization state update (e.g. delayed scaling
         amax reduction). Called from module backwards; the update itself runs
         after the backward pass is complete, at the next top-level autocast

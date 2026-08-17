@@ -234,7 +234,7 @@ class LinearBwdArgs:
     main_grad_func: Optional[Callable[[], torch.Tensor]] = None
 
     # --- Quantization state update bookkeeping ---
-    schedule_backward_quantization_update: bool = False
+    should_request_backward_quantization_update: bool = False
 
     # --- Misc ---
     cpu_offloading: bool = False
@@ -1429,9 +1429,9 @@ class _Linear(torch.autograd.Function):
                 or fwd_args.weight_requires_grad
                 or fwd_args.bias_requires_grad
             ):
-                bwd_args.schedule_backward_quantization_update = True
+                bwd_args.should_request_backward_quantization_update = True
             if fwd_args.backward_override is not None:
-                bwd_args.schedule_backward_quantization_update = False
+                bwd_args.should_request_backward_quantization_update = False
 
         return out, new_weight_workspace
 
@@ -1449,13 +1449,15 @@ class _Linear(torch.autograd.Function):
         if bwd_args.ub_name is not None:
             nvtx_label = f"{nvtx_label}.{bwd_args.ub_name}"
         result = _linear_backward(bwd_args) + (None,)  # fwd_args grad slot
-        schedule_backward_quantization_update = bwd_args.schedule_backward_quantization_update
+        should_request_backward_quantization_update = (
+            bwd_args.should_request_backward_quantization_update
+        )
         # Drop all references held by bwd_args (saved tensors, quantizers, weakrefs,
         # main_grad closure) so they don't outlive backward via ctx under retain_graph.
         ctx.backward_objects = None
         del bwd_args
-        if schedule_backward_quantization_update and not is_graph_capturing():
-            FP8GlobalStateManager.schedule_backward_quantization_update()
+        if should_request_backward_quantization_update and not is_graph_capturing():
+            FP8GlobalStateManager.request_backward_quantization_update()
         return result
 
 

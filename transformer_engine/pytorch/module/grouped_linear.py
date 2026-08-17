@@ -963,7 +963,7 @@ class _GroupedLinear(torch.autograd.Function):
             ctx.use_bias = use_bias
             ctx.inp_shape = inp.shape
             ctx.requires_dgrad = inp.requires_grad
-            ctx.schedule_backward_quantization_update = ctx.fp8 and requires_grad(
+            ctx.should_request_backward_quantization_update = ctx.fp8 and requires_grad(
                 inp, weights[0], biases[0]
             )
             ctx.wgrad_store = wgrad_store
@@ -1339,7 +1339,7 @@ class _GroupedLinear(torch.autograd.Function):
             ctx.sequence_parallel = sequence_parallel
             ctx.inp_shape = inp.shape
             ctx.requires_dgrad = inp.requires_grad
-            ctx.schedule_backward_quantization_update = ctx.fp8 and requires_grad(
+            ctx.should_request_backward_quantization_update = ctx.fp8 and requires_grad(
                 inp, weights[0], biases[0]
             )
             ctx.wgrad_store = wgrad_store
@@ -1359,7 +1359,7 @@ class _GroupedLinear(torch.autograd.Function):
                 ctx.grad_input_quantizers = [None] * num_gemms
                 ctx.grad_weight_quantizers = [None] * num_gemms
                 ctx.grad_output_quantizers = [None] * num_gemms
-                ctx.schedule_backward_quantization_update = False
+                ctx.should_request_backward_quantization_update = False
 
         # [*, in_features] -> [*, out_features] except first dimension changes for SP
         return out.view(-1, *inp.shape[1:-1], out.shape[-1]), new_workspaces
@@ -1611,8 +1611,8 @@ class _GroupedLinear(torch.autograd.Function):
         else:
             wgrad_list = [None] * num_weight_args
 
-        if ctx.schedule_backward_quantization_update and not is_graph_capturing():
-            FP8GlobalStateManager.schedule_backward_quantization_update()
+        if ctx.should_request_backward_quantization_update and not is_graph_capturing():
+            FP8GlobalStateManager.request_backward_quantization_update()
         return (
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
             None,  # m_splits
@@ -1875,8 +1875,8 @@ class _GroupedLinear(torch.autograd.Function):
             ):
                 grad_biases = [None] * ctx.num_gemms
 
-        if ctx.schedule_backward_quantization_update and not is_graph_capturing():
-            FP8GlobalStateManager.schedule_backward_quantization_update()
+        if ctx.should_request_backward_quantization_update and not is_graph_capturing():
+            FP8GlobalStateManager.request_backward_quantization_update()
         return (
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
             None,  # m_splits
