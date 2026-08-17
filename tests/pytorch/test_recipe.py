@@ -94,6 +94,7 @@ class TestFP8Recipe:
                 is_first_microbatch=True,
             )
         y.backward(torch.zeros_like(y))
+        FP8GlobalStateManager.flush_backward_quantization_update()
 
         # Get amax history and scaling factors
         fp8_meta = module.fp8_meta
@@ -147,6 +148,7 @@ class TestFP8Recipe:
             x = torch.randn([16, 16], device="cuda")
             y = module(x, is_first_microbatch=is_first_microbatch)
         y.backward(torch.randn_like(y))
+        FP8GlobalStateManager.flush_backward_quantization_update()
 
         # Check that amax history matches expected values
         torch.testing.assert_close(
@@ -245,6 +247,7 @@ class TestFP8Recipe:
             with te.autocast(recipe=recipe):
                 y = op(x)
             y.backward(dy)
+            FP8GlobalStateManager.flush_backward_quantization_update()
 
             def check_metas(
                 test_scale: float,

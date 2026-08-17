@@ -772,16 +772,15 @@ class FP8GlobalStateManager:
         # so all backward amaxes are populated. Never flush during activation
         # recompute or from inside a running backward pass (an autocast entered by
         # an externally driven recompute, e.g. Megatron-Core's).
-        if (
-            qstate.autocast_depth == 0
-            and qstate.pending_backward_quantization_update
-            and not _graph
-            and not qstate.activation_recompute_phase
-            and not torch.compiler.is_compiling()
-            and not cls.fp8_graph_capturing()
-            and torch._C._current_graph_task_id() == -1
-        ):
-            cls.flush_backward_quantization_update()
+        if qstate.autocast_depth == 0 and qstate.pending_backward_quantization_update:
+            if (
+                not _graph
+                and not qstate.activation_recompute_phase
+                and not torch.compiler.is_compiling()
+                and not cls.fp8_graph_capturing()
+                and torch._C._current_graph_task_id() == -1
+            ):
+                cls.flush_backward_quantization_update()
         qstate.autocast_arguments[autocast_key] = (
             fp8_recipe,
             fp8_group,
