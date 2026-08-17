@@ -28,7 +28,7 @@ from transformer_engine.common.recipe import (
 )
 from .constants import dist_group_type, DType
 
-from .utils import get_device_compute_capability
+from .utils import get_device_compute_capability, nvtx_range_push, nvtx_range_pop
 from .jit import jit_fuser
 
 
@@ -710,8 +710,10 @@ class FP8GlobalStateManager:
         if not qstate.pending_backward_quantization_update:
             return
         qstate.pending_backward_quantization_update = False
+        nvtx_range_push("transformer_engine.reduce_and_update_quantization_state.backward")
         with torch.no_grad():
             cls.reduce_and_update_quantization_state(forward=False)
+        nvtx_range_pop("transformer_engine.reduce_and_update_quantization_state.backward")
 
     @staticmethod
     def get_unique_autocast_key(
