@@ -419,7 +419,7 @@ def _snapshot_backward_ctx_state(
         "backward_override",
         "fp8",
         "grad_output_quantizer",
-        "reduce_and_update_bwd_fp8_tensors",
+        "schedule_backward_quantization_update",
     )
     missing_attrs = [attr for attr in required_attrs if not hasattr(state_holder, attr)]
     if missing_attrs:
@@ -430,7 +430,7 @@ def _snapshot_backward_ctx_state(
         getattr(state_holder, "backward_override"),
         bool(getattr(state_holder, "fp8")),
         getattr(state_holder, "grad_output_quantizer"),
-        bool(getattr(state_holder, "reduce_and_update_bwd_fp8_tensors")),
+        bool(getattr(state_holder, "schedule_backward_quantization_update")),
     )
 
 
@@ -816,7 +816,7 @@ def _run_grouped_linear_single_step_with_ctx_state(
         required_attrs = (
             "backward_override",
             "fp8",
-            "reduce_and_update_bwd_fp8_tensors",
+            "schedule_backward_quantization_update",
         )
         missing_attrs = [attr for attr in required_attrs if not hasattr(y.grad_fn, attr)]
         if missing_attrs:
@@ -827,7 +827,7 @@ def _run_grouped_linear_single_step_with_ctx_state(
         ctx_state = (
             getattr(y.grad_fn, "backward_override"),
             bool(getattr(y.grad_fn, "fp8")),
-            bool(getattr(y.grad_fn, "reduce_and_update_bwd_fp8_tensors")),
+            bool(getattr(y.grad_fn, "schedule_backward_quantization_update")),
         )
     y.backward(dy)
     assert x_run.grad is not None

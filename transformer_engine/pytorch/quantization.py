@@ -400,6 +400,9 @@ class FP8GlobalState:
     fp8_parameters: bool = False
     high_precision_init_val: bool = False
     is_first_fp8_module: bool = False
+    pending_backward_quantization_update: bool = False
+    activation_recompute_enabled: bool = False
+    activation_recompute_phase: bool = False
     fp8_graph_capturing: bool = False
     autocast_depth: int = 0
     global_amax_buffer: Dict[str, list] = field(default_factory=dict)
@@ -653,7 +656,7 @@ class FP8GlobalStateManager:
             )
 
     @classmethod
-    def reduce_and_update_fp8_tensors(
+    def reduce_and_update_quantization_state(
         cls,
         forward: bool = True,
     ) -> None:
@@ -710,6 +713,29 @@ class FP8GlobalStateManager:
                         amax_history, scale, get_fp8_max(recipe, forward), recipe
                     )
 
+    # Deprecated alias.
+    reduce_and_update_fp8_tensors = reduce_and_update_quantization_state
+
+    @classmethod
+    def schedule_backward_quantization_update(cls) -> None:
+        """Request a backward quantization state update (e.g. delayed scaling
+        amax reduction). Called from module backwards; the update itself runs
+        after the backward pass is complete, at the next top-level autocast
+        entry. This avoids any assumption about which module's backward
+        executes last (which does not hold for branched autograd graphs or
+        activation recompute)."""
+        cls.quantization_state.pending_backward_quantization_update = True
+
+    @classmethod
+    def flush_backward_quantization_update(cls) -> None:
+        """Run the pending backward quantization state update, if any."""
+        qstate = cls.quantization_state
+        if not qstate.pending_backward_quantization_update:
+            return
+        qstate.pending_backward_quantization_update = False
+        with torch.no_grad():
+            cls.reduce_and_update_quantization_state(forward=False)
+
     @staticmethod
     def get_unique_autocast_key(
         recipe: Optional[Recipe] = None,
@@ -740,6 +766,22 @@ class FP8GlobalStateManager:
         fp8_recipe = get_default_fp8_recipe() if fp8_recipe is None else fp8_recipe
         autocast_key = cls.get_unique_autocast_key(fp8_recipe, fp8_group)
         qstate = cls.quantization_state
+
+        # Flush the backward update requested by the previous backward pass. By the
+        # time a new top-level autocast region is entered, that backward is complete,
+        # so all backward amaxes are populated. Never flush during activation
+        # recompute or from inside a running backward pass (an autocast entered by
+        # an externally driven recompute, e.g. Megatron-Core's).
+        if (
+            qstate.autocast_depth == 0
+            and qstate.pending_backward_quantization_update
+            and not _graph
+            and not qstate.activation_recompute_phase
+            and not torch.compiler.is_compiling()
+            and not cls.fp8_graph_capturing()
+            and torch._C._current_graph_task_id() == -1
+        ):
+            cls.flush_backward_quantization_update()
         qstate.autocast_arguments[autocast_key] = (
             fp8_recipe,
             fp8_group,
@@ -776,10 +818,18 @@ class FP8GlobalStateManager:
         # Reduce only the non-FP8 weight modules here.
         # FP8 weight modules are reduced at the end of the optimizer
         # step after the weight amax is populated.
-        if enabled and qstate.autocast_depth == 0 and not _graph and torch.is_grad_enabled():
+        # Skip during activation recompute: the recompute re-enters an autocast, and
+        # updating here a second time would advance delayed-scaling state twice per step.
+        if (
+            enabled
+            and qstate.autocast_depth == 0
+            and not _graph
+            and not qstate.activation_recompute_phase
+            and torch.is_grad_enabled()
+        ):
             # delayed scaling only function, for other recipes (current scaling with any granularity),
             # this is noop for other recipes because cls.global_amax_buffer is empty list
-            cls.reduce_and_update_fp8_tensors(forward=True)
+            cls.reduce_and_update_quantization_state(forward=True)
 
     @classmethod
     def copy_forward_fp8_meta_tensors_for_recompute(cls, fp8_meta: Dict[str, Any]) -> None:

@@ -62,9 +62,6 @@ _MODEL_PARALLEL_ATTRIBUTE_DEFAULTS = {
 
 _USE_REENTRANT_ACTIVATION_RECOMPUTE = True
 
-_FP8_ACTIVATION_RECOMPUTE_ENABLED = False
-_FP8_ACTIVATION_RECOMPUTE_PHASE = False
-
 
 _ALL_ACTIVE_RNG_STATES = {}
 
@@ -247,40 +244,34 @@ class activation_recompute_forward(AbstractContextManager, ContextDecorator):
     activations, followed by calculation of gradients using these values.
     """
 
-    _is_first_fp8_module: List = []
-
     def __init__(self, activation_recompute: bool = False, recompute_phase: bool = False):
         super().__init__()
         self.activation_recompute = activation_recompute
         self.recompute_phase = recompute_phase
 
     def __enter__(self):
-        global _FP8_ACTIVATION_RECOMPUTE_ENABLED, _FP8_ACTIVATION_RECOMPUTE_PHASE
-        _FP8_ACTIVATION_RECOMPUTE_ENABLED = (
+        qstate = FP8GlobalStateManager.quantization_state
+        self._prev_enabled = qstate.activation_recompute_enabled
+        self._prev_phase = qstate.activation_recompute_phase
+        qstate.activation_recompute_enabled = (
             self.activation_recompute and FP8GlobalStateManager.is_fp8_enabled()
         )
-        _FP8_ACTIVATION_RECOMPUTE_PHASE = self.recompute_phase
-
-        qstate = FP8GlobalStateManager.quantization_state
-        if self.activation_recompute and not self.recompute_phase:
-            activation_recompute_forward._is_first_fp8_module.append(qstate.is_first_fp8_module)
-        if self.activation_recompute and self.recompute_phase:
-            qstate.is_first_fp8_module = activation_recompute_forward._is_first_fp8_module.pop(0)
+        qstate.activation_recompute_phase = self.recompute_phase
 
     def __exit__(self, *exc_details):
-        global _FP8_ACTIVATION_RECOMPUTE_ENABLED, _FP8_ACTIVATION_RECOMPUTE_PHASE
-        _FP8_ACTIVATION_RECOMPUTE_ENABLED = False
-        _FP8_ACTIVATION_RECOMPUTE_PHASE = False
+        qstate = FP8GlobalStateManager.quantization_state
+        qstate.activation_recompute_enabled = self._prev_enabled
+        qstate.activation_recompute_phase = self._prev_phase
 
 
 def is_fp8_activation_recompute_enabled() -> bool:
     """Return global boolean"""
-    return _FP8_ACTIVATION_RECOMPUTE_ENABLED
+    return FP8GlobalStateManager.quantization_state.activation_recompute_enabled
 
 
 def in_fp8_activation_recompute_phase() -> bool:
     """Return global boolean"""
-    return _FP8_ACTIVATION_RECOMPUTE_PHASE
+    return FP8GlobalStateManager.quantization_state.activation_recompute_phase
 
 
 def _get_active_autocast_contexts():
