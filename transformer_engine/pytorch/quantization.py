@@ -34,6 +34,7 @@ from .jit import jit_fuser
 
 __all__ = [
     "autocast",
+    "backward_quantization_update_scope",
     "quantized_model_init",
     "is_fp8_available",
     "is_mxfp8_available",
@@ -401,8 +402,11 @@ class FP8GlobalState:
     high_precision_init_val: bool = False
     is_first_fp8_module: bool = False
     pending_backward_quantization_update: bool = False
+    backward_quantization_update_callback_queued: bool = False
+    backward_quantization_update_scope_depth: int = 0
     in_activation_recompute_region: bool = False
     activation_recompute_phase: bool = False
+    activation_recompute_forward_phase: bool = False
     fp8_graph_capturing: bool = False
     autocast_depth: int = 0
     global_amax_buffer: Dict[str, list] = field(default_factory=dict)
@@ -696,12 +700,40 @@ class FP8GlobalStateManager:
     @classmethod
     def request_backward_quantization_update(cls) -> None:
         """Request a backward quantization state update (e.g. delayed scaling
-        amax reduction). Called from module backwards; the update itself runs
-        after the backward pass is complete, at the next top-level autocast
-        entry. This avoids any assumption about which module's backward
-        executes last (which does not hold for branched autograd graphs or
-        activation recompute)."""
-        cls.quantization_state.pending_backward_quantization_update = True
+        amax reduction) after the enclosing logical backward."""
+        qstate = cls.quantization_state
+        qstate.pending_backward_quantization_update = True
+        cls._queue_backward_quantization_update_callback()
+
+    @classmethod
+    def _queue_backward_quantization_update_callback(cls) -> None:
+        """Queue the pending update after the top-level autograd task."""
+        qstate = cls.quantization_state
+        if (
+            qstate.backward_quantization_update_scope_depth > 0
+            or qstate.backward_quantization_update_callback_queued
+            or torch.compiler.is_compiling()
+            or cls.fp8_graph_capturing()
+            or torch._C._current_graph_task_id() == -1
+        ):
+            return
+        queue_callback = getattr(torch.autograd.graph, "queue_callback", None)
+        if queue_callback is None:
+            return
+        qstate.backward_quantization_update_callback_queued = True
+        try:
+            queue_callback(cls._run_backward_quantization_update_callback)
+        except RuntimeError:
+            qstate.backward_quantization_update_callback_queued = False
+            raise
+
+    @classmethod
+    def _run_backward_quantization_update_callback(cls) -> None:
+        """Flush a pending update at the end of the enclosing backward."""
+        qstate = cls.quantization_state
+        qstate.backward_quantization_update_callback_queued = False
+        if qstate.backward_quantization_update_scope_depth == 0:
+            cls.flush_backward_quantization_update()
 
     @classmethod
     def flush_backward_quantization_update(cls) -> None:
@@ -711,9 +743,15 @@ class FP8GlobalStateManager:
             return
         qstate.pending_backward_quantization_update = False
         nvtx_range_push("transformer_engine.reduce_and_update_quantization_state.backward")
-        with torch.no_grad():
-            cls.reduce_and_update_quantization_state(forward=False)
-        nvtx_range_pop("transformer_engine.reduce_and_update_quantization_state.backward")
+        update_succeeded = False
+        try:
+            with torch.no_grad():
+                cls.reduce_and_update_quantization_state(forward=False)
+            update_succeeded = True
+        finally:
+            if not update_succeeded:
+                qstate.pending_backward_quantization_update = True
+            nvtx_range_pop("transformer_engine.reduce_and_update_quantization_state.backward")
 
     @staticmethod
     def get_unique_autocast_key(
@@ -746,12 +784,14 @@ class FP8GlobalStateManager:
         autocast_key = cls.get_unique_autocast_key(fp8_recipe, fp8_group)
         qstate = cls.quantization_state
 
-        # Flush the backward update requested by the previous backward pass. By the
-        # time a new top-level autocast region is entered, that backward is complete,
-        # so all backward amaxes are populated. Never flush during activation
-        # recompute or from inside a running backward pass (an autocast entered by
-        # an externally driven recompute, e.g. Megatron-Core's).
-        if qstate.autocast_depth == 0 and qstate.pending_backward_quantization_update:
+        # Fallback for runtimes without the autograd callback API. Never flush
+        # during activation recompute, an explicit backward update scope, or a
+        # running backward pass.
+        if (
+            qstate.autocast_depth == 0
+            and qstate.pending_backward_quantization_update
+            and qstate.backward_quantization_update_scope_depth == 0
+        ):
             if (
                 not _graph
                 and not qstate.activation_recompute_phase
@@ -827,15 +867,12 @@ class FP8GlobalStateManager:
         ]
 
         qstate = cls.quantization_state
-        if buffer_position_key in fp8_meta:
-            qstate.fp8_tensors_recompute_buffer[fp8_meta[buffer_position_key]].append(to_copy)
-        else:
-            if len(qstate.fp8_tensors_recompute_buffer) == 0:
-                qstate.fp8_tensors_recompute_buffer = [deque()]
-            else:
-                qstate.fp8_tensors_recompute_buffer.append(deque())
-            qstate.fp8_tensors_recompute_buffer[-1].append(to_copy)
-            fp8_meta[buffer_position_key] = len(qstate.fp8_tensors_recompute_buffer) - 1
+        buffer_position = fp8_meta.get(buffer_position_key)
+        if buffer_position is None or buffer_position >= len(qstate.fp8_tensors_recompute_buffer):
+            qstate.fp8_tensors_recompute_buffer.append(deque())
+            buffer_position = len(qstate.fp8_tensors_recompute_buffer) - 1
+            fp8_meta[buffer_position_key] = buffer_position
+        qstate.fp8_tensors_recompute_buffer[buffer_position].append(to_copy)
 
     @classmethod
     def get_old_fp8_meta_tensors_for_recompute(cls, fp8_meta: Dict[str, Any]) -> None:
@@ -846,15 +883,21 @@ class FP8GlobalStateManager:
         if not _has_delayed_scaling_state(fp8_meta):
             return
 
+        # Retrieve stashed amaxes and scales from phase 1 pre forward.
+        buffer_position_key = "global_fp8_buffer_pos_fwd_recompute"
+        buffer_position = fp8_meta.get(buffer_position_key)
+        buffers = cls.quantization_state.fp8_tensors_recompute_buffer
+        if (
+            buffer_position is None
+            or buffer_position >= len(buffers)
+            or not buffers[buffer_position]
+        ):
+            raise RuntimeError("FP8 activation recompute metadata stash is missing")
+        stashed_fp8_meta = buffers[buffer_position].popleft()
+
         # Store updated amaxes and scales from phase 1 post forward.
         fp8_meta["updated_amax_history_fwd"] = fp8_meta["scaling_fwd"].amax_history.clone()
         fp8_meta["updated_scale_fwd"] = fp8_meta["scaling_fwd"].scale.clone()
-
-        # Retrieve stashed amaxes and scales from phase 1 pre forward.
-        buffer_position_key = "global_fp8_buffer_pos_fwd_recompute"
-        stashed_fp8_meta = cls.quantization_state.fp8_tensors_recompute_buffer[
-            fp8_meta[buffer_position_key]
-        ].popleft()
 
         # Replace amaxes and scales with stashed values for phase 2 forward
         fp8_meta["scaling_fwd"].amax_history.copy_(stashed_fp8_meta[0])
@@ -869,6 +912,28 @@ class FP8GlobalStateManager:
 
         fp8_meta["scaling_fwd"].amax_history.copy_(fp8_meta["updated_amax_history_fwd"])
         fp8_meta["scaling_fwd"].scale.copy_(fp8_meta["updated_scale_fwd"])
+
+
+@contextmanager
+def backward_quantization_update_scope() -> None:
+    """Group quantization state updates from multiple backward calls.
+
+    Use this around one logical backward that is implemented with multiple
+    autograd backward calls or schedules gradient work after autograd returns.
+    The scope must include delayed work such as ``module.backward_dw()``.
+    Nested scopes flush once when the outermost scope exits.
+    """
+    qstate = FP8GlobalStateManager.quantization_state
+    qstate.backward_quantization_update_scope_depth += 1
+    try:
+        yield
+    finally:
+        qstate.backward_quantization_update_scope_depth -= 1
+        if qstate.backward_quantization_update_scope_depth == 0:
+            if torch._C._current_graph_task_id() == -1:
+                FP8GlobalStateManager.flush_backward_quantization_update()
+            else:
+                FP8GlobalStateManager._queue_backward_quantization_update_callback()
 
 
 @contextmanager

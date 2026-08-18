@@ -910,7 +910,11 @@ def test_single_update_per_step(mode):
 
 
 @pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
-def test_flush_at_next_autocast_entry():
+@pytest.mark.skipif(
+    hasattr(torch.autograd.graph, "queue_callback"),
+    reason="public autograd callback API is available",
+)
+def test_flush_at_next_autocast_entry_fallback():
     """Without an explicit flush, the update runs when the next autocast begins."""
     model = _make_model()
     recipe = DelayedScaling()
@@ -923,6 +927,57 @@ def test_flush_at_next_autocast_entry():
         _train_step(model, x, _forward_plain, recipe)
         assert counter.backward == 1
     FP8GlobalStateManager.flush_backward_quantization_update()
+
+
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.skipif(
+    not hasattr(torch.autograd.graph, "queue_callback"),
+    reason="public autograd callback API is unavailable",
+)
+@pytest.mark.parametrize("mode", FORWARD_FNS.keys())
+def test_flush_at_backward_completion(mode):
+    """The update runs after the complete top-level backward."""
+    model = _make_model()
+    recipe = DelayedScaling()
+
+    with _UpdateCounter() as counter:
+        x = torch.randn(BATCH, HIDDEN, device="cuda", requires_grad=True)
+        _train_step(model, x, FORWARD_FNS[mode], recipe)
+        assert counter.backward == 1
+
+
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_backward_quantization_update_scope():
+    """Independent autograd calls in one logical backward update once."""
+    model = _make_model()
+    recipe = DelayedScaling()
+
+    with _UpdateCounter() as counter:
+        with te.backward_quantization_update_scope():
+            for _ in range(STEPS):
+                x = torch.randn(BATCH, HIDDEN, device="cuda", requires_grad=True)
+                _train_step(model, x, _forward_plain, recipe)
+                assert counter.backward == 0
+        assert counter.backward == 1
+
+
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_backward_quantization_update_scope_covers_delayed_wgrad():
+    """The update runs after delayed weight-gradient computation."""
+    model = te.Linear(HIDDEN, HIDDEN, bias=True, delay_wgrad_compute=True).cuda()
+    recipe = DelayedScaling()
+
+    with _UpdateCounter() as counter:
+        with te.backward_quantization_update_scope():
+            x = torch.randn(BATCH, HIDDEN, device="cuda", requires_grad=True)
+            with te.autocast(enabled=True, recipe=recipe):
+                out = model(x)
+            out.float().sum().backward()
+            assert counter.backward == 0
+            model.backward_dw()
+            assert model.weight.grad is not None
+            assert counter.backward == 0
+        assert counter.backward == 1
 
 
 @pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
@@ -978,12 +1033,13 @@ def test_checkpointed_branch_without_backward():
 
 
 @pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("amax_compute_algo", ["max", "most_recent"])
 @pytest.mark.parametrize("mode", ["reentrant", "non_reentrant", "per_layer_reentrant", "nested"])
-def test_checkpointing_matches_plain_numerics(mode):
+def test_checkpointing_matches_plain_numerics(mode, amax_compute_algo):
     """Delayed-scaling state must evolve identically with and without
     activation checkpointing (duplicate updates would advance it faster)."""
     forward_fn = FORWARD_FNS[mode]
-    recipe = DelayedScaling()
+    recipe = DelayedScaling(amax_history_len=4, amax_compute_algo=amax_compute_algo)
 
     def train(forward):
         model = _make_model(seed=99)
@@ -1007,11 +1063,24 @@ def test_checkpointing_matches_plain_numerics(mode):
         torch.testing.assert_close(l_ckpt, l_ref, rtol=0, atol=0, msg=f"loss diverged @ {step}")
     for (scale_ref, hist_ref), (scale_ckpt, hist_ckpt) in zip(state_ref, state_ckpt):
         assert torch.equal(scale_ckpt, scale_ref), "scale diverged under checkpointing"
-        # With nested checkpoints the inner checkpoint re-runs its forward (as a
-        # regular forward frame) during the outer recompute and re-records the
-        # same amaxes into the history, so exact history equality does not hold.
-        if mode != "nested":
-            assert torch.equal(hist_ckpt, hist_ref), "amax history diverged under checkpointing"
+        assert torch.equal(hist_ckpt, hist_ref), "amax history diverged under checkpointing"
+
+
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("use_reentrant", [True, False])
+def test_checkpointed_eval_module(use_reentrant):
+    """Eval mode does not disable activation recompute or autograd."""
+    model = _make_model()
+    model.eval()
+    recipe = DelayedScaling()
+    x = torch.randn(BATCH, HIDDEN, device="cuda", requires_grad=True)
+
+    with te.autocast(enabled=True, recipe=recipe):
+        out = te_checkpoint(_run_layers, model, x, use_reentrant=use_reentrant)
+    out.float().sum().backward()
+    FP8GlobalStateManager.flush_backward_quantization_update()
+
+    assert x.grad is not None and torch.isfinite(x.grad).all()
 
 
 @pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)

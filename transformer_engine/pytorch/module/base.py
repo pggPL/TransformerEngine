@@ -42,6 +42,7 @@ from ..quantization import (
 from ..distributed import (
     gather_along_first_dim,
     is_fp8_activation_recompute_enabled,
+    in_fp8_activation_recompute_forward_phase,
     in_fp8_activation_recompute_phase,
     _fsdp_gather_tensors,
 )
@@ -1631,9 +1632,12 @@ class TransformerEngineBaseModule(torch.nn.Module, ABC):
                 if not FP8GlobalStateManager.fp8_graph_capturing():
                     FP8GlobalStateManager.add_fp8_tensors_to_global_buffer(self.fp8_meta)
 
-                # Activation recomputation is used and this is the first forward phase.
-                if self.training and is_fp8_activation_recompute_enabled():
-                    FP8GlobalStateManager.copy_forward_fp8_meta_tensors_for_recompute(self.fp8_meta)
+        if (
+            delayed_scaling_recipe
+            and is_fp8_activation_recompute_enabled()
+            and in_fp8_activation_recompute_forward_phase()
+        ):
+            FP8GlobalStateManager.copy_forward_fp8_meta_tensors_for_recompute(self.fp8_meta)
 
         nvtx_range_push(self.__class__.__name__ + " forward")
         if not allow_non_contiguous and not inp.is_contiguous():

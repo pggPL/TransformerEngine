@@ -43,8 +43,10 @@ from transformer_engine.pytorch import (
 )
 from transformer_engine.pytorch import checkpoint as te_checkpoint
 from transformer_engine.pytorch.distributed import (
-    is_fp8_activation_recompute_enabled,
+    activation_recompute_forward,
+    in_fp8_activation_recompute_forward_phase,
     in_fp8_activation_recompute_phase,
+    is_fp8_activation_recompute_enabled,
 )
 from transformer_engine.pytorch.cpp_extensions import general_gemm
 from transformer_engine.common import recipe
@@ -904,6 +906,23 @@ def _checkpointed_linear_backward(body, use_reentrant, *layers):
     for layer in layers:
         assert layer.weight.grad is not None
         assert torch.isfinite(layer.weight.grad).all()
+
+
+def test_nested_activation_recompute_phases():
+    """Nested checkpoint forwards preserve an active outer recompute phase."""
+    FP8GlobalStateManager.reset()
+
+    with activation_recompute_forward(True, True):
+        assert in_fp8_activation_recompute_phase()
+        assert not in_fp8_activation_recompute_forward_phase()
+        with activation_recompute_forward(True, False):
+            assert in_fp8_activation_recompute_phase()
+            assert in_fp8_activation_recompute_forward_phase()
+        assert in_fp8_activation_recompute_phase()
+        assert not in_fp8_activation_recompute_forward_phase()
+
+    assert not in_fp8_activation_recompute_phase()
+    assert not in_fp8_activation_recompute_forward_phase()
 
 
 @pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
