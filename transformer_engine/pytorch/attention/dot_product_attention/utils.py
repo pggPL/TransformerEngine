@@ -72,6 +72,32 @@ _print_rank = int(os.getenv("NVTE_PRINT_RANK", "0"))
 
 _cu_seqlens_cache = {}
 
+# Guard so the max_seqlen derivation deprecation warning is emitted only once.
+_warned_max_seqlen_derivation = False
+
+
+def warn_max_seqlen_derivation_once():
+    """Warn (once) that deriving ``max_seqlen_q``/``max_seqlen_kv`` internally forces a sync.
+
+    When ``max_seqlen_q``/``max_seqlen_kv`` are not passed to ``DotProductAttention.forward``,
+    they are derived from ``cu_seqlens`` via a ``.item()`` call. This forces a device-to-host
+    CUDA synchronization and is incompatible with ``torch.compile``. The warning is emitted at
+    most once per process.
+    """
+    global _warned_max_seqlen_derivation
+    if _warned_max_seqlen_derivation:
+        return
+    _warned_max_seqlen_derivation = True
+    warnings.warn(
+        "Deriving max_seqlen_q/max_seqlen_kv internally from cu_seqlens requires a "
+        ".item() call, which forces a device-to-host CUDA synchronization and is "
+        "incompatible with torch.compile. Please pass max_seqlen_q and max_seqlen_kv "
+        "explicitly to DotProductAttention.forward to avoid this synchronization. "
+        "Relying on internal derivation is deprecated.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
 
 class AttentionLogging:
     """
