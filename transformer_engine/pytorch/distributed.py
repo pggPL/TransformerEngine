@@ -62,9 +62,6 @@ _MODEL_PARALLEL_ATTRIBUTE_DEFAULTS = {
 
 _USE_REENTRANT_ACTIVATION_RECOMPUTE = True
 
-_IN_ACTIVATION_RECOMPUTE_REGION = False
-_ACTIVATION_RECOMPUTE_PHASE = False
-
 
 _ALL_ACTIVE_RNG_STATES = {}
 
@@ -247,43 +244,52 @@ class activation_recompute_forward(AbstractContextManager, ContextDecorator):
     activations, followed by calculation of gradients using these values.
     """
 
-    _is_first_fp8_module: List = []
-
     def __init__(self, activation_recompute: bool = False, recompute_phase: bool = False):
         super().__init__()
         self.activation_recompute = activation_recompute
         self.recompute_phase = recompute_phase
 
     def __enter__(self):
-        global _IN_ACTIVATION_RECOMPUTE_REGION, _ACTIVATION_RECOMPUTE_PHASE
+        qstate = FP8GlobalStateManager.quantization_state
+        self._prev_region = qstate.in_activation_recompute_region
+        self._prev_phase = qstate.activation_recompute_phase
+        self._prev_forward_phase = qstate.activation_recompute_forward_phase
         # Track the checkpoint region independently of the FP8 state at entry.
         # A checkpointed callable may open its own FP8 autocast context (for
         # example, to select precision per layer). Delayed-scaling modules in
         # that inner context must still save their scale and amax metadata for
         # the recompute forward.
-        _IN_ACTIVATION_RECOMPUTE_REGION = self.activation_recompute
-        _ACTIVATION_RECOMPUTE_PHASE = self.recompute_phase
-
-        qstate = FP8GlobalStateManager.quantization_state
-        if self.activation_recompute and not self.recompute_phase:
-            activation_recompute_forward._is_first_fp8_module.append(qstate.is_first_fp8_module)
-        if self.activation_recompute and self.recompute_phase:
-            qstate.is_first_fp8_module = activation_recompute_forward._is_first_fp8_module.pop(0)
+        qstate.in_activation_recompute_region = self._prev_region or self.activation_recompute
+        qstate.activation_recompute_phase = self._prev_phase or (
+            self.activation_recompute and self.recompute_phase
+        )
+        qstate.activation_recompute_forward_phase = self._prev_forward_phase or (
+            self.activation_recompute and not self.recompute_phase
+        )
 
     def __exit__(self, *exc_details):
-        global _IN_ACTIVATION_RECOMPUTE_REGION, _ACTIVATION_RECOMPUTE_PHASE
-        _IN_ACTIVATION_RECOMPUTE_REGION = False
-        _ACTIVATION_RECOMPUTE_PHASE = False
+        qstate = FP8GlobalStateManager.quantization_state
+        qstate.in_activation_recompute_region = self._prev_region
+        qstate.activation_recompute_phase = self._prev_phase
+        qstate.activation_recompute_forward_phase = self._prev_forward_phase
 
 
 def is_fp8_activation_recompute_enabled() -> bool:
     """Whether we are in an activation recompute region with FP8 currently enabled"""
-    return _IN_ACTIVATION_RECOMPUTE_REGION and FP8GlobalStateManager.is_fp8_enabled()
+    return (
+        FP8GlobalStateManager.quantization_state.in_activation_recompute_region
+        and FP8GlobalStateManager.is_fp8_enabled()
+    )
 
 
 def in_fp8_activation_recompute_phase() -> bool:
     """Return global boolean"""
-    return _ACTIVATION_RECOMPUTE_PHASE
+    return FP8GlobalStateManager.quantization_state.activation_recompute_phase
+
+
+def in_fp8_activation_recompute_forward_phase() -> bool:
+    """Whether an activation-checkpoint forward frame is active."""
+    return FP8GlobalStateManager.quantization_state.activation_recompute_forward_phase
 
 
 def _get_active_autocast_contexts():

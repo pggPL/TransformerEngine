@@ -25,6 +25,7 @@ from transformer_engine.pytorch.ops.basic.grouped_linear import (
 )
 from transformer_engine.pytorch.ops.fuser import OperationFuser
 from transformer_engine.pytorch._extra_state import UNSAFE_PICKLE_EXTRA_STATE_ENV
+from transformer_engine.pytorch.quantization import FP8GlobalStateManager
 
 from transformer_engine.pytorch.ops.fused import (
     BackwardActivationBias,
@@ -1030,6 +1031,7 @@ class TestFuser:
             with te.autocast(recipe=recipe):
                 y = model(x)
             y.backward(dy)
+            FP8GlobalStateManager.flush_backward_quantization_update()
             with torch.no_grad():
                 model.weight.fill_(w_vals[step + 1])
 
