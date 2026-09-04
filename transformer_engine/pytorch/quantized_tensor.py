@@ -7,6 +7,7 @@
 from __future__ import annotations
 from typing import NamedTuple, Optional, Tuple, Iterable, Any, Dict, Union, get_type_hints
 import abc
+import copy
 import warnings
 import math
 
@@ -586,6 +587,16 @@ class Quantizer(abc.ABC):
         if columnwise is not None:
             self.columnwise_usage = columnwise
 
+    def tangent_quantizer(self) -> Quantizer:
+        """Quantizer describing the expected gradient of a tensor made by this quantizer.
+
+        Used by torch.compile to guess the layout of a quantized gradient before
+        it exists (rowwise data only, as produced by a quantized dgrad).
+        """
+        quantizer = self.copy() if hasattr(self, "copy") else copy.copy(self)
+        quantizer.set_usage(rowwise=True, columnwise=False)
+        return quantizer
+
     def onnx_quantize(self, tensor: torch.Tensor) -> QuantizedTensor:
         """Symbolic function for ONNX export"""
         raise NotImplementedError(
@@ -793,6 +804,46 @@ class QuantizedTensor(torch.Tensor):
         raise NotImplementedError(
             f"{self.__class__.__name__} class does not implement quantize_ function"
         )
+
+    def __coerce_tangent_metadata__(self) -> QuantizedTensor:
+        """torch.compile hook: the gradient layout to trace the backward with."""
+        quantizer = getattr(self, "_quantizer", None)
+        if quantizer is None:
+            return self
+        return self._rewrap_with_quantizer(quantizer.tangent_quantizer())
+
+    def __coerce_same_metadata_as_tangent__(
+        self, expected_meta: Dict[str, Any], expected_type: Optional[type] = None
+    ) -> torch.Tensor:
+        """torch.compile hook: convert this runtime gradient to the traced layout."""
+        if expected_type is not None and not issubclass(expected_type, QuantizedTensorStorage):
+            return self.dequantize()
+        kwargs = expected_meta["nontensor_kwargs"]
+        quantizer = kwargs.get("quantizer")
+        if quantizer is None:
+            return self
+        same_type = expected_type is None or expected_type is type(self)
+        own = self._flatten_nontensor_kwargs()
+        if same_type and all(own.get(k) == v for k, v in kwargs.items() if k != "quantizer"):
+            self.update_usage(
+                rowwise_usage=quantizer.rowwise_usage, columnwise_usage=quantizer.columnwise_usage
+            )
+            return self
+        quantizer = quantizer.copy() if hasattr(quantizer, "copy") else copy.copy(quantizer)
+        quantizer.internal = False
+        return quantizer(self.dequantize())
+
+    def _rewrap_with_quantizer(self, quantizer: Quantizer) -> QuantizedTensor:
+        """Same buffers under ``quantizer``'s metadata; ``self`` if they don't cover its layout."""
+        names = list(quantizer.inner_tensor_specs(tuple(self.shape)).keys())
+        present, ctx = self.__tensor_flatten__()
+        if any(name not in present for name in names):
+            return self
+        ctx = dict(ctx)
+        ctx["requires_grad"] = False
+        ctx["nontensor_kwargs"] = quantizer.storage_metadata(self.dtype)["nontensor_kwargs"]
+        inner = {name: getattr(self, name) for name in names}
+        return type(self).__tensor_unflatten__(inner, ctx, tuple(self.shape), tuple(self.stride()))
 
     def detach(self) -> QuantizedTensor:
         """Create new quantized tensor with same data
@@ -1012,7 +1063,7 @@ class QuantizedTensor(torch.Tensor):
             new_kwargs = tree_map(maybe_unwrap, kwargs)
             schema_args = func._schema.arguments
             args_len = len(args)
-            super().__torch_dispatch__(func, types, new_args, new_kwargs)
+            func(*new_args, **(new_kwargs or {}))
             for arg, new_arg, schema_arg in zip(args, new_args, schema_args):
                 maybe_update_inplace(arg, new_arg, schema_arg)
             for kwarg, new_kwarg, schema_arg in zip(kwargs, new_kwargs, schema_args[args_len:]):
@@ -1020,12 +1071,12 @@ class QuantizedTensor(torch.Tensor):
                 maybe_update_inplace(kwargs[kwarg], new_kwargs[new_kwarg], schema_arg)
             return None
 
-        # Default op: dequantize and perform op
+        # Default op: dequantize and perform op. Re-dispatch normally (not via
+        # the dispatch-disabling ``super()`` path) so inner tensor modes such as
+        # FakeTensor/FunctionalTensor under torch.compile still see the call.
         args = tree_map(maybe_unwrap, args)
-        if kwargs is not None:
-            kwargs = tree_map(maybe_unwrap, kwargs)
-        out = super().__torch_dispatch__(func, types, args, kwargs)
-        return out
+        kwargs = tree_map(maybe_unwrap, kwargs) if kwargs is not None else {}
+        return func(*args, **kwargs)
 
     __torch_function__ = torch._C._disabled_torch_function_impl
 

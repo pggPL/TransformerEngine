@@ -1969,8 +1969,8 @@ def test_te_linear_compile_with_quantized_fp8_weight(compile_mode):
 def test_te_linear_compile_with_fp8_output(compile_mode):
     """torch.compile of ``te.Linear(..., fp8_output=True)`` under no_grad:
     forward must return a working :class:`Float8Tensor` (exercises the output
-    rewrap path). The differentiable case falls back to eager, so it is not
-    covered here."""
+    rewrap path). The differentiable case is covered by
+    ``test_te_linear_compile_fp8_output_differentiable``."""
     dtype = torch.bfloat16
     device = "cuda"
     fp8_recipe = recipe.Float8CurrentScaling()
@@ -2009,19 +2009,280 @@ def test_te_linear_compile_with_fp8_output(compile_mode):
             )
 
 
+def _run_fp8_io_pair(fn, model, compile_mode, *, consume=None, backward=True):
+    """Run ``fn`` eagerly and compiled on the same input; ``consume`` (eager,
+    outside the graph) maps the output to the loss. Returns ``(eager, compiled)``
+    tuples of ``(out, inp.grad, weight.grad, bias.grad)``."""
+    dtype, device = torch.bfloat16, "cuda"
+    torch.manual_seed(0)
+    base = torch.randn(32, 64, dtype=dtype, device=device)
+
+    def run(f):
+        model.zero_grad(set_to_none=True)
+        inp = base.clone().requires_grad_(True)
+        out = f(inp)
+        if backward:
+            loss = consume(out) if consume is not None else out
+            loss.sum().backward()
+        return out, inp.grad, model.weight.grad, model.bias.grad
+
+    torch._dynamo.reset()
+    if compile_mode == "reduce-overhead":
+        _cudagraph_warmup(
+            lambda x: (consume or (lambda o: o))(fn(x)),
+            base.clone().requires_grad_(True),
+            backward=backward,
+        )
+    ref = run(fn)
+    compiled = torch.compile(fn, fullgraph=True, mode=compile_mode)
+    n_iters = 3 if compile_mode == "reduce-overhead" else 1
+    with _assert_no_cudagraph_skips(compile_mode == "reduce-overhead"):
+        for _ in range(n_iters):
+            got = run(compiled)
+    return ref, got
+
+
+def _assert_fp8_io_close(ref, got, *, atol=_EAGER_ATOL, rtol=_EAGER_RTOL):
+    for name, r, g in zip(("out", "inp.grad", "wgrad", "bgrad"), ref, got):
+        if isinstance(r, QuantizedTensor):
+            r = r.dequantize()
+        if isinstance(g, QuantizedTensor):
+            g = g.dequantize()
+        torch.testing.assert_close(g, r, atol=atol, rtol=rtol, msg=lambda m, n=name: f"{n}: {m}")
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+@pytest.mark.parametrize("producer", ["te_linear", "torch_mul"])
+def test_te_linear_compile_fp8_grad(compile_mode, producer):
+    """``fp8_grad=True`` under torch.compile: the quantized dgrad is consumed
+    inside the graph -- by another TE Linear's backward directly, or by a torch
+    op's backward through the traceable FP8 dequantize -- matching eager exactly."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+    upstream = te.Linear(64, 64, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            hidden = upstream(inp) if producer == "te_linear" else inp * 2
+            return model(hidden, fp8_grad=True)
+
+    ref, got = _run_fp8_io_pair(fn, model, compile_mode)
+    _assert_fp8_io_close(ref, got)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+def test_te_linear_compile_fp8_grad_crosses_boundary(compile_mode):
+    """A quantized dgrad for a graph *input* is re-wrapped by AOTAutograd only
+    when the graph already carries a tensor subclass (here the ``fp8_output``);
+    then ``inp.grad`` leaves the graph as a :class:`Float8Tensor`, as in eager."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+    consumer = te.Linear(32, 16, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, fp8_output=True, fp8_grad=True)
+
+    def consume(out):
+        with te.autocast(recipe=fp8_recipe):
+            return consumer(out, fp8_grad=True)
+
+    ref, got = _run_fp8_io_pair(fn, model, compile_mode, consume=consume)
+    assert isinstance(ref[1], te.Float8Tensor)
+    assert isinstance(got[1], te.Float8Tensor), type(got[1]).__name__
+    _assert_fp8_io_close(ref, got)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "PyTorch limitation: AOTAutograd only wraps tensor-subclass grads when the graph "
+        "has a subclass input or output, so a quantized dgrad for a plain graph input is "
+        "lifted as a fake constant (assert_no_fake_params_or_buffers)."
+    ),
+)
+def test_te_linear_compile_fp8_grad_plain_graph_boundary_unsupported():
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, fp8_grad=True)
+
+    ref, got = _run_fp8_io_pair(fn, model, "default")
+    _assert_fp8_io_close(ref, got)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+def test_te_linear_compile_fp8_output_dequantize_in_graph(compile_mode):
+    """Differentiable ``fp8_output=True`` consumed inside the graph by
+    ``.dequantize()`` (traceable FP8 dequantize op); fwd + bwd match eager."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, fp8_output=True).dequantize()
+
+    ref, got = _run_fp8_io_pair(fn, model, compile_mode)
+    _assert_fp8_io_close(ref, got)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+def test_te_linear_compile_fp8_output_differentiable(compile_mode):
+    """Differentiable ``fp8_output=True``: the compiled forward returns a
+    :class:`Float8Tensor` with a grad_fn. Its gradient arriving from outside the
+    graph must be quantized (here from an eager ``fp8_grad=True`` consumer) --
+    AOTAutograd traces the backward with a quantized tangent guess
+    (``__coerce_tangent_metadata__``), so the E5M2 dgrad of the consumer is
+    accepted as-is and numerics match eager exactly."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+    consumer = te.Linear(32, 16, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, fp8_output=True)
+
+    def consume(out):
+        with te.autocast(recipe=fp8_recipe):
+            return consumer(out, fp8_grad=True)
+
+    ref, got = _run_fp8_io_pair(fn, model, compile_mode, consume=consume)
+    assert isinstance(got[0], te.Float8Tensor), type(got[0]).__name__
+    assert got[0].requires_grad
+    _assert_fp8_io_close(ref, got)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_te_linear_compile_fp8_output_tangent_requantized():
+    """A quantized tangent whose FP8 dtype differs from the traced guess (E4M3
+    grads from an ``Format.E4M3`` consumer vs the E5M2 guess) is requantized by
+    ``__coerce_same_metadata_as_tangent__`` instead of failing; numerics then
+    only match to FP8 precision."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    e4m3_recipe = recipe.Float8CurrentScaling(fp8_format=recipe.Format.E4M3)
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+    consumer = te.Linear(32, 16, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, fp8_output=True)
+
+    def consume(out):
+        with te.autocast(recipe=e4m3_recipe):
+            return consumer(out, fp8_grad=True)
+
+    ref, got = _run_fp8_io_pair(fn, model, "default", consume=consume)
+    _assert_fp8_io_close(ref, got, atol=0.1, rtol=0.25)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_te_linear_compile_fp8_output_plain_tangent_unsupported():
+    """PyTorch limitation: a plain-tensor gradient for a quantized graph output
+    (e.g. ``.dequantize()`` outside the graph) has no coercion hook and
+    AOTAutograd raises a tangent-metadata error. Pinned so the failure stays
+    loud and explicit rather than silently wrong."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp, fp8_output=True)
+
+    torch._dynamo.reset()
+    compiled = torch.compile(fn, fullgraph=True)
+    inp = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda", requires_grad=True)
+    out = compiled(inp)
+    with pytest.raises(RuntimeError, match="tangent"):
+        out.dequantize().sum().backward()
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_te_linear_compile_plain_output_fp8_tangent():
+    """A quantized gradient (eager ``fp8_grad=True`` consumer) arriving for a
+    plain-tensor graph output is dequantized by
+    ``__coerce_same_metadata_as_tangent__`` to match the traced plain tangent."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+    consumer = te.Linear(32, 16, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp)
+
+    def consume(out):
+        with te.autocast(recipe=fp8_recipe):
+            return consumer(out, fp8_grad=True)
+
+    ref, got = _run_fp8_io_pair(fn, model, "default", consume=consume)
+    _assert_fp8_io_close(ref, got)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+@pytest.mark.parametrize("consumer_grad", ["bf16", "fp8"])
+def test_te_linear_compile_fp8_output_chain(compile_mode, consumer_grad):
+    """``Linear(fp8_output=True)`` feeding a second ``Linear`` inside one graph:
+    the quantized input crosses the op boundary as a subclass, and the consumer's
+    dgrad (plain or quantized) reaches the producer through the grad handle."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+    consumer = te.Linear(32, 16, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return consumer(model(inp, fp8_output=True), fp8_grad=consumer_grad == "fp8")
+
+    ref, got = _run_fp8_io_pair(fn, model, compile_mode)
+    _assert_fp8_io_close(ref, got)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_te_linear_compile_quantized_input():
+    """An externally quantized :class:`Float8Tensor` input (no grad) goes through
+    the compiled op via the wrapper op's subclass flattening."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+    quantizer = Float8CurrentScalingQuantizer(fp8_dtype=tex.DType.kFloat8E4M3, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp)
+
+    torch.manual_seed(0)
+    inp = quantizer(torch.randn(32, 64, dtype=torch.bfloat16, device="cuda"))
+    torch._dynamo.reset()
+    compiled = torch.compile(fn, fullgraph=True)
+    with torch.no_grad():
+        ref = fn(inp)
+        out = compiled(inp)
+    torch.testing.assert_close(out, ref, atol=_EAGER_ATOL, rtol=_EAGER_RTOL)
+
+
 # Configs rejected by LinearFwdArgs.compile_unsupported_reason() that a
 # single-GPU unit test can construct. Distributed-only reasons (fsdp_group,
 # DistributedWeight) and CPU offloading need machinery this file doesn't have;
 # delayed scaling is a hard error (check_recipe_support), tested separately.
-# Modes: "bwd" = fwd+bwd vs eager; "fwd_grad" = grad-enabled forward only
-# (differentiable fp8_output backward hits a PyTorch limitation: the Float8
-# output crossing the graph-break boundary gets a plain-tensor tangent);
-# "no_grad" = forward under no_grad.
+# Modes: "bwd" = fwd+bwd vs eager; "no_grad" = forward under no_grad.
 _FALLBACK_CASES = [
-    "fp8_output_differentiable",
     "fuse_wgrad_accumulation",
     "delayed_wgrad",
-    "quantized_input",
 ]
 
 
@@ -2034,27 +2295,11 @@ def _fallback_case(case, dtype, device):
         model_kwargs["delay_wgrad_compute"] = True
     model = te.Linear(64, 32, params_dtype=dtype, device=device, **model_kwargs)
 
-    if case == "fp8_output_differentiable":
-        fp8_recipe = recipe.Float8CurrentScaling()
-
-        def fn(inp):
-            with te.autocast(recipe=fp8_recipe):
-                return model(inp, fp8_output=True).dequantize()
-
-        return model, fn, "fwd_grad", None, "differentiable fp8_output=True"
     if case == "fuse_wgrad_accumulation":
         model.weight.main_grad = torch.zeros_like(model.weight, dtype=torch.float32)
         return model, model, "bwd", None, "fuse_wgrad_accumulation"
     if case == "delayed_wgrad":
         return model, model, "bwd", model.backward_dw, "delayed wgrad compute"
-    if case == "quantized_input":
-        fp8_recipe = recipe.Float8CurrentScaling()
-
-        def fn(inp):
-            with te.autocast(recipe=fp8_recipe):
-                return model(inp)
-
-        return model, fn, "no_grad", None, "a quantized input tensor"
     raise ValueError(case)
 
 
@@ -2074,11 +2319,6 @@ def test_te_linear_compile_eager_fallback(case):
     def make_inp():
         torch.manual_seed(1)
         x = torch.randn(32, 64, dtype=dtype, device=device)
-        if case == "quantized_input":
-            quantizer = Float8CurrentScalingQuantizer(
-                fp8_dtype=tex.DType.kFloat8E4M3, device=device
-            )
-            return quantizer(x)
         return x.requires_grad_(mode != "no_grad")
 
     torch._dynamo.reset()

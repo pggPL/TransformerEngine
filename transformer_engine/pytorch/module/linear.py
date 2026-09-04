@@ -112,7 +112,7 @@ class LinearFwdArgs:
 
     # --- Differentiable tensors (also passed positionally to autograd) ---
     weight: TensorOrQuantized
-    inp: torch.Tensor
+    inp: TensorOrQuantized
     bias: Optional[torch.Tensor]
 
     # --- Non-differentiable cached tensors ---
@@ -186,30 +186,13 @@ class LinearFwdArgs:
             return "debug instrumentation (nvidia-dlfw-inspect)"
         if is_distributed_weight(self.weight):
             return "a DistributedWeight (custom weight parallelism, e.g. GTP)"
-        if isinstance(self.inp, (QuantizedTensor, QuantizedTensorStorage)):
-            return "a quantized input tensor"
         if self.fsdp_group is not None:
             return "manual TE FSDP (fsdp_group); use FSDP2 or MCore FSDP"
-        if (
-            self.fp8_output
-            and self.is_grad_enabled
-            and (self.input_requires_grad or self.weight_requires_grad or self.bias_requires_grad)
-        ):
-            return "differentiable fp8_output=True"
         if self.cpu_offloading:
             return "CPU activation offloading"
         if self.wgrad_store is not None:
             # Non-None only when delayed wgrad compute is on (see Linear.forward).
             return "delayed wgrad compute (wgrad_store)"
-        if (
-            self.grad_input_quantizer is not None
-            and self.is_grad_enabled
-            and self.input_requires_grad
-            and not (self.ub_overlap_rs_dgrad or self.ub_bulk_wgrad)
-        ):
-            # A quantized dgrad can't cross the op boundary: grads are packed
-            # one plain Tensor[] slot each (_pack_bwd_result).
-            return "a quantized input grad (fp8_grad=True)"
         if self.cache_weight and self.fp8:
             # The cached workspace is updated in place on the first microbatch,
             # which the functional op (mutates_args=()) can't express. Without
@@ -237,7 +220,7 @@ class LinearBwdArgs:
     """Single-argument bag for the backward path of :class:`_Linear`."""
 
     # --- Saved / restored tensors (populated at backward entry) ---
-    grad_output: Optional[torch.Tensor] = None
+    grad_output: Optional[TensorOrQuantized] = None
     inputmat: Optional[TensorOrQuantized] = None
     weight_fp8: Optional[TensorOrQuantized] = None
     saved_weight: Optional[TensorOrQuantized] = None
@@ -2382,9 +2365,7 @@ class Linear(TransformerEngineBaseModule):
                 fp8_grad = True
 
         if torch.compiler.is_compiling() and _linear_op is not None:
-            reason = self._compile_eager_fallback_reason(
-                inp, is_first_microbatch, fp8_output, fp8_grad, is_grad_enabled, debug
-            )
+            reason = self._compile_eager_fallback_reason(is_first_microbatch, debug)
             if reason is not None:
                 # A break inside the try/finally below would skip the whole frame.
                 warn_compile_eager_fallback(reason)
@@ -2625,32 +2606,17 @@ class Linear(TransformerEngineBaseModule):
         return unfused_weights
 
     def _compile_eager_fallback_reason(
-        self,
-        inp: torch.Tensor,
-        is_first_microbatch: Optional[bool],
-        fp8_output: bool,
-        fp8_grad: bool,
-        is_grad_enabled: bool,
-        debug: bool,
+        self, is_first_microbatch: Optional[bool], debug: bool
     ) -> Optional[str]:
         """Why this call can't use the compiled op (else None), decided before
         prepare_forward. Quantizer checks stay in compile_unsupported_reason."""
         if debug:
             return "debug instrumentation (nvidia-dlfw-inspect)"
-        weight_tensor, bias_tensor = self._get_weight_and_bias_tensors()
+        weight_tensor, _ = self._get_weight_and_bias_tensors()
         if is_distributed_weight(weight_tensor):
             return "a DistributedWeight (custom weight parallelism, e.g. GTP)"
-        if isinstance(inp, (QuantizedTensor, QuantizedTensorStorage)):
-            return "a quantized input tensor"
         if self.fsdp_group is not None:
             return "manual TE FSDP (fsdp_group); use FSDP2 or MCore FSDP"
-        any_requires_grad = (
-            inp.requires_grad
-            or weight_tensor.requires_grad
-            or (bias_tensor is not None and bias_tensor.requires_grad)
-        )
-        if fp8_output and is_grad_enabled and any_requires_grad:
-            return "differentiable fp8_output=True"
         if is_cpu_offload_enabled():
             return "CPU activation offloading"
         if self.wgrad_store is not None and self.wgrad_store.delay_wgrad_compute():
@@ -2658,14 +2624,6 @@ class Linear(TransformerEngineBaseModule):
         if self.fuse_wgrad_accumulation:
             return "fuse_wgrad_accumulation (main_grad)"
         fp8 = FP8GlobalStateManager.is_fp8_enabled()
-        needs_dgrad = is_grad_enabled and inp.requires_grad
-        if (
-            fp8
-            and fp8_grad
-            and needs_dgrad
-            and not (self.ub_overlap_rs_dgrad or self.ub_bulk_wgrad)
-        ):
-            return "a quantized input grad (fp8_grad=True)"
         if fp8 and is_first_microbatch is not None and not self.is_fsdp2:
             return "FP8 weight caching (is_first_microbatch)"
         return None
