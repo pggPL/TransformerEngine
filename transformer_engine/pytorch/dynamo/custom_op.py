@@ -14,6 +14,8 @@ caller that drives autograd at a higher level (``ops/fuser.py``).
 A TE forward/backward implementation takes one dataclass argument
 (``fwd_arg_type`` / ``bwd_arg_type``, e.g. ``LinearFwdArgs``) whose fields mix
 tensors, quantized tensors, quantizers, process groups and plain Python values.
+The autograd-free forward returns ``ForwardResult(output, aux)``; the
+autograd-wired API keeps its saved-tensor and context-metadata contract.
 
 A ``torch.library`` custom op is narrower: it only accepts flat schema slots
 (tensors plus opaque objects) and returns a flat ``Tensor[]``.
@@ -113,6 +115,15 @@ from ..quantized_tensor import (
 from ..utils import record_compile_disabled
 
 _TE_OP_NAMESPACE = "transformer_engine_compile"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ForwardResult:
+    """Output and fresh auxiliary tensors produced by an autograd-free forward."""
+
+    output: Any
+    aux: tuple = ()
+
 
 # Annotation for an op arg field that may hold a plain tensor, a quantized
 # tensor subclass or a *bare* ``QuantizedTensorStorage`` (the internal-quantizer
@@ -1315,19 +1326,18 @@ def register_custom_op(
     Both ops are two-tier, so ``QuantizedTensor`` subclass inputs pass through
     without dequantization.
 
-    Contracts, mirroring :func:`register_custom_op_with_autograd`:
+    Callable contracts:
 
-    * ``fwd_impl(fwd_args) -> (*user_outputs, tensors_to_save, ctx_attrs)``
+    * ``fwd_impl(fwd_args) -> ForwardResult(output, aux)``
     * ``fwd_fake_impl`` -- its data-free twin over :class:`TensorSpec`
     * ``bwd_impl(bwd_args) -> tuple`` of ``num_grad_inputs`` gradients
     * ``bwd_fake_impl`` -- its data-free twin
 
     Returns ``(forward_fn, backward_fn)``:
 
-    * ``forward_fn(fwd_args) -> (outputs, saved_tensors, ctx_attrs)`` --
-      ``outputs`` is a single value or a tuple, mirroring ``fwd_impl``'s user
-      outputs; ``saved_tensors`` is the reassembled ``tensors_to_save`` tuple,
-      which the caller is expected to persist (e.g. ``ctx.save_for_backward``).
+    * ``forward_fn(fwd_args) -> (output, aux)`` -- ``aux`` contains only fresh
+      tensors produced by the custom op. The caller decides which tensors and
+      metadata to persist for backward.
     * ``backward_fn(bwd_args) -> tuple`` of gradients.
 
     Returns ``None`` if registration fails (recorded once), so callers can fall
@@ -1363,11 +1373,25 @@ def _register_custom_op_impl(
     num_grad_inputs: int,
 ) -> Tuple[Callable[[Any], Any], Callable[[Any], Any]]:
     """Body of :func:`register_custom_op`; see it for semantics."""
+
+    def adapt_forward(impl):
+        def wrapped(args):
+            result = impl(args)
+            if not isinstance(result, ForwardResult):
+                raise TypeError(
+                    f"autograd-free fwd impl must return ForwardResult, got {type(result).__name__}"
+                )
+            return result.output, result.aux, None
+
+        return wrapped
+
+    adapted_fwd_impl = adapt_forward(fwd_impl)
+    adapted_fwd_fake_impl = adapt_forward(fwd_fake_impl)
     pair = _register_two_tier_pair(
         op_name=op_name,
         fwd_arg_type=fwd_arg_type,
-        fwd_impl=fwd_impl,
-        fwd_fake_impl=fwd_fake_impl,
+        fwd_impl=adapted_fwd_impl,
+        fwd_fake_impl=adapted_fwd_fake_impl,
         bwd_arg_type=bwd_arg_type,
         bwd_impl=bwd_impl,
         bwd_fake_impl=bwd_fake_impl,
@@ -1375,14 +1399,10 @@ def _register_custom_op_impl(
     )
 
     def forward_fn(fwd_args):
-        out_plan, payload = pair.call_forward(fwd_fake_impl, fwd_args)
+        out_plan, payload = pair.call_forward(adapted_fwd_fake_impl, fwd_args)
         outputs = out_plan.user_outputs(payload)
-        saved = out_plan.saved_tensors(payload)
-        return (
-            (outputs[0] if len(outputs) == 1 else tuple(outputs)),
-            tuple(saved),
-            out_plan.ctx_attrs,
-        )
+        aux = out_plan.saved_tensors(payload)
+        return outputs[0], tuple(aux)
 
     def backward_fn(bwd_args):
         # Unlike the forward payload, each grad occupies exactly one slot

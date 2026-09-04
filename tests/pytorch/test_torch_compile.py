@@ -39,6 +39,7 @@ from transformer_engine.pytorch.constants import FP8FwdTensorIdx, FP8BwdTensorId
 from transformer_engine.pytorch.module.base import TransformerEngineBaseModule
 from transformer_engine.pytorch.quantization import FP8GlobalStateManager, QuantizerRole
 from transformer_engine.pytorch.ops.basic.basic_linear import BasicLinear
+from transformer_engine.pytorch.ops.fuser import OperationFuser
 from transformer_engine.pytorch.ops.op import BasicOperation
 from transformer_engine.pytorch.tensor.float8_tensor import Float8CurrentScalingQuantizer
 from transformer_engine.pytorch.tensor.float8_blockwise_tensor import Float8BlockQuantizer
@@ -49,7 +50,7 @@ from transformer_engine.pytorch.quantized_tensor import (
     QuantizedTensorStorage,
     Quantizer,
 )
-from transformer_engine.pytorch.dynamo import TensorSpec, to_tensor_spec
+from transformer_engine.pytorch.dynamo import ForwardResult, TensorSpec, to_tensor_spec
 from transformer_engine.pytorch import (
     is_fp8_available,
     is_mxfp8_available,
@@ -2388,12 +2389,12 @@ class _ScaleOp(BasicOperation):
 
     @classmethod
     def forward_compute(cls, args):
-        return args.input_ * args.scale, (), {}
+        return ForwardResult(args.input_ * args.scale)
 
     @classmethod
     def forward_fake(cls, args):
         x = args.input_
-        return TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device), (), {}
+        return ForwardResult(TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device))
 
     @classmethod
     def backward_compute(cls, args):
@@ -2408,11 +2409,9 @@ class _ScaleOp(BasicOperation):
             TensorSpec(shape=(), dtype=dy.dtype, device=dy.device),
         )
 
-    def saved_for_backward(self, saved, input_):
-        # The forward produces no distinct tensor for its input, and a custom op
-        # may not return one of its own inputs.
-        del saved
-        return (input_,)
+    def setup_context(self, ctx, args, aux):
+        del aux
+        ctx.save_for_backward(args.input_, args.scale)
 
     def resolve_fwd_args(
         self,
@@ -2426,8 +2425,23 @@ class _ScaleOp(BasicOperation):
         return _ScaleFwdArgs(input_=input_, scale=self.scale)
 
     def resolve_bwd_args(self, ctx, grad_output):
-        (x,) = ctx.saved_tensors
-        return _ScaleBwdArgs(grad_output=grad_output, saved_input=x, scale=self.scale)
+        x, scale = ctx.saved_tensors
+        return _ScaleBwdArgs(grad_output=grad_output, saved_input=x, scale=scale)
+
+
+class _BackwardScalePair(te.ops.FusedOperation):
+    """Backward-only fusion for the compile gate test."""
+
+    def fuser_backward(self, basic_op_ctxs, grad_output, **unused):
+        dx, grad_params_1 = self.basic_ops[1].op_backward(basic_op_ctxs[1], grad_output)
+        dx, grad_params_0 = self.basic_ops[0].op_backward(basic_op_ctxs[0], dx)
+        return dx, [grad_params_0, grad_params_1], [(), ()]
+
+
+def _fuse_backward_scale_pair(ops, **unused):
+    if len(ops) == 2 and all(isinstance(op, _ScaleOp) for op in ops):
+        return [_BackwardScalePair(ops)]
+    return ops
 
 
 @dataclasses.dataclass(slots=True)
@@ -2473,16 +2487,12 @@ class _ScaleWithKwargsOp(BasicOperation):
         if isinstance(offset, QuantizedTensor):
             offset = offset.dequantize()
         out = args.input_ * args.scale * args.extra_scale + offset
-        return out, (), {"extra_scale": args.extra_scale}
+        return ForwardResult(out)
 
     @classmethod
     def forward_fake(cls, args):
         x = args.input_
-        return (
-            TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device),
-            (),
-            {"extra_scale": args.extra_scale},
-        )
+        return ForwardResult(TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device))
 
     @classmethod
     def backward_compute(cls, args):
@@ -2500,9 +2510,10 @@ class _ScaleWithKwargsOp(BasicOperation):
             TensorSpec(shape=(), dtype=dy.dtype, device=dy.device),
         )
 
-    def saved_for_backward(self, saved, input_):
-        del saved
-        return (input_,)
+    def setup_context(self, ctx, args, aux):
+        del aux
+        ctx.save_for_backward(args.input_, args.scale)
+        ctx.extra_scale = args.extra_scale
 
     def resolve_fwd_args(
         self,
@@ -2525,11 +2536,11 @@ class _ScaleWithKwargsOp(BasicOperation):
         )
 
     def resolve_bwd_args(self, ctx, grad_output):
-        (x,) = ctx.saved_tensors
+        x, scale = ctx.saved_tensors
         return _ScaleKwargsBwdArgs(
             grad_output=grad_output,
             saved_input=x,
-            scale=self.scale,
+            scale=scale,
             extra_scale=ctx.extra_scale,
         )
 
@@ -2583,6 +2594,36 @@ def test_te_ops_single_op_group_compiles():
     torch._dynamo.reset()
     base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
     _assert_sequential_matches_eager(lambda: te.ops.Sequential(_ScaleOp()), base)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_backward_fusion_uses_eager_implementations():
+    """A backward fusion prevents the group from using basic-op custom ops."""
+    te.ops.register_backward_fusion(_fuse_backward_scale_pair, prepend=True)
+    try:
+        base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+        with pytest.warns(UserWarning, match="backward fusion"):
+            _assert_sequential_matches_eager(
+                lambda: te.ops.Sequential(_ScaleOp(), _ScaleOp()), base
+            )
+    finally:
+        OperationFuser.backward_fusion_functions.remove(_fuse_backward_scale_pair)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.parametrize("compile_model", [False, True], ids=["eager", "compiled"])
+def test_te_ops_setup_context_saves_parameter(compile_model):
+    """Backward observes mutation of a tensor used by the forward."""
+    op = _ScaleOp()
+    model = te.ops.Sequential(op)
+    if compile_model:
+        model = torch.compile(model, fullgraph=True)
+    x = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda", requires_grad=True)
+    y = model(x)
+    with torch.no_grad():
+        op.scale.add_(1)
+    with pytest.raises(RuntimeError, match="modified by an inplace operation"):
+        y.sum().backward()
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")

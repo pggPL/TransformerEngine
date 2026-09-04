@@ -22,7 +22,7 @@ from ..quantization import (
     autocast,
 )
 from ..tensor import Quantizer
-from ..dynamo import is_value_opaque_quantizer, register_custom_op
+from ..dynamo import ForwardResult, is_value_opaque_quantizer, register_custom_op
 
 
 @dataclasses.dataclass
@@ -324,8 +324,8 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def forward_compute(cls, args: Any) -> tuple[Any, tuple, dict[str, Any]]:
-        """Pure forward: ``(output, tensors_to_save, ctx_attrs)``.
+    def forward_compute(cls, args: Any) -> ForwardResult:
+        """Forward computation over explicit arguments.
 
         Takes everything through ``args``; must not read ``self`` or global
         state, both of which are invisible to the compiler at this point.
@@ -333,7 +333,7 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @classmethod
-    def forward_fake(cls, args: Any) -> tuple[Any, tuple, dict[str, Any]]:
+    def forward_fake(cls, args: Any) -> ForwardResult:
         """Allocation-free twin of :meth:`forward_compute` over ``TensorSpec``.
 
         Runs as a meta kernel, outside the traced frame, and more than once per
@@ -397,15 +397,10 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
         """Rebuild the backward's inputs from the forward's saved state."""
         raise NotImplementedError
 
-    def saved_for_backward(self, saved: tuple, input_: torch.Tensor) -> tuple:
-        """Tensors to persist, given what the forward handed back.
-
-        An operation whose backward needs its input but whose forward does not
-        produce a distinct tensor for it overrides this; a custom op may not
-        return one of its own inputs.
-        """
-        del input_
-        return saved
+    def setup_context(self, ctx: OperationContext, args: Any, aux: tuple) -> None:
+        """Prepare backward state from the original arguments and fresh auxiliary tensors."""
+        del args
+        ctx.save_for_backward(*aux)
 
     @property
     def is_fused_op(self) -> bool:
@@ -689,12 +684,10 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             next_op_input_quantizer=next_op_input_quantizer,
             **kwargs,
         )
-        output, saved, ctx_attrs = self.forward_compute(args)
+        result = self.forward_compute(args)
         if ctx.requires_grad:
-            ctx.save_for_backward(*self.saved_for_backward(saved, input_))
-            for name, value in ctx_attrs.items():
-                setattr(ctx, name, value)
-        return output
+            self.setup_context(ctx, args, result.aux)
+        return result.output
 
     def compiled_op_forward(
         self,
@@ -719,11 +712,9 @@ class BasicOperation(FusibleOperation, metaclass=abc.ABCMeta):
             next_op_input_quantizer=next_op_input_quantizer,
             **kwargs,
         )
-        output, saved, ctx_attrs = self.compile_ops[0](args)
+        output, aux = self.compile_ops[0](args)
         if ctx.requires_grad:
-            ctx.save_for_backward(*self.saved_for_backward(saved, input_))
-            for name, value in ctx_attrs.items():
-                setattr(ctx, name, value)
+            self.setup_context(ctx, args, aux)
         return output
 
     def compiled_op_backward(
