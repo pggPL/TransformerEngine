@@ -4,10 +4,12 @@
 
 import abc
 import contextlib
+import dataclasses
 import os
 import re
 import sys
 import warnings
+from typing import Union
 
 import pytest
 import torch
@@ -37,12 +39,18 @@ from transformer_engine.pytorch.constants import FP8FwdTensorIdx, FP8BwdTensorId
 from transformer_engine.pytorch.module.base import TransformerEngineBaseModule
 from transformer_engine.pytorch.quantization import FP8GlobalStateManager, QuantizerRole
 from transformer_engine.pytorch.ops.basic.basic_linear import BasicLinear
+from transformer_engine.pytorch.ops.fuser import OperationFuser
+from transformer_engine.pytorch.ops.op import BasicOperation
 from transformer_engine.pytorch.tensor.float8_tensor import Float8CurrentScalingQuantizer
 from transformer_engine.pytorch.tensor.float8_blockwise_tensor import Float8BlockQuantizer
 from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Quantizer
 from transformer_engine.pytorch.tensor.nvfp4_tensor import NVFP4Quantizer
-from transformer_engine.pytorch.quantized_tensor import QuantizedTensor, Quantizer
-from transformer_engine.pytorch.dynamo import TensorSpec, to_tensor_spec
+from transformer_engine.pytorch.quantized_tensor import (
+    QuantizedTensor,
+    QuantizedTensorStorage,
+    Quantizer,
+)
+from transformer_engine.pytorch.dynamo import ForwardResult, TensorSpec, to_tensor_spec
 from transformer_engine.pytorch import (
     is_fp8_available,
     is_mxfp8_available,
@@ -2339,3 +2347,330 @@ def test_te_linear_dynamic_shapes():
             "Unexpected recompilation(s) across different batch sizes: "
             f"{unique_graphs_after - unique_graphs_baseline} extra graph(s) compiled"
         )
+
+
+# --------------------------------------------------------------------------- #
+# transformer_engine.pytorch.ops under torch.compile
+# --------------------------------------------------------------------------- #
+
+
+@dataclasses.dataclass(slots=True)
+class _ScaleFwdArgs:
+    """Flat, ``self``-free inputs to the test operation's forward."""
+
+    input_: torch.Tensor
+    scale: torch.Tensor
+
+
+@dataclasses.dataclass(slots=True)
+class _ScaleBwdArgs:
+    """Flat inputs to the test operation's backward."""
+
+    grad_output: torch.Tensor = None
+    saved_input: torch.Tensor = None
+    scale: torch.Tensor = None
+
+
+class _ScaleOp(BasicOperation):
+    """Test-only operation: multiply by a learnable scalar.
+
+    Exists so the fuser's compiled path can be exercised without depending on
+    which real operations happen to declare their compute halves. It is the
+    smallest operation that still has a parameter gradient and a saved tensor.
+    """
+
+    fwd_args_type = _ScaleFwdArgs
+    bwd_args_type = _ScaleBwdArgs
+    num_grad_inputs = 2  # grad input, grad scale
+
+    def __init__(self, *, device: str = "cuda", dtype: torch.dtype = torch.bfloat16) -> None:
+        super().__init__()
+        self.scale = torch.nn.Parameter(torch.full((), 2.0, device=device, dtype=dtype))
+
+    @classmethod
+    def forward_compute(cls, args):
+        return ForwardResult(args.input_ * args.scale)
+
+    @classmethod
+    def forward_fake(cls, args):
+        x = args.input_
+        return ForwardResult(TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device))
+
+    @classmethod
+    def backward_compute(cls, args):
+        dy = args.grad_output
+        return dy * args.scale, (dy * args.saved_input).sum()
+
+    @classmethod
+    def backward_fake(cls, args):
+        dy = args.grad_output
+        return (
+            TensorSpec(shape=tuple(dy.shape), dtype=dy.dtype, device=dy.device),
+            TensorSpec(shape=(), dtype=dy.dtype, device=dy.device),
+        )
+
+    def setup_context(self, ctx, args, aux):
+        del aux
+        ctx.save_for_backward(args.input_, args.scale)
+
+    def resolve_fwd_args(
+        self,
+        input_,
+        *,
+        requires_grad,
+        prev_op_grad_output_quantizer=None,
+        next_op_input_quantizer=None,
+    ):
+        del requires_grad, prev_op_grad_output_quantizer, next_op_input_quantizer
+        return _ScaleFwdArgs(input_=input_, scale=self.scale)
+
+    def resolve_bwd_args(self, ctx, grad_output):
+        x, scale = ctx.saved_tensors
+        return _ScaleBwdArgs(grad_output=grad_output, saved_input=x, scale=scale)
+
+
+class _BackwardScalePair(te.ops.FusedOperation):
+    """Backward-only fusion for the compile gate test."""
+
+    def fuser_backward(self, basic_op_ctxs, grad_output, **unused):
+        dx, grad_params_1 = self.basic_ops[1].op_backward(basic_op_ctxs[1], grad_output)
+        dx, grad_params_0 = self.basic_ops[0].op_backward(basic_op_ctxs[0], dx)
+        return dx, [grad_params_0, grad_params_1], [(), ()]
+
+
+def _fuse_backward_scale_pair(ops, **unused):
+    if len(ops) == 2 and all(isinstance(op, _ScaleOp) for op in ops):
+        return [_BackwardScalePair(ops)]
+    return ops
+
+
+@dataclasses.dataclass(slots=True)
+class _ScaleKwargsFwdArgs:
+    """Flat inputs to the kwarg-taking test operation's forward."""
+
+    input_: torch.Tensor
+    scale: torch.Tensor
+    extra_scale: float
+    offset: Union[torch.Tensor, QuantizedTensorStorage]
+
+
+@dataclasses.dataclass(slots=True)
+class _ScaleKwargsBwdArgs:
+    """Flat inputs to the kwarg-taking test operation's backward."""
+
+    grad_output: torch.Tensor = None
+    saved_input: torch.Tensor = None
+    scale: torch.Tensor = None
+    extra_scale: float = 1.0
+
+
+class _ScaleWithKwargsOp(BasicOperation):
+    """Test-only operation taking forward kwargs: a value and a tensor.
+
+    ``offset`` is declared as tensor-or-quantized, so a quantized kwarg crosses
+    the op boundary as its inner buffers. Neither kwarg carries a gradient --
+    that is what "read-only" means here.
+    """
+
+    fwd_args_type = _ScaleKwargsFwdArgs
+    bwd_args_type = _ScaleKwargsBwdArgs
+    num_grad_inputs = 2  # grad input, grad scale
+    fwd_kwarg_names = ("extra_scale", "offset")
+
+    def __init__(self, *, device: str = "cuda", dtype: torch.dtype = torch.bfloat16) -> None:
+        super().__init__()
+        self.scale = torch.nn.Parameter(torch.full((), 2.0, device=device, dtype=dtype))
+
+    @classmethod
+    def forward_compute(cls, args):
+        offset = args.offset
+        if isinstance(offset, QuantizedTensor):
+            offset = offset.dequantize()
+        out = args.input_ * args.scale * args.extra_scale + offset
+        return ForwardResult(out)
+
+    @classmethod
+    def forward_fake(cls, args):
+        x = args.input_
+        return ForwardResult(TensorSpec(shape=tuple(x.shape), dtype=x.dtype, device=x.device))
+
+    @classmethod
+    def backward_compute(cls, args):
+        dy = args.grad_output
+        return (
+            dy * args.scale * args.extra_scale,
+            (dy * args.saved_input).sum() * args.extra_scale,
+        )
+
+    @classmethod
+    def backward_fake(cls, args):
+        dy = args.grad_output
+        return (
+            TensorSpec(shape=tuple(dy.shape), dtype=dy.dtype, device=dy.device),
+            TensorSpec(shape=(), dtype=dy.dtype, device=dy.device),
+        )
+
+    def setup_context(self, ctx, args, aux):
+        del aux
+        ctx.save_for_backward(args.input_, args.scale)
+        ctx.extra_scale = args.extra_scale
+
+    def resolve_fwd_args(
+        self,
+        input_,
+        *,
+        requires_grad,
+        prev_op_grad_output_quantizer=None,
+        next_op_input_quantizer=None,
+        extra_scale=1.0,
+        offset=None,
+    ):
+        del requires_grad, prev_op_grad_output_quantizer, next_op_input_quantizer
+        if offset is None:
+            offset = torch.zeros((), device=input_.device, dtype=input_.dtype)
+        return _ScaleKwargsFwdArgs(
+            input_=input_,
+            scale=self.scale,
+            extra_scale=extra_scale,
+            offset=offset,
+        )
+
+    def resolve_bwd_args(self, ctx, grad_output):
+        x, scale = ctx.saved_tensors
+        return _ScaleKwargsBwdArgs(
+            grad_output=grad_output,
+            saved_input=x,
+            scale=scale,
+            extra_scale=ctx.extra_scale,
+        )
+
+
+def _assert_sequential_matches_eager(make_model, base, op_kwargs_seq=(None,)):
+    """Run a Sequential eagerly and compiled on identical inputs; compare both
+    the output and every parameter gradient.
+
+    Each pass gets its own freshly built model, so the compiled one is traced on
+    a first run: nothing has built the module groups, resolved the fusions or run
+    ``pre_first_fuser_forward`` on it beforehand. ``make_model`` must therefore
+    build deterministically identical models.
+
+    Several ``op_kwargs`` are run in order on the same pair of models, which is
+    what exercises Dynamo's guards on a kwarg value.
+    """
+    eager_model = make_model()
+    compiled_model = make_model()
+    compiled = torch.compile(compiled_model, fullgraph=True)
+
+    for op_kwargs in op_kwargs_seq:
+        call_kwargs = {} if op_kwargs is None else {"op_kwargs": op_kwargs}
+
+        inp_eager = base.detach().clone().requires_grad_(True)
+        eager_model.zero_grad(set_to_none=True)
+        out_eager = eager_model(inp_eager, **call_kwargs)
+        out_eager.sum().backward()
+        ref_out = out_eager.detach().clone()
+        ref_igrad = inp_eager.grad.detach().clone()
+        ref_pgrads = [p.grad.detach().clone() for p in eager_model.parameters()]
+
+        inp_compiled = base.detach().clone().requires_grad_(True)
+        compiled_model.zero_grad(set_to_none=True)
+        out_compiled = compiled(inp_compiled, **call_kwargs).clone()
+        out_compiled.sum().backward()
+
+        torch.testing.assert_close(out_compiled, ref_out)
+        torch.testing.assert_close(inp_compiled.grad, ref_igrad)
+        for got, expected in zip(compiled_model.parameters(), ref_pgrads):
+            torch.testing.assert_close(got.grad, expected)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_single_op_group_compiles():
+    """``fullgraph=True`` over an ``OperationFuser`` group holding one operation.
+
+    The pipeline-level ``autograd.Function`` is traced as a higher-order op and
+    calls the operation's custom ops inside, so forward and backward both end up
+    in the graph.
+    """
+    torch._dynamo.reset()
+    base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+    _assert_sequential_matches_eager(lambda: te.ops.Sequential(_ScaleOp()), base)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_backward_fusion_uses_eager_implementations():
+    """A backward fusion prevents the group from using basic-op custom ops."""
+    te.ops.register_backward_fusion(_fuse_backward_scale_pair, prepend=True)
+    try:
+        base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+        with pytest.warns(UserWarning, match="backward fusion"):
+            _assert_sequential_matches_eager(
+                lambda: te.ops.Sequential(_ScaleOp(), _ScaleOp()), base
+            )
+    finally:
+        OperationFuser.backward_fusion_functions.remove(_fuse_backward_scale_pair)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.parametrize("compile_model", [False, True], ids=["eager", "compiled"])
+def test_te_ops_setup_context_saves_parameter(compile_model):
+    """Backward observes mutation of a tensor used by the forward."""
+    op = _ScaleOp()
+    model = te.ops.Sequential(op)
+    if compile_model:
+        model = torch.compile(model, fullgraph=True)
+    x = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda", requires_grad=True)
+    y = model(x)
+    with torch.no_grad():
+        op.scale.add_(1)
+    with pytest.raises(RuntimeError, match="modified by an inplace operation"):
+        y.sum().backward()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_te_ops_unsupported_group_still_compiles_eagerly():
+    """An operation without the compute halves runs its eager implementation.
+
+    Note that this is not a fallback: under ``fullgraph=True`` there is no
+    leaving the graph, so the pipeline is traced either way and only the choice
+    of implementation changes. That is why the tracing constraints -- no
+    mutation of anything from an enclosing scope -- have to hold on both paths.
+    """
+    torch._dynamo.reset()
+    assert te.ops.Identity().compile_unsupported_reason() is not None
+
+    base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+    _assert_sequential_matches_eager(lambda: te.ops.Sequential(te.ops.Identity()), base)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_te_ops_forward_kwargs_compile():
+    """A tensor forward kwarg reaches the operation through its custom op.
+
+    The tensor is quantized, so it crosses the op boundary as its inner buffers,
+    and it changes between calls, which a graph input absorbs without a
+    recompilation. The last call adds a value kwarg: that one is gated onto the
+    eager implementation, since Dynamo turns a changed scalar into a symbol that
+    cannot be carried as opaque config.
+    """
+    torch._dynamo.reset()
+    quantizer = Float8CurrentScalingQuantizer(
+        fp8_dtype=tex.DType.kFloat8E4M3,
+        device=torch.device("cuda"),
+    )
+
+    def offset(value):
+        return quantizer(torch.full((64,), value, dtype=torch.bfloat16, device="cuda"))
+
+    base = torch.randn(32, 64, dtype=torch.bfloat16, device="cuda")
+    _assert_sequential_matches_eager(
+        lambda: te.ops.Sequential(_ScaleWithKwargsOp()),
+        base,
+        op_kwargs_seq=(
+            {0: {"offset": offset(0.5)}},
+            {0: {"offset": offset(1.5)}},
+            # No quantized offset here: this call runs the eager implementation,
+            # which is traced directly, and dequantize() is not traceable.
+            {0: {"extra_scale": 3.0}},
+        ),
+    )
