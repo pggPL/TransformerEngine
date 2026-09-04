@@ -2232,6 +2232,49 @@ def test_te_linear_compile_plain_output_fp8_tangent():
     _assert_fp8_io_close(ref, got)
 
 
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+@pytest.mark.parametrize("consumer_grad", ["bf16", "fp8"])
+def test_te_linear_compile_fp8_output_chain(compile_mode, consumer_grad):
+    """``Linear(fp8_output=True)`` feeding a second ``Linear`` inside one graph:
+    the quantized input crosses the op boundary as a subclass, and the consumer's
+    dgrad (plain or quantized) reaches the producer through the grad handle."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+    consumer = te.Linear(32, 16, params_dtype=torch.bfloat16, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return consumer(model(inp, fp8_output=True), fp8_grad=consumer_grad == "fp8")
+
+    ref, got = _run_fp8_io_pair(fn, model, compile_mode)
+    _assert_fp8_io_close(ref, got)
+
+
+@pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
+@pytest.mark.skipif(not fp8_available, reason=reason_for_no_fp8)
+def test_te_linear_compile_quantized_input():
+    """An externally quantized :class:`Float8Tensor` input (no grad) goes through
+    the compiled op via the wrapper op's subclass flattening."""
+    fp8_recipe = recipe.Float8CurrentScaling()
+    model = te.Linear(64, 32, params_dtype=torch.bfloat16, device="cuda")
+    quantizer = Float8CurrentScalingQuantizer(fp8_dtype=tex.DType.kFloat8E4M3, device="cuda")
+
+    def fn(inp):
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp)
+
+    torch.manual_seed(0)
+    inp = quantizer(torch.randn(32, 64, dtype=torch.bfloat16, device="cuda"))
+    torch._dynamo.reset()
+    compiled = torch.compile(fn, fullgraph=True)
+    with torch.no_grad():
+        ref = fn(inp)
+        out = compiled(inp)
+    torch.testing.assert_close(out, ref, atol=_EAGER_ATOL, rtol=_EAGER_RTOL)
+
+
 # Configs rejected by LinearFwdArgs.compile_unsupported_reason() that a
 # single-GPU unit test can construct. Distributed-only reasons (fsdp_group,
 # DistributedWeight) and CPU offloading need machinery this file doesn't have;
@@ -2240,7 +2283,6 @@ def test_te_linear_compile_plain_output_fp8_tangent():
 _FALLBACK_CASES = [
     "fuse_wgrad_accumulation",
     "delayed_wgrad",
-    "quantized_input",
 ]
 
 
@@ -2258,14 +2300,6 @@ def _fallback_case(case, dtype, device):
         return model, model, "bwd", None, "fuse_wgrad_accumulation"
     if case == "delayed_wgrad":
         return model, model, "bwd", model.backward_dw, "delayed wgrad compute"
-    if case == "quantized_input":
-        fp8_recipe = recipe.Float8CurrentScaling()
-
-        def fn(inp):
-            with te.autocast(recipe=fp8_recipe):
-                return model(inp)
-
-        return model, fn, "no_grad", None, "a quantized input tensor"
     raise ValueError(case)
 
 
@@ -2285,11 +2319,6 @@ def test_te_linear_compile_eager_fallback(case):
     def make_inp():
         torch.manual_seed(1)
         x = torch.randn(32, 64, dtype=dtype, device=device)
-        if case == "quantized_input":
-            quantizer = Float8CurrentScalingQuantizer(
-                fp8_dtype=tex.DType.kFloat8E4M3, device=device
-            )
-            return quantizer(x)
         return x.requires_grad_(mode != "no_grad")
 
     torch._dynamo.reset()

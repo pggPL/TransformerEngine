@@ -112,7 +112,7 @@ class LinearFwdArgs:
 
     # --- Differentiable tensors (also passed positionally to autograd) ---
     weight: TensorOrQuantized
-    inp: torch.Tensor
+    inp: TensorOrQuantized
     bias: Optional[torch.Tensor]
 
     # --- Non-differentiable cached tensors ---
@@ -186,8 +186,6 @@ class LinearFwdArgs:
             return "debug instrumentation (nvidia-dlfw-inspect)"
         if is_distributed_weight(self.weight):
             return "a DistributedWeight (custom weight parallelism, e.g. GTP)"
-        if isinstance(self.inp, (QuantizedTensor, QuantizedTensorStorage)):
-            return "a quantized input tensor"
         if self.fsdp_group is not None:
             return "manual TE FSDP (fsdp_group); use FSDP2 or MCore FSDP"
         if self.cpu_offloading:
@@ -2367,7 +2365,7 @@ class Linear(TransformerEngineBaseModule):
                 fp8_grad = True
 
         if torch.compiler.is_compiling() and _linear_op is not None:
-            reason = self._compile_eager_fallback_reason(inp, is_first_microbatch, debug)
+            reason = self._compile_eager_fallback_reason(is_first_microbatch, debug)
             if reason is not None:
                 # A break inside the try/finally below would skip the whole frame.
                 warn_compile_eager_fallback(reason)
@@ -2608,10 +2606,7 @@ class Linear(TransformerEngineBaseModule):
         return unfused_weights
 
     def _compile_eager_fallback_reason(
-        self,
-        inp: torch.Tensor,
-        is_first_microbatch: Optional[bool],
-        debug: bool,
+        self, is_first_microbatch: Optional[bool], debug: bool
     ) -> Optional[str]:
         """Why this call can't use the compiled op (else None), decided before
         prepare_forward. Quantizer checks stay in compile_unsupported_reason."""
@@ -2620,8 +2615,6 @@ class Linear(TransformerEngineBaseModule):
         weight_tensor, _ = self._get_weight_and_bias_tensors()
         if is_distributed_weight(weight_tensor):
             return "a DistributedWeight (custom weight parallelism, e.g. GTP)"
-        if isinstance(inp, (QuantizedTensor, QuantizedTensorStorage)):
-            return "a quantized input tensor"
         if self.fsdp_group is not None:
             return "manual TE FSDP (fsdp_group); use FSDP2 or MCore FSDP"
         if is_cpu_offload_enabled():
