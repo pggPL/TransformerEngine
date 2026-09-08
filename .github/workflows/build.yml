@@ -6,6 +6,8 @@
 name: 'Build'
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 concurrency:
   # Group by workflow name + PR number (for PRs) or ref (for branch/tag pushes)
@@ -13,8 +15,12 @@ concurrency:
   cancel-in-progress: true
 jobs:
   core:
-    name: 'Core'
+    name: 'Core (sm${{ matrix.arch }})'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ["70", "80", "89", "90", "100", "120"]
     container:
       image: nvcr.io/nvidia/cuda:12.9.2-devel-ubuntu22.04
       options: --user root
@@ -37,7 +43,7 @@ jobs:
         run: NVTE_USE_CCACHE=1 NVTE_CCACHE_BIN=sccache pip install --no-build-isolation . -v
         env:
           NVTE_FRAMEWORK: none
-          NVTE_CUDA_ARCHS: "90"
+          NVTE_CUDA_ARCHS: ${{ matrix.arch }}
           MAX_JOBS: 2
           SCCACHE_GHA_ENABLED: "true"
       - name: 'Sanity check'
