@@ -749,15 +749,35 @@ def _spec_view(obj: Any, tensor_field_names: Sequence[str]) -> Any:
 # --------------------------------------------------------------------------- #
 
 
-def _spec_slot_count(spec: Optional[TensorSpec]) -> int:
-    """Flat ``Tensor[]`` slots the value for ``spec`` occupies."""
+def _spec_slot_count(spec: Optional[TensorSpec], *, user_output: bool = False) -> int:
+    """Flat ``Tensor[]`` slots the value for ``spec`` occupies.
+
+    A quantized *user output* carries one extra slot, its grad handle (see
+    :func:`_grad_handle`).
+    """
     if spec is None:
         return 1
-    return len(spec.inner_names())
+    count = len(spec.inner_names())
+    if user_output and spec.is_quantized:
+        count += 1
+    return count
+
+
+def _grad_handle(shape: Sequence[int], dtype: torch.dtype, device: Any) -> torch.Tensor:
+    """Autograd stand-in for a quantized op output.
+
+    The inner buffers of a quantized output (uint8 data, scales) cannot carry
+    a gradient, so the op also returns this stride-0 high-precision tensor of
+    the output's logical shape. :class:`_QuantizedOutputFn` attaches it to
+    the rebuilt wrapper, and its gradient is the wrapper's ``grad_output``.
+    """
+    return torch.empty((1,), dtype=dtype, device=device).expand(tuple(shape))
 
 
 def _flatten_value(
     value: Optional[Union[torch.Tensor, QuantizedTensorStorage, TensorSpec]],
+    *,
+    user_output: bool = False,
 ) -> List[torch.Tensor]:
     """Return the flat ``Tensor[]`` slots that represent one op output ``value``.
 
@@ -767,16 +787,42 @@ def _flatten_value(
     if value is None:
         return [_encode_none(None)]
     if isinstance(value, TensorSpec):
-        return [_encode_none(t) for t in value.create_inner_tensors()]
+        flat = [_encode_none(t) for t in value.create_inner_tensors()]
+        if user_output and value.is_quantized:
+            flat.append(_grad_handle(value.shape, value.dtype, flat[0].device))
+        return flat
     if hasattr(value, "__tensor_flatten__"):
         inner_names, _ = value.__tensor_flatten__()
-        return [_encode_none(getattr(value, n)) for n in inner_names]
+        flat = [_encode_none(getattr(value, n)) for n in inner_names]
+        if user_output:
+            dtype = getattr(value, "dtype", None) or value._dtype
+            flat.append(_grad_handle(value.shape, dtype, flat[0].device))
+        return flat
     if isinstance(value, torch.Tensor):
         return [_encode_none(value)]
     raise TypeError(
         f"unsupported value type {type(value).__name__}; expected None / "
         "torch.Tensor / tensor subclass / bare storage / TensorSpec."
     )
+
+
+class _QuantizedOutputFn(torch.autograd.Function):
+    """Rebuild a quantized op output as a differentiable wrapper.
+
+    ``handle`` is the op's grad handle for this output; the gradient of the
+    wrapper flows back through it as-is (plain or quantized).
+    """
+
+    @staticmethod
+    def forward(ctx, handle, spec, *inner):
+        # pylint: disable=missing-function-docstring,unused-argument
+        ctx.num_inner = len(inner)
+        return dataclasses.replace(spec, requires_grad=False).assemble(list(inner))
+
+    @staticmethod
+    def backward(ctx, grad):
+        # pylint: disable=missing-function-docstring
+        return (grad, None) + (None,) * ctx.num_inner
 
 
 # Trailing slots in every fwd-impl return: ``tensors_to_save, ctx_attrs``.
@@ -816,7 +862,7 @@ def _pack_fwd_result(result: Any) -> List[torch.Tensor]:
     num_outputs = len(result) - _FWD_TRAILING_SLOTS
     flat: List[torch.Tensor] = []
     for value in result[:num_outputs]:
-        flat.extend(_flatten_value(value))
+        flat.extend(_flatten_value(value, user_output=True))
     saved = result[num_outputs]
     if saved is not None:
         for value in saved:
@@ -827,8 +873,9 @@ def _pack_fwd_result(result: Any) -> List[torch.Tensor]:
 def _pack_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> List[torch.Tensor]:
     """Pack a backward-impl return tuple into the op's ``Tensor[]`` payload.
 
-    Each grad occupies exactly one slot (validated against ``num_grad_inputs``);
-    a :class:`TensorSpec` grad is materialized into a single tensor.
+    One grad per ``input_tensors_for_grad`` entry (validated); like forward
+    outputs, a quantized grad is flattened to its inner buffers and rebuilt by
+    ``_autograd_backward`` from the bwd fake impl's specs.
     """
     grads = list(grads)
     if len(grads) != num_grad_inputs:
@@ -838,11 +885,25 @@ def _pack_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> List
         )
     out: List[torch.Tensor] = []
     for g in grads:
-        if isinstance(g, TensorSpec):
-            out.append(_encode_none(g.create_tensor()))
-        else:
-            out.append(_encode_none(g))
+        out.extend(_flatten_value(g))
     return out
+
+
+def _unpack_bwd_result(
+    grad_specs: Sequence[Optional[TensorSpec]], flat: Sequence[Optional[torch.Tensor]]
+) -> List[Any]:
+    """Rebuild the per-input grads from the backward op's flat return."""
+    grads: List[Any] = []
+    cursor = 0
+    for spec in grad_specs:
+        n = _spec_slot_count(spec)
+        chunk = [_decode_none(t) for t in flat[cursor : cursor + n]]
+        cursor += n
+        if spec is None or not spec.is_quantized:
+            grads.append(chunk[0])
+        else:
+            grads.append(spec.assemble(chunk))
+    return grads
 
 
 @dataclasses.dataclass(frozen=True)
@@ -874,7 +935,7 @@ class _OutputPlan:
         cursor = 0
         user_ranges: List[Tuple[int, int]] = []
         for spec in user_specs:
-            n = _spec_slot_count(spec)
+            n = _spec_slot_count(spec, user_output=True)
             user_ranges.append((cursor, cursor + n))
             cursor += n
         return cls(
@@ -893,12 +954,27 @@ class _OutputPlan:
         # ``spec is None`` is the op-boundary sentinel for an absent output.
         return spec.assemble(chunk) if spec is not None else None
 
-    def user_outputs(self, flat: Sequence[Optional[torch.Tensor]]) -> List[Any]:
-        """Rebuild the structured user outputs from the op's flat return."""
-        return [
-            self._assemble(spec, flat, start, stop)
-            for spec, (start, stop) in zip(self.user_specs, self.user_ranges)
-        ]
+    def user_outputs(
+        self, flat: Sequence[Optional[torch.Tensor]], *, differentiable: bool = True
+    ) -> List[Any]:
+        """Rebuild the structured user outputs from the op's flat return.
+
+        A quantized output whose grad handle requires grad is rebuilt through
+        :class:`_QuantizedOutputFn` (unless ``differentiable=False``, e.g. from
+        ``setup_context``) so autograd reaches the op through the handle.
+        """
+        outputs: List[Any] = []
+        for spec, (start, stop) in zip(self.user_specs, self.user_ranges):
+            if spec is None or not spec.is_quantized:
+                outputs.append(self._assemble(spec, flat, start, stop))
+                continue
+            handle = flat[stop - 1]
+            if differentiable and handle.requires_grad:
+                inner = [_decode_none(t) for t in flat[start : stop - 1]]
+                outputs.append(_QuantizedOutputFn.apply(handle, spec, *inner))
+            else:
+                outputs.append(self._assemble(spec, flat, start, stop - 1))
+        return outputs
 
     def saved_tensors(self, flat: Sequence[Optional[torch.Tensor]]) -> List[Any]:
         """Rebuild the saved-for-backward tensors from the op's flat return."""
@@ -916,17 +992,13 @@ def _slice_user_grads(
 ) -> List[Any]:
     """Gradient of each user output, sliced from the op's flat grad list.
 
-    A single-slot output yields its tensor grad; a flattened quantized output
-    yields the tuple of its inner-buffer grads. Takes the bare ranges (not the
-    whole :class:`_OutputPlan`) so ``setup_context`` only has to stash those on
-    ``ctx`` -- keeping the specs (and the quantizers they reference) off the
-    autograd tape.
+    A plain output's grad is its single slot; a quantized output's grad is the
+    grad of its trailing grad handle (plain or quantized tensor). Takes the bare
+    ranges (not the whole :class:`_OutputPlan`) so ``setup_context`` only has to
+    stash those on ``ctx`` -- keeping the specs (and the quantizers they
+    reference) off the autograd tape.
     """
-    grads: List[Any] = []
-    for start, stop in user_ranges:
-        chunk = [_decode_none(g) for g in flat_grads[start:stop]]
-        grads.append(chunk[0] if stop - start == 1 else tuple(chunk))
-    return grads
+    return [_decode_none(flat_grads[stop - 1]) for _, stop in user_ranges]
 
 
 # --------------------------------------------------------------------------- #
@@ -1001,13 +1073,16 @@ def _register_autograd_for_op(
     grad_targets: List[int],
     setup_context_user: Callable[..., Any],
     fwd_fake_impl: Callable[[Any], Tuple[Any, ...]],
+    bwd_fake_impl: Callable[[Any], Tuple[Any, ...]],
 ) -> None:
     """Wire ``register_autograd`` on a forward op so its backward calls ``bwd_op``.
 
     ``setup_context`` re-runs the spec fwd fake impl to parse the
     :class:`_OutputPlan`, reassembles the outputs / saved tensors from it, hands
     the saved tuple + ``ctx_attrs`` to the module's ``setup_context`` and stashes
-    the plan on ``ctx`` so backward can slice its grads per user output.
+    the plan on ``ctx`` so backward can slice its grads per user output. The
+    backward runs the spec bwd fake impl to learn the grads' layout and rebuilds
+    quantized grads from the op's flat return.
     """
     bwd_takes_grad_tuple = any(f.name == "grad_outputs" for f in bwd_plan.fields)
 
@@ -1019,7 +1094,7 @@ def _register_autograd_for_op(
         spec_obj = _spec_view(fwd_obj, fwd_plan.tensor_field_names())
 
         out_plan = _OutputPlan.parse(fwd_fake_impl(spec_obj))
-        user_outputs = out_plan.user_outputs(output)
+        user_outputs = out_plan.user_outputs(output, differentiable=False)
         saved_list = out_plan.saved_tensors(output)
 
         bwd_obj = bwd_plan.arg_type()
@@ -1053,9 +1128,10 @@ def _register_autograd_for_op(
             bwd_obj.grad_outputs = tuple(user_grads)
         else:
             bwd_obj.grad_output = user_grads[0]
+        grad_specs = bwd_fake_impl(_spec_view(bwd_obj, bwd_plan.tensor_field_names()))
         kwargs = bwd_plan.pack(bwd_obj)
         bwd_args_flat = [kwargs[name] for name in bwd_plan.slot_names]
-        grads = [_decode_none(g) for g in bwd_op(*bwd_args_flat)]
+        grads = _unpack_bwd_result(grad_specs, bwd_op(*bwd_args_flat))
         ctx.backward_objects = None
         # One grad per input schema slot: default None, but a ``Tensor[]`` slot
         # (always recorded in ``fwd_tensor_list_lengths``) needs a
@@ -1330,6 +1406,7 @@ def _register_custom_op_impl(
         "grad_targets": grad_targets,
         "setup_context_user": setup_context,
         "fwd_fake_impl": fwd_fake_impl,
+        "bwd_fake_impl": bwd_fake_impl,
     }
     wrapper_fwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), wrapper_fwd_name)
     wrapper_bwd_op = getattr(getattr(torch.ops, _TE_OP_NAMESPACE), wrapper_bwd_name)
