@@ -6,7 +6,12 @@
 PyTorch
 =======
 
-.. autoapiclass:: transformer_engine.pytorch.Linear(in_features, out_features, bias=True, **kwargs)
+.. autoapiclass:: transformer_engine.pytorch.autocast(enabled=True, calibrating=False, recipe=None, amax_reduction_group=None)
+
+Standard layers
+---------------
+
+.. autoapiclass:: transformer_engine.pytorch.Linear(in_features, out_features, **kwargs)
   :members: forward, set_tensor_parallel_group
 
 .. autoapiclass:: transformer_engine.pytorch.GroupedLinear(in_features, out_features, bias=True, **kwargs)
@@ -34,19 +39,33 @@ PyTorch
 .. autoapiclass:: transformer_engine.pytorch.TransformerLayer(hidden_size, ffn_hidden_size, num_attention_heads, **kwargs)
   :members: forward, set_context_parallel_group, set_tensor_parallel_group
 
+Model-specific layers
+---------------------
+
+DeepSeek-V3
+^^^^^^^^^^^
+
+.. autoapiclass:: transformer_engine.pytorch.models.DeepSeekV3Layer(hidden_size, num_attention_heads, **kwargs)
+  :members: forward
+
+.. autoapiclass:: transformer_engine.pytorch.models.DeepSeekV3MoE(hidden_size, moe_ffn_hidden_size, num_experts, **kwargs)
+  :members: forward, update_expert_bias
+
+.. autoapiclass:: transformer_engine.pytorch.models.MultiLatentAttention(hidden_size, num_attention_heads, **kwargs)
+  :members: forward
+
+Other
+-----
+
 .. autoapiclass:: transformer_engine.pytorch.dot_product_attention.inference.InferenceParams(max_batch_size, max_sequence_length)
   :members: reset, allocate_memory, pre_step, get_seqlens_pre_step, convert_paged_to_nonpaged, step
 
 .. autoapiclass:: transformer_engine.pytorch.CudaRNGStatesTracker()
   :members: reset, get_states, set_states, add, fork
 
-
-.. autoapiclass:: transformer_engine.pytorch.autocast(enabled=True, calibrating=False, recipe=None, amax_reduction_group=None)
-
 .. autoapifunction:: transformer_engine.pytorch.quantized_model_init
 
 .. autoapifunction:: transformer_engine.pytorch.checkpoint
-
 
 .. autoapifunction:: transformer_engine.pytorch.make_graphed_callables
 
@@ -112,6 +131,12 @@ Communication-computation overlap
   :members: FP8, NONE
 
 
+Fine-grained quantization recipes
+---------------------------------
+
+.. autoapiclass:: transformer_engine.pytorch.QuantizerRole(module_type="", tensor_type="", name="")
+
+
 Quantized tensors
 -----------------
 
@@ -129,6 +154,10 @@ Quantized tensors
 
 .. autoapiclass:: transformer_engine.pytorch.NVFP4TensorStorage(rowwise_data, rowwise_scale_inv, columnwise_data, columnwise_scale_inv, amax_rowwise, amax_columnwise, fp4_dtype, quantizer)
 
+.. autoapiclass:: transformer_engine.pytorch.HybridQuantizedTensorStorage(*, rowwise_storage, columnwise_storage, quantizer, fake_dtype=None)
+
+.. autoapiclass:: transformer_engine.pytorch.IdentityTensorStorage(*, hp_data, fake_dtype=None, quantizer=None)
+
 .. autoapiclass:: transformer_engine.pytorch.Float8Tensor(shape, dtype, data, fp8_scale_inv, fp8_dtype, requires_grad=False, data_transpose=None, quantizer=None)
 
 .. autoapiclass:: transformer_engine.pytorch.MXFP8Tensor(rowwise_data, rowwise_scale_inv, columnwise_data, columnwise_scale_inv, fp8_dtype, quantizer)
@@ -136,6 +165,10 @@ Quantized tensors
 .. autoapiclass:: transformer_engine.pytorch.Float8BlockwiseQTensor(rowwise_data, rowwise_scale_inv, columnwise_data, columnwise_scale_inv, fp8_dtype, quantizer, is_2D_scaled, data_format)
 
 .. autoapiclass:: transformer_engine.pytorch.NVFP4Tensor(rowwise_data, rowwise_scale_inv, columnwise_data, columnwise_scale_inv, amax_rowwise, amax_columnwise, fp4_dtype, quantizer)
+
+.. autoapiclass:: transformer_engine.pytorch.HybridQuantizedTensor(shape, dtype, *, rowwise_storage, columnwise_storage, quantizer, requires_grad=False, device=None)
+
+.. autoapiclass:: transformer_engine.pytorch.IdentityTensor(shape, dtype, *, hp_data, quantizer=None, requires_grad=False, device=None)
 
 Quantizers
 ----------
@@ -152,6 +185,10 @@ Quantizers
 .. autoapiclass:: transformer_engine.pytorch.Float8BlockQuantizer(fp8_dtype, *, rowwise, columnwise, **kwargs)
 
 .. autoapiclass:: transformer_engine.pytorch.NVFP4Quantizer(fp4_dtype, *, rowwise=True, columnwise=True, **kwargs)
+
+.. autoapiclass:: transformer_engine.pytorch.HybridQuantizer(*, rowwise_quantizer, columnwise_quantizer, columnwise_source="original")
+
+.. autoapiclass:: transformer_engine.pytorch.IdentityQuantizer(*, dtype=None, rowwise=True, columnwise=True)
 
 Tensor saving and restoring functions
 -------------------------------------
