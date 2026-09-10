@@ -6,6 +6,8 @@
 name: 'Build'
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 concurrency:
   # Group by workflow name + PR number (for PRs) or ref (for branch/tag pushes)
@@ -13,8 +15,12 @@ concurrency:
   cancel-in-progress: true
 jobs:
   core:
-    name: 'Core'
+    name: 'Core (sm${{ matrix.arch }})'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ["70", "80", "89", "90", "100", "120"]
     container:
       image: nvcr.io/nvidia/cuda:12.9.2-devel-ubuntu22.04
       options: --user root
@@ -37,14 +43,21 @@ jobs:
         run: NVTE_USE_CCACHE=1 NVTE_CCACHE_BIN=sccache pip install --no-build-isolation . -v
         env:
           NVTE_FRAMEWORK: none
-          MAX_JOBS: 1
+          NVTE_CUDA_ARCHS: ${{ matrix.arch }}
+          MAX_JOBS: 2
           SCCACHE_GHA_ENABLED: "true"
       - name: 'Sanity check'
-        run: python3 -c "import transformer_engine"
+        run: |
+          ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/lib/x86_64-linux-gnu/libcuda.so.1
+          python3 -c "import transformer_engine"
         working-directory: /
   pytorch:
-    name: 'PyTorch'
+    name: 'PyTorch (sm${{ matrix.arch }})'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ["80", "90"]
     steps:
       - name: Move /var/lib/docker/
         shell: bash -euxo pipefail {0}
@@ -88,15 +101,22 @@ jobs:
           '
 
       - name: 'Build'
-        run: docker exec builder bash -c 'pip install --no-build-isolation . -v --no-deps'
-        env:
-          NVTE_FRAMEWORK: pytorch
-          MAX_JOBS: 1
+        run: |
+          docker exec -e NVTE_FRAMEWORK=pytorch -e NVTE_CUDA_ARCHS=${{ matrix.arch }} -e MAX_JOBS=2 builder \
+            bash -c 'pip install --no-build-isolation . -v --no-deps'
       - name: 'Sanity check'
-        run: docker exec builder bash -c 'python3 tests/pytorch/test_sanity_import.py'
+        run: |
+          docker exec builder bash -c '\
+            ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/lib/x86_64-linux-gnu/libcuda.so.1 && \
+            python3 tests/pytorch/test_sanity_import.py \
+          '
   jax:
-    name: 'JAX'
+    name: 'JAX (sm${{ matrix.arch }})'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ["80", "90"]
     container:
       image: ghcr.io/nvidia/jax:jax-2026-07-21
       options: --user root
@@ -107,17 +127,17 @@ jobs:
         uses: actions/checkout@v3
         with:
           submodules: recursive
-      - name: ccache
-        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad
+      # sccache's nvcc wrapper breaks with the CUDA 13.x toolkit in this image
       - name: 'Build'
-        run: |
-          NVTE_CCACHE_BIN=sccache NVTE_USE_CCACHE=1 pip install --no-build-isolation . -v
+        run: pip install --no-build-isolation . -v
         env:
           NVTE_FRAMEWORK: jax
-          MAX_JOBS: 1
-          SCCACHE_GHA_ENABLED: "true"
+          NVTE_CUDA_ARCHS: ${{ matrix.arch }}
+          MAX_JOBS: 2
       - name: 'Sanity check'
-        run: python3 tests/jax/test_sanity_import.py
+        run: |
+          ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/lib/x86_64-linux-gnu/libcuda.so.1
+          python3 tests/jax/test_sanity_import.py
   all:
     name: 'All'
     runs-on: ubuntu-latest
@@ -158,9 +178,13 @@ jobs:
             pip install torch --no-cache-dir --index-url https://download.pytorch.org/whl/cu130
           '
       - name: 'Build'
-        run: docker exec builder bash -c 'pip install --no-cache-dir --no-build-isolation . -v --no-deps'
-        env:
-          NVTE_FRAMEWORK: all
-          MAX_JOBS: 1
+        run: |
+          docker exec -e NVTE_FRAMEWORK=all -e NVTE_CUDA_ARCHS=90 -e MAX_JOBS=2 builder \
+            bash -c 'pip install --no-cache-dir --no-build-isolation . -v --no-deps'
       - name: 'Sanity check'
-        run: docker exec builder bash -c 'python3 tests/pytorch/test_sanity_import.py && python3 tests/jax/test_sanity_import.py'
+        run: |
+          docker exec builder bash -c '\
+            ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/lib/x86_64-linux-gnu/libcuda.so.1 && \
+            python3 tests/pytorch/test_sanity_import.py && \
+            python3 tests/jax/test_sanity_import.py \
+          '
