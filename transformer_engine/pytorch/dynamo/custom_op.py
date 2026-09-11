@@ -32,6 +32,8 @@ on each call. The kinds -- and how each represents its field as op inputs:
   * ``TENSOR_OR_QUANTIZED`` -- a field that may be a plain tensor, a bare
     quantized storage, or ``None``: three slots (the tensor, its flat inner
     buffers, and a ``__kind__`` tag) so a quantized tensor crosses as its buffers.
+  * Tensor kinds also support lists, with per-element gradients and metadata.
+  * ``SYMINT_LIST`` -- ``List[int]`` in a ``SymInt[]`` slot for dynamic splits.
   * ``SIMPLE`` -- every remaining simple value (scalars, enums, sizes,
     quantizers -- value-opaque constants baked into the graph -- and nested
     collections of them), gathered into one shared ``OpaqueValueBundle`` slot.
@@ -390,6 +392,7 @@ class _FieldKind(Enum):
 
     TENSOR = "tensor"  # one ``Tensor`` / ``Tensor?`` slot
     TENSOR_OR_QUANTIZED = "tensor_or_quantized"  # 3 slots: tensor / inner / meta
+    SYMINT_LIST = "symint_list"
     PROCESS_GROUP = "process_group"  # c10d group name inside the shared bundle
     SIMPLE = "simple"  # value carried verbatim inside the shared bundle
     UNSUPPORTED = "unsupported"  # no slots; only a trivial value may cross
@@ -430,6 +433,7 @@ class _FieldPlan:
     name: str
     kind: _FieldKind
     slots: Tuple[_SlotSpec, ...]
+    is_list: bool = False
 
 
 def _is_tensor_storage_union(annot: Any) -> bool:
@@ -473,6 +477,22 @@ def _is_simple_annot(annot: Any) -> bool:
 
 def _parse_field(name: str, annot: Any) -> _FieldPlan:
     """Parse one field's annotation into its :class:`_FieldPlan`."""
+    stripped, _ = _strip_optional(annot)
+    if get_origin(stripped) is list and len(get_args(stripped)) == 1:
+        element_annot = get_args(stripped)[0]
+        if element_annot is int:
+            return _FieldPlan(name, _FieldKind.SYMINT_LIST, (_SlotSpec(name, "SymInt[]"),))
+        element = _parse_field(name, element_annot)
+        if element.is_list:
+            raise TypeError(f"field {name!r}: nested tensor lists are not supported")
+        if element.kind in (_FieldKind.TENSOR, _FieldKind.TENSOR_OR_QUANTIZED):
+            slots = tuple(
+                _SlotSpec(
+                    slot.name, "Tensor[]" if slot.type_str.startswith("Tensor") else slot.type_str
+                )
+                for slot in element.slots
+            )
+            return _FieldPlan(name, element.kind, slots, is_list=True)
     if _is_tensor_storage_union(annot):
         slots = (
             _SlotSpec(name, "Tensor?"),
@@ -551,6 +571,49 @@ def _unpack_tensor_or_quantized(field: _FieldPlan, slots: Dict[str, Any]) -> Any
     return _storage_unflatten(meta, slots[inner_slot])
 
 
+def _pack_tensor_list(field: _FieldPlan, values: Any, slots: Dict[str, Any]) -> None:
+    """Pack a tensor field's list using the scalar representation per element."""
+    if field.kind is _FieldKind.TENSOR:
+        slots[field.slots[0].name] = [_encode_none(value) for value in values]
+        return
+    outer, inner, items, counts = [], [], [], []
+    tensor_slot, inner_slot, meta_slot = (s.name for s in field.slots)
+    for value in values:
+        element_slots = {}
+        _pack_tensor_or_quantized(field, value, element_slots)
+        outer.append(_encode_none(element_slots[tensor_slot]))
+        tensors = element_slots[inner_slot]
+        inner.extend(tensors)
+        counts.append(len(tensors))
+        items.append(element_slots[meta_slot])
+    slots[tensor_slot] = outer
+    slots[inner_slot] = inner
+    slots[meta_slot] = OpaqueValueBundle({"items": items, "counts": counts})
+
+
+def _unpack_tensor_list(field: _FieldPlan, slots: Dict[str, Any]) -> List[Any]:
+    """Inverse of :func:`_pack_tensor_list`."""
+    if field.kind is _FieldKind.TENSOR:
+        return [_decode_none(value) for value in slots[field.slots[0].name]]
+    tensor_slot, inner_slot, meta_slot = (s.name for s in field.slots)
+    bundle = slots[meta_slot]
+    values = []
+    cursor = 0
+    for i, (meta, count) in enumerate(zip(bundle["items"], bundle["counts"])):
+        values.append(
+            _unpack_tensor_or_quantized(
+                field,
+                {
+                    tensor_slot: _decode_none(slots[tensor_slot][i]),
+                    inner_slot: slots[inner_slot][cursor : cursor + count],
+                    meta_slot: meta,
+                },
+            )
+        )
+        cursor += count
+    return values
+
+
 @dataclasses.dataclass(frozen=True)
 class _ArgPlan:
     """The parsed plan for one args dataclass: the single source of truth for
@@ -578,17 +641,17 @@ class _ArgPlan:
             if f.kind in (_FieldKind.TENSOR, _FieldKind.TENSOR_OR_QUANTIZED)
         )
 
-    def tensor_or_quantized_offsets(self) -> List[int]:
+    def tensor_or_quantized_offsets(self) -> List[Tuple[int, bool]]:
         """Start offset of each tensor-or-quantized slot group.
 
         Derived from ``fields`` on demand -- used once per registration, for
         the subclass-flattening dispatch wiring.
         """
-        offsets: List[int] = []
+        offsets: List[Tuple[int, bool]] = []
         offset = 0
         for field in self.fields:
             if field.kind is _FieldKind.TENSOR_OR_QUANTIZED:
-                offsets.append(offset)
+                offsets.append((offset, field.is_list))
             offset += len(field.slots)
         return offsets
 
@@ -623,7 +686,12 @@ class _ArgPlan:
         simple: Dict[str, Any] = {}
         for field in self.fields:
             value = getattr(obj, field.name, None)
+            if field.is_list:
+                _pack_tensor_list(field, value, slots)
+                continue
             match field.kind:
+                case _FieldKind.SYMINT_LIST:
+                    slots[field.slots[0].name] = list(value)
                 case _FieldKind.TENSOR:
                     slots[field.slots[0].name] = value
                 case _FieldKind.TENSOR_OR_QUANTIZED:
@@ -657,7 +725,12 @@ class _ArgPlan:
         kwargs: Dict[str, Any] = {}
         bundle = slots.get(_SIMPLE_META_SLOT)
         for field in self.fields:
+            if field.is_list:
+                kwargs[field.name] = _unpack_tensor_list(field, slots)
+                continue
             match field.kind:
+                case _FieldKind.SYMINT_LIST:
+                    kwargs[field.name] = list(slots[field.slots[0].name])
                 case _FieldKind.TENSOR:
                     kwargs[field.name] = slots[field.slots[0].name]
                 case _FieldKind.TENSOR_OR_QUANTIZED:
@@ -734,7 +807,12 @@ def _spec_view(obj: Any, tensor_field_names: Sequence[str]) -> Any:
     overrides: Dict[str, Any] = {}
     for name in tensor_field_names:
         value = getattr(obj, name, None)
-        if value is not None and not isinstance(value, TensorSpec):
+        if isinstance(value, (list, tuple)):
+            overrides[name] = [
+                to_tensor_spec(v) if v is not None and not isinstance(v, TensorSpec) else v
+                for v in value
+            ]
+        elif value is not None and not isinstance(value, TensorSpec):
             overrides[name] = to_tensor_spec(value)
     if not overrides:
         return obj
@@ -827,8 +905,7 @@ def _pack_fwd_result(result: Any) -> List[torch.Tensor]:
 def _pack_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> List[torch.Tensor]:
     """Pack a backward-impl return tuple into the op's ``Tensor[]`` payload.
 
-    Each grad occupies exactly one slot (validated against ``num_grad_inputs``);
-    a :class:`TensorSpec` grad is materialized into a single tensor.
+    List gradients occupy one slot per element; TensorSpec grads are materialized.
     """
     grads = list(grads)
     if len(grads) != num_grad_inputs:
@@ -837,11 +914,12 @@ def _pack_bwd_result(grads: Any, num_grad_inputs: int, op_qualname: str) -> List
             f"(one per input_tensors_for_grad entry), got {len(grads)}"
         )
     out: List[torch.Tensor] = []
-    for g in grads:
-        if isinstance(g, TensorSpec):
-            out.append(_encode_none(g.create_tensor()))
-        else:
-            out.append(_encode_none(g))
+    for grad in grads:
+        for g in grad if isinstance(grad, (list, tuple)) else (grad,):
+            if isinstance(g, TensorSpec):
+                out.append(_encode_none(g.create_tensor()))
+            else:
+                out.append(_encode_none(g))
     return out
 
 
@@ -1009,11 +1087,19 @@ def _register_autograd_for_op(
     the saved tuple + ``ctx_attrs`` to the module's ``setup_context`` and stashes
     the plan on ``ctx`` so backward can slice its grads per user output.
     """
+    tensor_list_slots = tuple(
+        i
+        for i, slot in enumerate(s for f in fwd_plan.fields for s in f.slots)
+        if slot.type_str == "Tensor[]"
+    )
     bwd_takes_grad_tuple = any(f.name == "grad_outputs" for f in bwd_plan.fields)
 
     def _setup_context(ctx, inputs, output):
+        # Autograd treats empty SymInt[] inputs as tensor lists too.
         ctx.fwd_tensor_list_lengths = {
-            i: len(value) for i, value in enumerate(inputs) if isinstance(value, list)
+            i: len(value)
+            for i, value in enumerate(inputs)
+            if i in tensor_list_slots or (isinstance(value, list) and not value)
         }
         fwd_obj = fwd_plan.unpack(dict(zip(fwd_plan.slot_names, inputs)))
         spec_obj = _spec_view(fwd_obj, fwd_plan.tensor_field_names())
@@ -1039,7 +1125,13 @@ def _register_autograd_for_op(
         # rederive shapes lossily (e.g. rank-1 inputs come back rank-2), so the
         # returned grads are viewed back to the true input shapes below.
         ctx.grad_input_shapes = {
-            pos: inputs[pos].shape for pos in grad_targets if isinstance(inputs[pos], torch.Tensor)
+            pos: (
+                [value.shape for value in inputs[pos]]
+                if pos in tensor_list_slots
+                else inputs[pos].shape
+            )
+            for pos in grad_targets
+            if pos in tensor_list_slots or isinstance(inputs[pos], torch.Tensor)
         }
 
     def _autograd_backward(ctx, *grad_outputs):
@@ -1063,25 +1155,63 @@ def _register_autograd_for_op(
         out: List[Any] = [None] * len(fwd_plan.slot_names)
         for pos, length in ctx.fwd_tensor_list_lengths.items():
             out[pos] = [None] * length
-        for pos, g in zip(grad_targets, grads):
-            if g is not None:
-                shape = ctx.grad_input_shapes.get(pos)
-                if shape is not None and g.shape != shape:
-                    g = g.view(shape)
-            out[pos] = g
+        cursor = 0
+        for pos in grad_targets:
+            is_list = pos in ctx.fwd_tensor_list_lengths
+            length = ctx.fwd_tensor_list_lengths[pos] if is_list else 1
+            if cursor + length > len(grads):
+                raise RuntimeError("bwd op returned too few flat grads for its input fields")
+            shapes = ctx.grad_input_shapes.get(pos)
+            values = list(grads[cursor : cursor + length])
+            for i, g in enumerate(values):
+                shape = shapes[i] if is_list else shapes
+                if g is not None and shape is not None and g.shape != shape:
+                    values[i] = g.view(shape)
+            out[pos] = values if is_list else values[0]
+            cursor += length
+        if cursor != len(grads):
+            raise RuntimeError(f"bwd op returned {len(grads)} flat grads, expected {cursor}")
         ctx.grad_input_shapes = None
         return tuple(out)
 
     fwd_op.register_autograd(_autograd_backward, setup_context=_setup_context)
 
 
+def _flatten_list_subclasses(new_args: List[Any], offset: int, subclass: type) -> None:
+    """Flatten subclass entries inside a tensor-or-quantized list slot."""
+    outer = list(new_args[offset])
+    if not any(isinstance(value, subclass) for value in outer):
+        return
+    bundle = new_args[offset + 2]
+    items = list(bundle["items"])
+    counts = list(bundle["counts"])
+    inner = []
+    cursor = 0
+    for i, value in enumerate(outer):
+        tensors = new_args[offset + 1][cursor : cursor + counts[i]]
+        cursor += counts[i]
+        if isinstance(value, subclass):
+            items[i], tensors = _storage_flatten(
+                value, {_TQ_KIND_KEY: _TensorOrQuantizedKind.STORAGE}
+            )
+            outer[i] = _encode_none(None)
+            counts[i] = len(tensors)
+        inner.extend(tensors)
+    new_args[offset] = outer
+    new_args[offset + 1] = inner
+    new_args[offset + 2] = OpaqueValueBundle({"items": items, "counts": counts})
+
+
 def _flatten_subclass_into_slots(
-    new_args: List[Any], slot_offsets: Sequence[int], subclass: type
+    new_args: List[Any], slot_offsets: Sequence[Tuple[int, bool]], subclass: type
 ) -> None:
     """Rewrite each tensor-or-quantized slot group whose ``Tensor?`` slot holds an
     instance of ``subclass`` into the storage layout (3 slots: name / tensors / meta).
     """
-    for offset in slot_offsets:
+    for offset, is_list in slot_offsets:
+        if is_list:
+            _flatten_list_subclasses(new_args, offset, subclass)
+            continue
         val = new_args[offset]
         if not isinstance(val, subclass):
             continue
@@ -1092,7 +1222,7 @@ def _flatten_subclass_into_slots(
 
 
 def _make_slot_forwarder(
-    base_op: Any, slot_offsets: Sequence[int], subclasses: Sequence[type]
+    base_op: Any, slot_offsets: Sequence[Tuple[int, bool]], subclasses: Sequence[type]
 ) -> Callable[[Sequence[Any]], List[torch.Tensor]]:
     """Return ``call(args)`` forwarding to ``base_op``, first flattening any
     ``subclasses`` instance sitting in the tensor-or-quantized slot groups at
@@ -1133,7 +1263,7 @@ def _register_wrapper_op(
     wrapper_op_name: str,
     schema_str: str,
     base_op: Any,
-    slot_offsets: Sequence[int] = (),
+    slot_offsets: Sequence[Tuple[int, bool]] = (),
     subclasses: Sequence[type] = (),
 ) -> Any:
     """Define the wrapper op via ``torch.library.custom_op``: forward to the base
