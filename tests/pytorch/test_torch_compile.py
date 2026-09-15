@@ -709,6 +709,21 @@ _DPA_COMPILE_CONFIGS = {
         ModelConfig(2, 128, 4, 64, attn_mask_type="causal"), packed="qkv", interleave_dim=-2
     ),
     "packed_kv_bshd_bs2hd": _cfg(ModelConfig(2, 128, 4, 64, attn_mask_type="causal"), packed="kv"),
+    "packed_kv_bshd_bsh2d": _cfg(
+        ModelConfig(2, 128, 4, 64, attn_mask_type="causal"), packed="kv", interleave_dim=-2
+    ),
+    "packed_qkv_bs3hd_singleton": _cfg(
+        ModelConfig(1, 1, 1, 64, attn_mask_type="causal"), packed="qkv"
+    ),
+    "packed_qkv_bsh3d_singleton": _cfg(
+        ModelConfig(1, 1, 1, 64, attn_mask_type="causal"), packed="qkv", interleave_dim=-2
+    ),
+    "packed_kv_bshd_bs2hd_singleton": _cfg(
+        ModelConfig(1, 1, 1, 64, attn_mask_type="causal"), packed="kv"
+    ),
+    "packed_kv_bshd_bsh2d_singleton": _cfg(
+        ModelConfig(1, 1, 1, 64, attn_mask_type="causal"), packed="kv", interleave_dim=-2
+    ),
     "packed_kv_thd_th2d": _cfg(
         ModelConfig(2, 128, 4, 64, attn_mask_type="padding_causal"),
         "thd",
@@ -893,16 +908,8 @@ def _make_dpa_inputs(spec: dict, dtype: torch.dtype):
     return args, kwargs, grad_tensors
 
 
-def _skip_unsupported(
-    spec: dict, backend: str, dtype, compiled: bool = True, inference_params=None
-) -> None:
-    """Skip what the backend under test cannot run, or -- for a test that
-    compiles it -- cannot be compiled."""
-    if compiled and backend == "fused":
-        # FusedAttention's forward carries @no_torch_dynamo, so there is nothing
-        # to compile: it runs as an eager island. Drop this skip once it traces,
-        # and the tests below cover it as they do the others.
-        pytest.skip("FusedAttention is an eager island and does not compile")
+def _skip_unsupported(spec: dict, backend: str, dtype, inference_params=None) -> None:
+    """Skip configurations the backend under test cannot run."""
     available, _, _ = get_available_attention_backends(
         spec["model_config"],
         dtype,
@@ -1024,7 +1031,8 @@ def _compare_compiled_to_eager(
 
 @pytest.mark.parametrize("backend", ["flash", "fused", "unfused"])
 @pytest.mark.parametrize("config", _DPA_COMPILE_CONFIGS.keys())
-def test_dpa_torch_compile(monkeypatch, backend, config):
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_dpa_torch_compile(monkeypatch, backend, config, dtype):
     """`DotProductAttention` under `torch.compile(fullgraph=True)` must match
     eager in forward and backward, for every backend that supports the
     configuration.
@@ -1033,7 +1041,6 @@ def test_dpa_torch_compile(monkeypatch, backend, config):
     whole module: input unpacking, qkv layout, backend selection and the backend
     itself.
     """
-    dtype = torch.bfloat16
     spec = _DPA_COMPILE_CONFIGS[config]
     module = _make_dpa(spec, dtype)
     args, kwargs, grads = _make_dpa_inputs(spec, dtype)
@@ -1045,33 +1052,43 @@ def test_dpa_torch_compile(monkeypatch, backend, config):
     )
 
 
-def test_dpa_torch_compile_around_fused(monkeypatch):
-    """FusedAttention itself is an eager island, but everything around it is
-    compiled: DotProductAttention traces up to the backend call, breaks the
-    graph there and resumes afterwards. What crosses that break has to survive
-    it -- the sub-backend enum did not, and reached cuDNN as the function that
-    produced it."""
+def test_dpa_torch_compile_fused_op_unavailable(monkeypatch):
+    """Without the fused attention custom op, FusedAttention is an eager island
+    and everything around it is compiled: DotProductAttention traces up to the
+    backend call, breaks the graph there and resumes afterwards. What crosses
+    that break has to survive it -- the sub-backend enum did not, and reached
+    cuDNN as the function that produced it."""
+    from transformer_engine.pytorch.attention.dot_product_attention import backends
+
     dtype = torch.bfloat16
     spec = _DPA_COMPILE_CONFIGS["self_bshd_causal"]
-    _skip_unsupported(spec, "fused", dtype, compiled=False)
+    _skip_unsupported(spec, "fused", dtype)
     _force_dpa_backend(monkeypatch, "fused")
+    monkeypatch.setattr(backends, "_fused_attn_op", None)
 
     module = _make_dpa(spec, dtype)
     args, kwargs, grads = _make_dpa_inputs(spec, dtype)
     # No fullgraph: the graph break at the eager island is the point here.
-    _compare_compiled_to_eager(module, args, kwargs, grads, monkeypatch, "fused", dtype)
+    with pytest.warns(UserWarning, match="Falling back to eager execution"):
+        _compare_compiled_to_eager(module, args, kwargs, grads, monkeypatch, "fused", dtype)
 
 
-@pytest.mark.parametrize("backend", ["flash", "unfused"])
-@pytest.mark.parametrize("config", ["self_bshd_causal", "kv_cache_bshd"])
+@pytest.mark.parametrize("backend", ["flash", "fused", "unfused"])
+@pytest.mark.parametrize(
+    "config",
+    ["self_bshd_causal", "kv_cache_bshd", "packed_qkv_bsh3d", "packed_kv_bshd_bsh2d"],
+)
 def test_dpa_torch_compile_cudagraphs(monkeypatch, backend, config):
     """`mode="reduce-overhead"`: forward and backward of DotProductAttention
     are captured into CUDA graphs and replayed on subsequent iterations."""
     dtype = torch.bfloat16
     spec = _DPA_COMPILE_CONFIGS[config]
-    _force_dpa_backend(monkeypatch, backend)
-
     module = _make_dpa(spec, dtype)
+    _, kwargs, _ = _make_dpa_inputs(spec, dtype)
+    # Before forcing the backend: probing the available backends re-runs the
+    # selection and would otherwise be cached over the forced one.
+    _skip_unsupported(spec, backend, dtype, inference_params=kwargs.get("inference_params"))
+    _force_dpa_backend(monkeypatch, backend)
 
     torch._dynamo.reset()
     counters.clear()
@@ -1091,7 +1108,7 @@ def test_dpa_torch_compile_cudagraphs(monkeypatch, backend, config):
     assert not counters["inductor"]["cudagraph_skips"], "inductor skipped CUDA graphs"
 
 
-@pytest.mark.parametrize("backend", ["flash", "unfused"])
+@pytest.mark.parametrize("backend", ["flash", "fused", "unfused"])
 @pytest.mark.parametrize("paged", [False, True], ids=["non_paged", "paged"])
 @pytest.mark.parametrize("cuda_graphs", [False, True], ids=["default", "cudagraphs"])
 def test_dpa_torch_compile_kv_cache_decoding(monkeypatch, backend, paged, cuda_graphs):
@@ -1230,7 +1247,7 @@ _EAGER_FALLBACK_CASES = {
 }
 
 
-@pytest.mark.parametrize("backend", ["flash", "unfused"])
+@pytest.mark.parametrize("backend", ["flash", "fused", "unfused"])
 @pytest.mark.parametrize("case", _EAGER_FALLBACK_CASES.keys())
 def test_dpa_torch_compile_eager_fallback(monkeypatch, backend, case):
     """Calls that cannot be traced run as an eager island instead, with a
@@ -1241,6 +1258,7 @@ def test_dpa_torch_compile_eager_fallback(monkeypatch, backend, case):
     dtype = torch.bfloat16
     config_name, make_inputs = _EAGER_FALLBACK_CASES[case]
     spec = _DPA_COMPILE_CONFIGS[config_name]
+    _skip_unsupported(spec, backend, dtype)
     _force_dpa_backend(monkeypatch, backend)
 
     module = _make_dpa(spec, dtype)
