@@ -18,6 +18,29 @@ from ...constants import TE_DType as torch_to_transformer_engine_dtype, TE_DType
 from ...utils import is_non_tn_fp8_gemm_supported, _empty_tensor
 
 
+def _dequantize_fp8_impl(
+    data: torch.Tensor, scale_inv: torch.Tensor, fp8_dtype: int, dtype: torch.dtype
+) -> torch.Tensor:
+    tensor = Float8TensorStorage(
+        data=data, fp8_scale_inv=scale_inv, fp8_dtype=DType(fp8_dtype), fake_dtype=dtype
+    )
+    return tex.dequantize(tensor, torch_to_transformer_engine_dtype[dtype])
+
+
+try:
+    _dequantize_fp8 = torch.library.custom_op(
+        "transformer_engine_compile::dequantize_fp8", mutates_args=()
+    )(_dequantize_fp8_impl)
+
+    @_dequantize_fp8.register_fake
+    def _(data: torch.Tensor, scale_inv: torch.Tensor, fp8_dtype: int, dtype: torch.dtype):
+        del scale_inv, fp8_dtype
+        return torch.empty(data.shape, dtype=dtype, device=data.device)
+
+except Exception:  # pylint: disable=broad-exception-caught
+    _dequantize_fp8 = _dequantize_fp8_impl
+
+
 class _FromFloat8Func(torch.autograd.Function):
     """Cast from FP8 to other dtype"""
 
@@ -28,8 +51,6 @@ class _FromFloat8Func(torch.autograd.Function):
         dtype: torch.dtype,
     ) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        te_dtype = torch_to_transformer_engine_dtype[dtype]
-
         # Make sure FP8 data is in expected format
         if tensor._data is not None:
             if tensor._data.numel() == 0:
@@ -41,8 +62,8 @@ class _FromFloat8Func(torch.autograd.Function):
                     tensor._data.view(fp8_torch_dtype).float()
                     * tensor._scale_inv.to(tensor._data.device)
                 ).to(dtype)
-            # Cast from FP8
-            return tex.dequantize(tensor, te_dtype)
+            # Cast from FP8 (custom op so torch.compile can trace it)
+            return _dequantize_fp8(tensor._data, tensor._scale_inv, int(tensor._fp8_dtype), dtype)
 
         if tensor._transpose is not None and not tensor._transpose_invalid:
             # A columnwise-only tensor stores the logical last dimension first

@@ -82,6 +82,11 @@ class Float8Quantizer(Quantizer):
         self.amax = amax
         self.dtype = DType.cast(fp8_dtype)
 
+    def tangent_quantizer(self) -> Quantizer:
+        quantizer = super().tangent_quantizer()
+        quantizer.dtype = DType.kFloat8E5M2
+        return quantizer
+
     def copy(self) -> Float8Quantizer:
         """Create shallow copy"""
 
@@ -259,6 +264,11 @@ class Float8CurrentScalingQuantizer(Quantizer):
         state = self.__dict__.copy()
         state["amax_reduction_group"] = None
         return state
+
+    def tangent_quantizer(self) -> Quantizer:
+        quantizer = super().tangent_quantizer()
+        quantizer.dtype = DType.kFloat8E5M2
+        return quantizer
 
     def copy(self) -> Float8CurrentScalingQuantizer:
         """Create shallow copy"""
