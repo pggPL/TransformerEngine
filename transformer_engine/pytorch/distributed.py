@@ -39,7 +39,7 @@ from .utils import (
 )
 
 from .constants import dist_group_type
-from .quantization import FP8GlobalStateManager, autocast
+from .quantization import FP8GlobalStateManager, autocast, quantization_backward_scope
 from .tensor.float8_tensor import Float8Quantizer, Float8Tensor, Float8CurrentScalingQuantizer
 from .tensor.mxfp8_tensor import MXFP8Quantizer
 from .tensor.nvfp4_tensor import NVFP4Quantizer
@@ -247,8 +247,6 @@ class activation_recompute_forward(AbstractContextManager, ContextDecorator):
     activations, followed by calculation of gradients using these values.
     """
 
-    _is_first_fp8_module: List = []
-
     def __init__(self, activation_recompute: bool = False, recompute_phase: bool = False):
         super().__init__()
         self.activation_recompute = activation_recompute
@@ -263,12 +261,6 @@ class activation_recompute_forward(AbstractContextManager, ContextDecorator):
         # the recompute forward.
         _IN_ACTIVATION_RECOMPUTE_REGION = self.activation_recompute
         _ACTIVATION_RECOMPUTE_PHASE = self.recompute_phase
-
-        qstate = FP8GlobalStateManager.quantization_state
-        if self.activation_recompute and not self.recompute_phase:
-            activation_recompute_forward._is_first_fp8_module.append(qstate.is_first_fp8_module)
-        if self.activation_recompute and self.recompute_phase:
-            qstate.is_first_fp8_module = activation_recompute_forward._is_first_fp8_module.pop(0)
 
     def __exit__(self, *exc_details):
         global _IN_ACTIVATION_RECOMPUTE_REGION, _ACTIVATION_RECOMPUTE_PHASE
@@ -372,9 +364,14 @@ class _CheckpointFunction(torch.autograd.Function):
         # Preserve torch autocast context for the backward pass
         torch_gpu_amp_ctx, torch_cpu_amp_ctx = _get_active_autocast_contexts()
 
-        with torch.no_grad(), forward_ctx:
-            with activation_recompute_forward(activation_recompute=True, recompute_phase=False):
-                outputs = run_function(*args, **kwargs)
+        # An ineligible nested checkpoint must inherit an enclosing recompute phase.
+        activation_recompute_ctx = (
+            activation_recompute_forward(activation_recompute=True, recompute_phase=False)
+            if any(ctx.needs_input_grad)
+            else nullcontext()
+        )
+        with torch.no_grad(), forward_ctx, activation_recompute_ctx:
+            outputs = run_function(*args, **kwargs)
 
         # Divide hidden states across model parallel group and only keep
         # the chunk corresponding to the current rank.
@@ -407,6 +404,20 @@ class _CheckpointFunction(torch.autograd.Function):
         ctx, *args: Tuple[Union[torch.Tensor, None], ...]
     ) -> Tuple[Union[torch.Tensor, None], ...]:
         """Call backward function with activation recomputation."""
+        recipe = ctx.fp8_recipe
+        update_scope = (
+            quantization_backward_scope()
+            if ctx.fp8 and (recipe.delayed() or recipe.custom())
+            else nullcontext()
+        )
+        with update_scope:
+            return _CheckpointFunction._backward(ctx, *args)
+
+    @staticmethod
+    def _backward(
+        ctx, *args: Tuple[Union[torch.Tensor, None], ...]
+    ) -> Tuple[Union[torch.Tensor, None], ...]:
+        """Recompute the forward and run its nested backward."""
         if not torch.autograd._is_checkpoint_valid():
             raise RuntimeError(
                 "Checkpointing is not compatible with .grad(), please use .backward() if possible"
@@ -627,6 +638,7 @@ def get_te_classes():
         DotProductAttention,
     )
     from .attention.dot_product_attention.backends import UnfusedDotProductAttention
+    from .attention.linear_attention.base import LinearAttentionBase
     from .attention.multi_head_attention import MultiheadAttention
     from .transformer import TransformerLayer
 
@@ -634,6 +646,7 @@ def get_te_classes():
         LayerNorm,
         RMSNorm,
         TransformerEngineBaseModule,
+        LinearAttentionBase,
         UnfusedDotProductAttention,
         DotProductAttention,
         MultiheadAttention,
@@ -739,6 +752,13 @@ def checkpoint(
             debug=debug,
             **kwargs,
         )
+
+    # When checkpoint is entered with autograd disabled, run the forward directly
+    # to avoid unreachable FP8 recompute state. Preserve the forward context.
+    if not torch.is_grad_enabled():
+        forward_ctx, _ = context_fn()
+        with forward_ctx:
+            return function(*args, **kwargs)
 
     from .module.base import TransformerEngineBaseModule
 

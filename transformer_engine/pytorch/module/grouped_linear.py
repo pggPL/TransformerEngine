@@ -40,7 +40,7 @@ from ..utils import (
     clear_tensor_data,
     get_device_compute_capability,
     init_method_constant,
-    requires_grad,
+    mark_grouped_tensor,
     resolve_grouped_linear_single_param_flags,
     get_nvtx_range_context,
 )
@@ -553,6 +553,10 @@ class _GroupedLinear(torch.autograd.Function):
             if not inp.requires_grad:
                 weights_to_save = [None] * len(weights_to_save)
 
+            # Megatron-LM paged stashing uses this marker to identify the dynamic activation
+            # buffers among the tensors saved by the GroupedLinear autograd function. The
+            # operation-fuser grouped MLP applies the same marker to its saved activations.
+            mark_grouped_tensor(input_to_save)
             tensors_to_save, tensor_objects = prepare_for_saving(
                 input_to_save,
                 *weights_to_save,
@@ -599,12 +603,9 @@ class _GroupedLinear(torch.autograd.Function):
             ctx.use_bias = use_bias
             ctx.inp_shape = inp.shape
             ctx.requires_dgrad = inp.requires_grad
-            ctx.reduce_and_update_bwd_fp8_tensors = False
-            if ctx.fp8 and requires_grad(inp, weights[0], biases[0]):
-                ctx.reduce_and_update_bwd_fp8_tensors = (
-                    ctx.reduce_and_update_bwd_fp8_tensors
-                    or FP8GlobalStateManager.is_first_fp8_module()
-                )
+            ctx.request_backward_quantization_update = (
+                ctx.fp8 and FP8GlobalStateManager.backward_quantization_update_needed()
+            )
             ctx.wgrad_store = wgrad_store
             ctx.debug = False
             ctx.save_original_input = save_original_input
@@ -975,12 +976,6 @@ class _GroupedLinear(torch.autograd.Function):
             ctx.sequence_parallel = sequence_parallel
             ctx.inp_shape = inp.shape
             ctx.requires_dgrad = inp.requires_grad
-            ctx.reduce_and_update_bwd_fp8_tensors = False
-            if ctx.fp8 and requires_grad(inp, weights[0], biases[0]):
-                ctx.reduce_and_update_bwd_fp8_tensors = (
-                    ctx.reduce_and_update_bwd_fp8_tensors
-                    or FP8GlobalStateManager.is_first_fp8_module()
-                )
             ctx.wgrad_store = wgrad_store
             ctx.debug = debug
             ctx.save_original_input = save_original_input
@@ -998,7 +993,9 @@ class _GroupedLinear(torch.autograd.Function):
                 ctx.grad_input_quantizers = [None] * num_gemms
                 ctx.grad_weight_quantizers = [None] * num_gemms
                 ctx.grad_output_quantizers = [None] * num_gemms
-                ctx.reduce_and_update_bwd_fp8_tensors = False
+            ctx.request_backward_quantization_update = (
+                ctx.fp8 and FP8GlobalStateManager.backward_quantization_update_needed()
+            )
 
         # [*, in_features] -> [*, out_features] except first dimension changes for SP
         return out.view(-1, *inp.shape[1:-1], out.shape[-1]), new_workspaces
@@ -1250,8 +1247,8 @@ class _GroupedLinear(torch.autograd.Function):
         else:
             wgrad_list = [None] * num_weight_args
 
-        if ctx.reduce_and_update_bwd_fp8_tensors:
-            FP8GlobalStateManager.reduce_and_update_fp8_tensors(forward=False)
+        if ctx.request_backward_quantization_update:
+            FP8GlobalStateManager.request_backward_quantization_update()
         return (
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
             None,  # m_splits
@@ -1517,8 +1514,8 @@ class _GroupedLinear(torch.autograd.Function):
             ):
                 grad_biases = [None] * ctx.num_gemms
 
-        if ctx.reduce_and_update_bwd_fp8_tensors:
-            FP8GlobalStateManager.reduce_and_update_fp8_tensors(forward=False)
+        if ctx.request_backward_quantization_update:
+            FP8GlobalStateManager.request_backward_quantization_update()
         return (
             dgrad.view(ctx.inp_shape) if ctx.requires_dgrad else None,
             None,  # m_splits
@@ -1809,6 +1806,8 @@ class GroupedLinear(TransformerEngineBaseModule):
         if generation is None:
             return
         if self._custom_quantizer_cache.get(meta_key) is generation:
+            return
+        if not fwd and not torch.is_grad_enabled():
             return
 
         if fwd:
@@ -2455,8 +2454,7 @@ class GroupedLinear(TransformerEngineBaseModule):
             # a failed generation remains installed when the caller catches the error.
             recipe = FP8GlobalStateManager.get_fp8_recipe()
             self._validate_custom_recipe_quantizers(True, recipe)
-            if torch.is_grad_enabled():
-                self._validate_custom_recipe_quantizers(False, recipe)
+            self._validate_custom_recipe_quantizers(False, recipe)
 
         weight_quantizers = self._get_weight_quantizers()
         input_quantizers, output_quantizers = (

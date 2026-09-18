@@ -28,6 +28,7 @@ from transformer_engine.common.recipe import (
 from transformer_engine.pytorch import Float8CurrentScalingQuantizer, NVFP4Quantizer
 from transformer_engine.pytorch.constants import NVFP4_BLOCK_SCALING_SIZE
 from transformer_engine.pytorch.distributed import gather_along_first_dim
+from transformer_engine.pytorch.quantization import FP8GlobalStateManager
 from run_layer_with_overlap import _compare_tensors
 
 SEQ_LEN, BATCH_SIZE = 16, 16
@@ -132,6 +133,7 @@ def main(argv=None, namespace=None):
         test_layernorm_linear,
         test_layernorm_mlp,
         test_transformer_layer,
+        test_backward_update_with_skipped_ranks,
     ]
 
     for test in test_dict:
@@ -292,6 +294,15 @@ def _check_gradients(model_distributed, model_single, main_grad_check=False):
         assert not bool(numerics_failed.item())
 
 
+def _check_input_grads(input_single_node, input_distributed, parallel_mode, sequence_parallel):
+    grad_d = input_distributed.grad
+    if parallel_mode == "row":
+        grad_d = _gather(grad_d, dim=1)
+    elif sequence_parallel:
+        grad_d = _gather(grad_d, dim=0)
+    _check_outputs(input_single_node.grad, grad_d)
+
+
 def _copy_params(model_distributed, model_single):
     for dist_param, single_param in zip(model_distributed.parameters(), model_single.parameters()):
         with torch.no_grad():
@@ -310,22 +321,35 @@ def _copy_params(model_distributed, model_single):
 
 
 def _apply_models(
-    model_single_node, model_distributed, input_single_node, input_distributed, **kwargs
+    model_single_node,
+    model_distributed,
+    input_single_node,
+    input_distributed,
+    use_compile=False,
+    compile_mode="default",
+    **kwargs,
 ):
     _alloc_main_grad(model_single_node, model_distributed)  # for fuse_wgrad_accumulation=True
     input_single_node.requires_grad_()
     input_distributed.requires_grad_()
+    forward_single_node = model_single_node
+    forward_distributed = model_distributed
+    if use_compile:
+        # Reset the compile cache so parametrized cases don't trip recompile_limit.
+        torch._dynamo.reset()
+        forward_single_node = torch.compile(model_single_node, fullgraph=True, mode=compile_mode)
+        forward_distributed = torch.compile(model_distributed, fullgraph=True, mode=compile_mode)
     with te.autocast(
         enabled=QUANTIZATION is not None,
         recipe=quantization_recipe(),
     ):
-        output_single_node = model_single_node(input_single_node, **kwargs)
+        output_single_node = forward_single_node(input_single_node, **kwargs)
     with te.autocast(
         enabled=QUANTIZATION is not None,
         recipe=quantization_recipe(),
         amax_reduction_group=NCCL_WORLD,
     ):
-        output_distributed = model_distributed(input_distributed, **kwargs)
+        output_distributed = forward_distributed(input_distributed, **kwargs)
     return output_single_node, output_distributed
 
 
@@ -641,12 +665,20 @@ def test_quantized_all_gather():
 #                   Linear                 #
 ############################################
 @run_distributed_test()
-def _test_linear(parallel_mode=None, sequence_parallel=False, **kwargs):
+def _test_linear(
+    parallel_mode=None,
+    sequence_parallel=False,
+    use_compile=False,
+    compile_mode="default",
+    **kwargs,
+):
     """Test the linear layer with specified parallel mode and sequence parallelization.
 
     Args:
         parallel_mode (str): 'row' or 'column' parallelism.
         sequence_parallel (bool): Enable sequence parallelism if True.
+        use_compile (bool): Wrap the modules in ``torch.compile`` before running.
+        compile_mode (str): ``torch.compile`` mode ("default" or "reduce-overhead").
         kwargs (dict): Additional arguments for the linear layer.
     """
     # Set parameter data type
@@ -696,7 +728,12 @@ def _test_linear(parallel_mode=None, sequence_parallel=False, **kwargs):
 
     # Apply models
     output_single_node, output_distributed = _apply_models(
-        model_single_node, model_distributed, input_single_node, input_distributed
+        model_single_node,
+        model_distributed,
+        input_single_node,
+        input_distributed,
+        use_compile=use_compile,
+        compile_mode=compile_mode,
     )
 
     if "return_bias" in kwargs:
@@ -728,6 +765,8 @@ def _test_linear(parallel_mode=None, sequence_parallel=False, **kwargs):
             main_grad_check=("fuse_wgrad_accumulation" in kwargs),
         )
 
+    _check_input_grads(input_single_node, input_distributed, parallel_mode, sequence_parallel)
+
 
 def test_linear():
     """Run linear layer tests with various configurations."""
@@ -740,12 +779,20 @@ def test_linear():
         {"params_dtype": torch.float16 if QUANTIZATION != "nvfp4" else torch.bfloat16},
         {"delay_wgrad_compute": True},
         {"save_original_input": True},
+        {"use_compile": True},
+        {"use_compile": True, "compile_mode": "reduce-overhead"},
     ]
 
     for kwargs in kwargs_list:
         if kwargs.get("save_original_input", False) and QUANTIZATION == "fp8":
             continue
-        if kwargs.get("delay_wgrad_compute", False) and NVTE_TEST_NVINSPECT_ENABLED:
+        # use_compile: debug instrumentation forces the eager fallback, so
+        # compile is a no-op there.
+        if NVTE_TEST_NVINSPECT_ENABLED and (
+            kwargs.get("delay_wgrad_compute", False) or kwargs.get("use_compile", False)
+        ):
+            continue
+        if kwargs.get("use_compile", False) and QUANTIZATION == "fp8":
             continue
         for parallel_mode in ["column", "row"]:
             for sequence_parallel in [False, True]:
@@ -1137,6 +1184,75 @@ def test_transformer_layer():
     for kwargs in kwargs_list:
         for sequence_parallel in [False, True]:
             _test_transformer_layer_parallel(sequence_parallel, **kwargs)
+
+
+############################################
+#      Delayed-scaling backward update     #
+############################################
+
+
+def _assert_bwd_state_matches_across_ranks(model):
+    for module in model:
+        state = module.fp8_meta["scaling_bwd"]
+        for t in (state.amax_history, state.scale):
+            gathered = [torch.empty_like(t) for _ in range(WORLD_SIZE)]
+            dist.all_gather(gathered, t)
+            for other in gathered[1:]:
+                assert torch.equal(other, gathered[0]), f"{gathered[0]} vs {other}"
+
+
+def _backward_update_step_skipped_module(model, recipe):
+    """Odd ranks feed the first module an empty batch and drop its output."""
+    rows = BATCH_SIZE if WORLD_RANK % 2 == 0 else 0
+    x_a = torch.randn(rows, HIDDEN_SIZE, device="cuda", requires_grad=True)
+    x_b = torch.randn(BATCH_SIZE, HIDDEN_SIZE, device="cuda", requires_grad=True)
+    with te.autocast(enabled=True, recipe=recipe):
+        y_a = model[0](x_a)
+        y_b = model[1](x_b)
+    loss = y_b.float().sum()
+    if y_a.numel() > 0:
+        loss = loss + y_a.float().sum()
+    loss.backward()
+
+
+def _backward_update_step_no_backward_in_scope(model, recipe):
+    """Odd ranks run no backward at all; the scope still triggers the update."""
+    x = torch.randn(BATCH_SIZE, HIDDEN_SIZE, device="cuda", requires_grad=True)
+    with te.quantization_backward_scope():
+        with te.autocast(enabled=True, recipe=recipe):
+            y = model[1](model[0](x))
+        if WORLD_RANK % 2 == 0:
+            y.float().sum().backward()
+
+
+@run_distributed_test()
+def _test_backward_update_with_skipped_ranks(step_fn):
+    # Drop amax buffers registered by earlier tests so only this model is reduced.
+    FP8GlobalStateManager.reset()
+    model = nn.ModuleList([te.Linear(HIDDEN_SIZE, HIDDEN_SIZE, bias=True) for _ in range(2)]).cuda()
+    recipe = DelayedScaling(reduce_amax=True)
+    qstate = FP8GlobalStateManager.quantization_state
+    for _ in range(3):
+        model.zero_grad(set_to_none=True)
+        step_fn(model, recipe)
+        assert not qstate.pending_backward_quantization_update
+        assert qstate.backward_quantization_update_callback_task_id is None
+        _assert_bwd_state_matches_across_ranks(model)
+    # Ranks that skipped backward must have received the other ranks' amaxes.
+    for module in model:
+        assert module.fp8_meta["scaling_bwd"].amax_history.abs().sum() > 0
+
+
+def test_backward_update_with_skipped_ranks():
+    """Every rank must join the amax reduction even if it skipped backward."""
+    if QUANTIZATION != "fp8":
+        return
+    for step_fn in (
+        _backward_update_step_skipped_module,
+        _backward_update_step_no_backward_in_scope,
+    ):
+        _test_backward_update_with_skipped_ranks(step_fn)
+    FP8GlobalStateManager.reset()
 
 
 if __name__ == "__main__":
