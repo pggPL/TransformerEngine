@@ -41,6 +41,7 @@ from ..utils import (
     clear_tensor_data,
     get_device_compute_capability,
     init_method_constant,
+    mark_grouped_tensor,
     requires_grad,
     resolve_grouped_linear_single_param_flags,
     get_nvtx_range_context,
@@ -896,6 +897,10 @@ def _grouped_linear_fused_forward(args: GroupedLinearFwdArgs) -> Tuple[Any, ...]
         if not args.input_requires_grad:
             weights_to_save = [None] * len(weights_to_save)
 
+        # Megatron-LM paged stashing uses this marker to identify the dynamic activation
+        # buffers among the tensors saved by the GroupedLinear autograd function. The
+        # operation-fuser grouped MLP applies the same marker to its saved activations.
+        mark_grouped_tensor(input_to_save)
         tensors_to_save = (
             input_to_save,
             *weights_to_save,
