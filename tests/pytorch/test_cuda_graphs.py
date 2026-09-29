@@ -5,6 +5,8 @@
 from typing import Callable, Dict, Iterable, List, Tuple, Union
 import pytest
 import copy
+import gc
+import weakref
 
 import torch
 from transformer_engine.pytorch import (
@@ -16,6 +18,7 @@ from transformer_engine.pytorch import (
     MultiheadAttention,
     TransformerLayer,
     autocast,
+    quantization_backward_scope,
     quantized_model_init,
     make_graphed_callables,
     is_fp8_available,
@@ -507,6 +510,71 @@ def test_make_graphed_callables(
     assert_all_equal(outputs, graph_outputs_mode2)
 
 
+@pytest.mark.skipif(not fp8_available, reason="FP8 is not supported")
+def test_graphed_delayed_scaling_update_respects_backward_scope(monkeypatch) -> None:
+    def amax_compute_algo(amax_history):
+        return torch.max(amax_history, dim=0).values
+
+    fp8_recipe = recipe.DelayedScaling(
+        amax_history_len=4,
+        amax_compute_algo=amax_compute_algo,
+    )
+    model = Linear(128, 128, bias=False, params_dtype=torch.bfloat16).cuda()
+    for param in model.parameters():
+        param.grad = torch.empty_like(param)
+    sample = torch.randn(
+        32,
+        128,
+        device="cuda",
+        dtype=torch.bfloat16,
+        requires_grad=False,
+    )
+    model = make_graphed_callables(
+        model,
+        (sample,),
+        num_warmup_iters=1,
+        enabled=True,
+        recipe=fp8_recipe,
+    )
+
+    update_count = 0
+    original_update = FP8GlobalStateManager.reduce_and_update_fp8_tensors.__func__
+
+    def counted_update(cls, forward=True):
+        nonlocal update_count
+        if not forward:
+            update_count += 1
+        return original_update(cls, forward=forward)
+
+    monkeypatch.setattr(
+        FP8GlobalStateManager,
+        "reduce_and_update_fp8_tensors",
+        classmethod(counted_update),
+    )
+
+    bwd_state = model.fp8_meta["scaling_bwd"]
+
+    def run_backward(use_scope):
+        model.zero_grad(set_to_none=False)
+        bwd_state.amax_history.zero_()
+        bwd_state.scale.fill_(1.0)
+        with autocast(enabled=True, recipe=fp8_recipe):
+            out = model(torch.randn_like(sample))
+        if use_scope:
+            with quantization_backward_scope():
+                out.float().sum().backward()
+        else:
+            out.float().sum().backward()
+        assert not bwd_state.amax_history[:-1].any()
+        assert bwd_state.amax_history[-1].any()
+
+    run_backward(use_scope=False)
+    assert update_count == 1
+    run_backward(use_scope=True)
+    assert update_count == 2
+    reset_graphs(model)
+
+
 _test_make_graphed_callables_with_fp8_weight_caching_modules = [
     "transformer",
     "layernorm_mlp_nocheckpoint",
@@ -992,6 +1060,206 @@ def _make_capture_time_hooks(
         }
         for module_idx in range(len(modules))
     ]
+
+
+def test_ordered_warmup_releases_consumed_outputs() -> None:
+    """Ordered warmup should only retain outputs until their corresponding backward."""
+
+    class OutputLifetimeModule(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.previous_output = None
+
+        def forward(self, input_: torch.Tensor) -> torch.Tensor:
+            is_warmup = not torch.cuda.is_current_stream_capturing()
+            if is_warmup and self.previous_output is not None:
+                assert self.previous_output() is None
+            output = input_ * 2
+            if is_warmup:
+                self.previous_output = weakref.ref(output)
+            return output
+
+    module = OutputLifetimeModule()
+    sample_args = tuple((torch.ones(4, 8, device="cuda", requires_grad=True),) for _ in range(2))
+    graphed_callables = make_graphed_callables(
+        (module,),
+        sample_args,
+        num_warmup_iters=2,
+        _order=[1, -1, 1, -1],
+        _num_layers_per_chunk=[1],
+    )
+    assert module.previous_output is not None
+    assert module.previous_output() is None
+    reset_graphs(graphed_callables)
+
+
+def test_unordered_warmup_releases_consumed_outputs() -> None:
+    """Unordered warmup should release each output after its corresponding backward."""
+
+    class OutputLifetimeModule(torch.nn.Module):
+        def __init__(self, output_refs: list, module_idx: int) -> None:
+            super().__init__()
+            self.output_refs = output_refs
+            self.module_idx = module_idx
+            self.capture_started = False
+
+        def forward(self, input_: torch.Tensor) -> torch.Tensor:
+            output = input_ * 2
+            if torch.cuda.is_current_stream_capturing():
+                self.capture_started = True
+            else:
+                self.output_refs[self.module_idx] = weakref.ref(output)
+            return output
+
+    output_refs = [None, None]
+    modules = tuple(OutputLifetimeModule(output_refs, module_idx) for module_idx in range(2))
+
+    def first_module_backward_pre_hook(_module: torch.nn.Module) -> None:
+        if not modules[0].capture_started:
+            assert output_refs[1] is not None
+            assert output_refs[1]() is None
+
+    graphed_callables = make_graphed_callables(
+        modules,
+        tuple((torch.ones(4, 8, device="cuda", requires_grad=True),) for _ in modules),
+        num_warmup_iters=2,
+        capture_time_hooks=[
+            {"backward_pre_hooks": {0: first_module_backward_pre_hook}},
+            None,
+        ],
+    )
+    assert all(output_ref is not None and output_ref() is None for output_ref in output_refs)
+    reset_graphs(graphed_callables)
+
+
+def test_inference_warmup_does_not_retain_outputs() -> None:
+    """Inference warmup should release outputs as soon as each forward returns."""
+
+    class OutputLifetimeModule(torch.nn.Module):
+        def __init__(self, previous_output: list) -> None:
+            super().__init__()
+            self.previous_output = previous_output
+
+        def forward(self, input_: torch.Tensor) -> torch.Tensor:
+            is_warmup = not torch.cuda.is_current_stream_capturing()
+            if is_warmup and self.previous_output[0] is not None:
+                assert self.previous_output[0]() is None
+            output = input_ * 2
+            if is_warmup:
+                self.previous_output[0] = weakref.ref(output)
+            return output
+
+    previous_output = [None]
+    modules = tuple(OutputLifetimeModule(previous_output).eval() for _ in range(2))
+    graphed_callables = make_graphed_callables(
+        modules,
+        tuple((torch.ones(4, 8, device="cuda"),) for _ in modules),
+        num_warmup_iters=2,
+    )
+    assert previous_output[0] is not None
+    assert previous_output[0]() is None
+    reset_graphs(graphed_callables)
+
+
+def test_reused_capture_buffers_release_outputs_after_backward() -> None:
+    """Capture locals must not keep weak-refed output buffers alive."""
+
+    class OutputLifetimeModule(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.previous_capture_output = None
+
+        def forward(self, input_: torch.Tensor) -> torch.Tensor:
+            if (
+                torch.cuda.is_current_stream_capturing()
+                and self.previous_capture_output is not None
+            ):
+                assert self.previous_capture_output() is None
+            output = input_ * 2
+            if torch.cuda.is_current_stream_capturing():
+                self.previous_capture_output = weakref.ref(output)
+            return output
+
+    module = OutputLifetimeModule()
+    sample_args = tuple((torch.ones(4, 8, device="cuda", requires_grad=True),) for _ in range(2))
+    graphed_callables = make_graphed_callables(
+        (module,),
+        sample_args,
+        _order=[1, -1, 1, -1],
+        _num_layers_per_chunk=[1],
+        _reuse_graph_input_output_buffers=True,
+    )
+    assert module.previous_capture_output is not None
+    assert module.previous_capture_output() is None
+    reset_graphs(graphed_callables)
+
+
+def test_reset_releases_only_the_selected_callable() -> None:
+    """Reset releases one callable's graph state without retaining its peers."""
+
+    class CaptureOutputModule(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.capture_output = None
+
+        def forward(self, input_: torch.Tensor) -> torch.Tensor:
+            output = input_ * 2
+            if torch.cuda.is_current_stream_capturing():
+                self.capture_output = weakref.ref(output)
+            return output
+
+    modules = tuple(CaptureOutputModule().cuda() for _ in range(2))
+    graphed_callables = make_graphed_callables(
+        modules,
+        tuple((torch.ones(4, device="cuda", requires_grad=True),) for _ in modules),
+    )
+    capture_outputs = tuple(module.capture_output for module in modules)
+    assert all(output is not None and output() is not None for output in capture_outputs)
+
+    graphed_callables[0].reset()
+    graphed_callables[0].reset()
+    gc.collect()
+    assert capture_outputs[0]() is None
+    assert capture_outputs[1]() is not None
+
+    output = graphed_callables[1](torch.randn(4, device="cuda", requires_grad=True))
+    output.sum().backward()
+    del output
+    graphed_callables[1].reset()
+    gc.collect()
+    assert capture_outputs[1]() is None
+
+
+@pytest.mark.parametrize("with_order", (False, True))
+def test_reset_rejects_all_replay_entry_points(with_order: bool) -> None:
+    """Reset is idempotent and terminal for forward and backward replay."""
+
+    class TestModule(torch.nn.Module):
+        def forward(self, input_: torch.Tensor) -> torch.Tensor:
+            return input_ * 2
+
+    module = TestModule().cuda()
+    sample_input = torch.ones(4, device="cuda", requires_grad=True)
+    graph_options = {}
+    if with_order:
+        graph_options = {"_order": [1, -1], "_num_layers_per_chunk": [1]}
+    graphed_callable = make_graphed_callables(module, (sample_input,), **graph_options)
+    output = graphed_callable(torch.randn_like(sample_input, requires_grad=True))
+    torch.cuda.synchronize()
+
+    graphed_callable.reset()
+    graphed_callable.reset()
+    if not with_order:
+        # The eager fallback for a different training state is invalid after reset too.
+        graphed_callable.eval()
+
+    error = "has been reset and can no longer be used"
+    with pytest.raises(RuntimeError, match=error):
+        graphed_callable(torch.randn_like(sample_input, requires_grad=True))
+    with pytest.raises(RuntimeError, match=error):
+        graphed_callable.backward_dw()
+    with pytest.raises(RuntimeError, match=error):
+        output.sum().backward()
 
 
 @pytest.mark.parametrize("with_order", (False, True))
