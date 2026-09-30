@@ -15,6 +15,7 @@ import numpy as np
 import torch
 
 from .torch_version import torch_version
+from ..common import decode_cudnn_version
 from ..debug.pytorch.debug_quantization import DebugQuantizedTensor
 
 
@@ -715,21 +716,21 @@ def assert_dim_for_fp8_exec(*tensors: List[torch.Tensor]) -> None:
             )
 
 
-def check_gemm_dims(inp: torch.Tensor, weight: torch.Tensor, fp8: bool) -> None:
+def check_gemm_dims(inp_shape: Sequence[int], weight_shape: Sequence[int], fp8: bool) -> None:
     """Emit the TN GEMM (``y = x @ w^T``) dim constraints as ``torch._check``
     guards at trace time. torch.compile path only; eager validation lives in
     the op impl. Messages are constant: Dynamo forbids tensor closures here.
     """
     # pylint: disable=protected-access
     torch._check(
-        inp.shape[-1] == weight.shape[-1],
+        inp_shape[-1] == weight_shape[-1],
         lambda: "GEMM not possible: input last dim must equal in_features",
     )
     if not fp8:
         return
-    for tensor, name in ((inp, "input"), (weight, "weight")):
+    for shape, name in ((inp_shape, "input"), (weight_shape, "weight")):
         torch._check(
-            math.prod(tensor.shape[:-1]) % 8 == 0 and tensor.shape[-1] % 16 == 0,
+            math.prod(shape[:-1]) % 8 == 0 and shape[-1] % 16 == 0,
             lambda n=name: (
                 f"FP8 execution requires the {n}'s product of all dimensions except the"
                 " last to be divisible by 8 and its last dimension to be divisible by 16"
@@ -781,11 +782,7 @@ def _get_cudnn_version() -> Tuple[int, int, int]:
     """Runtime cuDNN version (major, minor, patch)"""
     import transformer_engine.pytorch.cpp_extensions as ext
 
-    encoded_version = ext.get_cudnn_version()
-    major_version_magnitude = 1000 if encoded_version < 90000 else 10000
-    major, encoded_version = divmod(encoded_version, major_version_magnitude)
-    minor, patch = divmod(encoded_version, 100)
-    return (major, minor, patch)
+    return decode_cudnn_version(ext.get_cudnn_version())
 
 
 @torch.compiler.assume_constant_result
