@@ -10,6 +10,7 @@ import torch
 
 import transformer_engine_torch as tex
 from transformer_engine.pytorch.cpp_extensions.fused_attn import QKVFormat
+from transformer_engine.pytorch.attention.custom_ops import rope_fwd, rope_bwd
 
 
 __all__ = ["RotaryPositionEmbedding", "apply_rotary_pos_emb", "apply_fused_qkv_rotary_pos_emb"]
@@ -139,11 +140,13 @@ class FusedRoPEFunc(torch.autograd.Function):
             "bshd",
             "thd",
         ), f"Unsupported tensor_format: {tensor_format}."
-        output = tex.fused_rope_forward(
+        compiling = torch.compiler.is_compiling()
+        forward_func = rope_fwd if compiling else tex.fused_rope_forward
+        output = forward_func(
             t,
             freqs,
             start_positions,
-            QKVFormat[tensor_format],
+            tensor_format if compiling else QKVFormat[tensor_format],
             interleaved,
             cu_seqlens,
             cp_size,
@@ -161,11 +164,13 @@ class FusedRoPEFunc(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
         """Fused RoPE backward."""
         freqs, cu_seqlens, start_positions = ctx.saved_tensors
-        grad_input = tex.fused_rope_backward(
+        compiling = torch.compiler.is_compiling()
+        backward_func = rope_bwd if compiling else tex.fused_rope_backward
+        grad_input = backward_func(
             grad_output,
             freqs,
             start_positions,
-            QKVFormat[ctx.tensor_format],
+            ctx.tensor_format if compiling else QKVFormat[ctx.tensor_format],
             ctx.interleaved,
             cu_seqlens,
             ctx.cp_size,

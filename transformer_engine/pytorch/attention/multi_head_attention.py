@@ -55,6 +55,19 @@ class MultiheadAttention(torch.nn.Module):
         Argument :attr:`attention_mask` in the :meth:`forward() <MultiheadAttention.forward>` method is only used when
         :attr:`attn_mask_type` includes ``"padding"`` or ``"arbitrary"``.
 
+    .. note::
+
+        ``torch.compile(fullgraph=True)`` supports single-GPU FP16/BF16 self- and
+        cross-attention in ``sbhd`` and ``bshd`` formats, including GQA, input
+        normalization and rotary embeddings, with the FlashAttention 2, fused
+        cuDNN and unfused backends. The projection and attention modules retain
+        their own compilation restrictions. Separate Q/K/V parameters are
+        concatenated during compilation; use ``fuse_qkv_params=True`` to avoid
+        that concatenation. GQA and rotary embeddings may require contiguous
+        copies of the projected Q/K/V tensors.
+        Q/K normalization, attention checkpointing, FP8 attention and context
+        parallelism are not supported with ``fullgraph=True``.
+
     Parameters
     ----------
     hidden_size : int
@@ -917,7 +930,8 @@ class MultiheadAttention(torch.nn.Module):
 
         fp8 = FP8GlobalStateManager.is_fp8_enabled()
         custom_recipe = False
-        if _dpa_fp8_recipe == "":
+        fp8_dpa = fp8_mha = float8_current_scaling = mxfp8_scaling = False
+        if fp8 and _dpa_fp8_recipe == "":
             fp8_recipe = FP8GlobalStateManager.get_fp8_recipe()
             custom_recipe = fp8_recipe.custom()
             fp8_dpa = fp8_recipe.fp8_dpa
@@ -937,7 +951,7 @@ class MultiheadAttention(torch.nn.Module):
                 float8_current_scaling, mxfp8_scaling = (
                     self.core_attention.get_qkv_quantization_capabilities()
                 )
-        else:
+        elif fp8:
             fp8_dpa = _dpa_fp8_recipe_dpa
             fp8_mha = _dpa_fp8_recipe_mha
             float8_current_scaling = _dpa_fp8_recipe == "Float8CurrentScaling"
@@ -1053,9 +1067,15 @@ class MultiheadAttention(torch.nn.Module):
                 # not qkv_weight_interleaved:
                 #  [sq, b, (np/ng + 2), ng, hn]
                 #  --> [sq, b, np/ng, np, hn], [sq, b, 1, ng, hn], [sq, b, 1, ng, hn]
-                query_layer, key_layer, value_layer = SplitAlongDim.apply(
-                    mixed_x_layer, split_dim, (num_queries_per_key_value, 1, 1)
-                )
+                split_sizes = (num_queries_per_key_value, 1, 1)
+                if torch.compiler.is_compiling():
+                    query_layer, key_layer, value_layer = torch.split(
+                        mixed_x_layer, split_sizes, dim=split_dim
+                    )
+                else:
+                    query_layer, key_layer, value_layer = SplitAlongDim.apply(
+                        mixed_x_layer, split_dim, split_sizes
+                    )
 
                 if self.qkv_format == "thd":
                     query_layer, key_layer, value_layer = (
@@ -1119,11 +1139,13 @@ class MultiheadAttention(torch.nn.Module):
                 value_layer = None
             else:
                 # mixed_kv_layer --> 2 [sk, b, ng, hn]
-                key_layer, value_layer = SplitAlongDim.apply(
-                    mixed_kv_layer,
-                    split_dim,
-                    mixed_kv_layer.shape[split_dim] // 2,
-                )
+                split_size = mixed_kv_layer.shape[split_dim] // 2
+                if torch.compiler.is_compiling():
+                    key_layer, value_layer = torch.split(mixed_kv_layer, split_size, dim=split_dim)
+                else:
+                    key_layer, value_layer = SplitAlongDim.apply(
+                        mixed_kv_layer, split_dim, split_size
+                    )
                 key_layer, value_layer = (
                     x.reshape(
                         x.size(0),
@@ -1242,6 +1264,10 @@ class MultiheadAttention(torch.nn.Module):
         # ===========================
         if is_cpu_offload_enabled():
             start_offload(query_layer, key_layer, value_layer, offload_base_tensor=True)
+        if torch.compiler.is_compiling() and packed_qkv_layer is None and packed_kv_layer is None:
+            query_layer, key_layer, value_layer = (
+                x.contiguous() for x in (query_layer, key_layer, value_layer)
+            )
         context_layer = self.core_attention(
             query_layer,
             key_layer,
