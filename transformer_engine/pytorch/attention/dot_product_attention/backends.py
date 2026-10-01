@@ -1548,6 +1548,10 @@ class FusedAttnBwdArgs:
     dO_quantizer: Optional[Any] = None
     dP_quantizer: Optional[Any] = None
 
+    def setup_grad_outputs(self, grads) -> None:
+        """Assign the attention output gradient; max_logit is non-differentiable."""
+        self.grad_output = grads[0]
+
     def setup_saved_tensors(self, ctx: torch.autograd.function.FunctionCtx) -> None:
         """Pull saved tensors from ``ctx`` into the fields backward consumes."""
         (
