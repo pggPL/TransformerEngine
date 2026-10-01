@@ -1124,6 +1124,131 @@ def test_dpa_torch_compile(monkeypatch, backend, config, dtype):
     )
 
 
+@pytest.mark.parametrize("backend", ["flash", "fused", "unfused"])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize(
+    "options, use_rope",
+    [
+        pytest.param({}, False, id="default"),
+        pytest.param(dict(input_layernorm=True), False, id="layernorm"),
+        pytest.param(dict(fuse_qkv_params=True), False, id="packed_h3d"),
+        pytest.param(
+            dict(fuse_qkv_params=True, qkv_weight_interleaved=False), False, id="packed_3hd"
+        ),
+        pytest.param(dict(num_gqa_groups=2), False, id="gqa"),
+        pytest.param(dict(num_gqa_groups=2, fuse_qkv_params=True), True, id="gqa_rope"),
+        pytest.param(dict(input_layernorm=True, rotary_pos_interleaved=True), True, id="rope"),
+        pytest.param(dict(attention_type="cross"), False, id="cross"),
+        pytest.param(
+            dict(attention_type="cross", input_layernorm=True, fuse_qkv_params=True),
+            True,
+            id="cross_rope",
+        ),
+        pytest.param(
+            dict(
+                input_layernorm=True,
+                normalization="RMSNorm",
+                return_layernorm_output=True,
+                return_bias=True,
+            ),
+            False,
+            id="outputs",
+        ),
+    ],
+)
+@pytest.mark.parametrize("qkv_format", ["sbhd", "bshd"])
+def test_mha_torch_compile(monkeypatch, backend, dtype, options, use_rope, qkv_format):
+    _check_mha_compile(monkeypatch, backend, dtype, options, use_rope, qkv_format)
+
+
+@pytest.mark.parametrize("backend", ["flash", "fused", "unfused"])
+@pytest.mark.parametrize("training", [True, False])
+def test_mha_torch_compile_cudagraphs(monkeypatch, backend, training):
+    if counters is None:
+        pytest.skip("Dynamo counters are unavailable")
+    counters.clear()
+    _check_mha_compile(
+        monkeypatch,
+        backend,
+        torch.bfloat16,
+        dict(input_layernorm=True, fuse_qkv_params=True),
+        True,
+        "bshd",
+        mode="reduce-overhead",
+        training=training,
+    )
+    assert not counters["inductor"]["cudagraph_skips"], "inductor skipped CUDA graphs"
+
+
+def _check_mha_compile(
+    monkeypatch,
+    backend,
+    dtype,
+    options,
+    use_rope,
+    qkv_format,
+    mode="default",
+    training=True,
+):
+    torch.manual_seed(1234)
+    torch._dynamo.reset()
+    _force_dpa_backend(monkeypatch, backend)
+    module = te.MultiheadAttention(
+        256,
+        4,
+        attention_dropout=0.0,
+        params_dtype=dtype,
+        device="cuda",
+        qkv_format=qkv_format,
+        attn_mask_type="no_mask" if options.get("attention_type") == "cross" else "causal",
+        **options,
+    ).train(training)
+    shape = (32, 2, 256) if qkv_format == "sbhd" else (2, 32, 256)
+    inp = torch.randn(shape, device="cuda", dtype=dtype, requires_grad=training)
+    kwargs = {}
+    grad_tensors = [inp, *module.parameters()] if training else []
+    if options.get("attention_type") == "cross":
+        enc_shape = (48, 2, 256) if qkv_format == "sbhd" else (2, 48, 256)
+        encoder = torch.randn(enc_shape, device="cuda", dtype=dtype, requires_grad=training)
+        kwargs["encoder_output"] = encoder
+        if training:
+            grad_tensors.append(encoder)
+    if use_rope:
+        kwargs["rotary_pos_emb"] = te.RotaryPositionEmbedding(
+            64, rotary_percent=0.5, interleaved=options.get("rotary_pos_interleaved", False)
+        )(48)
+    compiled = torch.compile(module, fullgraph=True, mode=mode)
+
+    def run(fn, output_grads=None):
+        with torch.set_grad_enabled(training):
+            outputs = fn(inp, **kwargs)
+        if isinstance(outputs, torch.Tensor):
+            outputs = (outputs,)
+        if training:
+            if output_grads is None:
+                output_grads = tuple(torch.randn_like(t) for t in outputs)
+            torch.autograd.backward(outputs, output_grads)
+        captured = [t.detach().clone() for t in outputs]
+        for tensor in grad_tensors:
+            assert tensor.grad is not None
+            captured.append(tensor.grad.clone())
+            tensor.grad = None
+        return captured, output_grads
+
+    # Compile the cold module, then exercise replay with changed inputs and weights.
+    for _ in range(3):
+        torch.compiler.cudagraph_mark_step_begin()
+        actual, output_grads = run(compiled)
+        _assert_dpa_backend(backend)
+        expected, _ = run(module, output_grads)
+        for result, reference in zip(actual, expected):
+            torch.testing.assert_close(result, reference, **dtype_tols(dtype))
+        with torch.no_grad():
+            inp.copy_(torch.randn_like(inp))
+            for parameter in module.parameters():
+                parameter.add_(0.001)
+
+
 def test_dpa_torch_compile_fused_op_unavailable(monkeypatch):
     """Without the fused attention custom op, FusedAttention is an eager island
     and everything around it is compiled: DotProductAttention traces up to the
@@ -2983,3 +3108,40 @@ def test_te_ops_forward_kwargs_compile():
         for gain in (3.0, 5.0):
             _check_ops(compiled, model, x, dy, {"gain": gain})
     _assert_custom_ops(graphs[-1:], "_affineop", present=False)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("tensor_format", ["sbhd", "bshd", "thd"])
+@pytest.mark.parametrize("interleaved", [False, True])
+@pytest.mark.parametrize("cp_size", [1, 2])
+def test_rope_torch_compile(dtype, tensor_format, interleaved, cp_size):
+    from transformer_engine.pytorch.attention.rope import apply_rotary_pos_emb
+
+    torch.manual_seed(4321)
+    freqs = te.RotaryPositionEmbedding(64, rotary_percent=0.5, interleaved=interleaved)(40)
+    positions = torch.tensor([1, 3], device="cuda", dtype=torch.int32)
+    cu_seqlens = torch.tensor([0, 16, 24], device="cuda", dtype=torch.int32)
+    shape = {"sbhd": (16, 2, 4, 64), "bshd": (2, 16, 4, 64), "thd": (24 // cp_size, 4, 64)}[
+        tensor_format
+    ]
+    inp = torch.randn((*shape[:-1], 128), device="cuda", dtype=dtype)[..., ::2].requires_grad_()
+    kwargs = dict(
+        tensor_format=tensor_format,
+        start_positions=positions,
+        interleaved=interleaved,
+        cu_seqlens=cu_seqlens if tensor_format == "thd" else None,
+        cp_size=cp_size,
+        cp_rank=cp_size - 1,
+    )
+
+    def fused(x):
+        return apply_rotary_pos_emb(x, freqs, fused=True, **kwargs)
+
+    torch._dynamo.reset()
+    actual = torch.compile(fused, fullgraph=True)(inp)
+    expected = apply_rotary_pos_emb(inp.float(), freqs, fused=False, **kwargs).to(dtype)
+    grad = torch.randn_like(expected)
+    (actual_grad,) = torch.autograd.grad(actual, inp, grad)
+    (expected_grad,) = torch.autograd.grad(expected, inp, grad)
+    torch.testing.assert_close(actual, expected, **dtype_tols(dtype))
+    torch.testing.assert_close(actual_grad, expected_grad, **dtype_tols(dtype))

@@ -269,7 +269,8 @@ def noop_cat(
         raise ValueError("Attempted to concatenate 0 tensors")
     if len(tensors) == 1:
         return tensors[0]
-    if is_in_onnx_export_mode():
+    # Storage adjacency cannot be inspected or guarded while tracing.
+    if torch.compiler.is_compiling() or is_in_onnx_export_mode():
         return torch.cat(tensors, dim=dim)
     return _NoopCatFunc.apply(dim, *tensors)
 

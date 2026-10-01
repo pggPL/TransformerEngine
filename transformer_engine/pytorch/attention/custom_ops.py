@@ -4,6 +4,8 @@
 
 """Attention kernels wrapped as custom ops, so they don't graph-break under torch.compile."""
 
+from typing import Optional
+
 import torch
 import transformer_engine_torch as tex
 
@@ -112,3 +114,67 @@ def _fa_prepare_bwd_fake(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> t
     del k, v
     b, s, n, h = q.shape
     return q.new_empty((s, b, n, 3 * h))
+
+
+@torch.library.custom_op("te_attention::rope_fwd", mutates_args=(), device_types="cuda")
+def rope_fwd(
+    tensor: torch.Tensor,
+    freqs: torch.Tensor,
+    start_positions: Optional[torch.Tensor],
+    tensor_format: str,
+    interleaved: bool,
+    cu_seqlens: Optional[torch.Tensor],
+    cp_size: int,
+    cp_rank: int,
+) -> torch.Tensor:
+    """Apply fused rotary position embeddings."""
+    return tex.fused_rope_forward(
+        tensor,
+        freqs,
+        start_positions,
+        QKVFormat[tensor_format],
+        interleaved,
+        cu_seqlens,
+        cp_size,
+        cp_rank,
+    )
+
+
+@torch.library.custom_op("te_attention::rope_bwd", mutates_args=(), device_types="cuda")
+def rope_bwd(
+    tensor: torch.Tensor,
+    freqs: torch.Tensor,
+    start_positions: Optional[torch.Tensor],
+    tensor_format: str,
+    interleaved: bool,
+    cu_seqlens: Optional[torch.Tensor],
+    cp_size: int,
+    cp_rank: int,
+) -> torch.Tensor:
+    """Backpropagate through fused rotary position embeddings."""
+    return tex.fused_rope_backward(
+        tensor,
+        freqs,
+        start_positions,
+        QKVFormat[tensor_format],
+        interleaved,
+        cu_seqlens,
+        cp_size,
+        cp_rank,
+    )
+
+
+@rope_fwd.register_fake
+@rope_bwd.register_fake
+def _rope_fake(
+    tensor: torch.Tensor,
+    freqs: torch.Tensor,
+    start_positions: Optional[torch.Tensor],
+    tensor_format: str,
+    interleaved: bool,
+    cu_seqlens: Optional[torch.Tensor],
+    cp_size: int,
+    cp_rank: int,
+) -> torch.Tensor:
+    del freqs, start_positions, tensor_format, interleaved, cu_seqlens, cp_size, cp_rank
+    return tensor.new_empty(tensor.shape)
