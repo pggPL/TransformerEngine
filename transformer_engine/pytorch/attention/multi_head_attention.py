@@ -61,9 +61,10 @@ class MultiheadAttention(torch.nn.Module):
         cross-attention in ``sbhd`` and ``bshd`` formats, including GQA, input
         normalization and rotary embeddings, with the FlashAttention 2, fused
         cuDNN and unfused backends. The projection and attention modules retain
-        their own compilation restrictions. Separate Q/K/V parameters are
-        concatenated during compilation; use ``fuse_qkv_params=True`` to avoid
-        that concatenation. GQA and rotary embeddings may require contiguous
+        their own compilation restrictions. Separate Q/K/V parameters sharing
+        contiguous storage do not require a concatenation copy inside projections.
+        Disjoint parameters and returned split biases are concatenated.
+        GQA and rotary embeddings may require contiguous
         copies of the projected Q/K/V tensors.
         Q/K normalization, attention checkpointing, FP8 attention and context
         parallelism are not supported with ``fullgraph=True``.
