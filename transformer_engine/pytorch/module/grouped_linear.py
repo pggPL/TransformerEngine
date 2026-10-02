@@ -63,7 +63,12 @@ from ..cpp_extensions import (
 )
 from ..constants import GemmParallelModes, dist_group_type
 from ..jit import no_torch_dynamo
-from ..cpu_offload import is_cpu_offload_enabled, mark_not_offload, start_offload
+from ..cpu_offload import (
+    is_cpu_offload_enabled,
+    mark_activation_offload,
+    mark_not_offload,
+    start_offload,
+)
 from ..triton.grouped_dbias_dscales import compute_grouped_dbias
 
 from ..tensor import (
@@ -74,11 +79,13 @@ from ..tensor import (
     IdentityQuantizer,
     MXFP8Quantizer,
 )
+from ..tensor._bulk import pack_tensor_buffers, unpack_tensor_buffers
 from ..quantized_tensor import (
     QuantizedTensorStorage,
     Quantizer,
     prepare_for_saving,
     restore_from_func_ctx,
+    restore_from_saved,
 )
 from ...debug.pytorch.debug_quantization import DebugQuantizer
 from ...debug.pytorch.debug_state import TEDebugState
@@ -843,20 +850,26 @@ class _GroupedLinear(torch.autograd.Function):
         m_splits = m_splits.tolist()
 
         inp_view = inp.reshape(-1, in_features)
-        # Disable bulk allocation when CPU offloading is active: offloading skips small
-        # tensors (like scales), but bulk allocation shares storage across all tensors,
-        # so if scales can't be offloaded, nothing in the group can be offloaded.
+        bulk_buffers = [] if cpu_offloading else None
         inputmats, _ = _split_quantization._split_quantize(
             inp_view,
             m_splits,
             input_quantizers,
             activation_dtype,
             with_quantized_output=fp8 or debug,
-            disable_bulk_allocation=cpu_offloading,
+            bulk_buffers=bulk_buffers,
         )
 
         if cpu_offloading:
-            start_offload(*inputmats)
+            if bulk_buffers:
+                input_tensors, input_objects = prepare_for_saving(*inputmats)
+                offload_tensors, _ = pack_tensor_buffers(input_tensors, bulk_buffers)
+                mark_activation_offload(*offload_tensors)
+                start_offload(*offload_tensors)
+                restore_from_saved(input_objects, input_tensors)
+                del input_tensors, input_objects, offload_tensors
+            else:
+                start_offload(*inputmats)
 
         # Initialize weights
         weights_fp8: list
@@ -964,6 +977,11 @@ class _GroupedLinear(torch.autograd.Function):
                 *saved_weights,
                 *biases,
             )
+            ctx.tensor_buffer_views = None
+            if bulk_buffers:
+                tensors_to_save, ctx.tensor_buffer_views = pack_tensor_buffers(
+                    tensors_to_save, bulk_buffers
+                )
             ctx.save_for_backward(*tensors_to_save)
             ctx.tensor_objects = tensor_objects
 
@@ -1345,7 +1363,15 @@ class _GroupedLinear(torch.autograd.Function):
             if ctx.grouped_tensor_supported:
                 return _GroupedLinear._backward_grouped_tensor(ctx, grad_output)
 
-            saved_tensors = restore_from_func_ctx(ctx)
+            if ctx.tensor_buffer_views is None:
+                saved_tensors = restore_from_func_ctx(ctx)
+            else:
+                saved_tensors = restore_from_saved(
+                    ctx.tensor_objects,
+                    unpack_tensor_buffers(ctx.saved_tensors, ctx.tensor_buffer_views),
+                )
+                ctx.tensor_objects = None
+                ctx.tensor_buffer_views = None
             N = ctx.num_gemms
             inputmats = saved_tensors[:N]
             weights = saved_tensors[N : 2 * N]

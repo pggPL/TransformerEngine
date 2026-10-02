@@ -4575,7 +4575,7 @@ class TestHybridGroupedLinearValidation:
 
         def tracked_split_quantize(tensor, m_splits, quantizers, **kwargs):
             result = real_split_quantize(tensor, m_splits, quantizers, **kwargs)
-            calls.append((tensor, result))
+            calls.append((tensor, result[0]))
             return result
 
         monkeypatch.setattr(split_quantization.tex, "split_quantize", tracked_split_quantize)
@@ -4622,7 +4622,7 @@ class TestHybridGroupedLinearValidation:
 
         def tracked_split_quantize(tensor, splits, quantizers, **kwargs):
             result = real_split_quantize(tensor, splits, quantizers, **kwargs)
-            calls.append((tensor, result))
+            calls.append((tensor, result[0]))
             return result
 
         monkeypatch.setattr(split_quantization.tex, "split_quantize", tracked_split_quantize)
@@ -4680,7 +4680,7 @@ class TestHybridGroupedLinearValidation:
 
         def tracked_split_quantize(tensor, m_splits, quantizers, **kwargs):
             result = real_split_quantize(tensor, m_splits, quantizers, **kwargs)
-            calls.append((tensor, result))
+            calls.append((tensor, result[0]))
             return result
 
         monkeypatch.setattr(split_quantization.tex, "split_quantize", tracked_split_quantize)
@@ -4722,7 +4722,7 @@ class TestHybridGroupedLinearValidation:
 
         def tracked_split_quantize(tensor, m_splits, quantizers, **kwargs):
             result = real_split_quantize(tensor, m_splits, quantizers, **kwargs)
-            calls.append((tensor, result))
+            calls.append((tensor, result[0]))
             return result
 
         monkeypatch.setattr(split_quantization.tex, "split_quantize", tracked_split_quantize)

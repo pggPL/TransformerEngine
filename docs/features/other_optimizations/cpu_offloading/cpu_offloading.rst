@@ -283,6 +283,10 @@ Caveats
    CUDA kernels that rely on specific memory layout may produce unexpected results.
    To mitigate (1), non-trivial views are excluded from offloading by default.
    TE attention kernels are an exception — they use internal handling that is tested and supported.
+   ``GroupedLinear`` also preserves the layout of bulk-allocated quantized activations:
+   it offloads each saved allocation once, including its scales and amax values,
+   then restores the typed tensor views during backward. The size threshold applies
+   to the allocation rather than each expert's data or scale tensor.
    Issue (2) is not mitigated — custom kernels that assume adjacent tensors share
    contiguous memory may still fail.
 

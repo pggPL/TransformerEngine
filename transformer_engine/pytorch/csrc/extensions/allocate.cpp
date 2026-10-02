@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "../extensions.h"
@@ -22,10 +23,9 @@ namespace pytorch {
  * Stream usage is not recorded, so there may be race conditions if
  * compute is performed on multiple streams.
  */
-std::vector<at::Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &shapes,
-                                      const std::vector<at::ScalarType> &dtypes,
-                                      std::optional<c10::Device> device,
-                                      std::optional<std::vector<size_t>> alignments) {
+std::pair<std::vector<at::Tensor>, at::Tensor> bulk_allocate_with_buffer(
+    const std::vector<std::vector<size_t>> &shapes, const std::vector<at::ScalarType> &dtypes,
+    std::optional<c10::Device> device, std::optional<std::vector<size_t>> alignments) {
   // Check shapes and dtypes
   const size_t n = shapes.size();
   NVTE_CHECK(dtypes.size() == n, "Got ", shapes.size(), " shapes and ", dtypes.size(), " dtypes.");
@@ -89,7 +89,14 @@ std::vector<at::Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &sh
           at::device(*device).dtype(dtypes[i])));
     }
   }
-  return out;
+  return {std::move(out), *base_buffer};
+}
+
+std::vector<at::Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &shapes,
+                                      const std::vector<at::ScalarType> &dtypes,
+                                      std::optional<c10::Device> device,
+                                      std::optional<std::vector<size_t>> alignments) {
+  return bulk_allocate_with_buffer(shapes, dtypes, device, alignments).first;
 }
 
 }  // namespace pytorch
