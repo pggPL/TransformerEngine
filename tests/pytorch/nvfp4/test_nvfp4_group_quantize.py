@@ -84,7 +84,7 @@ def check_group_quantization_nvfp4_versus_reference(
     for q in sut_quantizers:
         q.optimize_for_gemm = optimize_for_gemm
 
-    split_quantize_outputs = tex.split_quantize(x, split_sections, sut_quantizers)
+    split_quantize_outputs, _, _ = tex.split_quantize(x, split_sections, sut_quantizers)
 
     if return_rowwise:
         x_qx = [output._rowwise_data.view(dtype=torch.uint8) for output in split_quantize_outputs]

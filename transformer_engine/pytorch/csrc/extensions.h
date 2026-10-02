@@ -7,6 +7,7 @@
 #ifndef TRANSFORMER_ENGINE_PYTORCH_CSRC_EXTENSIONS_H_
 #define TRANSFORMER_ENGINE_PYTORCH_CSRC_EXTENSIONS_H_
 
+#include <c10/util/SmallVector.h>
 #include <nccl.h>
 
 #include <cstdint>
@@ -367,6 +368,33 @@ std::vector<py::object> rmsnorm_fwd(const py::handle &input, const py::handle &w
  * Memory allocation
  **************************************************************************************************/
 
+struct TensorDescription {
+  int64_t buffer_index = -1;
+  int64_t offset = 0;
+  c10::SmallVector<int64_t, 4> shape;
+  at::ScalarType dtype = at::kByte;
+};
+
+struct TensorLayout {
+  std::vector<TensorDescription> tensors;
+  std::vector<std::string> fields;
+};
+
+std::vector<at::Tensor> get_tensors(const std::vector<at::Tensor> &buffers,
+                                    const TensorLayout &layout);
+
+std::pair<std::vector<at::Tensor>, TensorLayout> save_tensor_buffers(
+    const std::vector<py::object> &objects, const std::vector<at::Tensor> &buffers,
+    const TensorLayout &layout);
+
+void restore_tensor_buffers(const std::vector<py::object> &objects,
+                            const std::vector<at::Tensor> &buffers, const TensorLayout &layout);
+
+std::tuple<std::vector<at::Tensor>, at::Tensor, TensorLayout> bulk_allocate_with_buffer(
+    const std::vector<std::vector<size_t>> &shapes, const std::vector<at::ScalarType> &dtypes,
+    std::optional<c10::Device> device = std::nullopt,
+    std::optional<std::vector<size_t>> alignments = std::nullopt);
+
 // Allocates tensors all backed by a single contiguous buffer.
 std::vector<at::Tensor> bulk_allocate(const std::vector<std::vector<size_t>> &shapes,
                                       const std::vector<at::ScalarType> &dtypes,
@@ -430,10 +458,9 @@ py::object group_requantize_inplace(py::handle grouped_x, py::handle quantizer,
 std::vector<py::object> multi_tensor_quantize(const std::vector<at::Tensor> &tensor_list,
                                               std::vector<py::handle> quantizer_list);
 
-std::vector<py::object> split_quantize(const at::Tensor &tensor,
-                                       const std::vector<size_t> &split_sections,
-                                       std::vector<py::handle> quantizer_list,
-                                       bool disable_bulk_allocation = false);
+std::tuple<std::vector<py::object>, std::vector<at::Tensor>, TensorLayout> split_quantize(
+    const at::Tensor &tensor, const std::vector<size_t> &split_sections,
+    std::vector<py::handle> quantizer_list, bool disable_bulk_allocation = false);
 
 /***************************************************************************************************
  * Bias gradient fusions

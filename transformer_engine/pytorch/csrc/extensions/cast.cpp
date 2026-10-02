@@ -1115,9 +1115,23 @@ std::vector<py::object> multi_tensor_quantize(const std::vector<at::Tensor> &ten
 
 namespace {
 
+void append_bulk_tensor_layout(TensorLayout &layout, TensorLayout descriptions, size_t buffer_index,
+                               size_t num_tensors, bool columnwise) {
+  for (size_t j = 0; j < descriptions.tensors.size(); ++j) {
+    auto &desc = descriptions.tensors[j];
+    desc.buffer_index = buffer_index;
+    layout.tensors[(j % num_tensors) * layout.fields.size() + 2 * (j / num_tensors) + columnwise] =
+        std::move(desc);
+  }
+}
+
 std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> bulk_allocate_fp8_blockwise_tensors(
     std::vector<std::vector<size_t>> &shape_list, std::vector<py::handle> &quantizer_py_list,
-    std::vector<Float8BlockQuantizer *> &quantizer_cpp_list) {
+    std::vector<Float8BlockQuantizer *> &quantizer_cpp_list, std::vector<at::Tensor> &buffers,
+    TensorLayout &layout) {
+  layout.fields = {"_rowwise_data", "_columnwise_data", "_rowwise_scale_inv",
+                   "_columnwise_scale_inv"};
+  layout.tensors.resize(shape_list.size() * layout.fields.size());
   init_extension();
   std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> retval;
   auto &tensor_py_list = std::get<0>(retval);
@@ -1153,7 +1167,10 @@ std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> bulk_allocate_fp
     shapes.insert(shapes.end(), rowwise_scale_shapes.begin(), rowwise_scale_shapes.end());
     dtypes.insert(dtypes.end(), num_tensors, torch::kFloat32);
     alignments.insert(alignments.end(), num_tensors, 16);
-    auto tensors = bulk_allocate(shapes, dtypes, std::nullopt, alignments);
+    auto [tensors, buffer, descriptions] =
+        bulk_allocate_with_buffer(shapes, dtypes, std::nullopt, alignments);
+    append_bulk_tensor_layout(layout, std::move(descriptions), buffers.size(), num_tensors, false);
+    buffers.emplace_back(std::move(buffer));
 
     // Split data and scale tensors
     for (size_t i = 0; i < num_tensors; ++i) {
@@ -1184,7 +1201,10 @@ std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> bulk_allocate_fp
     shapes.insert(shapes.end(), columnwise_scale_shapes.begin(), columnwise_scale_shapes.end());
     dtypes.insert(dtypes.end(), num_tensors, torch::kFloat32);
     alignments.insert(alignments.end(), num_tensors, 16);
-    auto tensors = bulk_allocate(shapes, dtypes, std::nullopt, alignments);
+    auto [tensors, buffer, descriptions] =
+        bulk_allocate_with_buffer(shapes, dtypes, std::nullopt, alignments);
+    append_bulk_tensor_layout(layout, std::move(descriptions), buffers.size(), num_tensors, true);
+    buffers.emplace_back(std::move(buffer));
 
     // Split data and scale tensors
     for (size_t i = 0; i < num_tensors; ++i) {
@@ -1227,7 +1247,11 @@ std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> bulk_allocate_fp
 
 std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> bulk_allocate_mxfp8_tensors(
     std::vector<std::vector<size_t>> &shape_list, std::vector<py::handle> &quantizer_py_list,
-    std::vector<MXFP8Quantizer *> &quantizer_cpp_list) {
+    std::vector<MXFP8Quantizer *> &quantizer_cpp_list, std::vector<at::Tensor> &buffers,
+    TensorLayout &layout) {
+  layout.fields = {"_rowwise_data", "_columnwise_data", "_rowwise_scale_inv",
+                   "_columnwise_scale_inv"};
+  layout.tensors.resize(shape_list.size() * layout.fields.size());
   init_extension();
   std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> retval;
   auto &tensor_py_list = std::get<0>(retval);
@@ -1263,7 +1287,10 @@ std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> bulk_allocate_mx
     shapes.insert(shapes.end(), rowwise_scale_shapes.begin(), rowwise_scale_shapes.end());
     dtypes.insert(dtypes.end(), num_tensors, torch::kUInt8);
     alignments.insert(alignments.end(), num_tensors, 16);
-    auto tensors = bulk_allocate(shapes, dtypes, std::nullopt, alignments);
+    auto [tensors, buffer, descriptions] =
+        bulk_allocate_with_buffer(shapes, dtypes, std::nullopt, alignments);
+    append_bulk_tensor_layout(layout, std::move(descriptions), buffers.size(), num_tensors, false);
+    buffers.emplace_back(std::move(buffer));
 
     // Split data and scale tensors
     for (size_t i = 0; i < num_tensors; ++i) {
@@ -1291,7 +1318,10 @@ std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> bulk_allocate_mx
     shapes.insert(shapes.end(), columnwise_scale_shapes.begin(), columnwise_scale_shapes.end());
     dtypes.insert(dtypes.end(), num_tensors, torch::kUInt8);
     alignments.insert(alignments.end(), num_tensors, 16);
-    auto tensors = bulk_allocate(shapes, dtypes, std::nullopt, alignments);
+    auto [tensors, buffer, descriptions] =
+        bulk_allocate_with_buffer(shapes, dtypes, std::nullopt, alignments);
+    append_bulk_tensor_layout(layout, std::move(descriptions), buffers.size(), num_tensors, true);
+    buffers.emplace_back(std::move(buffer));
 
     // Split data and scale tensors
     for (size_t i = 0; i < num_tensors; ++i) {
@@ -1337,7 +1367,11 @@ std::tuple<std::vector<py::object>, std::vector<TensorWrapper>> bulk_allocate_mx
 // amax buffer will be zeroed out by later amax kernels, so we can use empty to allocate
 std::tuple<std::vector<py::object>, std::vector<TensorWrapper>, bool> bulk_allocate_nvfp4_tensors(
     std::vector<std::vector<size_t>> &shape_list, std::vector<py::handle> &quantizer_py_list,
-    std::vector<NVFP4Quantizer *> &quantizer_cpp_list) {
+    std::vector<NVFP4Quantizer *> &quantizer_cpp_list, std::vector<at::Tensor> &buffers,
+    TensorLayout &layout) {
+  layout.fields = {"_rowwise_data",         "_columnwise_data", "_rowwise_scale_inv",
+                   "_columnwise_scale_inv", "_amax_rowwise",    "_amax_columnwise"};
+  layout.tensors.resize(shape_list.size() * layout.fields.size());
   init_extension();
   std::tuple<std::vector<py::object>, std::vector<TensorWrapper>, bool> retval;
   auto &tensor_py_list = std::get<0>(retval);
@@ -1452,7 +1486,10 @@ std::tuple<std::vector<py::object>, std::vector<TensorWrapper>, bool> bulk_alloc
     }
     dtypes.insert(dtypes.end(), num_tensors, torch::kFloat32);
     alignments.insert(alignments.end(), num_tensors, 16);
-    auto tensors = bulk_allocate(shapes, dtypes, std::nullopt, alignments);
+    auto [tensors, buffer, descriptions] =
+        bulk_allocate_with_buffer(shapes, dtypes, std::nullopt, alignments);
+    append_bulk_tensor_layout(layout, std::move(descriptions), buffers.size(), num_tensors, false);
+    buffers.emplace_back(std::move(buffer));
 
     // Split data, scale, and amax tensors
     for (size_t i = 0; i < num_tensors; ++i) {
@@ -1509,7 +1546,10 @@ std::tuple<std::vector<py::object>, std::vector<TensorWrapper>, bool> bulk_alloc
     }
     dtypes.insert(dtypes.end(), num_tensors, torch::kFloat32);
     alignments.insert(alignments.end(), num_tensors, 16);
-    auto tensors = bulk_allocate(shapes, dtypes, std::nullopt, alignments);
+    auto [tensors, buffer, descriptions] =
+        bulk_allocate_with_buffer(shapes, dtypes, std::nullopt, alignments);
+    append_bulk_tensor_layout(layout, std::move(descriptions), buffers.size(), num_tensors, true);
+    buffers.emplace_back(std::move(buffer));
 
     // Split data, scale, and amax tensors
     for (size_t i = 0; i < num_tensors; ++i) {
@@ -2024,10 +2064,9 @@ void split_quantize_nvfp4_impl(const TensorWrapper &input,
 
 }  // namespace
 
-std::vector<py::object> split_quantize(const at::Tensor &tensor,
-                                       const std::vector<size_t> &split_sections,
-                                       std::vector<py::handle> quantizer_list,
-                                       bool disable_bulk_allocation) {
+std::tuple<std::vector<py::object>, std::vector<at::Tensor>, TensorLayout> split_quantize(
+    const at::Tensor &tensor, const std::vector<size_t> &split_sections,
+    std::vector<py::handle> quantizer_list, bool disable_bulk_allocation) {
   init_extension();
 
   // Check number of tensors
@@ -2111,6 +2150,8 @@ std::vector<py::object> split_quantize(const at::Tensor &tensor,
   // Allocate output tensors
   std::vector<TensorWrapper> output_cpp_list;
   std::vector<py::object> output_py_list;
+  std::vector<at::Tensor> buffers;
+  TensorLayout layout;
   switch (allocation_method) {
     case AllocationMethod::BULK_FP8_BLOCKWISE: {
       // Bulk allocation for FP8 block-scaling tensors
@@ -2118,8 +2159,8 @@ std::vector<py::object> split_quantize(const at::Tensor &tensor,
       for (auto &quantizer : quantizer_cpp_list) {
         blockwise_quantizers.push_back(static_cast<Float8BlockQuantizer *>(quantizer.get()));
       }
-      std::tie(output_py_list, output_cpp_list) =
-          bulk_allocate_fp8_blockwise_tensors(split_shapes, quantizer_list, blockwise_quantizers);
+      std::tie(output_py_list, output_cpp_list) = bulk_allocate_fp8_blockwise_tensors(
+          split_shapes, quantizer_list, blockwise_quantizers, buffers, layout);
       break;
     }
     case AllocationMethod::BULK_MXFP8: {
@@ -2128,8 +2169,8 @@ std::vector<py::object> split_quantize(const at::Tensor &tensor,
       for (auto &quantizer : quantizer_cpp_list) {
         mxfp8_quantizers.push_back(static_cast<MXFP8Quantizer *>(quantizer.get()));
       }
-      std::tie(output_py_list, output_cpp_list) =
-          bulk_allocate_mxfp8_tensors(split_shapes, quantizer_list, mxfp8_quantizers);
+      std::tie(output_py_list, output_cpp_list) = bulk_allocate_mxfp8_tensors(
+          split_shapes, quantizer_list, mxfp8_quantizers, buffers, layout);
       break;
     }
     case AllocationMethod::BULK_NVFP4: {
@@ -2140,7 +2181,8 @@ std::vector<py::object> split_quantize(const at::Tensor &tensor,
       }
       bool contiguous_data_and_scale = false;
       std::tie(output_py_list, output_cpp_list, contiguous_data_and_scale) =
-          bulk_allocate_nvfp4_tensors(split_shapes, quantizer_list, nvfp4_quantizers);
+          bulk_allocate_nvfp4_tensors(split_shapes, quantizer_list, nvfp4_quantizers, buffers,
+                                      layout);
       if (quantization_method == QuantizationMethod::FUSED_NVFP4 && !input_shape.empty() &&
           input_shape.back() % 128 != 0) {
         static std::once_flag once_unfused_nvfp4_fallback_warning;
@@ -2187,7 +2229,52 @@ std::vector<py::object> split_quantize(const at::Tensor &tensor,
       multi_tensor_quantize_impl(input_list, quantizer_list, quantizer_cpp_list, output_cpp_list);
   }
 
-  return output_py_list;
+  return {std::move(output_py_list), std::move(buffers), std::move(layout)};
+}
+
+std::pair<std::vector<at::Tensor>, TensorLayout> save_tensor_buffers(
+    const std::vector<py::object> &objects, const std::vector<at::Tensor> &buffers,
+    const TensorLayout &layout) {
+  NVTE_CHECK(
+      !layout.fields.empty() && layout.tensors.size() == objects.size() * layout.fields.size(),
+      "Tensor layout does not match the quantized objects");
+  std::vector<at::Tensor> saved_buffers;
+  std::vector<int64_t> indices(buffers.size(), -1);
+  TensorLayout saved_layout = layout;
+  for (size_t i = 0; i < layout.tensors.size(); ++i) {
+    auto &desc = saved_layout.tensors[i];
+    const auto &object = objects[i / layout.fields.size()];
+    const auto &field = layout.fields[i % layout.fields.size()];
+    if (desc.buffer_index < 0 || object.is_none() || object.attr(field.c_str()).is_none()) {
+      desc.buffer_index = -1;
+      continue;
+    }
+    NVTE_CHECK(static_cast<size_t>(desc.buffer_index) < buffers.size(), "Invalid buffer index");
+    auto &index = indices[desc.buffer_index];
+    if (index < 0) {
+      index = saved_buffers.size();
+      saved_buffers.push_back(buffers[desc.buffer_index]);
+    }
+    desc.buffer_index = index;
+    object.attr(field.c_str()) = py::none();
+  }
+  return {std::move(saved_buffers), std::move(saved_layout)};
+}
+
+void restore_tensor_buffers(const std::vector<py::object> &objects,
+                            const std::vector<at::Tensor> &buffers, const TensorLayout &layout) {
+  NVTE_CHECK(
+      !layout.fields.empty() && layout.tensors.size() == objects.size() * layout.fields.size(),
+      "Tensor layout does not match the quantized objects");
+  auto tensors = get_tensors(buffers, layout);
+  for (size_t i = 0; i < tensors.size(); ++i) {
+    if (tensors[i].defined()) {
+      const auto &object = objects[i / layout.fields.size()];
+      NVTE_CHECK(!object.is_none(), "Missing quantized object for restored tensor");
+      object.attr(layout.fields[i % layout.fields.size()].c_str()) =
+          py::cast(std::move(tensors[i]));
+    }
+  }
 }
 
 }  // namespace pytorch

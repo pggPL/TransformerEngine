@@ -21,6 +21,7 @@ from ..tensor import (
     NVFP4Quantizer,
 )
 from ..tensor.storage.hybrid_tensor_storage import HybridQuantizedTensorStorage
+from ..tensor._bulk import BulkTensorState
 from ..utils import cast_if_needed
 from ...debug.pytorch.debug_quantization import DebugQuantizer
 
@@ -219,17 +220,22 @@ def _split_quantize_non_hybrid(
     dtype: torch.dtype,
     *,
     disable_bulk_allocation: bool = False,
+    bulk_state: Optional[BulkTensorState] = None,
+    bulk_branch: Optional[str] = None,
     allow_identity_views: bool = True,
 ) -> Sequence[Union[torch.Tensor, QuantizedTensorStorage]]:
     """Split and quantize one homogeneous, non-Hybrid quantizer list."""
     reference = quantizers[0]
     if _supports_native_split_quantize(reference):
-        return tex.split_quantize(
+        outputs, buffers, layout = tex.split_quantize(
             tensor,
             split_sizes,
             quantizers,
             disable_bulk_allocation=disable_bulk_allocation,
         )
+        if bulk_state is not None:
+            bulk_state.add(buffers, layout, bulk_branch)
+        return outputs
 
     tensor = cast_if_needed(tensor, dtype)
     if (
@@ -253,6 +259,7 @@ def _split_quantize_hybrid(
     quantizers: Sequence[HybridQuantizer],
     *,
     disable_bulk_allocation: bool = False,
+    bulk_state: Optional[BulkTensorState] = None,
 ) -> Sequence[HybridQuantizedTensorStorage]:
     """Split and quantize an all-hybrid, generation-validated operand."""
     reference = quantizers[0]
@@ -272,6 +279,8 @@ def _split_quantize_hybrid(
             rowwise_quantizers,
             tensor.dtype,
             disable_bulk_allocation=disable_bulk_allocation,
+            bulk_state=bulk_state,
+            bulk_branch="_rowwise_storage",
             allow_identity_views=False,
         )
         if needs_rowwise_result
@@ -293,6 +302,8 @@ def _split_quantize_hybrid(
             columnwise_quantizers,
             tensor.dtype,
             disable_bulk_allocation=disable_bulk_allocation,
+            bulk_state=bulk_state,
+            bulk_branch="_columnwise_storage",
             allow_identity_views=False,
         )
         if columnwise_enabled
@@ -319,6 +330,7 @@ def _split_quantize(
     with_quantized_output: bool = True,
     compute_dbias: bool = False,
     disable_bulk_allocation: bool = False,
+    bulk_state: Optional[BulkTensorState] = None,
 ) -> Tuple[
     Sequence[Union[torch.Tensor, QuantizedTensorStorage]],
     Optional[List[torch.Tensor]],
@@ -329,6 +341,7 @@ def _split_quantize(
     implementation choices. ``dbiases`` is ``None`` when ``compute_dbias`` is
     false and otherwise contains one reduction result per split. Quantizer lists
     must be homogeneous; dispatch intentionally uses expert 0 as the reference.
+    When provided, ``bulk_state`` collects allocations and their native layouts for saving.
     """
     if quantizers is not None and len(quantizers) != len(split_sizes):
         raise ValueError(
@@ -374,6 +387,7 @@ def _split_quantize(
             split_sizes,
             cast(Sequence[HybridQuantizer], concrete_quantizers),
             disable_bulk_allocation=disable_bulk_allocation,
+            bulk_state=bulk_state,
         )
     else:
         outputs = _split_quantize_non_hybrid(
@@ -382,6 +396,7 @@ def _split_quantize(
             concrete_quantizers,
             activation_dtype,
             disable_bulk_allocation=disable_bulk_allocation,
+            bulk_state=bulk_state,
         )
     return outputs, dbiases
 

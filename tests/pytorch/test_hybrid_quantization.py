@@ -4339,7 +4339,7 @@ class TestHybridGroupedLinearValidation:
             disable_bulk_allocation=False,
         ):
             calls.append((tensor_arg, split_sizes_arg, quantizers_arg, disable_bulk_allocation))
-            return torch.split(tensor_arg, split_sizes_arg)
+            return torch.split(tensor_arg, split_sizes_arg), [], None
 
         monkeypatch.setattr(
             split_quantization.tex,
@@ -4575,7 +4575,7 @@ class TestHybridGroupedLinearValidation:
 
         def tracked_split_quantize(tensor, m_splits, quantizers, **kwargs):
             result = real_split_quantize(tensor, m_splits, quantizers, **kwargs)
-            calls.append((tensor, result))
+            calls.append((tensor, result[0]))
             return result
 
         monkeypatch.setattr(split_quantization.tex, "split_quantize", tracked_split_quantize)
@@ -4622,7 +4622,7 @@ class TestHybridGroupedLinearValidation:
 
         def tracked_split_quantize(tensor, splits, quantizers, **kwargs):
             result = real_split_quantize(tensor, splits, quantizers, **kwargs)
-            calls.append((tensor, result))
+            calls.append((tensor, result[0]))
             return result
 
         monkeypatch.setattr(split_quantization.tex, "split_quantize", tracked_split_quantize)
@@ -4680,7 +4680,7 @@ class TestHybridGroupedLinearValidation:
 
         def tracked_split_quantize(tensor, m_splits, quantizers, **kwargs):
             result = real_split_quantize(tensor, m_splits, quantizers, **kwargs)
-            calls.append((tensor, result))
+            calls.append((tensor, result[0]))
             return result
 
         monkeypatch.setattr(split_quantization.tex, "split_quantize", tracked_split_quantize)
@@ -4722,7 +4722,7 @@ class TestHybridGroupedLinearValidation:
 
         def tracked_split_quantize(tensor, m_splits, quantizers, **kwargs):
             result = real_split_quantize(tensor, m_splits, quantizers, **kwargs)
-            calls.append((tensor, result))
+            calls.append((tensor, result[0]))
             return result
 
         monkeypatch.setattr(split_quantization.tex, "split_quantize", tracked_split_quantize)

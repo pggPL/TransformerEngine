@@ -1244,7 +1244,7 @@ class GroupedLinear(BasicOperation):
         if with_quantized_compute:
             for quantizer in input_quantizers:
                 quantizer.set_usage(rowwise=True, columnwise=weight_requires_grad)
-            xs = tex.split_quantize(x, split_sizes_int, input_quantizers)
+            xs, _, _ = tex.split_quantize(x, split_sizes_int, input_quantizers)
         else:
             xs = torch.split(x, split_sizes_int)
         if is_cpu_offload_enabled():
@@ -1556,7 +1556,7 @@ class GroupedLinear(BasicOperation):
                     rowwise=ctx.input_requires_grad,
                     columnwise=ctx.weight_requires_grad,
                 )
-            dys = tex.split_quantize(dy, split_sizes_int, ctx.grad_output_quantizers)
+            dys, _, _ = tex.split_quantize(dy, split_sizes_int, ctx.grad_output_quantizers)
         else:
             dys = torch.split(dy, split_sizes_int)
 

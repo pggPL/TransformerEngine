@@ -542,6 +542,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("columnwise"));
 
   // Tensor allocation
+  py::class_<transformer_engine::pytorch::TensorLayout>(m, "TensorLayout");
+  m.def("get_tensors", &transformer_engine::pytorch::get_tensors, py::arg("buffers"),
+        py::arg("descriptions"), py::call_guard<py::gil_scoped_release>());
+  m.def("save_tensor_buffers", &transformer_engine::pytorch::save_tensor_buffers);
+  m.def("restore_tensor_buffers", &transformer_engine::pytorch::restore_tensor_buffers);
   m.def("bulk_allocate", &transformer_engine::pytorch::bulk_allocate,
         "Allocate tensors backed by a single contiguous buffer", py::arg("shapes"),
         py::arg("dtypes"), py::arg("device") = py::none(), py::arg("alignments") = py::none(),
