@@ -2,78 +2,50 @@
 #
 # See LICENSE for license information.
 
-"""Save bulk allocations without retaining their individual tensor wrappers."""
+"""Save split-quantize allocations using layouts supplied by the allocator."""
 
-from typing import NamedTuple
-
-import torch
+import transformer_engine_torch as tex
 
 
-class _BufferView(NamedTuple):
-    """Metadata for one tensor in a saved byte buffer."""
+class BulkTensorState:
+    """Collect native layouts, including each branch of hybrid quantization."""
 
-    index: int
-    offset: int
-    nbytes: int
-    shape: torch.Size
-    stride: tuple[int, ...]
-    dtype: torch.dtype
+    def __init__(self):
+        self.groups = []
 
+    def offload_tensors(self, tensors):
+        """Select owners and any non-bulk hybrid branch for offload."""
+        if not self.groups:
+            return tensors
+        result = [buffer for _, buffers, _ in self.groups for buffer in buffers]
+        branches = {branch for branch, _, _ in self.groups}
+        if None not in branches:
+            for branch in ("_rowwise_storage", "_columnwise_storage"):
+                if branch not in branches:
+                    result.extend(getattr(tensor, branch, None) for tensor in tensors)
+        return result
 
-def pack_tensor_buffers(tensors, buffers):
-    """Replace tensors inside contiguous uint8 buffers with owners and view metadata."""
-    ranges = [(buffer.data_ptr(), buffer.numel(), buffer.device) for buffer in buffers]
-    packed, metadata, buffer_indices = [], [], {}
-    for tensor in tensors:
-        view = None
-        if type(tensor) is torch.Tensor:  # pylint: disable=unidiomatic-typecheck
-            if tensor.numel():
-                ptr = tensor.data_ptr()
-                nbytes = tensor.element_size() * (
-                    1
-                    + sum(
-                        (size - 1) * stride for size, stride in zip(tensor.shape, tensor.stride())
-                    )
-                )
-            else:
-                ptr = (
-                    tensor.untyped_storage().data_ptr()
-                    + tensor.storage_offset() * tensor.element_size()
-                )
-                nbytes = 0
-            for i, (base_ptr, buffer_size, device) in enumerate(ranges):
-                offset = ptr - base_ptr
-                if tensor.device == device and 0 <= offset and offset + nbytes <= buffer_size:
-                    if i not in buffer_indices:
-                        buffer_indices[i] = len(packed)
-                        packed.append(buffers[i])
-                    view = _BufferView(
-                        buffer_indices[i],
-                        offset,
-                        nbytes,
-                        tensor.shape,
-                        tensor.stride(),
-                        tensor.dtype,
-                    )
-                    break
-        if view is None:
-            metadata.append(len(packed))
-            packed.append(tensor)
-        else:
-            metadata.append(view)
-    return packed, metadata
+    def add(self, buffers, layout, branch=None):
+        """Record one native split-quantize result."""
+        if buffers:
+            self.groups.append((branch, buffers, layout))
+
+    def prepare_for_saving(self, tensors):
+        """Detach retained bulk fields and save their owners once."""
+        saved_buffers, metadata = [], []
+        for branch, buffers, layout in self.groups:
+            objects = tensors if branch is None else [getattr(t, branch, None) for t in tensors]
+            retained, descriptions = tex.save_tensor_buffers(objects, buffers, layout)
+            if retained:
+                saved_buffers.extend(retained)
+                metadata.append((branch, len(retained), descriptions))
+        return saved_buffers, metadata
 
 
-def unpack_tensor_buffers(tensors, metadata):
-    """Rebuild typed views after the owning byte buffers have been restored."""
-    return [
-        (
-            tensors[view.index]
-            .narrow(0, view.offset, view.nbytes)
-            .view(view.dtype)
-            .as_strided(view.shape, view.stride)
-            if isinstance(view, _BufferView)
-            else tensors[view]
-        )
-        for view in metadata
-    ]
+def restore_tensor_buffers(tensors, buffers, metadata):
+    """Restore native storage fields after their owning buffers are reloaded."""
+    offset = 0
+    for branch, count, descriptions in metadata:
+        objects = tensors if branch is None else [getattr(t, branch, None) for t in tensors]
+        tex.restore_tensor_buffers(objects, buffers[offset : offset + count], descriptions)
+        offset += count

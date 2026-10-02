@@ -4339,7 +4339,7 @@ class TestHybridGroupedLinearValidation:
             disable_bulk_allocation=False,
         ):
             calls.append((tensor_arg, split_sizes_arg, quantizers_arg, disable_bulk_allocation))
-            return torch.split(tensor_arg, split_sizes_arg)
+            return torch.split(tensor_arg, split_sizes_arg), [], None
 
         monkeypatch.setattr(
             split_quantization.tex,

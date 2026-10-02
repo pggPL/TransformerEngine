@@ -79,7 +79,7 @@ from ..tensor import (
     IdentityQuantizer,
     MXFP8Quantizer,
 )
-from ..tensor._bulk import pack_tensor_buffers, unpack_tensor_buffers
+from ..tensor._bulk import BulkTensorState, restore_tensor_buffers
 from ..quantized_tensor import (
     QuantizedTensorStorage,
     Quantizer,
@@ -850,26 +850,21 @@ class _GroupedLinear(torch.autograd.Function):
         m_splits = m_splits.tolist()
 
         inp_view = inp.reshape(-1, in_features)
-        bulk_buffers = [] if cpu_offloading else None
+        bulk_state = BulkTensorState() if cpu_offloading else None
         inputmats, _ = _split_quantization._split_quantize(
             inp_view,
             m_splits,
             input_quantizers,
             activation_dtype,
             with_quantized_output=fp8 or debug,
-            bulk_buffers=bulk_buffers,
+            bulk_state=bulk_state,
         )
 
         if cpu_offloading:
-            if bulk_buffers:
-                input_tensors, input_objects = prepare_for_saving(*inputmats)
-                offload_tensors, _ = pack_tensor_buffers(input_tensors, bulk_buffers)
-                mark_activation_offload(*offload_tensors)
-                start_offload(*offload_tensors)
-                restore_from_saved(input_objects, input_tensors)
-                del input_tensors, input_objects, offload_tensors
-            else:
-                start_offload(*inputmats)
+            offload_tensors = bulk_state.offload_tensors(inputmats)
+            mark_activation_offload(*offload_tensors)
+            start_offload(*offload_tensors)
+            del offload_tensors
 
         # Initialize weights
         weights_fp8: list
@@ -971,18 +966,17 @@ class _GroupedLinear(torch.autograd.Function):
                 # GTP: gathered workspace is transient (re-gathered in backward), don't save it.
                 weights_fp8 = [None] * num_gemms
                 saved_weights = origin_weights
+            saved_buffers, ctx.bulk_tensor_metadata = [], []
+            if bulk_state is not None and weight_requires_grad and not save_original_input:
+                saved_buffers, ctx.bulk_tensor_metadata = bulk_state.prepare_for_saving(inputmats)
+            ctx.num_bulk_buffers = len(saved_buffers)
             tensors_to_save, tensor_objects = prepare_for_saving(
                 *inputmats,
                 *weights_fp8,
                 *saved_weights,
                 *biases,
             )
-            ctx.tensor_buffer_views = None
-            if bulk_buffers:
-                tensors_to_save, ctx.tensor_buffer_views = pack_tensor_buffers(
-                    tensors_to_save, bulk_buffers
-                )
-            ctx.save_for_backward(*tensors_to_save)
+            ctx.save_for_backward(*saved_buffers, *tensors_to_save)
             ctx.tensor_objects = tensor_objects
 
             ctx.grad_input_quantizers = grad_input_quantizers
@@ -1363,17 +1357,15 @@ class _GroupedLinear(torch.autograd.Function):
             if ctx.grouped_tensor_supported:
                 return _GroupedLinear._backward_grouped_tensor(ctx, grad_output)
 
-            if ctx.tensor_buffer_views is None:
-                saved_tensors = restore_from_func_ctx(ctx)
-            else:
-                saved_tensors = restore_from_saved(
-                    ctx.tensor_objects,
-                    unpack_tensor_buffers(ctx.saved_tensors, ctx.tensor_buffer_views),
-                )
-                ctx.tensor_objects = None
-                ctx.tensor_buffer_views = None
+            saved = ctx.saved_tensors
+            saved_tensors = restore_from_saved(ctx.tensor_objects, saved[ctx.num_bulk_buffers :])
+            ctx.tensor_objects = None
             N = ctx.num_gemms
             inputmats = saved_tensors[:N]
+            restore_tensor_buffers(
+                inputmats, saved[: ctx.num_bulk_buffers], ctx.bulk_tensor_metadata
+            )
+            ctx.bulk_tensor_metadata = None
             weights = saved_tensors[N : 2 * N]
             saved_weights = saved_tensors[2 * N : 3 * N]
             biases = saved_tensors[3 * N : 4 * N]
