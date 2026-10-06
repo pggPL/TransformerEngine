@@ -79,6 +79,8 @@ class FusibleOperation(torch.nn.Module, metaclass=abc.ABCMeta):
     @classmethod
     def _register_compile_ops(cls) -> None:
         name = cls.__name__.lower()
+        if any(base.__name__ == cls.__name__ for base in cls.__mro__[1:]):
+            name = f"{cls.__module__.replace('.', '_')}_{name}"
         ops = []
         for mode, arg_name, op_name in (
             ("forward", "fwd_args_type", name),
@@ -192,6 +194,8 @@ class FusibleOperation(torch.nn.Module, metaclass=abc.ABCMeta):
         )
         compute = self.compile_ops[0] if use_custom_ops else self.forward_compute
         output, extra_outputs, aux = compute(args)
+        if output is None:
+            output = input_
         if any(ctx.requires_grad for ctx in basic_op_ctxs):
             self.forward_setup_context(basic_op_ctxs, args, aux)
         return output, extra_outputs
@@ -251,6 +255,8 @@ class FusibleOperation(torch.nn.Module, metaclass=abc.ABCMeta):
     @classmethod
     def forward_compute(cls, args: Any, *, in_custom_op: bool = False) -> tuple:
         """Return (output, extra_outputs per basic op, fresh aux tensors).
+
+        A None output passes input_ through unchanged.
 
         The registered custom op passes in_custom_op=True; direct eager calls
         use False. Inside a custom op, do not mutate tensors supplied in args.
