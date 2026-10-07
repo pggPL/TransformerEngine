@@ -43,6 +43,37 @@ class _GroupedIdentityFunc(torch.autograd.Function):
         return grad_input
 
 
+class _FromTensorFunc(torch.autograd.Function):
+    """Connect packed high-precision data to its grouped wrapper."""
+
+    @staticmethod
+    def forward(ctx, tensor, split_sizes, row_alignment):
+        # pylint: disable=missing-function-docstring
+        ctx.input_shape = tensor.shape
+        ctx.input_dtype = tensor.dtype
+        return GroupedTensor(
+            shape=tuple(tensor.shape),
+            dtype=tensor.dtype,
+            num_tensors=split_sizes.numel(),
+            data=tensor.detach().view(-1),
+            first_dims=split_sizes,
+            tensor_offsets=GroupedTensorStorage.make_tensor_offsets(split_sizes, tensor.size(1)),
+            row_alignment=row_alignment,
+        )
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # pylint: disable=missing-function-docstring
+        if isinstance(grad_output, GroupedTensor):
+            if grad_output.quantizer is not None:
+                import transformer_engine_torch as tex
+                from ..constants import TE_DType
+
+                grad_output = tex.group_dequantize(grad_output, TE_DType[ctx.input_dtype])
+            grad_output = grad_output.rowwise_data.view(ctx.input_shape)
+        return grad_output.to(ctx.input_dtype), None, None
+
+
 # For now, conservatively ban 'most' shape manipulating ops.
 BANNED_SHAPE_OPS = {
     torch.ops.aten.reshape.default,
@@ -97,6 +128,7 @@ class GroupedTensor(GroupedTensorStorage, torch.Tensor):
         nvfp4_use_4over6: bool = False,
         nvfp4_e4m3_max: int = 0,
         scale_inv_dtype: Optional[DType] = None,
+        row_alignment: int = 1,
     ):
         if (
             shapes is not None
@@ -173,8 +205,59 @@ class GroupedTensor(GroupedTensorStorage, torch.Tensor):
             nvfp4_use_4over6=nvfp4_use_4over6,
             nvfp4_e4m3_max=nvfp4_e4m3_max,
             scale_inv_dtype=scale_inv_dtype,
+            row_alignment=row_alignment,
         )
         return instance
+
+    @staticmethod
+    def from_tensor(
+        tensor: torch.Tensor,
+        split_sizes: torch.Tensor,
+        *,
+        row_alignment: int = 1,
+    ) -> "GroupedTensor":
+        """Wrap packed high-precision matrices without copying their data.
+
+        Parameters
+        ----------
+        tensor : torch.Tensor
+            Contiguous 2D FP32, FP16, or BF16 tensor (or ``nn.Parameter``).
+            Groups occupy consecutive rows; unused capacity after the last
+            group is allowed.
+        split_sizes : torch.Tensor
+            Contiguous 1D int64 tensor on the same device, containing each
+            group's physical row count, including any padding. Counts must be
+            nonnegative and their sum must not exceed ``tensor.size(0)``.
+        row_alignment : int, default = 1
+            Caller-guaranteed divisor of every split size. A value of 1 makes
+            no stronger alignment guarantee. This helper does not pad data.
+
+        Notes
+        -----
+        Data and split sizes are shared with the inputs. Autograd propagates
+        gradients to ``tensor``. Offsets are computed on-device without reading
+        split values on the host; the caller must ensure the value constraints
+        above. Recreate the wrapper whenever the grouping changes.
+        Pass ``grouped.first_dims`` (or an alias of that buffer) as the split
+        argument to grouped operations.
+        Fusion planning uses ``row_alignment`` to check kernel requirements;
+        insufficient or unknown alignment keeps grouped MLP operations separate.
+        """
+        if type(tensor) not in (torch.Tensor, torch.nn.Parameter):
+            raise TypeError("tensor must be a plain high-precision Tensor or Parameter")
+        if tensor.dtype not in (torch.float32, torch.float16, torch.bfloat16):
+            raise TypeError("tensor must have dtype float32, float16, or bfloat16")
+        if tensor.dim() != 2 or not tensor.is_contiguous():
+            raise ValueError("tensor must be a contiguous 2D tensor")
+        if type(split_sizes) is not torch.Tensor:  # pylint: disable=unidiomatic-typecheck
+            raise TypeError("split_sizes must be a plain torch.Tensor")
+        if split_sizes.dtype != torch.int64:
+            raise TypeError("split_sizes must have dtype int64")
+        if split_sizes.dim() != 1 or split_sizes.numel() == 0 or not split_sizes.is_contiguous():
+            raise ValueError("split_sizes must be a nonempty contiguous 1D tensor")
+        if split_sizes.device != tensor.device:
+            raise ValueError("tensor and split_sizes must be on the same device")
+        return _FromTensorFunc.apply(tensor, split_sizes, row_alignment)
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args, kwargs=None):
@@ -185,6 +268,7 @@ class GroupedTensor(GroupedTensorStorage, torch.Tensor):
         def copy_grouped_storage_metadata(dst: GroupedTensor, src: GroupedTensor) -> None:
             """Shallow-copy grouped-storage metadata onto wrapper outputs."""
             dst.num_tensors = src.num_tensors
+            dst.row_alignment = src.row_alignment
             dst.quantizer = src.quantizer
             dst.tensor_shapes = src.tensor_shapes
             dst.fake_dtype = src.fake_dtype
@@ -211,16 +295,17 @@ class GroupedTensor(GroupedTensorStorage, torch.Tensor):
 
         def make_wrapper_like(src: GroupedTensor, requires_grad: bool) -> GroupedTensor:
             """Create a wrapper of the same type and tensor metadata as src."""
-            out = torch.Tensor._make_wrapper_subclass(
-                type(src),
-                tuple(src.shape),
-                strides=tuple(src.stride()),
-                storage_offset=src.storage_offset(),
-                dtype=src.dtype,
-                layout=src.layout,
-                requires_grad=requires_grad,
-                device=src.device,
-            )
+            with torch.inference_mode(src.is_inference()):
+                out = torch.Tensor._make_wrapper_subclass(
+                    type(src),
+                    tuple(src.shape),
+                    strides=tuple(src.stride()),
+                    storage_offset=src.storage_offset(),
+                    dtype=src.dtype,
+                    layout=src.layout,
+                    requires_grad=requires_grad,
+                    device=src.device,
+                )
             copy_grouped_storage_metadata(out, src)
             return out
 
@@ -229,9 +314,8 @@ class GroupedTensor(GroupedTensorStorage, torch.Tensor):
             src = args[0]
             if not isinstance(src, GroupedTensor):
                 raise TypeError(f"Expected GroupedTensor, got {type(src).__name__}")
-            if func == torch.ops.aten.detach.default:
-                return make_wrapper_like(src, requires_grad=False)
-            return make_wrapper_like(src, requires_grad=src.requires_grad)
+            # Autograd attaches differentiable-view metadata above this dispatch.
+            return make_wrapper_like(src, requires_grad=False)
 
         # Parameter construction may invoke aten.expand on tensor subclasses.
         # Handle this explicitly so grouped parameters can be created safely.

@@ -78,6 +78,7 @@ class GroupedTensorStorage:
         row_scaled_nvfp4: bool = False,
         nvfp4_use_4over6: bool = False,
         nvfp4_e4m3_max: int = 0,
+        row_alignment: int = 1,
     ) -> None:
         """
         Initialize a GroupedTensor.
@@ -101,6 +102,8 @@ class GroupedTensorStorage:
             tensor_offsets: Device tensor of int64 array of length num_tensors+1 (CSR-style,
                 or None if uniform). offsets[i] = start of tensor i, offsets[num_tensors] = total.
             offsets: Vector of integer offsets for each tensor.
+            row_alignment: Caller-guaranteed divisor of every member's physical row count.
+                Defaults to 1 (no stronger guarantee). This does not insert padding.
         """
         # `requires_grad` and `stride` are accepted for API symmetry with
         # GroupedTensor.__new__ but are not relevant for storage-only
@@ -108,6 +111,11 @@ class GroupedTensorStorage:
         del requires_grad
         del stride
 
+        if isinstance(row_alignment, bool) or not isinstance(row_alignment, int):
+            raise TypeError("row_alignment must be a positive integer")
+        if row_alignment < 1:
+            raise ValueError("row_alignment must be a positive integer")
+        instance.row_alignment = row_alignment
         instance.num_tensors = num_tensors
         instance.quantizer = quantizer
         instance.tensor_shapes = shapes
@@ -188,6 +196,7 @@ class GroupedTensorStorage:
         row_scaled_nvfp4: bool = False,
         nvfp4_use_4over6: bool = False,
         nvfp4_e4m3_max: int = 0,
+        row_alignment: int = 1,
     ):
         instance = object.__new__(cls)
         cls._initialize_storage_fields(
@@ -217,6 +226,7 @@ class GroupedTensorStorage:
             row_scaled_nvfp4=row_scaled_nvfp4,
             nvfp4_use_4over6=nvfp4_use_4over6,
             nvfp4_e4m3_max=nvfp4_e4m3_max,
+            row_alignment=row_alignment,
         )
         return instance
 
@@ -461,6 +471,7 @@ class GroupedTensorStorage:
         self.tensor_offsets = None
         self.logical_shape = (0, 0)
         self.num_tensors = 0
+        self.row_alignment = 1
         self.quantizer = None
         self.quantized_tensors = None
         self.offsets = None
@@ -489,6 +500,8 @@ class GroupedTensorStorage:
         quantizer: Optional[Quantizer] = None,
         device: Optional[torch.device] = None,
         dtype: Optional[torch.dtype] = None,
+        *,
+        row_alignment: int = 1,
     ) -> GroupedTensorStorage:
         """
         Create a GroupedTensor for storing multiple weight tensors of the same shape.
@@ -499,6 +512,7 @@ class GroupedTensorStorage:
             quantizer: Quantizer used for all tensors
             device: Device to allocate tensors on, defaults to current cuda device
             dtype: Data type of the tensor (for high precision case)
+            row_alignment: Caller-guaranteed divisor of every member's physical row count.
 
         Returns:
             A GroupedTensor.
@@ -540,6 +554,7 @@ class GroupedTensorStorage:
             quantizer=quantizer,
             device=device,
             dtype=dtype,
+            row_alignment=row_alignment,
         )
 
     @staticmethod
@@ -550,12 +565,16 @@ class GroupedTensorStorage:
         rowwise_data: torch.Tensor,
         dtype: Optional[torch.dtype] = None,
         internal: bool = False,
+        row_alignment: int = 1,
     ) -> GroupedTensorStorage:
         """Wrap pre-existing contiguous rowwise data as a grouped tensor.
 
         This helper does not allocate storage. It creates grouped metadata over
         `rowwise_data`, which is expected to contain `num_tensors` tensors of
         shape ``tensor_shape`` in packed contiguous layout.
+
+        ``row_alignment`` declares a divisor of every member's physical row count;
+        it does not insert padding.
 
         ``tensor_shape`` may be:
 
@@ -622,6 +641,7 @@ class GroupedTensorStorage:
             scale_inv_offsets=None,
             columnwise_scale_inv_offsets=None,
             with_gemm_swizzled_scales=False,
+            row_alignment=row_alignment,
             requires_grad=False,
         )
 
@@ -636,6 +656,7 @@ class GroupedTensorStorage:
             shape=self.logical_shape,
             dtype=self.fake_dtype,
             num_tensors=self.num_tensors,
+            row_alignment=self.row_alignment,
             shapes=self.tensor_shapes,
             quantizer=self.quantizer,
             data=self.rowwise_data,
@@ -678,6 +699,8 @@ class GroupedTensorStorage:
         quantizer: Optional[Quantizer] = None,
         device: Optional[torch.device] = None,
         dtype: Optional[torch.dtype] = None,
+        *,
+        row_alignment: int = 1,
     ) -> GroupedTensorStorage:
         """
         Create a GroupedTensor for storing multiple weight tensors of the same shape.
@@ -692,6 +715,7 @@ class GroupedTensorStorage:
                        and what to allocate.
             device: Device to allocate tensors on, defaults to current cuda device
             dtype: Data type of the tensor (for high precision case)
+            row_alignment: Caller-guaranteed divisor of every member's physical row count.
 
         Returns:
             A GroupedTensor.
@@ -994,6 +1018,7 @@ class GroupedTensorStorage:
             row_scaled_nvfp4=row_scaled_nvfp4,
             nvfp4_use_4over6=nvfp4_use_4over6,
             nvfp4_e4m3_max=nvfp4_e4m3_max,
+            row_alignment=row_alignment,
             scale_inv_dtype=scale_inv_dtype,
         )
         grouped_tensor.quantized_tensors = grouped_tensor.split_into_quantized_tensors()

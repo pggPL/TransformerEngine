@@ -24,6 +24,7 @@ from ..tensor import (
     Float8BlockQuantizer,
     Float8CurrentScalingQuantizer,
     Float8Quantizer,
+    GroupedTensor,
     MXFP8Quantizer,
     NVFP4Quantizer,
 )
@@ -303,3 +304,29 @@ def get_dummy_wgrads_for_params(
         else:
             out.append(None)
     return out
+
+
+def same_tensor_buffer(lhs: Optional[torch.Tensor], rhs: Optional[torch.Tensor]) -> bool:
+    """Compare tensor views without reading device values."""
+    if lhs is None or rhs is None:
+        return False
+    return lhs is rhs or (lhs.device, lhs.dtype, lhs.size(), lhs.stride(), lhs.data_ptr()) == (
+        rhs.device,
+        rhs.dtype,
+        rhs.size(),
+        rhs.stride(),
+        rhs.data_ptr(),
+    )
+
+
+def unwrap_grouped_input(
+    input_: torch.Tensor, split_sizes: torch.Tensor, in_features: int
+) -> torch.Tensor:
+    """Expose high-precision grouped data inside an operation's autograd boundary."""
+    if not isinstance(input_, GroupedTensor) or input_.quantizer is not None:
+        return input_
+    if input_.dim() != 2 or input_.size(-1) != in_features:
+        raise ValueError(f"GroupedTensor input must have shape (total_tokens, {in_features})")
+    if not same_tensor_buffer(split_sizes, input_.first_dims):
+        raise ValueError("GroupedTensor input requires its first_dims buffer as split_sizes")
+    return input_.rowwise_data.view(input_.logical_shape)

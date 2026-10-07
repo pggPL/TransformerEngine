@@ -51,7 +51,7 @@ OperationFusionFunction: TypeAlias = (
     "Callable[tuple[list[FusibleOperation], ...], list[FusibleOperation]]"
 )
 _FusedOpList: TypeAlias = list[tuple[FusibleOperation, list[int]]]
-_FusionParams: TypeAlias = tuple[type, int, Optional[str]]
+_FusionParams: TypeAlias = tuple[type, int, Optional[str], tuple[bool, ...]]
 
 
 class _OperationFuserAutogradFunction(torch.autograd.Function):
@@ -465,6 +465,15 @@ class OperationFuser:
         self._num_basic_ops: int = len(basic_ops)
         self._basic_ops: list[BasicOperation] = basic_ops
 
+        from .basic.grouped_linear import GroupedLinear
+
+        self._grouped_mlp_starts = tuple(
+            idx
+            for idx in range(len(basic_ops) - 2)
+            if isinstance(basic_ops[idx], GroupedLinear)
+            and isinstance(basic_ops[idx + 2], GroupedLinear)
+        )
+
         # Number of extra tensor inputs
         self._basic_op_num_extra_inputs: list[int] = list(op.num_extra_inputs for op in basic_ops)
         self._basic_op_extra_input_sources: list[list[Optional[tuple[int, int]]]] = [
@@ -702,7 +711,13 @@ class OperationFuser:
         # backward boundary in the key, but pay construction cost only once for
         # each configuration. Full recompute therefore builds at most one
         # no-grad plan and one grad-enabled plan for a stable recipe.
-        fusion_params = (recipe_type, first_op_requiring_backward, backward_override)
+        grouped_mlp_support = self._grouped_mlp_alignment_support(input_, extra_inputs)
+        fusion_params = (
+            recipe_type,
+            first_op_requiring_backward,
+            backward_override,
+            grouped_mlp_support,
+        )
         cached_ops = self._fused_ops_cache.get(fusion_params)
         if cached_ops is not None:
             self._forward_ops, self._backward_ops = cached_ops
@@ -714,6 +729,7 @@ class OperationFuser:
             OperationFuser.forward_backward_fusion_functions,
             recipe=recipe,
         )
+        joint_ops = self._filter_grouped_mlp_fusions(joint_ops, grouped_mlp_support)
 
         # Apply forward-only and backward-only fusions
         self._forward_ops = OperationFuser._map_to_basic_ops(
@@ -736,6 +752,54 @@ class OperationFuser:
         # The FusedOperation contract excludes parameters and per-invocation
         # state, so the mapped lists can be selected directly on cache hits.
         self._fused_ops_cache[fusion_params] = (self._forward_ops, self._backward_ops)
+
+    def _grouped_mlp_alignment_support(
+        self, input_: torch.Tensor, extra_inputs: list[Iterable[torch.Tensor]]
+    ) -> tuple[bool, ...]:
+        """Prove per-expert alignment from the input or an internal dispatch."""
+        if not self._grouped_mlp_starts:
+            return ()
+        from ..tensor import GroupedTensor
+        from ._common import same_tensor_buffer
+        from .basic.dispatch import MoeDispatch
+        from .fused.grouped_mlp import _GroupedMLP_CuTeGEMMBase
+
+        supported = []
+        for idx in self._grouped_mlp_starts:
+            alignment = 1
+            fc1_source = self._basic_op_extra_input_sources[idx][0]
+            fc2_source = self._basic_op_extra_input_sources[idx + 2][0]
+            if idx == 0 and isinstance(input_, GroupedTensor):
+                fc1_splits = next(iter(extra_inputs[idx]), None)
+                fc2_splits = next(iter(extra_inputs[idx + 2]), None)
+                if same_tensor_buffer(input_.first_dims, fc1_splits) and same_tensor_buffer(
+                    fc1_splits, fc2_splits
+                ):
+                    alignment = input_.row_alignment
+            elif idx > 0 and isinstance(self._basic_ops[idx - 1], MoeDispatch):
+                if fc1_source == fc2_source == (idx - 1, 0):
+                    alignment = self._basic_ops[idx - 1].config.alignment
+            supported.append(
+                alignment > 0 and alignment % _GroupedMLP_CuTeGEMMBase.required_row_alignment == 0
+            )
+        return tuple(supported)
+
+    def _filter_grouped_mlp_fusions(
+        self, ops: list[FusibleOperation], supported: tuple[bool, ...]
+    ) -> list[FusibleOperation]:
+        """Decline grouped MLP kernels without their per-expert row guarantee."""
+        if not self._grouped_mlp_starts:
+            return ops
+        from .fused.grouped_mlp import _GroupedMLP_CuTeGEMMBase
+
+        support_by_start = dict(zip(self._grouped_mlp_starts, supported))
+        out = []
+        for op, indices in self._map_to_basic_ops(ops, self._basic_ops):
+            if isinstance(op, _GroupedMLP_CuTeGEMMBase) and not support_by_start[indices[0]]:
+                out.extend(op.basic_ops)
+            else:
+                out.append(op)
+        return out
 
     def _custom_ops_unsupported_reason(
         self, basic_op_kwargs: list[dict[str, Any]], mode: str

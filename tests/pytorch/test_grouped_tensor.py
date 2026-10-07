@@ -24,7 +24,7 @@ from transformer_engine.pytorch.utils import is_non_tn_fp8_gemm_supported, mark_
 import transformer_engine_torch as tex
 
 # Import test utilities
-from utils import assert_close
+from utils import assert_close, dtype_tols
 
 # Check available recipes
 fp8_available, reason_for_no_fp8 = te.is_fp8_available(return_reason=True)
@@ -2043,3 +2043,369 @@ class TestGroupedTensor:
             assert torch.equal(getattr(dst, f"weight{i}"), expected_weight)
         for i, expected_bias in enumerate(expected_biases):
             assert torch.equal(getattr(dst, f"bias{i}"), expected_bias.reshape(-1))
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("rows,alignment", [([0, 3, 7], 1), ([0, 128, 256], 128)])
+def test_from_tensor_storage_and_autograd(device, dtype, rows, alignment):
+    """Unequal/empty groups and spare capacity retain the original gradient edge."""
+    base = torch.randn(sum(rows) + 5, 16, device=device, dtype=dtype, requires_grad=True)
+    x = (base * 2)[1:]
+    splits = torch.tensor(rows, dtype=torch.int64, device=device)
+    grouped = GroupedTensor.from_tensor(x, splits, row_alignment=alignment)
+    assert grouped.rowwise_data.data_ptr() == x.data_ptr()
+    assert grouped.first_dims is splits
+    assert grouped.row_alignment == alignment
+    assert grouped.shape == x.shape
+    assert grouped.quantizer is None
+    torch.testing.assert_close(
+        grouped.tensor_offsets,
+        torch.tensor(
+            [0] + [sum(rows[: i + 1]) * 16 for i in range(len(rows))],
+            dtype=torch.int64,
+            device=device,
+        ),
+    )
+    grad = torch.randn_like(x)
+    grouped.backward(grad)
+    expected = torch.zeros_like(base)
+    expected[1:] = grad * 2
+    torch.testing.assert_close(base.grad, expected, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("mode", [torch.enable_grad, torch.no_grad, torch.inference_mode])
+def test_from_tensor_metadata_lifetime(mode):
+    x = torch.randn(12, 16, requires_grad=True)
+    splits = torch.tensor([4, 0, 8])
+    with mode():
+        grouped = GroupedTensor.from_tensor(x, splits, row_alignment=4)
+    assert grouped.requires_grad == (mode is torch.enable_grad)
+    for alias in (grouped.detach(), torch.ops.aten.alias(grouped), grouped.copy()):
+        assert alias.row_alignment == 4
+        assert alias.first_dims is splits
+        assert alias.rowwise_data.data_ptr() == x.data_ptr()
+    saved, storage = grouped.copy().prepare_for_saving()
+    storage.restore_from_saved(saved)
+    assert storage.row_alignment == 4
+    assert storage.first_dims is splits
+    torch.testing.assert_close(storage.rowwise_data.view_as(x), x)
+
+
+@pytest.mark.parametrize(
+    "alignment,error", [(0, ValueError), (-1, ValueError), (1.5, TypeError), (True, TypeError)]
+)
+def test_from_tensor_invalid_alignment(alignment, error):
+    with pytest.raises(error, match="row_alignment must be a positive integer"):
+        GroupedTensor.from_tensor(torch.empty(8, 4), torch.tensor([8]), row_alignment=alignment)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "data_dtype",
+        "data_dim",
+        "data_stride",
+        "split_dtype",
+        "split_dim",
+        "split_stride",
+        "empty_splits",
+        "device",
+    ],
+)
+def test_from_tensor_invalid_metadata(case):
+    x = torch.empty(8, 4)
+    splits = torch.tensor([4, 4])
+    if case == "data_dtype":
+        x = x.to(torch.int32)
+    elif case == "data_dim":
+        x = x.view(-1)
+    elif case == "data_stride":
+        x = x.t()
+    elif case == "split_dtype":
+        splits = splits.int()
+    elif case == "split_dim":
+        splits = splits.view(1, 2)
+    elif case == "split_stride":
+        splits = torch.tensor([4, 0, 4, 0])[::2]
+    elif case == "empty_splits":
+        splits = splits[:0]
+    elif case == "device":
+        splits = splits.cuda()
+    with pytest.raises((TypeError, ValueError)):
+        GroupedTensor.from_tensor(x, splits)
+
+
+def test_from_tensor_cuda_graph():
+    x = torch.randn(768, 16, device="cuda", requires_grad=True)
+    splits = torch.tensor([0, 256, 512], dtype=torch.int64, device="cuda")
+    stream = torch.cuda.Stream()
+    stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(stream):
+        GroupedTensor.from_tensor(x, splits, row_alignment=256)
+    torch.cuda.current_stream().wait_stream(stream)
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        grouped = GroupedTensor.from_tensor(x, splits, row_alignment=256)
+        grouped.backward(torch.ones_like(x))
+    splits.copy_(torch.tensor([256, 512, 0], device="cuda"))
+    graph.replay()
+    torch.testing.assert_close(
+        grouped.tensor_offsets, torch.tensor([0, 4096, 12288, 12288], device="cuda")
+    )
+    torch.testing.assert_close(x.grad, torch.ones_like(x))
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("legacy_path", [False, True])
+@pytest.mark.parametrize("checkpoint_mode", [None, False, True])
+def test_from_tensor_grouped_linear(dtype, legacy_path, checkpoint_mode, monkeypatch):
+    from torch.utils.checkpoint import checkpoint
+
+    torch.manual_seed(1234)
+    if legacy_path:
+        monkeypatch.setattr(
+            "transformer_engine.pytorch.ops.basic.grouped_linear.is_op_fuser_grouped_tensor_path_supported",
+            lambda *_: False,
+        )
+    rows = [0, 13, 29, 7]
+    splits = torch.tensor(rows, device="cuda", dtype=torch.int64)
+    x = torch.randn(sum(rows), 128, device="cuda", dtype=dtype, requires_grad=True)
+    x_ref = x.detach().clone().requires_grad_()
+    op = te.ops.GroupedLinear(
+        4,
+        128,
+        64,
+        bias=True,
+        dtype=dtype,
+        device="cuda",
+        single_grouped_weight=False,
+        single_grouped_bias=False,
+    )
+    weights = [getattr(op, f"weight{i}").detach().clone().requires_grad_() for i in range(4)]
+    biases = [getattr(op, f"bias{i}").detach().clone().requires_grad_() for i in range(4)]
+    ref = torch.cat(
+        [
+            torch.nn.functional.linear(part, w, b)
+            for part, w, b in zip(x_ref.split(rows), weights, biases)
+        ]
+    )
+    grouped = GroupedTensor.from_tensor(x, splits)
+    if checkpoint_mode is None:
+        out = op(grouped, splits)
+    else:
+        out = checkpoint(op, grouped, splits, use_reentrant=checkpoint_mode)
+    grad = torch.randn_like(out)
+    out.backward(grad)
+    ref.backward(grad)
+    tols = dtype_tols(torch.float16 if dtype == torch.float32 else dtype)  # TF32 GEMM
+    torch.testing.assert_close(out, ref, **tols)
+    torch.testing.assert_close(x.grad, x_ref.grad, **tols)
+    for i, (w, b) in enumerate(zip(weights, biases)):
+        torch.testing.assert_close(getattr(op, f"weight{i}").grad, w.grad, **tols)
+        torch.testing.assert_close(getattr(op, f"bias{i}").grad, b.grad, **tols)
+    with torch.no_grad():
+        torch.testing.assert_close(op(grouped, splits.detach()), out, rtol=0, atol=0)
+    for incompatible_splits in (
+        splits.clone(),
+        splits.view(torch.float64),
+        splits.as_strided(splits.shape, (0,)),
+    ):
+        with pytest.raises(ValueError, match="first_dims buffer as split_sizes"):
+            op(grouped, incompatible_splits)
+    wrong_features = GroupedTensor.from_tensor(x[:, :64].contiguous(), splits)
+    with pytest.raises(ValueError, match="must have shape"):
+        op(wrong_features, splits)
+
+
+@pytest.mark.skipif(not mxfp8_available, reason=reason_for_no_mxfp8)
+@pytest.mark.parametrize("fused", [False, True])
+def test_from_tensor_mxfp8_mlp(fused, monkeypatch, request):
+    """Wrapping BF16 must not change quantization, outputs, or any gradients."""
+    from transformer_engine.common.recipe import MXFP8BlockScaling
+    from transformer_engine.pytorch.ops.fuser import OperationFuser
+    from transformer_engine.pytorch.ops.fused.grouped_mlp import fuse_glu_ops
+
+    monkeypatch.setattr(OperationFuser, "forward_backward_fusion_functions", [fuse_glu_ops])
+    torch.manual_seed(1234)
+    monkeypatch.setenv("NVTE_CUTEDSL_FUSED_GROUPED_MLP", "1" if fused else "0")
+    te.ops.fused.GroupedMLP_CuTeGEMMGLU.is_supported.cache_clear()
+    request.addfinalizer(te.ops.fused.GroupedMLP_CuTeGEMMGLU.is_supported.cache_clear)
+    if fused and not te.ops.fused.GroupedMLP_CuTeGEMMGLU.is_supported():
+        pytest.skip("CuTeDSL grouped MLP is unavailable")
+    alignment = 256 if fused else 128
+    splits = torch.tensor(
+        [0, alignment, 2 * alignment, alignment], dtype=torch.int64, device="cuda"
+    )
+    x = torch.randn(4 * alignment, 256, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+    probs = torch.rand(x.size(0), device="cuda", dtype=x.dtype, requires_grad=True)
+    fc1 = te.ops.GroupedLinear(
+        4, 256, 512, bias=False, device="cuda", dtype=x.dtype, single_grouped_weight=False
+    )
+    fc2 = te.ops.GroupedLinear(
+        4, 256, 256, bias=False, device="cuda", dtype=x.dtype, single_grouped_weight=False
+    )
+    mlp = te.ops.Sequential(fc1, te.ops.ScaledSwiGLU(glu_interleave_size=32), fc2)
+    grad = torch.randn_like(x)
+
+    def run(wrap):
+        mlp.zero_grad(set_to_none=True)
+        x.grad = None
+        probs.grad = None
+        inp = GroupedTensor.from_tensor(x, splits, row_alignment=alignment) if wrap else x
+        with te.autocast(recipe=MXFP8BlockScaling()):
+            out = mlp(inp, splits, probs, splits)
+        out.backward(grad)
+        return [out.detach(), x.grad.clone(), probs.grad.clone()] + [
+            p.grad.clone() for p in mlp.parameters()
+        ]
+
+    with monkeypatch.context() as patch:
+        if fused:
+            # Force the reference kernel for this fixture's known 256-row padding.
+            patch.setattr(OperationFuser, "_grouped_mlp_alignment_support", lambda *_: (True,))
+        reference = run(False)
+    mlp._module_groups[0]._fused_ops_cache.clear()
+    actual = run(True)
+    forward_ops = mlp._module_groups[0]._forward_ops
+    assert isinstance(forward_ops[0][0], te.ops.fused.GroupedMLP_CuTeGEMMGLU) == fused
+    for test, ref in zip(actual, reference):
+        torch.testing.assert_close(test, ref, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("alignment", [1, 4])
+def test_grouped_tensor_factory_alignment(alignment):
+    grouped = GroupedTensor.make_grouped_tensor_with_shapes(
+        2, [(4, 8), (8, 8)], device="cpu", dtype=torch.float32, row_alignment=alignment
+    )
+    assert grouped.row_alignment == alignment
+    uniform = GroupedTensor.make_grouped_tensor_from_rowwise_data(
+        num_tensors=2, tensor_shape=(4, 8), rowwise_data=torch.empty(64), row_alignment=alignment
+    )
+    assert uniform.row_alignment == alignment
+    default = GroupedTensor((4, 8), torch.float32, num_tensors=1, data=torch.empty(32))
+    assert default.row_alignment == 1
+
+
+def test_from_tensor_grouped_gradient():
+    x = torch.randn(12, 8, requires_grad=True)
+    splits = torch.tensor([0, 4, 8])
+    grouped = GroupedTensor.from_tensor(x, splits, row_alignment=4)
+    grad = torch.randn_like(x)
+    grouped.backward(GroupedTensor.from_tensor(grad, splits, row_alignment=4))
+    torch.testing.assert_close(x.grad, grad, rtol=0, atol=0)
+
+
+def test_from_tensor_empty_buffer():
+    x = torch.empty(0, 8, requires_grad=True)
+    splits = torch.zeros(3, dtype=torch.int64)
+    grouped = GroupedTensor.from_tensor(x, splits)
+    grouped.backward(torch.empty_like(x))
+    assert x.grad.shape == x.shape
+    torch.testing.assert_close(grouped.tensor_offsets, torch.zeros(4, dtype=torch.int64))
+
+
+@pytest.mark.skipif(not mxfp8_available, reason=reason_for_no_mxfp8)
+def test_from_tensor_quantized_gradient():
+    x = torch.randn(512, 128, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+    splits = torch.tensor([128, 0, 384], device="cuda", dtype=torch.int64)
+    grouped = GroupedTensor.from_tensor(x, splits, row_alignment=128)
+    quantizer = MXFP8Quantizer(tex.DType.kFloat8E4M3, rowwise=True, columnwise=False)
+    grad = tex.group_quantize(torch.randn_like(x), quantizer, 3, splits)
+    reference = tex.group_dequantize(grad, tex.DType.kBFloat16).rowwise_data.view_as(x)
+    grouped.backward(grad)
+    torch.testing.assert_close(x.grad, reference, rtol=0, atol=0)
+
+
+def test_from_tensor_grouped_linear_cuda_graph():
+    """Replay wrapping plus GEMM/backward with changing on-device expert counts."""
+    from transformer_engine.pytorch.ops.basic.grouped_linear import (
+        is_op_fuser_grouped_tensor_path_supported,
+    )
+
+    torch.manual_seed(1234)
+    dtype = torch.bfloat16
+    if not is_op_fuser_grouped_tensor_path_supported(None, dtype):
+        pytest.skip("Graph-safe grouped GEMM is unavailable")
+    splits = torch.tensor([0, 128, 256, 128], dtype=torch.int64, device="cuda")
+    x = torch.randn(512, 128, device="cuda", dtype=dtype, requires_grad=True)
+    dy = torch.randn(512, 64, device="cuda", dtype=dtype)
+    kwargs = dict(bias=False, device="cuda", dtype=dtype, single_grouped_weight=False)
+    op = te.ops.GroupedLinear(4, 128, 64, **kwargs)
+    reference_op = te.ops.GroupedLinear(4, 128, 64, **kwargs)
+    reference_op.load_state_dict(op.state_dict())
+
+    def forward_backward():
+        grouped = GroupedTensor.from_tensor(x, splits, row_alignment=128)
+        out = op(grouped, splits)
+        out.backward(dy)
+        return out
+
+    stream = torch.cuda.Stream()
+    stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(stream):
+        for _ in range(3):
+            op.zero_grad(set_to_none=True)
+            x.grad = None
+            forward_backward()
+    torch.cuda.current_stream().wait_stream(stream)
+    op.zero_grad(set_to_none=True)
+    x.grad = None
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        out = forward_backward()
+
+    for rows in ([128, 256, 0, 128], [256, 0, 128, 128]):
+        splits.copy_(torch.tensor(rows, device="cuda"))
+        with torch.no_grad():
+            x.copy_(torch.randn_like(x))
+        graph.replay()
+        reference_op.zero_grad(set_to_none=True)
+        x_ref = x.detach().clone().requires_grad_()
+        out_ref = reference_op(x_ref, splits)
+        out_ref.backward(dy)
+        torch.testing.assert_close(out, out_ref, rtol=0, atol=0)
+        torch.testing.assert_close(x.grad, x_ref.grad, rtol=0, atol=0)
+        for param, ref_param in zip(op.parameters(), reference_op.parameters()):
+            torch.testing.assert_close(param.grad, ref_param.grad, rtol=0, atol=0)
+
+
+def test_from_tensor_parameter():
+    param = torch.nn.Parameter(torch.randn(12, 8))
+    splits = torch.tensor([0, 4, 8])
+    grouped = GroupedTensor.from_tensor(param, splits, row_alignment=4)
+    grad = torch.randn_like(param)
+    grouped.backward(grad)
+    assert grouped.rowwise_data.data_ptr() == param.data_ptr()
+    torch.testing.assert_close(param.grad, grad, rtol=0, atol=0)
+
+
+def test_from_tensor_alias_autograd():
+    x = torch.randn(12, 8, requires_grad=True)
+    splits = torch.tensor([0, 4, 8])
+    grouped = GroupedTensor.from_tensor(x, splits, row_alignment=4)
+    alias = torch.ops.aten.alias(grouped)
+    assert alias.requires_grad
+    assert alias.row_alignment == 4
+    grad = torch.randn_like(x)
+    alias.backward(grad)
+    torch.testing.assert_close(x.grad, grad, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("creation_mode", [torch.enable_grad, torch.inference_mode])
+@pytest.mark.parametrize("alias_mode", [torch.enable_grad, torch.no_grad, torch.inference_mode])
+@pytest.mark.parametrize("requires_grad", [False, True])
+@pytest.mark.parametrize("operation", [torch.ops.aten.alias.default, torch.ops.aten.detach.default])
+def test_from_tensor_alias_modes(creation_mode, alias_mode, requires_grad, operation):
+    with creation_mode():
+        x = torch.randn(12, 8, requires_grad=requires_grad)
+        grouped = GroupedTensor.from_tensor(x, torch.tensor([0, 4, 8]), row_alignment=4)
+        reference = torch.empty_like(x, requires_grad=grouped.requires_grad)
+    with alias_mode():
+        expected = operation(reference)
+        actual = operation(grouped)
+    assert actual.requires_grad == expected.requires_grad
+    assert actual.is_leaf == expected.is_leaf
+    assert actual.is_inference() == expected.is_inference()
+    assert actual.row_alignment == 4
+    assert actual.rowwise_data.data_ptr() == x.data_ptr()

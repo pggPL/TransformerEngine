@@ -59,6 +59,7 @@ from .._common import (
     get_main_grad_from_param,
     is_quantized_tensor,
     maybe_dequantize,
+    unwrap_grouped_input,
     validate_or_alloc_output,
     view_main_grad_as_grouped_buffer,
 )
@@ -1114,6 +1115,8 @@ class _GroupedMLP_CuTeGEMMBase(FusedOperation):
 
     """
 
+    required_row_alignment = 256
+
     @classmethod
     def grouped_gemm_activation_kernel(cls) -> Callable:
         """Fused kernel for grouped GEMM, activation, and post-multiplication."""
@@ -1269,6 +1272,8 @@ class _GroupedMLP_CuTeGEMMBase(FusedOperation):
             )
         output_buffer = basic_op_kwargs[-1].get(OUTPUT_BUFFER_KEY)
         fc1_ctx.dgrad_out = basic_op_kwargs[0].get(GRAD_INPUT_BUFFER_KEY)
+
+        input_ = unwrap_grouped_input(input_, basic_op_extra_inputs[0][0], fc1_op.in_features)
 
         # Tensor properties
         fc1_weight_shape = (fc1_op.out_features, fc1_op.in_features)

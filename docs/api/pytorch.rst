@@ -74,6 +74,55 @@ Data types
 .. autoapiclass:: transformer_engine.pytorch.DType()
   :members: kByte, kInt32, kFloat32, kFloat16, kBFloat16, kFloat8E4M3, kFloat8E5M2, kFloat4E2M1
 
+Grouped tensors (experimental)
+------------------------------
+
+.. autoapiclass:: transformer_engine.pytorch.tensor.GroupedTensor
+  :members: from_tensor
+
+Wrap an existing packed buffer and its physical per-group row counts without
+copying the data, then pass the wrapper to an ``ops.GroupedLinear`` instance:
+
+.. code-block:: python
+
+    from transformer_engine.pytorch.tensor import GroupedTensor
+
+    # Dispatch/permutation has already padded each group to a multiple of 256 rows.
+    grouped_x = GroupedTensor.from_tensor(x, m_splits, row_alignment=256)
+    y = grouped_linear(grouped_x, grouped_x.first_dims)
+
+``x`` must be a contiguous 2D FP32, FP16, or BF16 tensor. ``m_splits`` must be a
+contiguous int64 tensor on the same device. It includes padding within each
+group; unused capacity after the last group is allowed. The wrapper preserves
+the autograd connection to ``x`` and computes element offsets on-device. Use
+``x`` for general PyTorch operations and ``grouped_x`` for supported grouped TE
+operations.
+
+Grouped kernels only define output and gradient rows covered by the splits.
+The legacy split-based ``GroupedLinear`` path requires the splits to cover the
+full tensor, including any per-group padding.
+
+``row_alignment`` is a caller guarantee that every physical group row count is
+divisible by that value. Its default, 1, provides no stronger guarantee. It does
+not pad or quantize the input, and split values are not checked on the host.
+Recreate the wrapper whenever the grouping changes. Use the same split
+buffer (aliases are allowed) when calling ``ops.GroupedLinear`` or a grouped MLP
+in ``ops.Sequential``.
+If split values change between CUDA Graph replays, capture ``from_tensor``
+together with its consumers so the offsets are recomputed on every replay.
+
+The cuDNN fused grouped MLP requires a guarantee divisible by 256. With unknown
+or insufficient alignment, the planner keeps the grouped operations separate.
+This includes existing plain-tensor inputs; their call signatures remain valid,
+but they may lose this fusion until wrapped with a sufficient guarantee.
+
+For a ``MoeDispatch`` immediately preceding the grouped MLP in the same
+``ops.Sequential``, the planner can use ``EpConfig.alignment`` directly when
+both grouped linears consume that dispatch's tokens-per-expert channel.
+Dispatch return types are unchanged. Other intermediate operations currently
+discard the planner's alignment guarantee. Fusion plans are cached separately
+for inputs that satisfy the alignment requirement and inputs that do not.
+
 Recipe availability
 -------------------
 
