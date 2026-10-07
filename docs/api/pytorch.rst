@@ -98,6 +98,10 @@ the autograd connection to ``x`` and computes element offsets on-device. Use
 ``x`` for general PyTorch operations and ``grouped_x`` for supported grouped TE
 operations.
 
+Grouped kernels only define output and gradient rows covered by the splits.
+The legacy split-based ``GroupedLinear`` path requires the splits to cover the
+full tensor, including any per-group padding.
+
 ``row_alignment`` is a caller guarantee that every physical group row count is
 divisible by that value. Its default, 1, provides no stronger guarantee. It does
 not pad or quantize the input, and split values are not checked on the host.
@@ -107,10 +111,17 @@ in ``ops.Sequential``.
 If split values change between CUDA Graph replays, capture ``from_tensor``
 together with its consumers so the offsets are recomputed on every replay.
 
-Alignment metadata does not currently change fusion selection. The caller must
-still satisfy the selected kernel's requirements, including per-group padding
-when enabling fused grouped MLP kernels. Dispatch return types and existing
-plain-tensor call signatures are unchanged.
+The cuDNN fused grouped MLP requires a guarantee divisible by 256. With unknown
+or insufficient alignment, the planner keeps the grouped operations separate.
+This includes existing plain-tensor inputs; their call signatures remain valid,
+but they may lose this fusion until wrapped with a sufficient guarantee.
+
+For a ``MoeDispatch`` immediately preceding the grouped MLP in the same
+``ops.Sequential``, the planner can use ``EpConfig.alignment`` directly when
+both grouped linears consume that dispatch's tokens-per-expert channel.
+Dispatch return types are unchanged. Other intermediate operations currently
+discard the planner's alignment guarantee. Fusion plans are cached separately
+for inputs that satisfy the alignment requirement and inputs that do not.
 
 Recipe availability
 -------------------

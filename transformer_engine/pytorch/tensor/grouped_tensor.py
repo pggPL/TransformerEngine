@@ -240,7 +240,8 @@ class GroupedTensor(GroupedTensorStorage, torch.Tensor):
         above. Recreate the wrapper whenever the grouping changes.
         Pass ``grouped.first_dims`` (or an alias of that buffer) as the split
         argument to grouped operations.
-        ``row_alignment`` describes the layout; it does not select a kernel.
+        Fusion planning uses ``row_alignment`` to check kernel requirements;
+        insufficient or unknown alignment keeps grouped MLP operations separate.
         """
         if type(tensor) not in (torch.Tensor, torch.nn.Parameter):
             raise TypeError("tensor must be a plain high-precision Tensor or Parameter")

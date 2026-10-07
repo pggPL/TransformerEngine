@@ -1115,6 +1115,8 @@ class _GroupedMLP_CuTeGEMMBase(FusedOperation):
 
     """
 
+    required_row_alignment = 256
+
     @classmethod
     def grouped_gemm_activation_kernel(cls) -> Callable:
         """Fused kernel for grouped GEMM, activation, and post-multiplication."""

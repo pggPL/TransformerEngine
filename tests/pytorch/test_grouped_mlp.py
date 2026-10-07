@@ -1119,6 +1119,19 @@ class TestGroupedLinearOp:
                 assert_close(g, param.grad, **tols)
 
 
+class _AlignedSequential(te.ops.Sequential):
+    """Declare the 256-row padding used by the fused-kernel test fixtures."""
+
+    def forward(self, input_, split_sizes, *extra_inputs, **kwargs):
+        from transformer_engine.pytorch.tensor import GroupedTensor
+
+        if isinstance(input_, GroupedTensor):
+            input_.row_alignment = 256
+        else:
+            input_ = GroupedTensor.from_tensor(input_, split_sizes, row_alignment=256)
+        return super().forward(input_, split_sizes, *extra_inputs, **kwargs)
+
+
 class TestGroupedMLPFusedOp:
     """Tests for grouped MLP fused op"""
 
@@ -1201,7 +1214,7 @@ class TestGroupedMLPFusedOp:
         else:
             split_sizes = [split_alignment * i for i in range(group_size)]
         random.shuffle(split_sizes)
-        split_sizes = torch.tensor(split_sizes, dtype=torch.int, device=device)
+        split_sizes = torch.tensor(split_sizes, dtype=torch.int64, device=device)
 
         # Make input shape
         in_shape = (split_sizes.sum().item(), hidden_size)
@@ -1444,7 +1457,7 @@ class TestGroupedMLPFusedOp:
                     delay_wgrad_compute=delay_wgrad_compute,
                     scale_bias=bias,
                 )
-                return te.ops.Sequential(fc1_op, _make_scaled_act(), fc2_op), fc1_op, fc2_op
+                return _AlignedSequential(fc1_op, _make_scaled_act(), fc2_op), fc1_op, fc2_op
 
         module, fc1, fc2 = _make_module()
 
@@ -1854,7 +1867,7 @@ class TestGroupedMLPFusedOp:
         # Split sizes (including an empty group); sum is a multiple of 128.
         split_sizes = [split_alignment * i for i in range(group_size)]
         random.shuffle(split_sizes)
-        split_sizes = torch.tensor(split_sizes, dtype=torch.int, device=device)
+        split_sizes = torch.tensor(split_sizes, dtype=torch.int64, device=device)
         total_tokens = int(split_sizes.sum().item())
         glu_interleave_size = 32
 
@@ -1876,7 +1889,7 @@ class TestGroupedMLPFusedOp:
             fc2 = te.ops.GroupedLinear(
                 group_size, hidden_size, hidden_size, bias=False, device=device, dtype=dtype
             )
-            module = te.ops.Sequential(
+            module = _AlignedSequential(
                 fc1, te.ops.ScaledSwiGLU(glu_interleave_size=glu_interleave_size), fc2
             )
         with torch.no_grad():
@@ -1948,7 +1961,7 @@ class TestGroupedMLPFusedOp:
         # Split sizes (including an empty group); sum is a multiple of 128.
         split_sizes = [split_alignment * i for i in range(group_size)]
         random.shuffle(split_sizes)
-        split_sizes = torch.tensor(split_sizes, dtype=torch.int, device=device)
+        split_sizes = torch.tensor(split_sizes, dtype=torch.int64, device=device)
         total_tokens = int(split_sizes.sum().item())
         glu_interleave_size = 32
 
@@ -1976,7 +1989,7 @@ class TestGroupedMLPFusedOp:
                 dtype=dtype,
                 scale_bias=bias,
             )
-            module = te.ops.Sequential(
+            module = _AlignedSequential(
                 fc1, te.ops.ScaledSwiGLU(glu_interleave_size=glu_interleave_size), fc2
             )
 
@@ -2265,7 +2278,7 @@ class TestGroupedMLPFusedOp:
                     single_grouped_weight=single_grouped_weight,
                     scale_bias=bias,
                 )
-                module = te.ops.Sequential(fc1, scaled_act, fc2)
+                module = _AlignedSequential(fc1, scaled_act, fc2)
 
             with torch.no_grad():
                 if single_grouped_weight:
@@ -2434,7 +2447,7 @@ class TestGroupedMLPFusedOp:
                 delay_wgrad_compute=delay_wgrad_compute,
                 scale_bias=bias,
             )
-            module = te.ops.Sequential(fc1, scaled_act, fc2)
+            module = _AlignedSequential(fc1, scaled_act, fc2)
 
         def rand(*shape):
             return torch.empty(shape, device=device, dtype=dtype).uniform_(-0.25, 0.25)
@@ -2620,7 +2633,7 @@ class TestGroupedMLPFusedOp:
                 fc2 = te.ops.GroupedLinear(
                     group_size, hidden_size, hidden_size, bias=False, device=device, dtype=dtype
                 )
-                module = te.ops.Sequential(fc1, scaled_act, fc2)
+                module = _AlignedSequential(fc1, scaled_act, fc2)
             with torch.no_grad():
                 for i in range(group_size):
                     getattr(fc1, f"weight{i}").copy_(fc1_ws_base[i])
@@ -2745,7 +2758,7 @@ class TestGroupedMLPFusedOp:
                     delay_wgrad_compute=delay_wgrad_compute,
                 )
                 scaled_act = te.ops.ScaledSwiGLU(glu_interleave_size=glu_interleave_size)
-                module = te.ops.Sequential(fc1, scaled_act, fc2)
+                module = _AlignedSequential(fc1, scaled_act, fc2)
 
             with torch.no_grad():
                 if single_grouped_weight:
@@ -2875,7 +2888,7 @@ class TestGroupedMLPFusedOp:
                 if activation == "scaled_swiglu"
                 else te.ops.ScaledClampedQGeGLU(glu_interleave_size=glu_interleave_size)
             )
-            module = te.ops.Sequential(
+            module = _AlignedSequential(
                 fc1,
                 scaled_act,
                 fc2,
@@ -2905,7 +2918,7 @@ class TestGroupedMLPFusedOp:
                 if activation == "scaled_swiglu"
                 else te.ops.ScaledClampedQGeGLU(glu_interleave_size=glu_interleave_size)
             )
-            reference_module = te.ops.Sequential(
+            reference_module = _AlignedSequential(
                 reference_fc1,
                 reference_scaled_act,
                 reference_fc2,
@@ -3223,7 +3236,9 @@ class TestGroupedMLPDeterminism:
         group_size = 16
         hidden_size = 2048
         tokens_per_group = 1024
-        split_sizes = torch.tensor([tokens_per_group] * group_size, dtype=torch.int, device=device)
+        split_sizes = torch.tensor(
+            [tokens_per_group] * group_size, dtype=torch.int64, device=device
+        )
         num_tokens = tokens_per_group * group_size
 
         recipe = make_recipe("mxfp8")
@@ -3241,7 +3256,7 @@ class TestGroupedMLPDeterminism:
 
         # No bias, or probs.grad comes from the Triton dbias kernel instead of cuDNN.
         with te.quantized_model_init(enabled=True, recipe=recipe):
-            module = te.ops.Sequential(
+            module = _AlignedSequential(
                 te.ops.GroupedLinear(
                     group_size, hidden_size, hidden_size, bias=False, device=device, dtype=dtype
                 ),

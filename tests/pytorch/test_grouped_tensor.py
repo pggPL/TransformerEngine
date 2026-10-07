@@ -2260,7 +2260,12 @@ def test_from_tensor_mxfp8_mlp(fused, monkeypatch, request):
             p.grad.clone() for p in mlp.parameters()
         ]
 
-    reference = run(False)
+    with monkeypatch.context() as patch:
+        if fused:
+            # Force the reference kernel for this fixture's known 256-row padding.
+            patch.setattr(OperationFuser, "_grouped_mlp_alignment_support", lambda *_: (True,))
+        reference = run(False)
+    mlp._module_groups[0]._fused_ops_cache.clear()
     actual = run(True)
     forward_ops = mlp._module_groups[0]._forward_ops
     assert isinstance(forward_ops[0][0], te.ops.fused.GroupedMLP_CuTeGEMMGLU) == fused

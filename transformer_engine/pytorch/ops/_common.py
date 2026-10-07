@@ -306,6 +306,19 @@ def get_dummy_wgrads_for_params(
     return out
 
 
+def same_tensor_buffer(lhs: Optional[torch.Tensor], rhs: Optional[torch.Tensor]) -> bool:
+    """Compare tensor views without reading device values."""
+    if lhs is None or rhs is None:
+        return False
+    return lhs is rhs or (lhs.device, lhs.dtype, lhs.size(), lhs.stride(), lhs.data_ptr()) == (
+        rhs.device,
+        rhs.dtype,
+        rhs.size(),
+        rhs.stride(),
+        rhs.data_ptr(),
+    )
+
+
 def unwrap_grouped_input(
     input_: torch.Tensor, split_sizes: torch.Tensor, in_features: int
 ) -> torch.Tensor:
@@ -314,23 +327,6 @@ def unwrap_grouped_input(
         return input_
     if input_.dim() != 2 or input_.size(-1) != in_features:
         raise ValueError(f"GroupedTensor input must have shape (total_tokens, {in_features})")
-    first_dims = input_.first_dims
-    if first_dims is None or (
-        split_sizes is not first_dims
-        and (
-            split_sizes.device,
-            split_sizes.dtype,
-            split_sizes.size(),
-            split_sizes.stride(),
-            split_sizes.data_ptr(),
-        )
-        != (
-            first_dims.device,
-            first_dims.dtype,
-            first_dims.size(),
-            first_dims.stride(),
-            first_dims.data_ptr(),
-        )
-    ):
+    if not same_tensor_buffer(split_sizes, input_.first_dims):
         raise ValueError("GroupedTensor input requires its first_dims buffer as split_sizes")
     return input_.rowwise_data.view(input_.logical_shape)
