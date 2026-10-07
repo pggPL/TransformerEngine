@@ -48,6 +48,7 @@ from .._common import (
     get_main_grad_from_param,
     is_quantized_tensor,
     maybe_dequantize,
+    unwrap_grouped_input,
     validate_or_alloc_output,
     view_main_grad_as_grouped_buffer,
 )
@@ -1037,6 +1038,7 @@ class GroupedLinear(BasicOperation):
 
         # Extract split sizes from extra input. Keep on GPU for graph safety.
         split_sizes = basic_op_extra_inputs[0][0]
+        input_ = unwrap_grouped_input(input_, split_sizes, self.in_features)
         if int(split_sizes.numel()) != num_groups:
             raise ValueError(f"Expected {num_groups} splits, but got {int(split_sizes.numel())}.")
         if split_sizes.dtype != torch.int64:

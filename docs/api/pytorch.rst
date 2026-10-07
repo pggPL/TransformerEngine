@@ -74,6 +74,44 @@ Data types
 .. autoapiclass:: transformer_engine.pytorch.DType()
   :members: kByte, kInt32, kFloat32, kFloat16, kBFloat16, kFloat8E4M3, kFloat8E5M2, kFloat4E2M1
 
+Grouped tensors (experimental)
+------------------------------
+
+.. autoapiclass:: transformer_engine.pytorch.tensor.GroupedTensor
+  :members: from_tensor
+
+Wrap an existing packed buffer and its physical per-group row counts without
+copying the data, then pass the wrapper to an ``ops.GroupedLinear`` instance:
+
+.. code-block:: python
+
+    from transformer_engine.pytorch.tensor import GroupedTensor
+
+    # Dispatch/permutation has already padded each group to a multiple of 256 rows.
+    grouped_x = GroupedTensor.from_tensor(x, m_splits, row_alignment=256)
+    y = grouped_linear(grouped_x, grouped_x.first_dims)
+
+``x`` must be a contiguous 2D FP32, FP16, or BF16 tensor. ``m_splits`` must be a
+contiguous int64 tensor on the same device. It includes padding within each
+group; unused capacity after the last group is allowed. The wrapper preserves
+the autograd connection to ``x`` and computes element offsets on-device. Use
+``x`` for general PyTorch operations and ``grouped_x`` for supported grouped TE
+operations.
+
+``row_alignment`` is a caller guarantee that every physical group row count is
+divisible by that value. Its default, 1, provides no stronger guarantee. It does
+not pad or quantize the input, and split values are not checked on the host.
+Recreate the wrapper whenever the grouping changes. Use the same split
+buffer (aliases are allowed) when calling ``ops.GroupedLinear`` or a grouped MLP
+in ``ops.Sequential``.
+If split values change between CUDA Graph replays, capture ``from_tensor``
+together with its consumers so the offsets are recomputed on every replay.
+
+Alignment metadata does not currently change fusion selection. The caller must
+still satisfy the selected kernel's requirements, including per-group padding
+when enabling fused grouped MLP kernels. Dispatch return types and existing
+plain-tensor call signatures are unchanged.
+
 Recipe availability
 -------------------
 
