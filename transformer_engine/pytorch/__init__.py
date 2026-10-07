@@ -31,11 +31,13 @@ from transformer_engine.pytorch.module import UserBufferQuantizationMode
 from transformer_engine.pytorch.attention import DotProductAttention
 from transformer_engine.pytorch.attention import GatedDeltaNetAttention
 from transformer_engine.pytorch.attention import GatedDeltaNet2Attention
+from transformer_engine.pytorch.attention import GatedDeltaProductAttention
 from transformer_engine.pytorch.attention import FusedMLAQUpProjFunction, FusedMLAQUpProjRopeQuant
 from transformer_engine.pytorch.attention import MultiheadAttention
 from transformer_engine.pytorch.attention import InferenceParams
 from transformer_engine.pytorch.attention import RotaryPositionEmbedding
 from transformer_engine.pytorch.transformer import TransformerLayer
+from transformer_engine.pytorch import models
 from transformer_engine.pytorch.permutation import (
     moe_permute,
     moe_permute_with_probs,
