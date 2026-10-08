@@ -55,6 +55,13 @@ Additional Prerequisites
 1. [For PyTorch support] `PyTorch <https://pytorch.org/>`__ with GPU support.
 2. [For JAX support] `JAX <https://github.com/google/jax/>`__ with GPU support, version >= 0.4.7.
 
+PyTorch EP and cuSolverMp use the selected NCCL backend's Python ``comm_ptr``
+property or ``_comm_ptr()`` method when available. Builds against PyTorch older
+than 2.16 retain a C++ fallback for backends without either Python getter,
+including older NVIDIA PyTorch 2.15 snapshots. This fallback is excluded when
+building with PyTorch 2.16 or newer, or with ``NVTE_TORCH_STABLE_ABI=1``; those
+builds require the backend's Python getter.
+
 Installation (stable release)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

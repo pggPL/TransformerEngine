@@ -714,10 +714,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         &transformer_engine::pytorch::multi_tensor_compute_scale_inv_e8m0_cuda,
         "Fused compute E8M0 scale_inv from amax", py::call_guard<py::gil_scoped_release>());
 
-  // Borrow torch's host ncclComm_t from a process group (used by NCCL EP and cuSolverMp).
+#ifdef NVTE_WITH_TORCH_NCCL_COMM
   m.def("get_nccl_comm_ptr", &transformer_engine::pytorch::get_nccl_comm_ptr,
-        "Borrow torch's host ncclComm_t from a process group's CUDA backend.",
-        py::arg("process_group"));
+        "Borrow torch's host ncclComm_t from a CUDA backend.", py::arg("backend"));
+#endif
 
   // Newton-Schulz (cuSolverMp)
   m.def("cusolvermp_ctx_create", &transformer_engine::pytorch::cusolvermp_ctx_create,
