@@ -73,13 +73,16 @@ def get_nccl_comm_ptr(group: torch.distributed.ProcessGroup) -> int:
         comm_ptr = backend.comm_ptr
     except AttributeError:
         getter = getattr(backend, "_comm_ptr", None)
-        if getter is None:
+        if getter is not None:
+            comm_ptr = getter()
+        elif hasattr(tex, "get_nccl_comm_ptr"):
+            comm_ptr = tex.get_nccl_comm_ptr(backend)
+        else:
             raise RuntimeError(
                 f"PyTorch {torch.__version__} backend '{backend.name()}' does not expose "
                 "a NCCL communicator pointer. Use a PyTorch build with comm_ptr or "
                 "_comm_ptr support for this backend."
             ) from None
-        comm_ptr = getter()
     if not isinstance(comm_ptr, int) or isinstance(comm_ptr, bool) or comm_ptr <= 0:
         raise RuntimeError("NCCL backend returned an invalid communicator pointer")
     return comm_ptr

@@ -9,6 +9,7 @@ from pathlib import Path
 from importlib import metadata
 
 import setuptools
+from packaging.version import Version
 
 from .utils import (
     all_files_in_dir,
@@ -90,6 +91,14 @@ def setup_pytorch_extension(
             raise RuntimeError("Transformer Engine requires CUDA 12.0 or newer")
 
     setup_mpi_flags(include_dirs, cxx_flags)
+
+    # Older NVIDIA snapshots also need this fallback despite reporting torch 2.15.
+    from torch import __version__ as torch_version
+
+    if Version(torch_version).release < (2, 16) and not bool(
+        int(os.getenv("NVTE_TORCH_STABLE_ABI", "0"))
+    ):
+        cxx_flags.extend(["-DNVTE_WITH_TORCH_NCCL_COMM", "-DUSE_C10D_NCCL"])
 
     # Mirror the NCCL EP gate from setup.py / common CMake. When disabled, the
     # ep.cpp source no-ops at the #ifdef boundary; without the define it would

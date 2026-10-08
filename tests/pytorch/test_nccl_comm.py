@@ -15,6 +15,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from transformer_engine.pytorch.distributed import get_nccl_comm_ptr
+import transformer_engine_torch as tex
 
 
 @pytest.fixture
@@ -22,6 +23,12 @@ def borrow_env(monkeypatch):
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 3)
     barrier = Mock()
     monkeypatch.setattr(dist, "barrier", barrier)
+    monkeypatch.setattr(
+        tex,
+        "get_nccl_comm_ptr",
+        Mock(side_effect=AssertionError("Unexpected C++ fallback")),
+        raising=False,
+    )
     return barrier
 
 
@@ -43,19 +50,48 @@ def test_borrow_nccl_comm(borrow_env, interface, backend_name, wrapped):
     group._get_backend.return_value = backend
     assert get_nccl_comm_ptr(group) == pointer
     group._get_backend.assert_called_once_with(torch.device("cuda", 3))
+    tex.get_nccl_comm_ptr.assert_not_called()
 
 
 @pytest.mark.parametrize("pointer", [0, -1, None, True, "123", 1.5])
-def test_invalid_nccl_comm(borrow_env, pointer):
-    backend = SimpleNamespace(name=lambda: "nccl", comm_ptr=pointer, _comm_ptr=Mock())
+@pytest.mark.parametrize("native", [False, True])
+def test_invalid_nccl_comm(borrow_env, pointer, native):
+    backend = SimpleNamespace(name=lambda: "nccl")
+    if native:
+        tex.get_nccl_comm_ptr.side_effect = None
+        tex.get_nccl_comm_ptr.return_value = pointer
+    else:
+        backend.comm_ptr = pointer
+        backend._comm_ptr = Mock()
     group = Mock()
     group._get_backend.return_value = backend
     with pytest.raises(RuntimeError, match="invalid communicator pointer"):
         get_nccl_comm_ptr(group)
-    backend._comm_ptr.assert_not_called()
+    if native:
+        tex.get_nccl_comm_ptr.assert_called_once_with(backend)
+    else:
+        backend._comm_ptr.assert_not_called()
+        tex.get_nccl_comm_ptr.assert_not_called()
 
 
-def test_missing_nccl_getter(borrow_env):
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_cpp_fallback(borrow_env, wrapped):
+    backend = SimpleNamespace(name=lambda: "nccl2")
+    group = Mock()
+    group._get_backend.return_value = SimpleNamespace(wrapped_pg=backend) if wrapped else backend
+
+    def get_pointer(actual_backend):
+        assert actual_backend is backend
+        borrow_env.assert_called_once_with(group=group, device_ids=[3])
+        return 123
+
+    tex.get_nccl_comm_ptr.side_effect = get_pointer
+    assert get_nccl_comm_ptr(group) == 123
+    tex.get_nccl_comm_ptr.assert_called_once_with(backend)
+
+
+def test_missing_nccl_getter(borrow_env, monkeypatch):
+    monkeypatch.delattr(tex, "get_nccl_comm_ptr")
     group = Mock()
     group._get_backend.return_value = SimpleNamespace(name=lambda: "nccl2")
     with pytest.raises(RuntimeError, match="does not expose a NCCL communicator pointer"):
@@ -84,6 +120,17 @@ def test_getter_error_propagates(borrow_env):
     with pytest.raises(RuntimeError, match="communicator aborted"):
         get_nccl_comm_ptr(group)
     Backend._comm_ptr.assert_not_called()
+    tex.get_nccl_comm_ptr.assert_not_called()
+
+
+def test_cpp_getter_error_propagates(borrow_env):
+    group = Mock()
+    backend = SimpleNamespace(name=lambda: "nccl2")
+    group._get_backend.return_value = backend
+    tex.get_nccl_comm_ptr.side_effect = RuntimeError("communicator aborted")
+    with pytest.raises(RuntimeError, match="communicator aborted"):
+        get_nccl_comm_ptr(group)
+    tex.get_nccl_comm_ptr.assert_called_once_with(backend)
 
 
 def _run_nccl_rank(rank, world_size, store_path, debug, legacy):
@@ -105,11 +152,6 @@ def _run_nccl_rank(rank, world_size, store_path, debug, legacy):
         if debug:
             assert hasattr(backend, "wrapped_pg")
             backend = backend.wrapped_pg
-        if not hasattr(type(backend), "comm_ptr") and not hasattr(backend, "_comm_ptr"):
-            with pytest.raises(RuntimeError, match="does not expose a NCCL communicator pointer"):
-                get_nccl_comm_ptr(group)
-            return
-
         comm = ctypes.c_void_p(get_nccl_comm_ptr(group))
         nccl = ctypes.CDLL("libnccl.so.2")
         for name, expected in [

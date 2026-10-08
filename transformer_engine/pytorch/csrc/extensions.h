@@ -736,6 +736,10 @@ void grouped_swizzle_for_gemm(py::handle &tensor, bool rowwise, bool columnwise)
  * Expert Parallelism
  **************************************************************************************************/
 
+#ifdef NVTE_WITH_TORCH_NCCL_COMM
+int64_t get_nccl_comm_ptr(c10d::Backend *backend);
+#endif
+
 // Borrows torch's NCCL host comm passed from Python.
 // ``group_name`` is the PG name used by the symm-mem window resolver.
 // ``zero_copy`` is forwarded into ``NVTEEpGroupConfig.zero_copy``.
