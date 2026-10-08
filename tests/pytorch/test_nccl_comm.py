@@ -95,8 +95,10 @@ def _run_nccl_rank(rank, world_size, store_path, debug, legacy):
         init_method=f"file://{store_path}",
         rank=rank,
         world_size=world_size,
+        device_id=torch.device("cuda", rank),
         timeout=timedelta(seconds=60),
     )
+    graph = None
     try:
         group = dist.group.WORLD
         backend = group._get_backend(torch.device("cuda", rank))
@@ -148,6 +150,7 @@ def _run_nccl_rank(rank, world_size, store_path, debug, legacy):
                 data, torch.full_like(data, world_size * (world_size + 1) / 2)
             )
     finally:
+        del graph
         dist.destroy_process_group()
 
 
