@@ -17,7 +17,7 @@ import transformer_engine_torch as tex
 
 from .constants import DType
 from .cpu_offload import mark_not_offload
-from .distributed import symm_mem_alloc, release_symm_mem_pool
+from .distributed import get_nccl_comm_ptr, symm_mem_alloc, release_symm_mem_pool
 from .quantized_tensor import QuantizedTensor, QuantizedTensorStorage
 from .tensor.storage.mxfp8_tensor_storage import MXFP8TensorStorage
 
@@ -194,9 +194,7 @@ def ep_bootstrap(
             stacklevel=2,
         )
 
-    # Materialize the PG's NCCL comm before borrowing its raw handle.
-    dist.barrier(group=ep_group, device_ids=[torch.cuda.current_device()])
-    comm_ptr = tex.get_nccl_comm_ptr(ep_group)
+    comm_ptr = get_nccl_comm_ptr(ep_group)
 
     tex.ep_initialize(
         int(comm_ptr),

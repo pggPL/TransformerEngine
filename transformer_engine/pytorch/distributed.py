@@ -54,6 +54,37 @@ from ..debug.pytorch.debug_quantization import DebugQuantizedTensor
 __all__ = ["checkpoint", "CudaRNGStatesTracker"]
 
 
+def get_nccl_comm_ptr(group: torch.distributed.ProcessGroup) -> int:
+    """Materialize and borrow the current device's NCCL communicator.
+
+    This is collective over ``group``. The caller must keep the group alive
+    until all users of the borrowed communicator have been destroyed.
+    """
+    device = torch.cuda.current_device()
+    backend = group._get_backend(torch.device("cuda", device))
+    while hasattr(backend, "wrapped_pg"):
+        backend = backend.wrapped_pg
+    if backend.name() not in ("nccl", "nccl2", "nccl-lazy"):
+        raise RuntimeError(f"Expected a NCCL CUDA backend, got '{backend.name()}'")
+
+    # The communicator must exist on this device before either getter is called.
+    torch.distributed.barrier(group=group, device_ids=[device])
+    try:
+        comm_ptr = backend.comm_ptr
+    except AttributeError:
+        getter = getattr(backend, "_comm_ptr", None)
+        if getter is None:
+            raise RuntimeError(
+                f"PyTorch {torch.__version__} backend '{backend.name()}' does not expose "
+                "a NCCL communicator pointer. Use a PyTorch build with comm_ptr or "
+                "_comm_ptr support for this backend."
+            ) from None
+        comm_ptr = getter()
+    if not isinstance(comm_ptr, int) or isinstance(comm_ptr, bool) or comm_ptr <= 0:
+        raise RuntimeError("NCCL backend returned an invalid communicator pointer")
+    return comm_ptr
+
+
 _MODEL_PARALLEL_ATTRIBUTE_DEFAULTS = {
     "tensor_model_parallel": False,
     "partition_dim": -1,

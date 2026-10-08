@@ -55,6 +55,11 @@ Additional Prerequisites
 1. [For PyTorch support] `PyTorch <https://pytorch.org/>`__ with GPU support.
 2. [For JAX support] `JAX <https://github.com/google/jax/>`__ with GPU support, version >= 0.4.7.
 
+PyTorch EP and cuSolverMp require the selected NCCL backend to expose its
+communicator through Python's ``comm_ptr`` property or ``_comm_ptr()`` method.
+Some PyTorch builds expose these only for the legacy NCCL backend; using NCCL2
+or NCCL lazy with these features requires a build that also exposes its getter.
+
 Installation (stable release)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
