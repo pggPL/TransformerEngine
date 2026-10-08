@@ -15,6 +15,23 @@ from transformer_engine.pytorch.torch_version import torch_version
 
 assert torch_version() >= (2, 1), f"Minimum torch version 2.1 required. Found {torch_version()}."
 
+try:
+    from transformer_engine.pytorch._build_config import (
+        TORCH_STABLE_ABI,
+        TORCH_STABLE_ABI_MIN_TORCH,
+    )
+except ImportError:
+    TORCH_STABLE_ABI = False
+    TORCH_STABLE_ABI_MIN_TORCH = None
+
+if TORCH_STABLE_ABI:
+    # Stable-ABI builds link shims that only exist in newer libtorch; loading
+    # them on an older runtime would fail with a raw dynamic-linker error.
+    assert torch_version() >= TORCH_STABLE_ABI_MIN_TORCH, (
+        "This Transformer Engine build uses the torch stable ABI and requires torch >="
+        f" {'.'.join(map(str, TORCH_STABLE_ABI_MIN_TORCH))} at runtime. Found {torch_version()}."
+    )
+
 load_framework_extension("torch")
 from transformer_engine.pytorch import constants
 from transformer_engine.pytorch.constants import CPLoadBalancingStrategy, DType
@@ -31,6 +48,7 @@ from transformer_engine.pytorch.module import UserBufferQuantizationMode
 from transformer_engine.pytorch.attention import DotProductAttention
 from transformer_engine.pytorch.attention import GatedDeltaNetAttention
 from transformer_engine.pytorch.attention import GatedDeltaNet2Attention
+from transformer_engine.pytorch.attention import GatedDeltaProductAttention
 from transformer_engine.pytorch.attention import FusedMLAQUpProjFunction, FusedMLAQUpProjRopeQuant
 from transformer_engine.pytorch.attention import MultiheadAttention
 from transformer_engine.pytorch.attention import InferenceParams
@@ -52,6 +70,7 @@ from transformer_engine.pytorch.quantization import is_fp8_available
 from transformer_engine.pytorch.quantization import is_mxfp8_available
 from transformer_engine.pytorch.quantization import is_fp8_block_scaling_available
 from transformer_engine.pytorch.quantization import is_nvfp4_available
+from transformer_engine.pytorch.quantization import is_fp8_ue5m3_available
 from transformer_engine.pytorch.quantization import get_default_recipe
 from transformer_engine.pytorch.quantization import QuantizerRole
 from transformer_engine.pytorch.quantization import QuantizerRequest
