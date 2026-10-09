@@ -13,6 +13,7 @@ import torch
 import transformer_engine_torch as tex
 from ...dynamo import TensorOrQuantized, TensorSpec
 from ...quantization import FP8GlobalStateManager
+from .._common import update_nvfp4_direct_output_spec
 from ..op import BasicOperation
 from ...utils import canonicalize_device, canonicalize_dtype
 from ...tensor import Quantizer
@@ -202,5 +203,6 @@ class Bias(BasicOperation):
                 device=dy.device,
                 quantizer=args.grad_input_quantizer,
             )
+            update_nvfp4_direct_output_spec(dx)
         db = TensorSpec(shape=(dy.shape[-1],), dtype=dy.dtype, device=dy.device)
         return dx, [(db,)], [()]

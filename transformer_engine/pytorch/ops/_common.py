@@ -29,7 +29,27 @@ from ..tensor import (
     NVFP4Quantizer,
 )
 from ..tensor.float8_tensor import Float8Tensor
-from ..utils import canonicalize_dtype
+from ..utils import canonicalize_dtype, get_device_compute_capability
+
+
+def update_nvfp4_direct_output_spec(spec: TensorSpec) -> None:
+    """Match the NVFP4 layout emitted without a post-quantize swizzle."""
+    quantizer = spec.quantizer
+    if not isinstance(quantizer, NVFP4Quantizer) or not quantizer.optimize_for_gemm:
+        return
+    rows, cols = math.prod(spec.shape[:-1]), spec.shape[-1]
+    if not (10, 0) <= get_device_compute_capability() <= (11, 0):
+        spec.with_gemm_swizzled_scales = False
+    elif quantizer.with_rht:
+        spec.with_gemm_swizzled_scales = bool(rows % 64 == 0 and cols % 128 == 0)
+    else:
+        spec.with_gemm_swizzled_scales = bool(
+            quantizer.with_2d_quantization
+            and not quantizer.row_scaled_nvfp4
+            and not quantizer.nvfp4_use_4over6
+            and rows % 128 == 0
+            and cols % 128 == 0
+        )
 
 
 def get_fused_normalization_quantizer(
