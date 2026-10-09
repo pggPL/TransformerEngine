@@ -3228,27 +3228,20 @@ def test_te_ops_activation_compile(case):
     _assert_custom_ops(graphs, case.activation.lower(), backward=case.training)
 
 
+@pytest.mark.parametrize("activation", ["GELU", "ReLU", "GEGLU", "SwiGLU"])
+@pytest.mark.parametrize("quantization", [None, "fp8", "nvfp4", "nvfp4_no_rht"])
 @pytest.mark.parametrize(
-    "activation,dtype,quantization,mode",
-    [
-        (activation, dtype, quantization, mode)
-        for activation in ("GELU", "ReLU", "GEGLU", "SwiGLU")
-        for dtype, quantization in ((torch.float16, None), (torch.bfloat16, "fp8"))
-        for mode in ("default", "reduce-overhead")
-    ]
-    + [
-        (activation, torch.bfloat16, quantization, "default")
-        for activation in ("GELU", "SwiGLU")
-        for quantization in ("nvfp4", "nvfp4_no_rht")
-    ],
+    "training,mode", [(False, "default"), (True, "default"), (True, "reduce-overhead")]
 )
-def test_te_ops_activation_mlp_compile(activation, dtype, quantization, mode, monkeypatch):
+def test_te_ops_activation_mlp_compile(activation, quantization, training, mode, monkeypatch):
     nvfp4 = quantization in ("nvfp4", "nvfp4_no_rht")
     if nvfp4 and not nvfp4_available:
         pytest.skip(reason_for_no_nvfp4)
     if quantization == "fp8" and not fp8_available:
         pytest.skip(reason_for_no_fp8)
-    training = not nvfp4
+    if nvfp4 and training:
+        pytest.skip("NVFP4TensorStorage.size() calls warnings.warn() during backward tracing")
+    dtype = torch.float16 if quantization is None else torch.bfloat16
     torch._dynamo.reset()
     counters.clear()
     monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
