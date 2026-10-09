@@ -34,6 +34,8 @@ tensor-or-quantized offsets. ``_ArgPlan.pack`` / ``unpack`` interpret the plan
 on each call. The kinds -- and how each represents its field as op inputs:
 
   * ``TENSOR`` -- a plain ``Tensor`` / ``Optional[Tensor]``: one tensor slot.
+  * ``TENSOR_LIST`` -- a list of tensors, optionally containing ``None``;
+    one list slot, for non-differentiable inputs such as saved intermediates.
   * ``TENSOR_OR_QUANTIZED`` -- a field that may be a plain tensor, a bare
     quantized storage, or ``None``: three slots (the tensor, its flat inner
     buffers, and a ``__kind__`` tag) so a quantized tensor crosses as its buffers.
@@ -396,6 +398,7 @@ class _FieldKind(Enum):
     """How one dataclass field crosses the custom-op boundary."""
 
     TENSOR = "tensor"  # one ``Tensor`` / ``Tensor?`` slot
+    TENSOR_LIST = "tensor_list"
     TENSOR_OR_QUANTIZED = "tensor_or_quantized"  # 3 slots: tensor / inner / meta
     PROCESS_GROUP = "process_group"  # c10d group name inside the shared bundle
     SIMPLE = "simple"  # value carried verbatim inside the shared bundle
@@ -491,6 +494,11 @@ def _parse_field(name: str, annot: Any) -> _FieldPlan:
     if stripped is torch.Tensor:
         slot = _SlotSpec(name, "Tensor?" if is_optional else "Tensor")
         return _FieldPlan(name, _FieldKind.TENSOR, (slot,))
+    if get_origin(annot) is list and len(get_args(annot)) == 1:
+        item, optional_item = _strip_optional(get_args(annot)[0])
+        if item is torch.Tensor:
+            slot = _SlotSpec(name, "Tensor?[]" if optional_item else "Tensor[]")
+            return _FieldPlan(name, _FieldKind.TENSOR_LIST, (slot,))
     # A union mixing tensor types with anything else is a malformed signature
     # (e.g. a bare quantized-storage Optional, or Tensor | int): reject it at
     # registration instead of silently degrading to an unsupported field.
@@ -582,7 +590,7 @@ class _ArgPlan:
         return tuple(
             f.name
             for f in self.fields
-            if f.kind in (_FieldKind.TENSOR, _FieldKind.TENSOR_OR_QUANTIZED)
+            if f.kind in (_FieldKind.TENSOR, _FieldKind.TENSOR_LIST, _FieldKind.TENSOR_OR_QUANTIZED)
         )
 
     def tensor_or_quantized_offsets(self) -> List[int]:
@@ -631,7 +639,7 @@ class _ArgPlan:
         for field in self.fields:
             value = getattr(obj, field.name, None)
             match field.kind:
-                case _FieldKind.TENSOR:
+                case _FieldKind.TENSOR | _FieldKind.TENSOR_LIST:
                     slots[field.slots[0].name] = value
                 case _FieldKind.TENSOR_OR_QUANTIZED:
                     _pack_tensor_or_quantized(field, value, slots)
@@ -665,7 +673,7 @@ class _ArgPlan:
         bundle = slots.get(_SIMPLE_META_SLOT)
         for field in self.fields:
             match field.kind:
-                case _FieldKind.TENSOR:
+                case _FieldKind.TENSOR | _FieldKind.TENSOR_LIST:
                     kwargs[field.name] = slots[field.slots[0].name]
                 case _FieldKind.TENSOR_OR_QUANTIZED:
                     kwargs[field.name] = _unpack_tensor_or_quantized(field, slots)
@@ -741,7 +749,16 @@ def _spec_view(obj: Any, tensor_field_names: Sequence[str]) -> Any:
     overrides: Dict[str, Any] = {}
     for name in tensor_field_names:
         value = getattr(obj, name, None)
-        if value is not None and not isinstance(value, TensorSpec):
+        if isinstance(value, list):
+            overrides[name] = [
+                (
+                    to_tensor_spec(item)
+                    if item is not None and not isinstance(item, TensorSpec)
+                    else item
+                )
+                for item in value
+            ]
+        elif value is not None and not isinstance(value, TensorSpec):
             overrides[name] = to_tensor_spec(value)
     if not overrides:
         return obj

@@ -20,6 +20,7 @@ from transformer_engine.pytorch.attention.dot_product_attention.utils import (
 from transformer_engine.pytorch import DType
 from test_attention_with_cp import (
     model_configs_flash_attn,
+    model_configs_compile,
     model_configs_fused_attn,
 )
 from transformer_engine.pytorch import (
@@ -238,6 +239,7 @@ def run_dpa_with_cp(
     deterministic="False",
     load_balancing_strategy="DUAL_CHUNK_SWAP",
     softcap="0.0",
+    torch_compile="False",
     log_level=logging.WARNING,
 ):
     """Test DotProductAttention module with context parallelism"""
@@ -272,8 +274,9 @@ def run_dpa_with_cp(
         config = copy.deepcopy(model_configs_flash_attn[model])
     if kernel_backend == "FusedAttention":
         os.environ["NVTE_FUSED_ATTN"] = "1"
-        if model in model_configs_fused_attn:
-            config = copy.deepcopy(model_configs_fused_attn[model])
+        configs = model_configs_compile if torch_compile == "True" else model_configs_fused_attn
+        if model in configs:
+            config = copy.deepcopy(configs[model])
         else:
             assert False, f"{model=} is not a known FusedAttention CP config!"
     assert config.attn_mask_type in [
@@ -578,6 +581,10 @@ def run_dpa_with_cp(
         fp8_context = autocast(enabled=True, recipe=fp8_recipe, amax_reduction_group=cp_comm_group)
     else:
         fp8_context = nullcontext()
+
+    if torch_compile == "True":
+        torch._dynamo.reset()
+        core_attn = torch.compile(core_attn, fullgraph=True)
 
     # run attention
     max_logit_ = None

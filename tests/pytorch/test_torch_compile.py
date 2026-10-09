@@ -12,7 +12,7 @@ import subprocess
 import sys
 import textwrap
 import warnings
-from typing import Literal, NamedTuple, Union
+from typing import List, Literal, NamedTuple, Optional, Union
 
 import pytest
 import torch
@@ -100,6 +100,73 @@ def nvfp4_row_scaled():
     nvfp4_recipe.fp4_quant_fwd_weight = recipe.QParams()
     nvfp4_recipe.fp4_quant_bwd_grad = recipe.QParams()
     return nvfp4_recipe
+
+
+@pytest.mark.skipif(not _opaque_available, reason="Requires custom-op opaque object support")
+@pytest.mark.parametrize("backend", ["aot_eager", "inductor"])
+@pytest.mark.parametrize("optional", [False, True])
+def test_custom_op_saved_tensor_list(backend, optional):
+    """Keep ragged saved tensors and None entries across the backward boundary."""
+    from transformer_engine.pytorch.dynamo.custom_op import register_custom_op_with_autograd
+    from transformer_engine.pytorch.quantized_tensor import restore_from_func_ctx
+
+    @dataclasses.dataclass
+    class FwdArgs:
+        x: torch.Tensor
+
+    tensor_list_type = List[Optional[torch.Tensor]] if optional else List[torch.Tensor]
+
+    @dataclasses.dataclass
+    class BwdArgs:
+        grad_output: Optional[torch.Tensor] = None
+        saved: tensor_list_type = dataclasses.field(default_factory=list)
+
+        def setup_saved_tensors(self, ctx):
+            self.saved = list(restore_from_func_ctx(ctx))
+
+    def forward(args):
+        saved = (args.x[:1].clone(), args.x[1:].clone())
+        if optional:
+            saved = (*saved, None)
+        return args.x.square(), saved, {}
+
+    def forward_fake(args):
+        saved = (
+            TensorSpec((1, *args.x.shape[1:]), args.x.dtype, device=args.x.device),
+            TensorSpec(
+                (args.x.shape[0] - 1, *args.x.shape[1:]), args.x.dtype, device=args.x.device
+            ),
+        )
+        if optional:
+            saved = (*saved, None)
+        return args.x, saved, {}
+
+    def backward(args):
+        if optional:
+            assert args.saved[2] is None
+        return (2 * torch.cat(args.saved[:2]) * args.grad_output,)
+
+    op = register_custom_op_with_autograd(
+        op_name=f"test_saved_tensor_list_{backend}_{optional}",
+        input_tensors_for_grad=["x"],
+        fwd_arg_type=FwdArgs,
+        fwd_impl=forward,
+        fwd_fake_impl=forward_fake,
+        setup_context=lambda _bwd, _fwd, _out, _attrs, saved: saved,
+        bwd_arg_type=BwdArgs,
+        bwd_impl=backward,
+        bwd_fake_impl=lambda args: (args.grad_output,),
+    )
+    if op is None:
+        pytest.skip("Requires custom-op opaque object support")
+    torch._dynamo.reset()
+    compiled = torch.compile(lambda x: op(FwdArgs(x)), backend=backend, fullgraph=True)
+    x = torch.randn(4, 7, device="cuda", requires_grad=True)
+    grad = torch.randn_like(x)
+    actual = compiled(x)
+    actual.backward(grad)
+    torch.testing.assert_close(actual, x.square())
+    torch.testing.assert_close(x.grad, 2 * x.detach() * grad)
 
 
 def nvfp4_4over6():
