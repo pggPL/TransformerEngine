@@ -2755,11 +2755,14 @@ class AttnFuncWithCPAndKVP2P(torch.autograd.Function):
                     kv_fp8,
                     (
                         out
-                        if (ctx.fp8_recipe.float8_current_scaling() and _dpa_fp8_cs_o_in_f16)
-                        or ctx.fp8_recipe.mxfp8()
+                        if ctx.fp8
+                        and (
+                            (ctx.fp8_recipe.float8_current_scaling() and _dpa_fp8_cs_o_in_f16)
+                            or ctx.fp8_recipe.mxfp8()
+                        )
                         else out_fp8
                     ),
-                    dout_fp8 if not ctx.fp8_recipe.mxfp8() else dout,
+                    dout if ctx.fp8 and ctx.fp8_recipe.mxfp8() else dout_fp8,
                     softmax_lse,
                     softmax_lse_,
                     rng_states,
@@ -5739,6 +5742,11 @@ def attn_forward_func_with_cp(
         return_max_logit,
         softcap,
     ]
+
+    if torch.compiler.is_compiling() and use_fused_attention:
+        from .context_parallel_op import context_parallel_attention
+
+        return context_parallel_attention(locals())
 
     if cp_comm_type in ["p2p", "a2a+p2p"]:
         args += [

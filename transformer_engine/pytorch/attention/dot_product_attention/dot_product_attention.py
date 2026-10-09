@@ -51,6 +51,9 @@ from transformer_engine.pytorch.distributed import (
     graph_safe_rng_available,
 )
 from transformer_engine.pytorch.jit import no_torch_dynamo
+from transformer_engine.pytorch.attention.dot_product_attention.context_parallel_op import (
+    cp_compile_reason,
+)
 from transformer_engine.pytorch.graph import is_graph_capturing
 from transformer_engine.pytorch.attention.inference import InferenceParams
 
@@ -458,7 +461,14 @@ def _needs_eager_dpa(call: Dict[str, Any]) -> Optional[str]:
             return "FP8 attention"
 
     if call["self"].cp_group is not None:
-        return "context parallelism"
+        reason = cp_compile_reason(
+            call.get("qkv_format") or call["self"].qkv_format,
+            call.get("core_attention_bias_type", "no_bias"),
+            call["self"].softmax_type,
+            call["self"].load_balancing_strategy,
+        )
+        if reason is not None:
+            return reason
 
     if call.get("checkpoint_core_attention", False):
         return "activation checkpointing of the attention"
@@ -849,6 +859,11 @@ class DotProductAttention(TransformerEngineBaseModule):
                   - ``"a2a+p2p"``: hierarchical CP implementation. First applying a2a to QKV
                     across each CP sub-group (e.g., via NVLink), then exchanging KV with
                     p2p between sub-groups (e.g., via IBLink).
+
+                  ``torch.compile(fullgraph=True)`` supports these communication types
+                  with FusedAttention, FP16/BF16, ``bshd``/``sbhd`` inputs, dual-chunk
+                  load balancing, no attention bias and vanilla softmax. FP8 attention,
+                  THD inputs and FlashAttention CP use eager fallback.
     """
 
     def __init__(
@@ -912,6 +927,9 @@ class DotProductAttention(TransformerEngineBaseModule):
         self.cp_group = cp_group
         self.cp_global_ranks = cp_global_ranks
         self.cp_stream = cp_stream
+        self._cp_stream_handle = (
+            (cp_stream.cuda_stream, cp_stream.device.index) if cp_stream is not None else None
+        )
         self.cp_comm_type = cp_comm_type
         self.load_balancing_strategy = CPLoadBalancingStrategy.DUAL_CHUNK_SWAP
 
@@ -1107,6 +1125,9 @@ class DotProductAttention(TransformerEngineBaseModule):
         self.cp_group = cp_group
         self.cp_global_ranks = cp_global_ranks
         self.cp_stream = cp_stream
+        self._cp_stream_handle = (
+            (cp_stream.cuda_stream, cp_stream.device.index) if cp_stream is not None else None
+        )
         self.cp_comm_type = cp_comm_type
         self.load_balancing_strategy = load_balancing_strategy
 
@@ -3043,6 +3064,7 @@ class DotProductAttention(TransformerEngineBaseModule):
                     cp_group=self.cp_group,
                     cp_global_ranks=self.cp_global_ranks,
                     cp_stream=self.cp_stream,
+                    cp_stream_handle=self._cp_stream_handle,
                     cp_comm_type=self.cp_comm_type,
                     load_balancing_strategy=self.load_balancing_strategy,
                     fp8=self.fp8 and self.fp8_meta["recipe"].fp8_dpa,

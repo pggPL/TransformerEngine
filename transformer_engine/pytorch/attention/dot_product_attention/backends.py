@@ -59,6 +59,9 @@ from transformer_engine.pytorch.attention.custom_ops import (
     fa_prepare_fwd,
 )
 from transformer_engine.pytorch.jit import no_torch_dynamo
+from transformer_engine.pytorch.attention.dot_product_attention.context_parallel_op import (
+    cp_compile_reason,
+)
 from transformer_engine.pytorch.dynamo.custom_op import (
     TensorOrQuantized,
     register_custom_op_with_autograd,
@@ -940,6 +943,12 @@ class _MaskTHDPaddingGrad(torch.autograd.Function):
         return _mask_thd_padding(grad_output, padding_mask), None
 
 
+def _needs_eager_flash_attention(call: Dict[str, Any]) -> Optional[str]:
+    if call.get("cp_group") is not None:
+        return "context parallelism with FlashAttention"
+    return None
+
+
 class FlashAttention(torch.nn.Module):
     """Dot product attention, using HazyResearch flash-attn package:
     https://github.com/Dao-AILab/flash-attention
@@ -977,6 +986,7 @@ class FlashAttention(torch.nn.Module):
         if not self.logger.hasHandlers():
             self.logger.addHandler(attn_log._stream_handler)
 
+    @no_torch_dynamo(when=_needs_eager_flash_attention)
     def forward(
         self,
         query_layer: torch.Tensor,
@@ -2563,7 +2573,16 @@ def _needs_eager_fused_attention(call: Dict[str, Any]) -> Optional[str]:
     if call.get("fp8", False):
         return "FP8 attention"
     if call.get("cp_group") is not None:
-        return "context parallelism"
+        if call.get("cp_stream_handle") is None:
+            return "context parallelism without a preconfigured stream handle"
+        reason = cp_compile_reason(
+            dpa_utils.get_qkv_format(call.get("qkv_layout", "sbhd_sbhd_sbhd"))[0],
+            call.get("core_attention_bias_type", "no_bias"),
+            call["self"].softmax_type,
+            call.get("load_balancing_strategy", CPLoadBalancingStrategy.DUAL_CHUNK_SWAP),
+        )
+        if reason is not None:
+            return reason
     if call.get("score_mod") is not None:
         return "score_mod"
     if call["self"].use_FAv2_bwd:
@@ -2685,6 +2704,7 @@ class FusedAttention(torch.nn.Module):
         packed_kv: Optional[torch.Tensor] = None,
         bf16_backward: bool = False,
         load_balancing_strategy=CPLoadBalancingStrategy.DUAL_CHUNK_SWAP,
+        cp_stream_handle: Optional[Tuple[int, int]] = None,
     ) -> torch.Tensor:
         """fused attention fprop"""
         assert (
@@ -2832,7 +2852,7 @@ class FusedAttention(torch.nn.Module):
                     self.attention_dropout if self.training else 0.0,
                     cp_group,
                     cp_global_ranks,
-                    cp_stream,
+                    cp_stream_handle if torch.compiler.is_compiling() else cp_stream,
                     cp_comm_type,
                     softmax_scale=self.softmax_scale,
                     qkv_format=qkv_format,
