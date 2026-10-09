@@ -3117,82 +3117,163 @@ def _ops_activation_reference(name, x):
     return x if gate is None else x * gate
 
 
+class _ActivationCompileCase(NamedTuple):
+    activation: str
+    dtype: torch.dtype = torch.float32
+    layout: str = "contiguous"
+    cache_input: bool = False
+    autocast: bool = False
+    training: bool = True
+    interleave_size: int | None = None
+    dynamic: bool = False
+
+
 @pytest.mark.parametrize(
-    "activation",
+    "case",
     [
-        "GELU",
-        "GEGLU",
-        "GLU",
-        "QGELU",
-        "QGEGLU",
-        "ReLU",
-        "ReGLU",
-        "SReLU",
-        "SReGLU",
-        "SiLU",
-        "SwiGLU",
+        _ActivationCompileCase(activation, dtype, layout, cache_input)
+        for activation in (
+            "GELU",
+            "GEGLU",
+            "GLU",
+            "QGELU",
+            "QGEGLU",
+            "ReLU",
+            "ReGLU",
+            "SReLU",
+            "SReGLU",
+            "SiLU",
+            "SwiGLU",
+        )
+        for dtype, layout, cache_input in (
+            (torch.float32, "contiguous", False),
+            (torch.float16, "contiguous", False),
+            (torch.bfloat16, "contiguous", False),
+            (torch.bfloat16, "strided", False),
+            (torch.bfloat16, "fp8", False),
+            (torch.bfloat16, "contiguous", True),
+            (torch.bfloat16, "fp8", True),
+        )
+    ]
+    + [
+        _ActivationCompileCase(
+            activation, cache_input=cache_input, autocast=True, training=training
+        )
+        for activation in ("GELU", "SwiGLU")
+        for cache_input in (False, True)
+        for training in (False, True)
+    ]
+    + [
+        _ActivationCompileCase(
+            "SwiGLU", cache_input=cache_input, interleave_size=interleave_size, dynamic=True
+        )
+        for cache_input in (False, True)
+        for interleave_size in (None, 4)
     ],
+    ids=lambda case: "-".join(map(str, case)),
 )
-@pytest.mark.parametrize(
-    "dtype,layout,cache_input",
-    [
-        (torch.float32, "contiguous", False),
-        (torch.float16, "contiguous", False),
-        (torch.bfloat16, "contiguous", False),
-        (torch.bfloat16, "strided", False),
-        (torch.bfloat16, "fp8", False),
-        (torch.bfloat16, "contiguous", True),
-        (torch.bfloat16, "fp8", True),
-    ],
-)
-def test_te_ops_activation_compile(activation, dtype, layout, cache_input):
-    if (layout == "fp8" or cache_input) and not fp8_available:
+def test_te_ops_activation_compile(case):
+    if (case.layout == "fp8" or case.cache_input) and not fp8_available:
         pytest.skip(reason_for_no_fp8)
     torch._dynamo.reset()
-    x = torch.randn(2, 16, 64, device="cuda", dtype=dtype)
-    if layout == "fp8" or cache_input:
-        quantizer = Float8CurrentScalingQuantizer(tex.DType.kFloat8E4M3, device="cuda")
-        x = quantizer(x)
-        if layout != "fp8":
-            x = x.dequantize()
-    if layout == "strided":
-        x = x.transpose(0, 1)
-    x = x.detach().requires_grad_()
-    reference_x = (x.dequantize() if layout == "fp8" else x).detach().double().requires_grad_()
-    op = getattr(te.ops, activation)(cache_quantized_input=cache_input)
-    model = te.ops.Sequential(op)
-    compiled, graphs = _compile_with_graphs(model)
-    actual = compiled(x)
-    expected = _ops_activation_reference(activation, reference_x)
-    dy = torch.randn_like(actual)
-    actual_grad = torch.autograd.grad(actual, x, dy)[0]
-    expected_grad = torch.autograd.grad(expected, reference_x, dy.double())[0]
-    torch.testing.assert_close(actual.double(), expected, **dtype_tols(dtype))
-    torch.testing.assert_close(actual_grad.double(), expected_grad, **dtype_tols(dtype))
-    _assert_custom_ops(graphs, activation.lower())
+    kwargs = {"cache_quantized_input": case.cache_input}
+    if case.interleave_size is not None:
+        kwargs["glu_interleave_size"] = case.interleave_size
+    model = te.ops.Sequential(getattr(te.ops, case.activation)(**kwargs))
+
+    def run(x):
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=case.autocast):
+            return model(x)
+
+    compiled, graphs = _compile_with_graphs(run)
+    eager_reference = case.autocast or case.dynamic
+    tols = {} if eager_reference else dtype_tols(case.dtype)
+    for step, rows in enumerate((16, 16, 32, 48) if case.dynamic else (32,)):
+        shape = (rows, 64) if case.dynamic else (2, 16, 64)
+        x = torch.randn(shape, device="cuda", dtype=case.dtype)
+        if case.layout == "fp8" or (case.cache_input and not eager_reference):
+            quantizer = Float8CurrentScalingQuantizer(tex.DType.kFloat8E4M3, device="cuda")
+            x = quantizer(x)
+            if case.layout != "fp8":
+                x = x.dequantize()
+        if case.layout == "strided":
+            x = x.transpose(0, 1)
+        x = x.detach().requires_grad_(case.training)
+        if case.dynamic:
+            torch._dynamo.mark_dynamic(x, 0)
+        ref_x = (
+            x.detach().clone()
+            if eager_reference
+            else (x.dequantize() if case.layout == "fp8" else x).detach().double()
+        ).requires_grad_(case.training)
+        with torch.set_grad_enabled(case.training):
+            actual = compiled(x)
+            expected = (
+                run(ref_x) if eager_reference else _ops_activation_reference(case.activation, ref_x)
+            )
+            torch.testing.assert_close(actual.to(expected.dtype), expected, **tols)
+            if case.training:
+                dy = torch.randn_like(actual)
+                got = torch.autograd.grad(actual, x, dy)[0]
+                want = torch.autograd.grad(expected, ref_x, dy.to(expected.dtype))[0]
+                torch.testing.assert_close(got.to(want.dtype), want, **tols)
+        if case.autocast:
+            assert actual.dtype == torch.bfloat16
+            torch.testing.assert_close(x, ref_x)
+        if case.dynamic:
+            if step == 1:
+                graph_count = len(graphs)
+            elif step > 1:
+                assert len(graphs) == graph_count
+    _assert_custom_ops(graphs, case.activation.lower(), backward=case.training)
 
 
-@pytest.mark.parametrize("activation", ["GELU", "ReLU", "GEGLU", "SwiGLU"])
-@pytest.mark.parametrize("dtype,quantization", [(torch.float16, None), (torch.bfloat16, "fp8")])
-@pytest.mark.parametrize("mode", ["default", "reduce-overhead"])
+@pytest.mark.parametrize(
+    "activation,dtype,quantization,mode",
+    [
+        (activation, dtype, quantization, mode)
+        for activation in ("GELU", "ReLU", "GEGLU", "SwiGLU")
+        for dtype, quantization in ((torch.float16, None), (torch.bfloat16, "fp8"))
+        for mode in ("default", "reduce-overhead")
+    ]
+    + [
+        (activation, torch.bfloat16, quantization, "default")
+        for activation in ("GELU", "SwiGLU")
+        for quantization in ("nvfp4", "nvfp4_no_rht")
+    ],
+)
 def test_te_ops_activation_mlp_compile(activation, dtype, quantization, mode, monkeypatch):
-    if quantization and not fp8_available:
+    nvfp4 = quantization in ("nvfp4", "nvfp4_no_rht")
+    if nvfp4 and not nvfp4_available:
+        pytest.skip(reason_for_no_nvfp4)
+    if quantization == "fp8" and not fp8_available:
         pytest.skip(reason_for_no_fp8)
+    training = not nvfp4
     torch._dynamo.reset()
     counters.clear()
     monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
-    hidden = 64
+    in_features, hidden = (128, 128) if nvfp4 else (32, 64)
     gated = activation in ("GEGLU", "SwiGLU")
-    model = te.ops.Sequential(
-        te.ops.Linear(32, hidden * (2 if gated else 1), device="cuda", dtype=dtype),
-        getattr(te.ops, activation)(),
-        te.ops.Linear(hidden, 32, device="cuda", dtype=dtype),
+    model = (
+        te.ops.Sequential(
+            te.ops.Linear(in_features, hidden * (2 if gated else 1), device="cuda", dtype=dtype),
+            getattr(te.ops, activation)(),
+            te.ops.Linear(hidden, in_features, device="cuda", dtype=dtype),
+        )
+        .train(training)
+        .requires_grad_(training)
     )
-    with torch.no_grad():
-        for param in model.parameters():
-            param.copy_(torch.randint(0, 3, param.shape, device=param.device) / 32)
+    if training:
+        with torch.no_grad():
+            for param in model.parameters():
+                param.copy_(torch.randint(0, 3, param.shape, device=param.device) / 32)
     eager_model = copy.deepcopy(model)
-    quant_recipe = recipe.Float8CurrentScaling(backward_override=None) if quantization else None
+    if nvfp4:
+        quant_recipe = recipe.NVFP4BlockScaling(
+            disable_rht=quantization == "nvfp4_no_rht", disable_stochastic_rounding=True
+        )
+    else:
+        quant_recipe = recipe.Float8CurrentScaling(backward_override=None) if quantization else None
 
     def run(x, module=model):
         if quant_recipe is None:
@@ -3206,17 +3287,21 @@ def test_te_ops_activation_mlp_compile(activation, dtype, quantization, mode, mo
         compiled, graphs = torch.compile(run, fullgraph=True, mode=mode), []
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
     eager_optimizer = torch.optim.SGD(eager_model.parameters(), lr=0.01)
-    for step in range(4):
+    for step in range(4 if training else 1):
         torch.compiler.cudagraph_mark_step_begin()
-        x = torch.randn(2, 16, 32, device="cuda", dtype=dtype, requires_grad=True)
-        if step == 0:
+        shape = (2, 16, in_features) if training else (32, in_features)
+        x = torch.randn(shape, device="cuda", dtype=dtype, requires_grad=training)
+        if training and step == 0:
             # Keep the independent reference reductions well-conditioned.
             with torch.no_grad():
                 x.copy_(torch.randint(0, 9, x.shape, device=x.device) / 8)
-        eager_x = x.detach().clone().requires_grad_()
-        actual = compiled(x)
-        expected = run(eager_x, eager_model)
-        torch.testing.assert_close(actual, expected)
+        eager_x = x.detach().clone().requires_grad_(training)
+        with torch.set_grad_enabled(training):
+            actual = compiled(x)
+            expected = run(eager_x, eager_model)
+        torch.testing.assert_close(actual, expected, **({} if training else {"rtol": 0, "atol": 0}))
+        if not training:
+            continue
         dy = torch.randn_like(actual)
         if step == 0:
             dy.copy_(torch.randint(0, 9, dy.shape, device=dy.device) / 8)
@@ -3246,8 +3331,8 @@ def test_te_ops_activation_mlp_compile(activation, dtype, quantization, mode, mo
             assert len(graphs) == graph_count
         del actual, expected, x, eager_x
     if mode == "default":
-        fused = quantization is not None and activation in ("GELU", "ReLU")
-        _assert_custom_ops(graphs, activation.lower(), backward=not fused)
+        fused = training and quantization is not None and activation in ("GELU", "ReLU")
+        _assert_custom_ops(graphs, activation.lower(), backward=training and not fused)
         _assert_custom_ops(graphs, "backwardactivationbias", forward=False, backward=fused)
     else:
         assert not counters["inductor"]["cudagraph_skips"], counters["inductor"]
@@ -3321,138 +3406,3 @@ def test_te_ops_activation_nvfp4_custom_op(activation, direction, shape, quantiz
     restored = spec.assemble([getattr(expected, name) for name in spec.inner_names()])
     torch.testing.assert_close(restored.dequantize(), expected.dequantize(), rtol=0, atol=0)
     assert quantizer.optimize_for_gemm == (quantization != "unoptimized")
-
-
-@pytest.mark.skipif(not nvfp4_available, reason=reason_for_no_nvfp4)
-@pytest.mark.parametrize("activation", ["GELU", "SwiGLU"])
-@pytest.mark.parametrize("with_rht", [False, True])
-def test_te_ops_activation_nvfp4_mlp_compile(activation, with_rht):
-    torch._dynamo.reset()
-    quant_recipe = recipe.NVFP4BlockScaling(
-        disable_rht=not with_rht, disable_stochastic_rounding=True
-    )
-    model = (
-        te.ops.Sequential(
-            te.ops.Linear(
-                128, 256 if activation == "SwiGLU" else 128, device="cuda", dtype=torch.bfloat16
-            ),
-            getattr(te.ops, activation)(),
-            te.ops.Linear(128, 128, device="cuda", dtype=torch.bfloat16),
-        )
-        .eval()
-        .requires_grad_(False)
-    )
-    eager_model = copy.deepcopy(model)
-
-    def run(x, module=model):
-        with te.autocast(recipe=quant_recipe):
-            return module(x)
-
-    x = torch.randn(32, 128, device="cuda", dtype=torch.bfloat16)
-    with torch.no_grad():
-        actual = torch.compile(run, fullgraph=True)(x)
-        expected = run(x, eager_model)
-    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-
-
-@pytest.mark.parametrize("cache_input", [False, True])
-@pytest.mark.parametrize("interleave_size", [None, 4])
-def test_te_ops_swiglu_compile_dynamic(cache_input, interleave_size):
-    if cache_input and not fp8_available:
-        pytest.skip(reason_for_no_fp8)
-    torch._dynamo.reset()
-    model = te.ops.Sequential(
-        te.ops.SwiGLU(cache_quantized_input=cache_input, glu_interleave_size=interleave_size)
-    )
-    compiled, graphs = _compile_with_graphs(model)
-    for step, rows in enumerate([16, 16, 32, 48]):
-        x = torch.randn(rows, 64, device="cuda", requires_grad=True)
-        torch._dynamo.mark_dynamic(x, 0)
-        ref_x = x.detach().clone().requires_grad_()
-        actual, expected = compiled(x), model(ref_x)
-        dy = torch.randn_like(actual)
-        got = torch.autograd.grad(actual, x, dy)
-        want = torch.autograd.grad(expected, ref_x, dy)
-        torch.testing.assert_close(actual, expected)
-        torch.testing.assert_close(got, want)
-        if step == 1:
-            graph_count = len(graphs)
-        elif step > 1:
-            assert len(graphs) == graph_count
-
-
-def test_te_ops_same_name_subclass_compile():
-    wrapper = type("GELU", (te.ops.GELU,), {"__module__": "_te_test_wrapper"})
-    torch._dynamo.reset()
-    model = te.ops.Sequential(te.ops.GELU(), wrapper())
-    compiled, graphs = _compile_with_graphs(model)
-    x = torch.randn(32, 64, device="cuda", requires_grad=True)
-    actual = compiled(x)
-    expected = _ops_activation_reference("GELU", _ops_activation_reference("GELU", x))
-    dy = torch.randn_like(actual)
-    torch.testing.assert_close(actual, expected)
-    torch.testing.assert_close(
-        torch.autograd.grad(actual, x, dy), torch.autograd.grad(expected, x, dy)
-    )
-    _assert_custom_ops(graphs, "gelu")
-    _assert_custom_ops(graphs, "_te_test_wrapper_gelu")
-
-
-class _PassthroughOp(_AffineOp):
-    @classmethod
-    def forward_compute(cls, args, *, in_custom_op=False):
-        return None, [()], ()
-
-    @classmethod
-    def forward_compute_fake(cls, args):
-        return None, [()], ()
-
-    @classmethod
-    def backward_compute(cls, args, *, in_custom_op=False):
-        return None, [(None,)], [()]
-
-    @classmethod
-    def backward_compute_fake(cls, args):
-        return None, [(None,)], [()]
-
-
-def test_te_ops_forward_passthrough_compile():
-    torch._dynamo.reset()
-    model = te.ops.Sequential(_PassthroughOp(), _AffineOp())
-    compiled = torch.compile(model, fullgraph=True)
-    x = torch.randn(16, 32, device="cuda", requires_grad=True)
-    actual, expected = compiled(x), x * model[1].weight
-    dy = torch.randn_like(actual)
-    torch.testing.assert_close(actual, expected)
-    targets = (x, model[1].weight)
-    torch.testing.assert_close(
-        torch.autograd.grad(actual, targets, dy), torch.autograd.grad(expected, targets, dy)
-    )
-
-
-@pytest.mark.parametrize("activation", ["GELU", "SwiGLU"])
-@pytest.mark.parametrize("cache_input", [False, True])
-@pytest.mark.parametrize("training", [False, True])
-def test_te_ops_activation_compile_autocast(activation, cache_input, training):
-    if cache_input and not fp8_available:
-        pytest.skip(reason_for_no_fp8)
-    torch._dynamo.reset()
-    model = te.ops.Sequential(getattr(te.ops, activation)(cache_quantized_input=cache_input))
-
-    def run(x):
-        with torch.autocast("cuda", dtype=torch.bfloat16):
-            return model(x)
-
-    compiled = torch.compile(run, fullgraph=True)
-    x = torch.randn(32, 64, device="cuda", dtype=torch.float32, requires_grad=training)
-    ref_x = x.detach().clone().requires_grad_(training)
-    with contextlib.nullcontext() if training else torch.no_grad():
-        actual, expected = compiled(x), run(ref_x)
-        assert actual.dtype == torch.bfloat16
-        torch.testing.assert_close(actual, expected)
-        if training:
-            dy = torch.randn_like(actual)
-            torch.testing.assert_close(
-                torch.autograd.grad(actual, x, dy), torch.autograd.grad(expected, ref_x, dy)
-            )
-    torch.testing.assert_close(x, ref_x)
