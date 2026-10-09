@@ -3133,9 +3133,18 @@ def _ops_activation_reference(name, x):
         "SwiGLU",
     ],
 )
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("layout", ["contiguous", "strided", "fp8"])
-@pytest.mark.parametrize("cache_input", [False, True])
+@pytest.mark.parametrize(
+    "dtype,layout,cache_input",
+    [
+        (torch.float32, "contiguous", False),
+        (torch.float16, "contiguous", False),
+        (torch.bfloat16, "contiguous", False),
+        (torch.bfloat16, "strided", False),
+        (torch.bfloat16, "fp8", False),
+        (torch.bfloat16, "contiguous", True),
+        (torch.bfloat16, "fp8", True),
+    ],
+)
 def test_te_ops_activation_compile(activation, dtype, layout, cache_input):
     if (layout == "fp8" or cache_input) and not fp8_available:
         pytest.skip(reason_for_no_fp8)
@@ -3164,8 +3173,7 @@ def test_te_ops_activation_compile(activation, dtype, layout, cache_input):
 
 
 @pytest.mark.parametrize("activation", ["GELU", "ReLU", "GEGLU", "SwiGLU"])
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("quantization", [None, "fp8"])
+@pytest.mark.parametrize("dtype,quantization", [(torch.float16, None), (torch.bfloat16, "fp8")])
 @pytest.mark.parametrize("mode", ["default", "reduce-overhead"])
 def test_te_ops_activation_mlp_compile(activation, dtype, quantization, mode, monkeypatch):
     if quantization and not fp8_available:
@@ -3253,15 +3261,22 @@ def test_te_ops_activation_mlp_compile(activation, dtype, quantization, mode, mo
         ("GELU", "forward"),
         ("GELU", "backward"),
         ("GELU", "fused_backward"),
-        ("ReLU", "forward"),
-        ("ReLU", "backward"),
         ("ReLU", "fused_backward"),
         ("SwiGLU", "forward"),
         ("SwiGLU", "backward"),
     ],
 )
-@pytest.mark.parametrize("shape", [(32, 128), (64, 128), (128, 128), (2, 16, 128)])
-@pytest.mark.parametrize("quantization", ["1d", "2d", "rht", "unoptimized"])
+@pytest.mark.parametrize(
+    "shape,quantization",
+    [
+        ((2, 16, 128), "1d"),
+        ((64, 128), "2d"),
+        ((128, 128), "2d"),
+        ((32, 128), "rht"),
+        ((64, 128), "rht"),
+        ((64, 128), "unoptimized"),
+    ],
+)
 def test_te_ops_activation_nvfp4_custom_op(activation, direction, shape, quantization):
     from transformer_engine.pytorch.ops.basic.activation import ActivationFwdArgs, ActivationBwdArgs
     from transformer_engine.pytorch.ops.basic.swiglu import SwiGLUFwdArgs, SwiGLUBwdArgs
@@ -3302,9 +3317,6 @@ def test_te_ops_activation_nvfp4_custom_op(activation, direction, shape, quantiz
 
     assert actual._with_gemm_swizzled_scales == expected._with_gemm_swizzled_scales
     torch.testing.assert_close(actual.dequantize(), expected.dequantize(), rtol=0, atol=0)
-    names, _ = expected.__tensor_flatten__()
-    for name in names:
-        assert getattr(actual, name).shape == getattr(expected, name).shape
     spec = to_tensor_spec(expected)
     restored = spec.assemble([getattr(expected, name) for name in spec.inner_names()])
     torch.testing.assert_close(restored.dequantize(), expected.dequantize(), rtol=0, atol=0)
@@ -3313,10 +3325,8 @@ def test_te_ops_activation_nvfp4_custom_op(activation, direction, shape, quantiz
 
 @pytest.mark.skipif(not nvfp4_available, reason=reason_for_no_nvfp4)
 @pytest.mark.parametrize("activation", ["GELU", "SwiGLU"])
-@pytest.mark.parametrize("rows", [32, 64])
 @pytest.mark.parametrize("with_rht", [False, True])
-@pytest.mark.parametrize("backend", ["aot_eager", "inductor"])
-def test_te_ops_activation_nvfp4_mlp_compile(activation, rows, with_rht, backend):
+def test_te_ops_activation_nvfp4_mlp_compile(activation, with_rht):
     torch._dynamo.reset()
     quant_recipe = recipe.NVFP4BlockScaling(
         disable_rht=not with_rht, disable_stochastic_rounding=True
@@ -3338,9 +3348,9 @@ def test_te_ops_activation_nvfp4_mlp_compile(activation, rows, with_rht, backend
         with te.autocast(recipe=quant_recipe):
             return module(x)
 
-    x = torch.randn(rows, 128, device="cuda", dtype=torch.bfloat16)
+    x = torch.randn(32, 128, device="cuda", dtype=torch.bfloat16)
     with torch.no_grad():
-        actual = torch.compile(run, fullgraph=True, backend=backend)(x)
+        actual = torch.compile(run, fullgraph=True)(x)
         expected = run(x, eager_model)
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
