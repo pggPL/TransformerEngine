@@ -5,7 +5,7 @@
 """Context Parallelism."""
 import os
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, List, Optional, Union, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Union, Tuple
 import torch
 import transformer_engine_torch as tex
 
@@ -1619,6 +1619,9 @@ class CPAttentionFwdArgs:
 class CPAttentionBwdArgs:
     """Communication configuration and saved backward inputs."""
 
+    _saved_fields: ClassVar[Tuple[str, ...]] = ()
+    _saved_lists: ClassVar[Tuple[str, ...]] = ()
+    saved_list_lengths: Tuple[int, ...] = ()
     grad_output: Optional[TensorOrQuantized] = None
     q_fp8: Optional[TensorOrQuantized] = None
     out_fp8: Optional[TensorOrQuantized] = None
@@ -1653,6 +1656,14 @@ class CPAttentionBwdArgs:
     use_flash_attn_4: Optional[bool] = None
     use_fused_attention: Optional[bool] = None
 
+    def setup_saved_tensors(self, ctx):
+        """Restore named tensors and per-step tensor lists."""
+        tensors = iter(restore_from_func_ctx(ctx))
+        for name in self._saved_fields:
+            setattr(self, name, next(tensors))
+        for name, length in zip(self._saved_lists, self.saved_list_lengths):
+            setattr(self, name, [next(tensors) for _ in range(length)])
+
 
 @dataclass
 class CPP2PBwdArgs(CPAttentionBwdArgs):
@@ -1685,25 +1696,23 @@ class CPP2PBwdArgs(CPAttentionBwdArgs):
     softmax_lse_in_packed_format: Optional[bool] = None
     v_shape: Optional[Tuple[int, ...]] = None
 
-    def setup_saved_tensors(self, ctx):
-        """Restore the tensors saved by forward."""
-        (
-            self.q_fp8,
-            self.kv_fp8,
-            self.out_fp8,
-            self.q,
-            self.kv,
-            self.out,
-            self.softmax_lse,
-            self.cu_seqlens_q_padded,
-            self.cu_seqlens_kv_padded,
-            *other_tensors,
-        ) = restore_from_func_ctx(ctx)
-        size = get_distributed_world_size(self.cp_group)
-        self.cu_seqlens_q_per_step = other_tensors[:size]
-        self.cu_seqlens_kv_per_step = other_tensors[size : 2 * size]
-        self.rng_states = other_tensors[2 * size : 3 * size]
-        self.attn_biases = other_tensors[3 * size : 4 * size]
+    _saved_fields: ClassVar[Tuple[str, ...]] = (
+        "q_fp8",
+        "kv_fp8",
+        "out_fp8",
+        "q",
+        "kv",
+        "out",
+        "softmax_lse",
+        "cu_seqlens_q_padded",
+        "cu_seqlens_kv_padded",
+    )
+    _saved_lists: ClassVar[Tuple[str, ...]] = (
+        "cu_seqlens_q_per_step",
+        "cu_seqlens_kv_per_step",
+        "rng_states",
+        "attn_biases",
+    )
 
 
 @dataclass
@@ -1720,7 +1729,6 @@ class CPAllGatherBwdArgs(CPAttentionBwdArgs):
     rng_states: List[Optional[torch.Tensor]] = field(default_factory=list)
     thd_cu_seqlens_q_per_step: List[Optional[torch.Tensor]] = field(default_factory=list)
     thd_cu_seqlens_q_padded_per_step: List[Optional[torch.Tensor]] = field(default_factory=list)
-    thd_num_steps: int = 0
     dqkv_format: Optional[str] = None
     dqkv_layout: Optional[str] = None
     k_shape: Optional[Tuple[int, ...]] = None
@@ -1735,30 +1743,26 @@ class CPAllGatherBwdArgs(CPAttentionBwdArgs):
     window_size: Optional[Tuple[int, ...]] = None
     window_size_per_step: Optional[List[Tuple[int, int]]] = None
 
-    def setup_saved_tensors(self, ctx):
-        """Restore the tensors saved by forward."""
-        tensors = restore_from_func_ctx(ctx)
-        (
-            self.q_fp8,
-            self.k_fp8,
-            self.v_fp8,
-            self.out_fp8,
-            self.q,
-            self.k,
-            self.v,
-            self.out,
-            self.cu_seqlens_q,
-            self.cu_seqlens_q_padded,
-            *per_step,
-        ) = tensors
-        self.cu_seqlens_kv_per_step = per_step[:2]
-        self.softmax_lse_per_step = per_step[2:4]
-        self.rng_states = per_step[4:6]
-        if self.qkv_format == "thd":
-            self.cu_seqlens_kv_padded = per_step[6]
-            steps = self.thd_num_steps
-            self.thd_cu_seqlens_q_per_step = per_step[7 : 7 + steps]
-            self.thd_cu_seqlens_q_padded_per_step = per_step[7 + steps :]
+    _saved_fields: ClassVar[Tuple[str, ...]] = (
+        "q_fp8",
+        "k_fp8",
+        "v_fp8",
+        "out_fp8",
+        "q",
+        "k",
+        "v",
+        "out",
+        "cu_seqlens_q",
+        "cu_seqlens_q_padded",
+        "cu_seqlens_kv_padded",
+    )
+    _saved_lists: ClassVar[Tuple[str, ...]] = (
+        "cu_seqlens_kv_per_step",
+        "softmax_lse_per_step",
+        "rng_states",
+        "thd_cu_seqlens_q_per_step",
+        "thd_cu_seqlens_q_padded_per_step",
+    )
 
 
 @dataclass
@@ -1784,23 +1788,31 @@ class CPA2ABwdArgs(CPAttentionBwdArgs):
     softmax_type: Optional[str] = None
     window_size: Optional[Tuple[int, ...]] = None
 
-    def setup_saved_tensors(self, ctx):
-        """Restore the tensors saved by forward."""
-        (
-            self.q_fp8,
-            self.k_fp8,
-            self.v_fp8,
-            self.out_fp8,
-            self.q,
-            self.k,
-            self.v,
-            self.out,
-            self.cu_seqlens_q,
-            self.cu_seqlens_kv,
-            self.cu_seqlens_q_padded,
-            self.cu_seqlens_kv_padded,
-            *self.aux_ctx_tensors,
-        ) = restore_from_func_ctx(ctx)
+    _saved_fields: ClassVar[Tuple[str, ...]] = (
+        "q_fp8",
+        "k_fp8",
+        "v_fp8",
+        "out_fp8",
+        "q",
+        "k",
+        "v",
+        "out",
+        "cu_seqlens_q",
+        "cu_seqlens_kv",
+        "cu_seqlens_q_padded",
+        "cu_seqlens_kv_padded",
+    )
+    _saved_lists: ClassVar[Tuple[str, ...]] = ("aux_ctx_tensors",)
+
+
+def _cp_forward_result(out, max_logit, state):
+    names = (*state._saved_fields, *state._saved_lists)
+    tensors = [getattr(state, name) for name in state._saved_fields]
+    state.saved_list_lengths = tuple(len(getattr(state, name)) for name in state._saved_lists)
+    for name in state._saved_lists:
+        tensors.extend(getattr(state, name))
+    attrs = {name: value for name, value in vars(state).items() if name not in names}
+    return out, max_logit, tuple(tensors), attrs
 
 
 def _cp_setup_context(bwd_args, _fwd_args, _outputs, attrs, saved):
@@ -2585,17 +2597,15 @@ def _cp_p2p_forward(args: CPAttentionFwdArgs):
         kv_f16 = kv
         f16_tensors = (q_f16, kv_f16, out_f16)
 
-    tensors_to_save = (
-        *fp8_tensors,
-        *f16_tensors,
-        softmax_lse,
-        cu_seqlens_q_padded,
-        cu_seqlens_kv_padded,
-        *cu_seqlens_q_per_step,
-        *cu_seqlens_kv_per_step,
-        *rng_states,
-        *attn_biases,
-    )
+    bwd_args.q_fp8, bwd_args.kv_fp8, bwd_args.out_fp8 = fp8_tensors
+    bwd_args.q, bwd_args.kv, bwd_args.out = f16_tensors
+    bwd_args.softmax_lse = softmax_lse
+    bwd_args.cu_seqlens_q_padded = cu_seqlens_q_padded
+    bwd_args.cu_seqlens_kv_padded = cu_seqlens_kv_padded
+    bwd_args.cu_seqlens_q_per_step = cu_seqlens_q_per_step
+    bwd_args.cu_seqlens_kv_per_step = cu_seqlens_kv_per_step
+    bwd_args.rng_states = rng_states
+    bwd_args.attn_biases = attn_biases
 
     bwd_args.cp_group_a2a = cp_group_a2a
     bwd_args.cp_size_a2a = cp_size_a2a
@@ -2652,7 +2662,7 @@ def _cp_p2p_forward(args: CPAttentionFwdArgs):
 
     nvtx_range_pop(f"{nvtx_label}")
 
-    return out_ret, max_logit if return_max_logit else None, tensors_to_save, vars(bwd_args)
+    return _cp_forward_result(out_ret, max_logit if return_max_logit else None, bwd_args)
 
 
 def _cp_p2p_backward(args: CPP2PBwdArgs):
@@ -4103,15 +4113,16 @@ def _cp_all_gather_forward(args: CPAttentionFwdArgs):
         # v: [s, b, h, d]
         # out_f16: [b, s, h, d] or [s, b, h, d]
         f16_tensors = (q, k, v, out_f16)
-    tensors_to_save = (
-        *fp8_tensors,
-        *f16_tensors,
-        cu_seqlens_q,
-        cu_seqlens_q_padded,
-        *cu_seqlens_kv_per_step,
-        *softmax_lse_per_step,
-        *rng_states,
-    )
+    bwd_args.q_fp8, bwd_args.k_fp8, bwd_args.v_fp8, bwd_args.out_fp8 = fp8_tensors
+    bwd_args.q, bwd_args.k, bwd_args.v, bwd_args.out = f16_tensors
+    bwd_args.cu_seqlens_q = cu_seqlens_q
+    bwd_args.cu_seqlens_q_padded = cu_seqlens_q_padded
+    bwd_args.cu_seqlens_kv_padded = cu_seqlens_kv_padded
+    bwd_args.cu_seqlens_kv_per_step = cu_seqlens_kv_per_step
+    bwd_args.softmax_lse_per_step = softmax_lse_per_step
+    bwd_args.rng_states = rng_states
+    bwd_args.thd_cu_seqlens_q_per_step = thd_cu_seqlens_q_per_step
+    bwd_args.thd_cu_seqlens_q_padded_per_step = thd_cu_seqlens_q_padded_per_step
 
     bwd_args.qkv_format = qkv_format
     bwd_args.qkv_layout = qkv_layout
@@ -4162,14 +4173,7 @@ def _cp_all_gather_forward(args: CPAttentionFwdArgs):
             bwd_args.S_quantizer.scale = S_quantizer.scale.clone()
 
     nvtx_range_pop("transformer_engine.AttnFuncWithCPAndKVAllGather.forward")
-    if qkv_format == "thd":
-        bwd_args.thd_num_steps = len(thd_cu_seqlens_q_per_step)
-        tensors_to_save += (
-            cu_seqlens_kv_padded,
-            *thd_cu_seqlens_q_per_step,
-            *thd_cu_seqlens_q_padded_per_step,
-        )
-    return out_ret, max_logit if return_max_logit else None, tensors_to_save, vars(bwd_args)
+    return _cp_forward_result(out_ret, max_logit if return_max_logit else None, bwd_args)
 
 
 def _cp_all_gather_backward(args: CPAllGatherBwdArgs):
@@ -5145,15 +5149,13 @@ def _cp_a2a_forward(args: CPAttentionFwdArgs):
         else:
             # all tensors are in F16
             f16_tensors = (q_part, k_part, v_part, out_part)
-    tensors_to_save = (
-        *fp8_tensors,
-        *f16_tensors,
-        cu_seqlens_q,
-        cu_seqlens_kv,
-        cu_seqlens_q_padded,
-        cu_seqlens_kv_padded,
-        *aux_ctx_tensors,
-    )
+    bwd_args.q_fp8, bwd_args.k_fp8, bwd_args.v_fp8, bwd_args.out_fp8 = fp8_tensors
+    bwd_args.q, bwd_args.k, bwd_args.v, bwd_args.out = f16_tensors
+    bwd_args.cu_seqlens_q = cu_seqlens_q
+    bwd_args.cu_seqlens_kv = cu_seqlens_kv
+    bwd_args.cu_seqlens_q_padded = cu_seqlens_q_padded
+    bwd_args.cu_seqlens_kv_padded = cu_seqlens_kv_padded
+    bwd_args.aux_ctx_tensors = aux_ctx_tensors
 
     bwd_args.cp_group = cp_group
     bwd_args.cp_stream = cp_stream
@@ -5193,7 +5195,7 @@ def _cp_a2a_forward(args: CPAttentionFwdArgs):
             bwd_args.S_quantizer.scale = S_quantizer.scale.clone()
 
     nvtx_range_pop("transformer_engine.AttnFuncWithCPAndQKVOA2A.forward")
-    return out_ret, max_logit if return_max_logit else None, tensors_to_save, vars(bwd_args)
+    return _cp_forward_result(out_ret, max_logit if return_max_logit else None, bwd_args)
 
 
 def _cp_a2a_backward(args: CPA2ABwdArgs):
