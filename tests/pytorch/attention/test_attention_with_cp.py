@@ -549,6 +549,11 @@ model_configs_fused_attn = {
 }
 
 
+model_configs_compile = {
+    name: model_configs_fused_attn[name] for name in ("cp_1_0", "cp_1_1", "cp_2_0", "cp_3_0")
+}
+
+
 dtypes = ["bf16", "fp16", "fp8"]
 qkv_formats = ["bshd", "sbhd", "thd"]
 cp_comm_types = ["p2p", "all_gather", "a2a", "a2a+p2p"]
@@ -805,5 +810,47 @@ def test_cp_with_flash_attention_no_load_balance(cp_pool):
         fa_pad_between_seqs=False,
         load_balancing_strategy="NO_LOAD_BALANCE",
         deterministic=_deterministic,
+        log_level=pytest_logging_level,
+    )
+
+
+@pytest.mark.parametrize("dtype", ["bf16", "fp16"])
+@pytest.mark.parametrize("qkv_format", ["bshd", "sbhd"])
+@pytest.mark.parametrize("cp_comm_type", ["p2p", "all_gather", "a2a", "a2a+p2p"])
+@pytest.mark.parametrize("model", ["cp_1_0", "cp_1_1", "cp_2_0", "cp_3_0"])
+def test_cp_torch_compile(cp_pool, dtype, qkv_format, cp_comm_type, model):
+    """Compare full-graph CP forward/backward with unpartitioned attention."""
+    from transformer_engine.pytorch.attention.dot_product_attention.context_parallel_op import (
+        _cp_attention_ops,
+    )
+
+    if any(op is None for op in _cp_attention_ops.values()):
+        pytest.skip("Requires PyTorch custom-op opaque object support")
+    world_size = 4 if cp_comm_type == "a2a+p2p" else 2
+    if torch.cuda.device_count() < world_size:
+        pytest.skip(f"Requires {world_size} GPUs")
+    config = copy.deepcopy(model_configs_compile[model])
+    config.context_parallel = True
+    config.cp_comm_type = cp_comm_type
+    available, _, _ = get_available_attention_backends(
+        config,
+        qkv_dtype=torch.bfloat16 if dtype == "bf16" else torch.float16,
+        qkv_layout="_".join([qkv_format] * 3),
+        is_training=True,
+        deterministic=_deterministic,
+        cp_size=world_size,
+        cp_size_a2a=2 if cp_comm_type == "a2a+p2p" else 1,
+    )
+    if not available[1]:
+        pytest.skip("No fused attention backend available")
+    _submit(
+        cp_pool(world_size),
+        dtype=dtype,
+        model=model,
+        qkv_format=qkv_format,
+        kernel_backend="FusedAttention",
+        cp_comm_type=cp_comm_type,
+        deterministic=_deterministic,
+        torch_compile=True,
         log_level=pytest_logging_level,
     )

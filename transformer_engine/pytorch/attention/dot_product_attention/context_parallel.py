@@ -1600,9 +1600,11 @@ class CPAttentionFwdArgs:
     return_max_logit: bool = False
     softcap: float = 0.0
     window_size: Optional[Tuple[int, int]] = None
-    cp_group: Optional[Union[dist_group_type, List[dist_group_type]]] = None
+    cp_group: Optional[dist_group_type] = None
+    cp_group_a2a: Optional[dist_group_type] = None
     cp_global_ranks: Optional[List[int]] = None
     cp_stream: Optional[Any] = None
+    cp_stream_handle: Optional[Tuple[int, int]] = None
     fp8: bool = False
     fp8_meta: Optional[Dict[str, Any]] = None
     quantizers: Optional[Any] = None
@@ -1636,6 +1638,7 @@ class CPAttentionBwdArgs:
     attn_mask_type: Optional[str] = None
     cp_group: Optional[dist_group_type] = None
     cp_stream: Optional[Any] = None
+    cp_stream_handle: Optional[Tuple[int, int]] = None
     dO_quantizer: Optional[Any] = None
     dP_quantizer: Optional[Any] = None
     dQKV_quantizer: Optional[Any] = None
@@ -1805,7 +1808,83 @@ class CPA2ABwdArgs(CPAttentionBwdArgs):
     _saved_lists: ClassVar[Tuple[str, ...]] = ("aux_ctx_tensors",)
 
 
-def _cp_forward_result(out, max_logit, state):
+def _cp_backward_args(args, bwd_type):
+    state = bwd_type()
+    for name in (
+        "dropout_p",
+        "attn_bias_type",
+        "deterministic",
+        "softcap",
+        "use_fused_attention",
+        "pad_between_seqs",
+        "use_flash_attn_3",
+        "use_flash_attn_4",
+    ):
+        setattr(state, name, getattr(args, name))
+    return state
+
+
+def _cp_stream(args):
+    if args.cp_stream is not None:
+        return args.cp_stream
+    handle, device = args.cp_stream_handle
+    return torch.cuda.ExternalStream(handle, device=device)
+
+
+def _cp_compile_alias_names(state):
+    if isinstance(state, CPP2PBwdArgs):
+        return ("q", "out") if state.cp_group_a2a is None else ()
+    if isinstance(state, CPAllGatherBwdArgs):
+        return ("q", "k", "v", "out")
+    return ("cu_seqlens_q", "cu_seqlens_kv", "cu_seqlens_q_padded", "cu_seqlens_kv_padded")
+
+
+def _cp_compile_saved_tensors(state, args):
+    state.cp_stream, state.cp_stream_handle = None, args.cp_stream_handle
+    state.fp8_recipe, state.fp8_meta = None, None
+    for name in _cp_compile_alias_names(state):
+        setattr(state, name, None)
+    # Metadata can reuse cached sequence lengths or views of one allocation.
+    for name in state._saved_fields:
+        value = getattr(state, name)
+        if name.startswith("cu_") and isinstance(value, torch.Tensor):
+            setattr(state, name, value.clone())
+    for name in state._saved_lists:
+        setattr(
+            state,
+            name,
+            [
+                value.clone() if isinstance(value, torch.Tensor) else value
+                for value in getattr(state, name)
+            ],
+        )
+
+
+def _cp_compile_saved_aliases(state, args, out):
+    if isinstance(state, CPP2PBwdArgs):
+        if state.cp_group_a2a is not None:
+            return {}
+        q = args.q
+        if "causal" in args.attn_mask_type:
+            seq_dim = args.qkv_format.index("s")
+            q = q.view(*q.shape[:seq_dim], 2, q.shape[seq_dim] // 2, *q.shape[seq_dim + 1 :])
+        return {"q": q, "out": out}
+    if isinstance(state, CPAllGatherBwdArgs):
+        seq_dim = args.qkv_format.index("s")
+        return {
+            "q": args.q.view(state.q_shape),
+            "k": args.k.movedim(seq_dim, 0).contiguous(),
+            "v": args.v.movedim(seq_dim, 0).contiguous(),
+            "out": out,
+        }
+    return {name: getattr(args, name) for name in _cp_compile_alias_names(state)}
+
+
+def _cp_forward_result(out, max_logit, state, fwd_args):
+    if fwd_args.cp_stream_handle is not None:
+        if not fwd_args.is_training:
+            return out, max_logit, (), {}
+        _cp_compile_saved_tensors(state, fwd_args)
     names = (*state._saved_fields, *state._saved_lists)
     tensors = [getattr(state, name) for name in state._saved_fields]
     state.saved_list_lengths = tuple(len(getattr(state, name)) for name in state._saved_lists)
@@ -1815,9 +1894,15 @@ def _cp_forward_result(out, max_logit, state):
     return out, max_logit, tuple(tensors), attrs
 
 
-def _cp_setup_context(bwd_args, _fwd_args, _outputs, attrs, saved):
+def _cp_setup_context(bwd_args, fwd_args, outputs, attrs, saved):
     for name, value in attrs.items():
         setattr(bwd_args, name, value)
+    if fwd_args.cp_stream_handle is not None:
+        aliases = _cp_compile_saved_aliases(bwd_args, fwd_args, outputs[0])
+        saved = list(saved)
+        for i, name in enumerate(bwd_args._saved_fields):
+            if name in aliases:
+                saved[i] = aliases[name]
     return saved
 
 
@@ -1856,22 +1941,23 @@ def _cp_p2p_forward(args: CPAttentionFwdArgs):
     attn_mask_type = args.attn_mask_type
     attn_bias_type = args.attn_bias_type
     attn_bias = args.attn_bias
-    deterministic = args.deterministic
     use_fused_attention = args.use_fused_attention
     return_max_logit = args.return_max_logit
     softcap = args.softcap
     fp8 = args.fp8
     fp8_meta = args.fp8_meta
-    cp_group = args.cp_group
+    cp_group = (
+        [args.cp_group_a2a, args.cp_group] if args.cp_group_a2a is not None else args.cp_group
+    )
     cp_global_ranks = args.cp_global_ranks
-    cp_stream = args.cp_stream
+    cp_stream = _cp_stream(args)
     quantizers = args.quantizers
     pad_between_seqs = args.pad_between_seqs
     use_flash_attn_3 = args.use_flash_attn_3
     use_flash_attn_4 = args.use_flash_attn_4
     fp8_output = args.fp8_output
     layer_number = args.layer_number
-    bwd_args = CPP2PBwdArgs()
+    bwd_args = _cp_backward_args(args, CPP2PBwdArgs)
 
     nvtx_label = "transformer_engine.AttnFuncWithCPAndKVP2P.forward"
     nvtx_range_push(f"{nvtx_label}")
@@ -2613,24 +2699,16 @@ def _cp_p2p_forward(args: CPAttentionFwdArgs):
     bwd_args.cp_group = cp_group
     bwd_args.cp_global_ranks = cp_global_ranks
     bwd_args.cp_stream = cp_stream
-    bwd_args.dropout_p = dropout_p
     bwd_args.max_seqlen_q = max_seqlen_q
     bwd_args.max_seqlen_kv = max_seqlen_kv
     bwd_args.softmax_scale = softmax_scale
     bwd_args.attn_mask_type = attn_mask_type
-    bwd_args.attn_bias_type = attn_bias_type
     bwd_args.attn_bias_shape = None if attn_bias is None else attn_bias.shape
-    bwd_args.deterministic = deterministic
-    bwd_args.softcap = softcap
-    bwd_args.use_fused_attention = use_fused_attention
-    bwd_args.pad_between_seqs = pad_between_seqs
     bwd_args.softmax_lse_in_packed_format = softmax_lse_in_packed_format
     bwd_args.second_half_lse_seqlen = second_half_lse_seqlen
     bwd_args.fp8_meta = fp8_meta
     bwd_args.is_input_fp8 = is_input_fp8
     bwd_args.is_output_fp8 = is_output_fp8
-    bwd_args.use_flash_attn_3 = use_flash_attn_3
-    bwd_args.use_flash_attn_4 = use_flash_attn_4
 
     bwd_args.orig_q_shape = orig_q_shape
     bwd_args.orig_k_shape = orig_k_shape
@@ -2662,12 +2740,13 @@ def _cp_p2p_forward(args: CPAttentionFwdArgs):
 
     nvtx_range_pop(f"{nvtx_label}")
 
-    return _cp_forward_result(out_ret, max_logit if return_max_logit else None, bwd_args)
+    return _cp_forward_result(out_ret, max_logit if return_max_logit else None, bwd_args, args)
 
 
 def _cp_p2p_backward(args: CPP2PBwdArgs):
     """Compute gradients for p2p attention."""
     dout = args.grad_output
+    args.cp_stream = _cp_stream(args)
 
     nvtx_label = "transformer_engine.AttnFuncWithCPAndKVP2P.backward"
     nvtx_range_push(f"{nvtx_label}")
@@ -2705,7 +2784,7 @@ def _cp_p2p_backward(args: CPP2PBwdArgs):
     q = args.q
     kv = args.kv
     out = args.out
-    softmax_lse = args.softmax_lse
+    softmax_lse = args.softmax_lse.view_as(args.softmax_lse)
     cu_seqlens_q_padded = args.cu_seqlens_q_padded
     cu_seqlens_kv_padded = args.cu_seqlens_kv_padded
     cu_seqlens_q_per_step = args.cu_seqlens_q_per_step
@@ -2983,11 +3062,14 @@ def _cp_p2p_backward(args: CPP2PBwdArgs):
                 kv_fp8,
                 (
                     out
-                    if (args.fp8_recipe.float8_current_scaling() and _dpa_fp8_cs_o_in_f16)
-                    or args.fp8_recipe.mxfp8()
+                    if args.fp8
+                    and (
+                        (args.fp8_recipe.float8_current_scaling() and _dpa_fp8_cs_o_in_f16)
+                        or args.fp8_recipe.mxfp8()
+                    )
                     else out_fp8
                 ),
-                dout_fp8 if not args.fp8_recipe.mxfp8() else dout,
+                dout if args.fp8 and args.fp8_recipe.mxfp8() else dout_fp8,
                 softmax_lse,
                 softmax_lse_,
                 rng_states,
@@ -3391,6 +3473,8 @@ def _cp_p2p_backward(args: CPP2PBwdArgs):
 
     nvtx_range_pop(f"{nvtx_label}")
 
+    if args.cp_stream_handle is not None:
+        dq, dk, dv = dq.contiguous(), dk.clone().contiguous(), dv.contiguous()
     return dq, dk, dv, attn_dbias, None
 
 
@@ -3473,22 +3557,20 @@ def _cp_all_gather_forward(args: CPAttentionFwdArgs):
     attn_mask_type = args.attn_mask_type
     attn_bias_type = args.attn_bias_type
     attn_bias = args.attn_bias
-    deterministic = args.deterministic
     use_fused_attention = args.use_fused_attention
     return_max_logit = args.return_max_logit
     softcap = args.softcap
     window_size = args.window_size
     cp_group = args.cp_group
-    cp_stream = args.cp_stream
+    cp_stream = _cp_stream(args)
     use_flash_attn_3 = args.use_flash_attn_3
     use_flash_attn_4 = args.use_flash_attn_4
-    pad_between_seqs = args.pad_between_seqs
     fp8 = args.fp8
     fp8_meta = args.fp8_meta
     quantizers = args.quantizers
     fp8_output = args.fp8_output
     load_balancing_strategy = args.load_balancing_strategy
-    bwd_args = CPAllGatherBwdArgs()
+    bwd_args = _cp_backward_args(args, CPAllGatherBwdArgs)
 
     nvtx_range_push("transformer_engine.AttnFuncWithCPAndKVAllGather.forward")
 
@@ -4139,17 +4221,9 @@ def _cp_all_gather_forward(args: CPAttentionFwdArgs):
 
     bwd_args.cp_group = cp_group
     bwd_args.cp_stream = cp_stream
-    bwd_args.dropout_p = dropout_p
     bwd_args.max_seqlen_q = max_seqlen_q
     bwd_args.softmax_scale = softmax_scale
-    bwd_args.attn_bias_type = attn_bias_type
     bwd_args.attn_mask_type = attn_mask_type
-    bwd_args.deterministic = deterministic
-    bwd_args.softcap = softcap
-    bwd_args.use_fused_attention = use_fused_attention
-    bwd_args.use_flash_attn_3 = use_flash_attn_3
-    bwd_args.use_flash_attn_4 = use_flash_attn_4
-    bwd_args.pad_between_seqs = pad_between_seqs
     bwd_args.window_size = window_size
     bwd_args.load_balancing_strategy = load_balancing_strategy
     if qkv_format == "thd":
@@ -4173,12 +4247,13 @@ def _cp_all_gather_forward(args: CPAttentionFwdArgs):
             bwd_args.S_quantizer.scale = S_quantizer.scale.clone()
 
     nvtx_range_pop("transformer_engine.AttnFuncWithCPAndKVAllGather.forward")
-    return _cp_forward_result(out_ret, max_logit if return_max_logit else None, bwd_args)
+    return _cp_forward_result(out_ret, max_logit if return_max_logit else None, bwd_args, args)
 
 
 def _cp_all_gather_backward(args: CPAllGatherBwdArgs):
     """Compute gradients for all gather attention."""
     dout = args.grad_output
+    args.cp_stream = _cp_stream(args)
 
     nvtx_range_push("transformer_engine.AttnFuncWithCPAndKVAllGather.backward")
     cp_size = get_distributed_world_size(args.cp_group)
@@ -4697,6 +4772,8 @@ def _cp_all_gather_backward(args: CPAllGatherBwdArgs):
         dq, dk, dv, _, _ = combine_and_quantize(args.dqkv_layout, dq, dk, dv, args.dQKV_quantizer)
 
     nvtx_range_pop("transformer_engine.AttnFuncWithCPAndKVAllGather.backward")
+    if args.cp_stream_handle is not None:
+        dq, dk, dv = dq.contiguous(), dk.contiguous(), dv.contiguous()
     return dq, dk, dv, None, None
 
 
@@ -4743,7 +4820,6 @@ def _cp_a2a_forward(args: CPAttentionFwdArgs):
     attn_mask_type = args.attn_mask_type
     attn_bias_type = args.attn_bias_type
     attn_bias = args.attn_bias
-    deterministic = args.deterministic
     use_fused_attention = args.use_fused_attention
     return_max_logit = args.return_max_logit
     softcap = args.softcap
@@ -4751,7 +4827,7 @@ def _cp_a2a_forward(args: CPAttentionFwdArgs):
     fp8 = args.fp8
     fp8_meta = args.fp8_meta
     cp_group = args.cp_group
-    cp_stream = args.cp_stream
+    cp_stream = _cp_stream(args)
     quantizers = args.quantizers
     pad_between_seqs = args.pad_between_seqs
     use_flash_attn_3 = args.use_flash_attn_3
@@ -4759,7 +4835,7 @@ def _cp_a2a_forward(args: CPAttentionFwdArgs):
     softmax_type = args.softmax_type
     softmax_offset = args.softmax_offset
     fp8_output = args.fp8_output
-    bwd_args = CPA2ABwdArgs()
+    bwd_args = _cp_backward_args(args, CPA2ABwdArgs)
 
     nvtx_range_push("transformer_engine.AttnFuncWithCPAndQKVOA2A.forward")
 
@@ -5159,24 +5235,16 @@ def _cp_a2a_forward(args: CPAttentionFwdArgs):
 
     bwd_args.cp_group = cp_group
     bwd_args.cp_stream = cp_stream
-    bwd_args.dropout_p = dropout_p
     bwd_args.max_seqlen_q = max_seqlen_q
     bwd_args.max_seqlen_kv = max_seqlen_kv
     bwd_args.softmax_scale = softmax_scale
     bwd_args.attn_mask_type = attn_mask_type
-    bwd_args.attn_bias_type = attn_bias_type
-    bwd_args.deterministic = deterministic
-    bwd_args.softcap = softcap
     bwd_args.window_size = window_size
-    bwd_args.use_fused_attention = use_fused_attention
     bwd_args.fp8_meta = fp8_meta
     bwd_args.is_input_fp8 = is_input_fp8
     bwd_args.is_output_fp8 = is_output_fp8
     bwd_args.fwd_nominal_dtype = fwd_nominal_dtype
     bwd_args.fp8_recipe = fp8_recipe
-    bwd_args.use_flash_attn_3 = use_flash_attn_3
-    bwd_args.use_flash_attn_4 = use_flash_attn_4
-    bwd_args.pad_between_seqs = pad_between_seqs
     bwd_args.softmax_type = softmax_type
 
     bwd_args.dQKV_quantizer = dQKV_quantizer
@@ -5195,12 +5263,13 @@ def _cp_a2a_forward(args: CPAttentionFwdArgs):
             bwd_args.S_quantizer.scale = S_quantizer.scale.clone()
 
     nvtx_range_pop("transformer_engine.AttnFuncWithCPAndQKVOA2A.forward")
-    return _cp_forward_result(out_ret, max_logit if return_max_logit else None, bwd_args)
+    return _cp_forward_result(out_ret, max_logit if return_max_logit else None, bwd_args, args)
 
 
 def _cp_a2a_backward(args: CPA2ABwdArgs):
     """Compute gradients for a2a attention."""
     dout = args.grad_output
+    args.cp_stream = _cp_stream(args)
 
     nvtx_range_push("transformer_engine.AttnFuncWithCPAndQKVOA2A.backward")
     cp_size = get_distributed_world_size(args.cp_group)
@@ -5516,6 +5585,8 @@ def _cp_a2a_backward(args: CPA2ABwdArgs):
                 )
 
     nvtx_range_pop("transformer_engine.AttnFuncWithCPAndQKVOA2A.backward")
+    if args.cp_stream_handle is not None:
+        dq, dk, dv = dq.contiguous(), dk.contiguous(), dv.contiguous()
     return dq, dk, dv, d_bias, d_softmax_offset
 
 
@@ -5840,6 +5911,15 @@ def attn_forward_func_with_cp(
             " qkv_format = 'thd'!"
         )
 
+    cp_group_a2a = None
+    if isinstance(cp_group, list):
+        cp_group_a2a, cp_group = cp_group
+    cp_stream_handle = None
+    if torch.compiler.is_compiling() and use_fused_attention:
+        cp_stream_handle, cp_stream = cp_stream, None
+        fp8_meta, quantizers = None, None
+        cp_global_ranks = list(cp_global_ranks) if cp_global_ranks is not None else None
+
     args = CPAttentionFwdArgs(
         is_training=is_training,
         q=q,
@@ -5853,8 +5933,10 @@ def attn_forward_func_with_cp(
         cu_seqlens_kv_padded=cu_seqlens_kv_padded,
         dropout_p=dropout_p,
         cp_group=cp_group,
+        cp_group_a2a=cp_group_a2a,
         cp_global_ranks=cp_global_ranks,
         cp_stream=cp_stream,
+        cp_stream_handle=cp_stream_handle,
         softmax_scale=softmax_scale,
         qkv_format=qkv_format,
         attn_mask_type=attn_mask_type,
@@ -5885,6 +5967,10 @@ def attn_forward_func_with_cp(
         function = AttnFuncWithCPAndQKVOA2A
     else:
         raise ValueError(f"Unsupported communication type: {cp_comm_type}!")
+    if torch.compiler.is_compiling() and use_fused_attention:
+        from .context_parallel_op import context_parallel_attention
+
+        return context_parallel_attention(args, cp_comm_type)
     return function.apply(q, k, v, attn_bias, softmax_offset, args)
 
 
