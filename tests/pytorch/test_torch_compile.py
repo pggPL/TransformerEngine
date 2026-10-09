@@ -3239,9 +3239,8 @@ def test_te_ops_activation_mlp_compile(activation, quantization, training, mode,
         pytest.skip(reason_for_no_nvfp4)
     if quantization == "fp8" and not fp8_available:
         pytest.skip(reason_for_no_fp8)
-    if nvfp4 and training:
-        pytest.skip("NVFP4TensorStorage.size() calls warnings.warn() during backward tracing")
     dtype = torch.float16 if quantization is None else torch.bfloat16
+    tols = {"rtol": 0, "atol": 0} if nvfp4 or not training else {}
     torch._dynamo.reset()
     counters.clear()
     monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
@@ -3292,7 +3291,7 @@ def test_te_ops_activation_mlp_compile(activation, quantization, training, mode,
         with torch.set_grad_enabled(training):
             actual = compiled(x)
             expected = run(eager_x, eager_model)
-        torch.testing.assert_close(actual, expected, **({} if training else {"rtol": 0, "atol": 0}))
+        torch.testing.assert_close(actual, expected, **tols)
         if not training:
             continue
         dy = torch.randn_like(actual)
@@ -3300,9 +3299,9 @@ def test_te_ops_activation_mlp_compile(activation, quantization, training, mode,
             dy.copy_(torch.randint(0, 9, dy.shape, device=dy.device) / 8)
         actual.backward(dy)
         expected.backward(dy)
-        torch.testing.assert_close(x.grad, eager_x.grad)
+        torch.testing.assert_close(x.grad, eager_x.grad, **tols)
         for param, reference in zip(model.parameters(), eager_model.parameters()):
-            torch.testing.assert_close(param.grad, reference.grad)
+            torch.testing.assert_close(param.grad, reference.grad, **tols)
         if quantization is None and step == 0:
             ref_x = x.detach().clone().requires_grad_()
             params = [p.detach().clone().requires_grad_() for p in model.parameters()]
@@ -3342,6 +3341,7 @@ def test_te_ops_activation_mlp_compile(activation, quantization, training, mode,
         ("ReLU", "fused_backward"),
         ("SwiGLU", "forward"),
         ("SwiGLU", "backward"),
+        ("Bias", "backward"),
     ],
 )
 @pytest.mark.parametrize(
@@ -3358,6 +3358,7 @@ def test_te_ops_activation_mlp_compile(activation, quantization, training, mode,
 def test_te_ops_activation_nvfp4_custom_op(activation, direction, shape, quantization):
     from transformer_engine.pytorch.ops.basic.activation import ActivationFwdArgs, ActivationBwdArgs
     from transformer_engine.pytorch.ops.basic.swiglu import SwiGLUFwdArgs, SwiGLUBwdArgs
+    from transformer_engine.pytorch.ops.basic.bias import BiasBwdArgs
     from transformer_engine.pytorch.ops.fused.backward_activation_bias import (
         BackwardActivationBias,
         BackwardActivationBiasArgs,
@@ -3386,6 +3387,8 @@ def test_te_ops_activation_nvfp4_custom_op(activation, direction, shape, quantiz
         args = ActivationBwdArgs(dy, x, x.dtype, quantizer)
         if gated:
             args = SwiGLUBwdArgs(dy, x, x.dtype, quantizer, None)
+        if activation == "Bias":
+            args = BiasBwdArgs(dy, quantizer)
         if direction == "fused_backward":
             op = BackwardActivationBias
             args = BackwardActivationBiasArgs(dy, x, x.dtype, quantizer, activation.lower())
