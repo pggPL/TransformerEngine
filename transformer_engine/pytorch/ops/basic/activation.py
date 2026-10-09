@@ -20,7 +20,7 @@ from ...cpu_offload import is_cpu_offload_enabled, mark_activation_offload
 from ...tensor.float8_tensor import Float8CurrentScalingQuantizer, Quantizer
 from ...utils import _compile_safe_warn, clear_tensor_data
 from ..op import BasicOperation, OperationContext
-from .._common import maybe_dequantize
+from .._common import maybe_dequantize, update_nvfp4_direct_output_spec
 
 __all__ = [
     "GELU",
@@ -168,6 +168,7 @@ class _ActivationOperation(BasicOperation, metaclass=abc.ABCMeta):
         y = TensorSpec(
             shape=shape, dtype=args.dtype, device=x.device, quantizer=args.output_quantizer
         )
+        update_nvfp4_direct_output_spec(y)
         saved = ()
         if args.requires_grad and args.input_quantizer is not None:
             saved = (
@@ -205,16 +206,14 @@ class _ActivationOperation(BasicOperation, metaclass=abc.ABCMeta):
 
     @classmethod
     def backward_compute_fake(cls, args: ActivationBwdArgs):
-        return (
-            TensorSpec(
-                shape=args.input_.shape,
-                dtype=args.dtype,
-                device=args.input_.device,
-                quantizer=args.grad_input_quantizer,
-            ),
-            [()],
-            [()],
+        dx = TensorSpec(
+            shape=args.input_.shape,
+            dtype=args.dtype,
+            device=args.input_.device,
+            quantizer=args.grad_input_quantizer,
         )
+        update_nvfp4_direct_output_spec(dx)
+        return dx, [()], [()]
 
 
 class GELU(_ActivationOperation):

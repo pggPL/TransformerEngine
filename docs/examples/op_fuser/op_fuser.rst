@@ -81,30 +81,6 @@ Thus, using the operation fuser simply involves constructing
    Operations that match ``LayerNormMLP`` module. Note that different
    fusions have been applied in the forward and backward passes.
 
-Compiling an MLP
-^^^^^^^^^^^^^^^^
-
-``torch.compile(fullgraph=True)`` supports pipelines of ``Linear`` and
-ordinary activations: GELU, GEGLU, GLU, QGELU, QGEGLU, ReLU, ReGLU, SReLU,
-SReGLU, SiLU, and SwiGLU. Forward and backward use the same compute
-implementations as eager execution. FP8 CurrentScaling also preserves the
-fused activation-gradient and bias reduction for GELU and ReLU.
-
-.. code-block:: python
-
-    mlp = te.ops.Sequential(
-        te.ops.Linear(256, 1024, device="cuda", dtype=torch.bfloat16),
-        te.ops.GELU(),
-        te.ops.Linear(1024, 256, device="cuda", dtype=torch.bfloat16),
-    )
-    compiled = torch.compile(mlp, fullgraph=True)
-    x = torch.randn(32, 256, device="cuda", dtype=torch.bfloat16, requires_grad=True)
-    compiled(x).sum().backward()
-
-The activation custom ops support quantized saved inputs and SwiGLU's
-interleaved layout. CPU activation offload, delayed scaling, and operations
-with extra tensor inputs or outputs remain outside this compiled path.
-
 Quantization
 ^^^^^^^^^^^^
 

@@ -23,7 +23,7 @@ from transformer_engine.pytorch.ops.op import (
 )
 from ...utils import clear_tensor_data
 from ...dynamo import TensorSpec
-from .._common import maybe_dequantize
+from .._common import maybe_dequantize, update_nvfp4_direct_output_spec
 
 _fused_activations = {GELU: tex.dbias_dgelu, ReLU: tex.dbias_drelu}
 _fusible_activations = tuple(_fused_activations.keys())
@@ -86,6 +86,7 @@ class BackwardActivationBias(FusedOperation):
         dx = TensorSpec(
             shape=x.shape, dtype=args.dtype, device=x.device, quantizer=args.grad_input_quantizer
         )
+        update_nvfp4_direct_output_spec(dx)
         db = TensorSpec(shape=(x.shape[-1],), dtype=args.dtype, device=x.device)
         return dx, [(db,), ()], [(), ()]
 

@@ -3246,6 +3246,105 @@ def test_te_ops_activation_mlp_compile(activation, dtype, quantization, mode, mo
         assert counters["inductor"]["cudagraph_recorded_non_static_inputs"] > 0
 
 
+@pytest.mark.skipif(not nvfp4_available, reason=reason_for_no_nvfp4)
+@pytest.mark.parametrize(
+    "activation,direction",
+    [
+        ("GELU", "forward"),
+        ("GELU", "backward"),
+        ("GELU", "fused_backward"),
+        ("ReLU", "forward"),
+        ("ReLU", "backward"),
+        ("ReLU", "fused_backward"),
+        ("SwiGLU", "forward"),
+        ("SwiGLU", "backward"),
+    ],
+)
+@pytest.mark.parametrize("shape", [(32, 128), (64, 128), (128, 128), (2, 16, 128)])
+@pytest.mark.parametrize("quantization", ["1d", "2d", "rht", "unoptimized"])
+def test_te_ops_activation_nvfp4_custom_op(activation, direction, shape, quantization):
+    from transformer_engine.pytorch.ops.basic.activation import ActivationFwdArgs, ActivationBwdArgs
+    from transformer_engine.pytorch.ops.basic.swiglu import SwiGLUFwdArgs, SwiGLUBwdArgs
+    from transformer_engine.pytorch.ops.fused.backward_activation_bias import (
+        BackwardActivationBias,
+        BackwardActivationBiasArgs,
+    )
+
+    quantizer = NVFP4Quantizer(
+        with_rht=quantization == "rht",
+        with_post_rht_amax=quantization == "rht",
+        with_2d_quantization=quantization == "2d",
+    )
+    quantizer.internal = True
+    quantizer.optimize_for_gemm = quantization != "unoptimized"
+    gated = activation == "SwiGLU"
+    x = torch.randn(
+        (*shape[:-1], shape[-1] * (2 if gated else 1)), device="cuda", dtype=torch.bfloat16
+    )
+    dy = torch.randn(shape, device="cuda", dtype=x.dtype)
+    op = getattr(te.ops, activation)
+    if direction == "forward":
+        args = ActivationFwdArgs(x, x.dtype, quantizer, None, None, False)
+        if gated:
+            args = SwiGLUFwdArgs(x, x.dtype, quantizer, None, None, False, None)
+        expected = op.forward_compute(args, in_custom_op=True)[0]
+        actual = op.compile_ops[0](args)[0]
+    else:
+        args = ActivationBwdArgs(dy, x, x.dtype, quantizer)
+        if gated:
+            args = SwiGLUBwdArgs(dy, x, x.dtype, quantizer, None)
+        if direction == "fused_backward":
+            op = BackwardActivationBias
+            args = BackwardActivationBiasArgs(dy, x, x.dtype, quantizer, activation.lower())
+        expected, expected_params, _ = op.backward_compute(args, in_custom_op=True)
+        actual, actual_params, _ = op.compile_ops[1](args)
+        torch.testing.assert_close(actual_params, expected_params, rtol=0, atol=0)
+
+    assert actual._with_gemm_swizzled_scales == expected._with_gemm_swizzled_scales
+    torch.testing.assert_close(actual.dequantize(), expected.dequantize(), rtol=0, atol=0)
+    names, _ = expected.__tensor_flatten__()
+    for name in names:
+        assert getattr(actual, name).shape == getattr(expected, name).shape
+    spec = to_tensor_spec(expected)
+    restored = spec.assemble([getattr(expected, name) for name in spec.inner_names()])
+    torch.testing.assert_close(restored.dequantize(), expected.dequantize(), rtol=0, atol=0)
+    assert quantizer.optimize_for_gemm == (quantization != "unoptimized")
+
+
+@pytest.mark.skipif(not nvfp4_available, reason=reason_for_no_nvfp4)
+@pytest.mark.parametrize("activation", ["GELU", "SwiGLU"])
+@pytest.mark.parametrize("rows", [32, 64])
+@pytest.mark.parametrize("with_rht", [False, True])
+@pytest.mark.parametrize("backend", ["aot_eager", "inductor"])
+def test_te_ops_activation_nvfp4_mlp_compile(activation, rows, with_rht, backend):
+    torch._dynamo.reset()
+    quant_recipe = recipe.NVFP4BlockScaling(
+        disable_rht=not with_rht, disable_stochastic_rounding=True
+    )
+    model = (
+        te.ops.Sequential(
+            te.ops.Linear(
+                128, 256 if activation == "SwiGLU" else 128, device="cuda", dtype=torch.bfloat16
+            ),
+            getattr(te.ops, activation)(),
+            te.ops.Linear(128, 128, device="cuda", dtype=torch.bfloat16),
+        )
+        .eval()
+        .requires_grad_(False)
+    )
+    eager_model = copy.deepcopy(model)
+
+    def run(x, module=model):
+        with te.autocast(recipe=quant_recipe):
+            return module(x)
+
+    x = torch.randn(rows, 128, device="cuda", dtype=torch.bfloat16)
+    with torch.no_grad():
+        actual = torch.compile(run, fullgraph=True, backend=backend)(x)
+        expected = run(x, eager_model)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
 @pytest.mark.parametrize("cache_input", [False, True])
 @pytest.mark.parametrize("interleave_size", [None, 4])
 def test_te_ops_swiglu_compile_dynamic(cache_input, interleave_size):
