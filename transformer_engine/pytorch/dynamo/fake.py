@@ -18,7 +18,7 @@ from ..tensor.nvfp4_tensor import NVFP4Quantizer
 from ..utils import get_device_compute_capability
 
 
-def _make_output_spec(
+def _make_fused_quantization_output_spec(
     shape: tuple[int, ...],
     dtype: torch.dtype,
     device: Optional[torch.device],
@@ -60,7 +60,9 @@ def fake_activation(
     shape = input_.shape
     if gated:
         shape = (*shape[:-1], shape[-1] // 2)
-    return _make_output_spec(shape, dtype or input_.dtype, input_.device, quantizer)
+    return _make_fused_quantization_output_spec(
+        shape, dtype or input_.dtype, input_.device, quantizer
+    )
 
 
 def fake_activation_backward(
@@ -70,7 +72,9 @@ def fake_activation_backward(
     dtype: Optional[torch.dtype] = None,
 ) -> TensorSpec:
     """Describe the gradient of the original, pre-activation input."""
-    return _make_output_spec(input_.shape, dtype or input_.dtype, input_.device, quantizer)
+    return _make_fused_quantization_output_spec(
+        input_.shape, dtype or input_.dtype, input_.device, quantizer
+    )
 
 
 def fake_bgrad(
@@ -85,7 +89,9 @@ def fake_bgrad(
     dx = (
         grad_output
         if quantizer is None and dtype == grad_output.dtype
-        else _make_output_spec(grad_output.shape, dtype, grad_output.device, quantizer)
+        else _make_fused_quantization_output_spec(
+            grad_output.shape, dtype, grad_output.device, quantizer
+        )
     )
     return db, dx
 
@@ -100,7 +106,9 @@ def fake_norm(
     """Describe newly allocated norm output, mean and reciprocal standard deviation."""
     if normalization not in ("LayerNorm", "RMSNorm"):
         raise ValueError(f"Unsupported normalization: {normalization}")
-    out = _make_output_spec(input_.shape, dtype or input_.dtype, input_.device, quantizer)
+    out = _make_fused_quantization_output_spec(
+        input_.shape, dtype or input_.dtype, input_.device, quantizer
+    )
     rows, cols = math.prod(input_.shape[:-1]), input_.shape[-1]
     if (
         isinstance(quantizer, MXFP8Quantizer)
