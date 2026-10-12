@@ -1695,6 +1695,26 @@ _USAGE_COMBOS = [
 ]
 
 
+@pytest.mark.skipif(not nvfp4_available, reason=reason_for_no_nvfp4)
+@pytest.mark.parametrize("shape", [(64, 128), (1, 64, 128), (64, 1, 128), (2, 4, 8, 128)])
+@pytest.mark.parametrize("with_rht", [False, True])
+@pytest.mark.parametrize("optimize_for_gemm", [False, True])
+@pytest.mark.parametrize("rowwise, columnwise", _USAGE_COMBOS)
+def test_nvfp4_inner_tensor_specs_match_quantize(
+    shape, with_rht, optimize_for_gemm, rowwise, columnwise
+):
+    """NVFP4 fake buffers match native quantization for every input rank."""
+    quantizer = _nvfp4(with_rht=with_rht)
+    quantizer.set_usage(rowwise=rowwise, columnwise=columnwise)
+    quantizer.optimize_for_gemm = optimize_for_gemm
+    tensor = quantizer(torch.randn(shape, dtype=torch.bfloat16, device="cuda"))
+    for name, (expected_shape, expected_dtype) in quantizer.inner_tensor_specs(shape).items():
+        inner = getattr(tensor, name)
+        assert inner.shape == expected_shape, name
+        assert inner.dtype == expected_dtype, name
+        assert inner.is_contiguous(), name
+
+
 @pytest.mark.parametrize("factory, shape", _SPEC_QUANTIZERS)
 @pytest.mark.parametrize("rowwise, columnwise", _USAGE_COMBOS)
 @pytest.mark.parametrize("internal", [False, True], ids=["wrapper", "internal"])
@@ -1972,17 +1992,33 @@ def test_te_linear_compiles(fp8_recipe, compile_mode):
 @pytest.mark.skipif(not _opaque_available, reason="torch opaque object API not available")
 @pytest.mark.parametrize("compile_mode", _compile_modes)
 @pytest.mark.parametrize(
-    "input_shape",
-    [(64,), (2, 4, 4, 64)],
-    ids=["rank1", "rank4"],
+    "fp8_recipe,input_shape",
+    [pytest.param(None, (64,), id="bf16-rank1")]
+    + [
+        pytest.param(fp8_recipe, shape, id=f"{name}-{shape}")
+        for name, fp8_recipe in (
+            ("bf16", None),
+            ("mxfp8", recipe.MXFP8BlockScaling()),
+            ("nvfp4", recipe.NVFP4BlockScaling()),
+            ("nvfp4-no-rht", recipe.NVFP4BlockScaling(disable_rht=True)),
+        )
+        for shape in ((1, 128, 128), (128, 1, 128), (2, 4, 16, 128))
+    ],
 )
-def test_te_linear_compiles_non_2d_input(input_shape, compile_mode):
+def test_te_linear_compiles_non_2d_input(fp8_recipe, input_shape, compile_mode):
     """Compiled Linear preserves non-matrix activation shapes in forward and backward."""
+    if isinstance(fp8_recipe, recipe.NVFP4BlockScaling) and not nvfp4_available:
+        pytest.skip(reason_for_no_nvfp4)
+    if isinstance(fp8_recipe, recipe.MXFP8BlockScaling) and not mxfp8_available:
+        pytest.skip(reason_for_no_mxfp8)
     dtype = torch.bfloat16
-    model = te.Linear(64, 32, params_dtype=dtype, device="cuda")
+    model = te.Linear(input_shape[-1], 128, params_dtype=dtype, device="cuda")
 
     def fn(inp):
-        return model(inp)
+        if fp8_recipe is None:
+            return model(inp)
+        with te.autocast(recipe=fp8_recipe):
+            return model(inp)
 
     torch._dynamo.reset()
     if compile_mode == "reduce-overhead":
@@ -2858,6 +2894,49 @@ def test_te_ops_bias_compile_with_fp8_input(backward):
 @pytest.mark.parametrize("grads", ["all", "input", "weight", "bias", "none"])
 def test_te_ops_linear_bias_compile(dtype, quantization, case, grads, monkeypatch):
     _check_linear_bias_compile(dtype, quantization, case, grads, monkeypatch)
+
+
+@pytest.mark.skipif(not nvfp4_available, reason=reason_for_no_nvfp4)
+@pytest.mark.parametrize("compile_mode", _compile_modes)
+@pytest.mark.parametrize("bias", [False, True])
+@pytest.mark.parametrize(
+    "shape,with_rht,disable_rht_fusion",
+    [
+        ((2, 16, 128), False, False),
+        ((2, 16, 128), True, False),
+        ((64, 128), True, False),
+        ((64, 128), True, True),
+    ],
+)
+def test_te_ops_linear_nvfp4_compile(
+    shape, with_rht, disable_rht_fusion, bias, compile_mode, monkeypatch
+):
+    monkeypatch.setenv("NVTE_NVFP4_DISABLE_RHT_CAST_FUSION", str(int(disable_rht_fusion)))
+    torch._dynamo.reset()
+    model = te.ops.Sequential(te.ops.Linear(128, 128, bias=bias, dtype=torch.bfloat16))
+    eager_model = copy.deepcopy(model)
+    quant_recipe = recipe.NVFP4BlockScaling(
+        disable_rht=not with_rht, disable_stochastic_rounding=True
+    )
+
+    def run(x, module=model):
+        with te.autocast(recipe=quant_recipe):
+            return module(x)
+
+    compiled = torch.compile(run, fullgraph=True, mode=compile_mode)
+    with _assert_no_cudagraph_skips(compile_mode == "reduce-overhead"):
+        for _ in range(3):
+            torch.compiler.cudagraph_mark_step_begin()
+            x = torch.randn(shape, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+            eager_x = x.detach().clone().requires_grad_()
+            actual = compiled(x)
+            expected = run(eager_x, eager_model)
+            torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+            dy = torch.randn_like(actual)
+            grads = torch.autograd.grad(actual, (x, *model.parameters()), dy)
+            eager_grads = torch.autograd.grad(expected, (eager_x, *eager_model.parameters()), dy)
+            torch.testing.assert_close(grads, eager_grads, rtol=0, atol=0)
+            del actual, expected, grads, eager_grads, x, eager_x, dy
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")

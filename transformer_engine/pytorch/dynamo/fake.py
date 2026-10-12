@@ -2,7 +2,7 @@
 #
 # See LICENSE for license information.
 
-"""Data-free descriptions of native activation, bias and normalization outputs."""
+"""Data-free descriptions of quantized operation outputs."""
 
 from __future__ import annotations
 import math
