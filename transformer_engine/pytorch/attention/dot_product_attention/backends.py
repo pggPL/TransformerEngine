@@ -10,7 +10,7 @@ from importlib.metadata import version as get_pkg_version
 from importlib.metadata import PackageNotFoundError
 import inspect
 import os
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import warnings
 import logging
 from packaging.version import Version as PkgVersion
@@ -1630,6 +1630,10 @@ class FusedAttnBwdArgs:
     dQKV_quantizer: Optional[Any] = None
     dO_quantizer: Optional[Any] = None
     dP_quantizer: Optional[Any] = None
+
+    def setup_grad_outputs(self, grads: Sequence[Any]) -> None:
+        """Assign the output gradient, ignoring auxiliary outputs."""
+        self.grad_output = grads[0]
 
     def setup_saved_tensors(self, ctx: torch.autograd.function.FunctionCtx) -> None:
         """Pull saved tensors from ``ctx`` into the fields backward consumes."""
