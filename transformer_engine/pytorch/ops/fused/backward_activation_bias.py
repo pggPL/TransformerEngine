@@ -22,8 +22,8 @@ from transformer_engine.pytorch.ops.op import (
     FusibleOperation,
 )
 from ...utils import clear_tensor_data
-from ...dynamo import TensorSpec
-from .._common import maybe_dequantize, update_nvfp4_direct_output_spec
+from ...dynamo.fake import fake_bgrad
+from .._common import maybe_dequantize
 
 _fused_activations = {GELU: tex.dbias_dgelu, ReLU: tex.dbias_drelu}
 _fusible_activations = tuple(_fused_activations.keys())
@@ -82,12 +82,7 @@ class BackwardActivationBias(FusedOperation):
 
     @classmethod
     def backward_compute_fake(cls, args: BackwardActivationBiasArgs):
-        x = args.input_
-        dx = TensorSpec(
-            shape=x.shape, dtype=args.dtype, device=x.device, quantizer=args.grad_input_quantizer
-        )
-        update_nvfp4_direct_output_spec(dx)
-        db = TensorSpec(shape=(x.shape[-1],), dtype=args.dtype, device=x.device)
+        db, dx = fake_bgrad(args.grad_output, args.grad_input_quantizer, dtype=args.dtype)
         return dx, [(db,), ()], [(), ()]
 
     @staticmethod

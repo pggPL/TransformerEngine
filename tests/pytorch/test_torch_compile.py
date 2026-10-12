@@ -3117,115 +3117,121 @@ def _ops_activation_reference(name, x):
     return x if gate is None else x * gate
 
 
-class _ActivationCompileCase(NamedTuple):
-    activation: str
-    dtype: torch.dtype = torch.float32
-    layout: str = "contiguous"
-    cache_input: bool = False
-    autocast: bool = False
-    training: bool = True
-    interleave_size: int | None = None
-    dynamic: bool = False
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        _ActivationCompileCase(activation, dtype, layout, cache_input)
-        for activation in (
-            "GELU",
-            "GEGLU",
-            "GLU",
-            "QGELU",
-            "QGEGLU",
-            "ReLU",
-            "ReGLU",
-            "SReLU",
-            "SReGLU",
-            "SiLU",
-            "SwiGLU",
-        )
-        for dtype, layout, cache_input in (
-            (torch.float32, "contiguous", False),
-            (torch.float16, "contiguous", False),
-            (torch.bfloat16, "contiguous", False),
-            (torch.bfloat16, "strided", False),
-            (torch.bfloat16, "fp8", False),
-            (torch.bfloat16, "contiguous", True),
-            (torch.bfloat16, "fp8", True),
-        )
-    ]
-    + [
-        _ActivationCompileCase(
-            activation, cache_input=cache_input, autocast=True, training=training
-        )
-        for activation in ("GELU", "SwiGLU")
-        for cache_input in (False, True)
-        for training in (False, True)
-    ]
-    + [
-        _ActivationCompileCase(
-            "SwiGLU", cache_input=cache_input, interleave_size=interleave_size, dynamic=True
-        )
-        for cache_input in (False, True)
-        for interleave_size in (None, 4)
-    ],
-    ids=lambda case: "-".join(map(str, case)),
-)
-def test_te_ops_activation_compile(case):
-    if (case.layout == "fp8" or case.cache_input) and not fp8_available:
+def _check_te_ops_activation_compile(
+    activation,
+    *,
+    dtype=torch.float32,
+    layout="contiguous",
+    cache_input=False,
+    autocast=False,
+    training=True,
+    interleave_size=None,
+    dynamic=False,
+):
+    if (layout == "fp8" or cache_input) and not fp8_available:
         pytest.skip(reason_for_no_fp8)
     torch._dynamo.reset()
-    kwargs = {"cache_quantized_input": case.cache_input}
-    if case.interleave_size is not None:
-        kwargs["glu_interleave_size"] = case.interleave_size
-    model = te.ops.Sequential(getattr(te.ops, case.activation)(**kwargs))
+    kwargs = {"cache_quantized_input": cache_input}
+    if interleave_size is not None:
+        kwargs["glu_interleave_size"] = interleave_size
+    model = te.ops.Sequential(getattr(te.ops, activation)(**kwargs))
 
     def run(x):
-        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=case.autocast):
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=autocast):
             return model(x)
 
     compiled, graphs = _compile_with_graphs(run)
-    eager_reference = case.autocast or case.dynamic
-    tols = {} if eager_reference else dtype_tols(case.dtype)
-    for step, rows in enumerate((16, 16, 32, 48) if case.dynamic else (32,)):
-        shape = (rows, 64) if case.dynamic else (2, 16, 64)
-        x = torch.randn(shape, device="cuda", dtype=case.dtype)
-        if case.layout == "fp8" or (case.cache_input and not eager_reference):
+    eager_reference = autocast or dynamic
+    tols = {} if eager_reference else dtype_tols(dtype)
+    for step, rows in enumerate((16, 16, 32, 48) if dynamic else (32,)):
+        shape = (rows, 64) if dynamic else (2, 16, 64)
+        x = torch.randn(shape, device="cuda", dtype=dtype)
+        if layout == "fp8" or (cache_input and not eager_reference):
             quantizer = Float8CurrentScalingQuantizer(tex.DType.kFloat8E4M3, device="cuda")
             x = quantizer(x)
-            if case.layout != "fp8":
+            if layout != "fp8":
                 x = x.dequantize()
-        if case.layout == "strided":
+        if layout == "strided":
             x = x.transpose(0, 1)
-        x = x.detach().requires_grad_(case.training)
-        if case.dynamic:
+        x = x.detach().requires_grad_(training)
+        if dynamic:
             torch._dynamo.mark_dynamic(x, 0)
         ref_x = (
             x.detach().clone()
             if eager_reference
-            else (x.dequantize() if case.layout == "fp8" else x).detach().double()
-        ).requires_grad_(case.training)
-        with torch.set_grad_enabled(case.training):
+            else (x.dequantize() if layout == "fp8" else x).detach().double()
+        ).requires_grad_(training)
+        with torch.set_grad_enabled(training):
             actual = compiled(x)
             expected = (
-                run(ref_x) if eager_reference else _ops_activation_reference(case.activation, ref_x)
+                run(ref_x) if eager_reference else _ops_activation_reference(activation, ref_x)
             )
             torch.testing.assert_close(actual.to(expected.dtype), expected, **tols)
-            if case.training:
+            if training:
                 dy = torch.randn_like(actual)
                 got = torch.autograd.grad(actual, x, dy)[0]
                 want = torch.autograd.grad(expected, ref_x, dy.to(expected.dtype))[0]
                 torch.testing.assert_close(got.to(want.dtype), want, **tols)
-        if case.autocast:
+        if autocast:
             assert actual.dtype == torch.bfloat16
             torch.testing.assert_close(x, ref_x)
-        if case.dynamic:
+        if dynamic:
             if step == 1:
                 graph_count = len(graphs)
             elif step > 1:
                 assert len(graphs) == graph_count
-    _assert_custom_ops(graphs, case.activation.lower(), backward=case.training)
+    _assert_custom_ops(graphs, activation.lower(), backward=training)
+
+
+@pytest.mark.parametrize(
+    "activation",
+    [
+        "GELU",
+        "GEGLU",
+        "GLU",
+        "QGELU",
+        "QGEGLU",
+        "ReLU",
+        "ReGLU",
+        "SReLU",
+        "SReGLU",
+        "SiLU",
+        "SwiGLU",
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype,layout,cache_input",
+    [
+        (torch.float32, "contiguous", False),
+        (torch.float16, "contiguous", False),
+        (torch.bfloat16, "contiguous", False),
+        (torch.bfloat16, "strided", False),
+        (torch.bfloat16, "fp8", False),
+        (torch.bfloat16, "contiguous", True),
+        (torch.bfloat16, "fp8", True),
+    ],
+)
+def test_te_ops_activation_compile(activation, dtype, layout, cache_input):
+    _check_te_ops_activation_compile(
+        activation, dtype=dtype, layout=layout, cache_input=cache_input
+    )
+
+
+@pytest.mark.parametrize("activation", ["GELU", "SwiGLU"])
+@pytest.mark.parametrize("cache_input", [False, True])
+@pytest.mark.parametrize("training", [False, True])
+def test_te_ops_activation_autocast_compile(activation, cache_input, training):
+    _check_te_ops_activation_compile(
+        activation, cache_input=cache_input, autocast=True, training=training
+    )
+
+
+@pytest.mark.parametrize("cache_input", [False, True])
+@pytest.mark.parametrize("interleave_size", [None, 4])
+def test_te_ops_swiglu_dynamic_compile(cache_input, interleave_size):
+    _check_te_ops_activation_compile(
+        "SwiGLU", cache_input=cache_input, interleave_size=interleave_size, dynamic=True
+    )
 
 
 @pytest.mark.parametrize("activation", ["GELU", "ReLU", "GEGLU", "SwiGLU"])

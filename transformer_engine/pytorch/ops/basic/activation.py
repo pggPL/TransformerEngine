@@ -16,11 +16,12 @@ import torch
 import transformer_engine_torch as tex
 from ...constants import DType
 from ...dynamo import TensorSpec, TensorOrQuantized
+from ...dynamo.fake import fake_activation, fake_activation_backward
 from ...cpu_offload import is_cpu_offload_enabled, mark_activation_offload
 from ...tensor.float8_tensor import Float8CurrentScalingQuantizer, Quantizer
 from ...utils import _compile_safe_warn, clear_tensor_data
 from ..op import BasicOperation, OperationContext
-from .._common import maybe_dequantize, update_nvfp4_direct_output_spec
+from .._common import maybe_dequantize
 
 __all__ = [
     "GELU",
@@ -162,13 +163,12 @@ class _ActivationOperation(BasicOperation, metaclass=abc.ABCMeta):
     @classmethod
     def forward_compute_fake(cls, args: ActivationFwdArgs):
         x = args.input_
-        shape = x.shape
-        if cls._output_halves_last_dim:
-            shape = (*shape[:-1], shape[-1] // 2)
-        y = TensorSpec(
-            shape=shape, dtype=args.dtype, device=x.device, quantizer=args.output_quantizer
+        y = fake_activation(
+            x,
+            args.output_quantizer,
+            dtype=args.dtype,
+            gated=cls._output_halves_last_dim,
         )
-        update_nvfp4_direct_output_spec(y)
         saved = ()
         if args.requires_grad and args.input_quantizer is not None:
             saved = (
@@ -206,13 +206,11 @@ class _ActivationOperation(BasicOperation, metaclass=abc.ABCMeta):
 
     @classmethod
     def backward_compute_fake(cls, args: ActivationBwdArgs):
-        dx = TensorSpec(
-            shape=args.input_.shape,
+        dx = fake_activation_backward(
+            args.input_,
+            args.grad_input_quantizer,
             dtype=args.dtype,
-            device=args.input_.device,
-            quantizer=args.grad_input_quantizer,
         )
-        update_nvfp4_direct_output_spec(dx)
         return dx, [()], [()]
 
 
