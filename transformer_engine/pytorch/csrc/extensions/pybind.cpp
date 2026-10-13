@@ -16,6 +16,7 @@
 #include <optional>
 #include <vector>
 
+#include "../bulk_tensor.h"
 #include "../common.h"
 #include "../extensions.h"
 #include "common.h"
@@ -191,6 +192,8 @@ void bind_quantize_with_amax_extensions(py::module_ &m) {
 #include "common/util/pybind_helper.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("unpack_bulk_tensor", &transformer_engine::pytorch::unpack_bulk_tensor, py::arg("buffer"),
+        py::arg("layout"));
   NVTE_DECLARE_COMMON_PYBIND11_HANDLES(m)
 
   // Register __eq__/__ne__ on the pybind ``DType`` enum so it compares by integer.

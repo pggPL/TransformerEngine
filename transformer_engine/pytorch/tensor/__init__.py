@@ -25,6 +25,7 @@ from .mxfp8_tensor import MXFP8Tensor, MXFP8Quantizer
 from .float8_blockwise_tensor import Float8BlockwiseQTensor, Float8BlockQuantizer
 from .nvfp4_tensor import NVFP4Tensor, NVFP4Quantizer
 from .grouped_tensor import GroupedTensor
+from .bulk_tensor import BulkTensor, BulkTensorRegion
 from .hybrid_tensor import HybridQuantizedTensor, HybridQuantizer
 from .identity_tensor import IdentityTensor, IdentityQuantizer
 from .storage.identity_tensor_storage import IdentityTensorStorage
@@ -54,6 +55,8 @@ __all__ = [
     "Float8BlockwiseQTensor",
     "NVFP4Tensor",
     "GroupedTensor",
+    "BulkTensor",
+    "BulkTensorRegion",
     "HybridQuantizedTensor",
     "prepare_for_saving",
     "restore_from_saved",
