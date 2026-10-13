@@ -157,6 +157,48 @@ Quantized tensors
 
 .. autoapiclass:: transformer_engine.pytorch.IdentityTensor(shape, dtype, *, hp_data, quantizer=None, requires_grad=False, device=None)
 
+Bulk buffers
+------------
+
+``BulkTensor`` stores one contiguous ``uint8`` buffer and immutable metadata
+for typed, contiguous regions. It is a container, not a ``torch.Tensor`` subclass.
+Allocation creates only the base tensor; regions are materialized on demand.
+
+.. code-block:: python
+
+   from transformer_engine.pytorch.tensor import BulkTensor
+
+   bulk = BulkTensor.empty(
+       [(128, 256), (128, 8)],
+       [torch.uint8, torch.float32],
+       device="cuda",
+       alignments=[256, 16],
+   )
+   data, scales = bulk.unpack()
+
+Native consumers can include ``pytorch/csrc/bulk_tensor.h`` and call
+``unpack_bulk_tensor(buffer, layout)`` to obtain ``std::vector<at::Tensor>``
+without creating Python objects for the regions. Nonempty regions share the
+base storage and version counter. Empty regions use empty tensors with null
+data pointers, as required by TE kernels. The allocator must provide the
+requested base alignment, which native unpacking validates.
+
+For autograd, save ``bulk.buffer`` with ``ctx.save_for_backward`` and retain
+``bulk.layout`` separately. Reconstruct ``BulkTensor(restored_buffer, layout)``
+after offload; the metadata contains offsets rather than pointers. Keep
+buffers with different lifetimes in separate ``BulkTensor`` objects.
+
+A functional custom op should expose the base buffer once and reconstruct
+regions inside its consumer. Its fake implementation must describe the same
+buffer size. Returning the aliases produced by ``unpack()`` from a functional
+custom op violates that operator's aliasing contract. This container does not
+automatically adapt existing GroupedLinear custom ops or quantized storages.
+
+.. autoapiclass:: transformer_engine.pytorch.tensor.BulkTensor
+   :members: empty, unpack
+
+.. autoapiclass:: transformer_engine.pytorch.tensor.BulkTensorRegion
+
 Quantizers
 ----------
 
