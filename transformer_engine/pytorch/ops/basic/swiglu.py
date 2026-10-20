@@ -7,6 +7,7 @@
 from __future__ import annotations
 from collections.abc import Iterable, Sequence
 import math
+from dataclasses import dataclass, fields
 from typing import Any, Optional
 
 import torch
@@ -18,6 +19,7 @@ from ...tensor import Float8CurrentScalingQuantizer, Quantizer
 from ...utils import clear_tensor_data
 from ..op import BasicOperation, OperationContext
 from .._common import maybe_dequantize
+from .activation import _ActivationOperation, ActivationFwdArgs, ActivationBwdArgs
 
 __all__ = [
     "SwiGLU",
@@ -29,7 +31,28 @@ __all__ = [
 ]
 
 
-class SwiGLU(BasicOperation):
+@dataclass(slots=True)
+class SwiGLUFwdArgs(ActivationFwdArgs):
+    """Activation configuration with the GLU input layout."""
+
+    glu_interleave_size: Optional[int]
+
+
+@dataclass(slots=True)
+class SwiGLUBwdArgs(ActivationBwdArgs):
+    """Activation gradient with the GLU input layout."""
+
+    glu_interleave_size: Optional[int]
+
+
+def _interleave_glu(tensor: torch.Tensor, size: int, *, reverse: bool = False) -> torch.Tensor:
+    shape = tensor.shape
+    blocks = shape[-1] // (2 * size)
+    middle = (blocks, 2) if reverse else (2, blocks)
+    return tensor.reshape(-1, *middle, size).transpose(1, 2).contiguous().view(shape)
+
+
+class SwiGLU(_ActivationOperation):
     r"""Swish gated linear unit
 
     The input tensor is split into chunks :math:``a`` and :math:``b``
@@ -88,13 +111,120 @@ class SwiGLU(BasicOperation):
         self.cache_quantized_input: bool = cache_quantized_input
         self.glu_interleave_size: Optional[int] = glu_interleave_size
 
+    fwd_args_type = SwiGLUFwdArgs
+    bwd_args_type = SwiGLUBwdArgs
+    _output_halves_last_dim = True
+
+    @staticmethod
+    def _activation_forward_impl(*args, **kwargs) -> torch.Tensor:
+        return tex.swiglu(*args, **kwargs)
+
+    @staticmethod
+    def _activation_backward_impl(*args, **kwargs) -> torch.Tensor:
+        return tex.dswiglu(*args, **kwargs)
+
+    def pack_forward_args(self, *args, **kwargs) -> SwiGLUFwdArgs:
+        args = super().pack_forward_args(*args, **kwargs)
+        return SwiGLUFwdArgs(
+            **{field.name: getattr(args, field.name) for field in fields(args)},
+            glu_interleave_size=self.glu_interleave_size,
+        )
+
+    @classmethod
+    def forward_compute(cls, args: SwiGLUFwdArgs, *, in_custom_op: bool = False):
+        x = maybe_dequantize(args.input_, args.dtype).contiguous()
+        swiglu_in = x
+        if args.glu_interleave_size is not None:
+            swiglu_in = _interleave_glu(x, args.glu_interleave_size, reverse=True)
+        out = cls._activation_forward_impl(swiglu_in, args.output_quantizer)
+        if args.input_quantizer is not None:
+            x = args.input_quantizer(x)
+        save_input = args.requires_grad and (not in_custom_op or args.input_quantizer is not None)
+        return out, [()], (x,) if save_input else ()
+
+    def pack_backward_args(self, *args, **kwargs) -> SwiGLUBwdArgs:
+        args = super().pack_backward_args(*args, **kwargs)
+        return SwiGLUBwdArgs(
+            **{field.name: getattr(args, field.name) for field in fields(args)},
+            glu_interleave_size=self.glu_interleave_size,
+        )
+
+    @classmethod
+    def backward_compute(cls, args: SwiGLUBwdArgs, *, in_custom_op: bool = False):
+        x = maybe_dequantize(args.input_, args.dtype).contiguous()
+        dy = maybe_dequantize(args.grad_output, args.dtype).contiguous()
+        quantizer = args.grad_input_quantizer
+        if args.glu_interleave_size is not None:
+            x = _interleave_glu(x, args.glu_interleave_size, reverse=True)
+            quantizer = None
+        dx = cls._activation_backward_impl(dy, x, quantizer)
+        if args.glu_interleave_size is not None:
+            dx = _interleave_glu(dx, args.glu_interleave_size)
+        if not in_custom_op:
+            clear_tensor_data(args.input_)
+        return dx, [()], [()]
+
+    @classmethod
+    def backward_compute_fake(cls, args: SwiGLUBwdArgs):
+        dx, params, extras = super().backward_compute_fake(args)
+        if args.glu_interleave_size is not None:
+            dx.quantizer = None
+        return dx, params, extras
+
+
+class SiTUGLU(SwiGLU):
+    r"""Soft-capped SiLU gated linear unit used by Kimi K3.
+
+    See the `Kimi K3 technical report
+    <https://github.com/MoonshotAI/Kimi-K3/blob/main/k3_tech_report.pdf>`__.
+
+    The input is split into gate and up-projection halves and computes
+
+    .. math::
+
+       \beta_1 \tanh(a / \beta_1) \sigma(a)
+       \; \beta_2 \tanh(b / \beta_2).
+
+    Parameters
+    ----------
+    beta1 : float, default = 4.0
+        Positive gate soft-cap parameter.
+    beta2 : float, default = 25.0
+        Positive up-branch soft-cap parameter.
+    cache_quantized_input : bool, default = False
+        Quantize the saved input for backward, as in :class:`SwiGLU`.
+    glu_interleave_size : int, optional
+        Block-interleaved GLU layout, as in :class:`SwiGLU`.
+    """
+
+    fwd_args_type = None
+    bwd_args_type = None
+
+    def __init__(
+        self,
+        *,
+        beta1: float = 4.0,
+        beta2: float = 25.0,
+        cache_quantized_input: bool = False,
+        glu_interleave_size: Optional[int] = None,
+    ) -> None:
+        super().__init__(
+            cache_quantized_input=cache_quantized_input,
+            glu_interleave_size=glu_interleave_size,
+        )
+        self.beta1 = float(beta1)
+        self.beta2 = float(beta2)
+        if not math.isfinite(self.beta1) or self.beta1 <= 0.0:
+            raise ValueError(f"beta1 must be finite and positive, got {self.beta1}")
+        if not math.isfinite(self.beta2) or self.beta2 <= 0.0:
+            raise ValueError(f"beta2 must be finite and positive, got {self.beta2}")
+
     def _tex_swiglu_forward(
         self,
         input_: torch.Tensor,
         quantizer: Optional[Quantizer],
     ) -> torch.Tensor:
-        """Call the Transformer Engine SwiGLU forward kernel."""
-        return tex.swiglu(input_, quantizer)
+        return tex.situglu(input_, quantizer, self.beta1, self.beta2)
 
     def _tex_swiglu_backward(
         self,
@@ -102,8 +232,7 @@ class SwiGLU(BasicOperation):
         input_: torch.Tensor,
         quantizer: Optional[Quantizer],
     ) -> torch.Tensor:
-        """Call the Transformer Engine SwiGLU backward kernel."""
-        return tex.dswiglu(grad_output, input_, quantizer)
+        return tex.dsituglu(grad_output, input_, quantizer, self.beta1, self.beta2)
 
     def op_forward(
         self,
@@ -211,66 +340,6 @@ class SwiGLU(BasicOperation):
         clear_tensor_data(input_)
 
         return dx, ()
-
-
-class SiTUGLU(SwiGLU):
-    r"""Soft-capped SiLU gated linear unit used by Kimi K3.
-
-    See the `Kimi K3 technical report
-    <https://github.com/MoonshotAI/Kimi-K3/blob/main/k3_tech_report.pdf>`__.
-
-    The input is split into gate and up-projection halves and computes
-
-    .. math::
-
-       \beta_1 \tanh(a / \beta_1) \sigma(a)
-       \; \beta_2 \tanh(b / \beta_2).
-
-    Parameters
-    ----------
-    beta1 : float, default = 4.0
-        Positive gate soft-cap parameter.
-    beta2 : float, default = 25.0
-        Positive up-branch soft-cap parameter.
-    cache_quantized_input : bool, default = False
-        Quantize the saved input for backward, as in :class:`SwiGLU`.
-    glu_interleave_size : int, optional
-        Block-interleaved GLU layout, as in :class:`SwiGLU`.
-    """
-
-    def __init__(
-        self,
-        *,
-        beta1: float = 4.0,
-        beta2: float = 25.0,
-        cache_quantized_input: bool = False,
-        glu_interleave_size: Optional[int] = None,
-    ) -> None:
-        super().__init__(
-            cache_quantized_input=cache_quantized_input,
-            glu_interleave_size=glu_interleave_size,
-        )
-        self.beta1 = float(beta1)
-        self.beta2 = float(beta2)
-        if not math.isfinite(self.beta1) or self.beta1 <= 0.0:
-            raise ValueError(f"beta1 must be finite and positive, got {self.beta1}")
-        if not math.isfinite(self.beta2) or self.beta2 <= 0.0:
-            raise ValueError(f"beta2 must be finite and positive, got {self.beta2}")
-
-    def _tex_swiglu_forward(
-        self,
-        input_: torch.Tensor,
-        quantizer: Optional[Quantizer],
-    ) -> torch.Tensor:
-        return tex.situglu(input_, quantizer, self.beta1, self.beta2)
-
-    def _tex_swiglu_backward(
-        self,
-        grad_output: torch.Tensor,
-        input_: torch.Tensor,
-        quantizer: Optional[Quantizer],
-    ) -> torch.Tensor:
-        return tex.dsituglu(grad_output, input_, quantizer, self.beta1, self.beta2)
 
 
 class ClampedSwiGLU(BasicOperation):
