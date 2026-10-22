@@ -82,8 +82,6 @@ class MoeDispatch(BasicOperation):
         super().__init__()
         if not isinstance(config, EpConfig):
             raise TypeError(f"config must be an EpConfig, got {type(config).__name__}.")
-        if config.zero_copy:
-            raise NotImplementedError("MoeDispatch does not support zero-copy EP.")
         self.config = config
         self.buffer = buffer
 

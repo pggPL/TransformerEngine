@@ -1,7 +1,11 @@
 # Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # See LICENSE for license information.
-"""PyTorch Expert Parallelism (EP) API."""
+"""PyTorch Expert Parallelism (EP) API.
+
+NCCL EP uses staged communication with ordinary PyTorch tensors. The experimental
+``zero_copy`` option and EP symmetric-memory helpers have been removed.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +21,6 @@ import transformer_engine_torch as tex
 
 from .constants import DType
 from .cpu_offload import mark_not_offload
-from .distributed import symm_mem_alloc, release_symm_mem_pool
 from .quantized_tensor import QuantizedTensor, QuantizedTensorStorage
 from .tensor.storage.mxfp8_tensor_storage import MXFP8TensorStorage
 
@@ -38,15 +41,7 @@ __all__ = [
     "ep_finalize",
     "ep_dispatch",
     "ep_combine",
-    "symm_mem_alloc",
-    "release_symm_mem_pool",
-    "is_symm_backed",
 ]
-
-
-# ``symm_mem_alloc`` (imported from .distributed) allocates the symm-mem buffers
-# used by the zero-copy IO path. Set ``ep_bootstrap(zero_copy=True)`` to opt in;
-# the C++ backend then operates the EP group in zero-copy mode.
 
 
 # Bootstrap
@@ -82,7 +77,7 @@ def _check_nccl_runtime_version() -> None:
 
 _BOOTSTRAPPED = False
 _ATEXIT_REGISTERED = False
-# EP group captured at bootstrap; used by the zero-copy symm-mem pool allocator.
+# EP group captured at bootstrap.
 _EP_GROUP: Optional[dist.ProcessGroup] = None
 # Eager-mode toggle captured at bootstrap (set when recv_capacity_per_rank is
 # omitted); ep_dispatch reads it to size the recv outputs from the per-step
@@ -99,7 +94,7 @@ class EpConfig:
     the format of the data it moves. It describes no particular transport: the
     ops in ``transformer_engine.pytorch.ops.basic`` accept it whichever backend
     carries the tokens, and a backend that needs transport settings of its own
-    (an ``EpBuffer``'s receive capacity, alignment, payload dtype, zero-copy and
+    (an ``EpBuffer``'s receive capacity, alignment, payload dtype and
     overflow policy) is configured with them directly.
 
     ``alignment`` defaults to 256 tokens per expert to support grouped MLP
@@ -115,7 +110,6 @@ class EpConfig:
     ep_group: dist.ProcessGroup
     alignment: int = 256
     payload_dtype: torch.dtype = torch.bfloat16
-    zero_copy: bool = False
     drop_on_overflow: bool = False
     # Quantization recipes used to move the dispatched tokens forward and the
     # combined gradient backward; ``None`` moves BF16 both ways.
@@ -148,7 +142,6 @@ def ep_bootstrap(
     num_topk: int,
     recv_capacity_per_rank: Optional[int] = None,
     max_num_sms: int = 0,
-    zero_copy: bool = False,
     drop_on_overflow: bool = False,
     max_token_dtype: torch.dtype = torch.bfloat16,
 ) -> None:
@@ -161,12 +154,6 @@ def ep_bootstrap(
     sizes the recv outputs. Omit it (``None``) for eager mode, which sizes recv
     outputs from the per-step recv total instead; eager needs a host sync each
     step and is not CUDA-graph capturable.
-
-    ``zero_copy`` opts the EP group into the symm-mem zero-copy IO path; pass
-    ``True`` only when payload tensors are allocated via ``symm_mem_alloc``.
-    Requires ``recv_capacity_per_rank``. To capture a CUDA graph, supply
-    persistent recv_tokens / grad_out buffers to dispatch/combine; the pool-based
-    auto-allocation used when they are omitted is not CUDA-graph capturable.
 
     ``num_topk`` is the per-token top-k; it sizes NCCL EP internal buffers.
 
@@ -181,30 +168,15 @@ def ep_bootstrap(
         raise ValueError(f"ep_bootstrap requires ep_group.size() >= 2 (got {ep_group.size()}).")
     if num_topk < 1:
         raise ValueError(f"ep_bootstrap requires num_topk >= 1 (got {num_topk}).")
-    if zero_copy and eager:
-        raise ValueError("ep_bootstrap: zero_copy requires recv_capacity_per_rank")
     if drop_on_overflow and eager:
         raise ValueError("ep_bootstrap: drop_on_overflow requires recv_capacity_per_rank")
     _check_nccl_runtime_version()
-    if zero_copy:
-        if not tex.ep_zero_copy_supported():
-            raise RuntimeError(
-                "ep_bootstrap: zero_copy=True requires the Transformer Engine torch extension "
-                "built with NCCL symm-mem support (torch >= 2.11 with USE_NCCL)."
-            )
-        warnings.warn(
-            "ep_bootstrap(zero_copy=True) is experimental; the symm-mem IO path "
-            "and its alias contracts on EpBuffer slots are subject to change.",
-            stacklevel=2,
-        )
-
     # Materialize the PG's NCCL comm before borrowing its raw handle.
     dist.barrier(group=ep_group, device_ids=[torch.cuda.current_device()])
     comm_ptr = tex.get_nccl_comm_ptr(ep_group)
 
     tex.ep_initialize(
         int(comm_ptr),
-        str(ep_group.group_name),
         int(num_experts),
         int(max_tokens_per_rank),
         # Eager mode (recv_capacity_per_rank=None) sizes recv buffers per routing,
@@ -213,7 +185,6 @@ def ep_bootstrap(
         int(hidden_dim),
         int(max_num_sms),
         max_token_dtype,
-        bool(zero_copy),
         int(num_topk),
         bool(drop_on_overflow),
     )
@@ -229,7 +200,6 @@ def ep_bootstrap(
             None if recv_capacity_per_rank is None else int(recv_capacity_per_rank)
         ),
         "payload_dtype": max_token_dtype,
-        "zero_copy": bool(zero_copy),
         "drop_on_overflow": bool(drop_on_overflow),
     }
     if not _ATEXIT_REGISTERED:
@@ -265,42 +235,18 @@ def ep_finalize() -> None:
     An atexit handler covers normal interpreter shutdown, so most users do not
     need to call this. Call it explicitly only before
     ``dist.destroy_process_group()``, since the borrowed NCCL comm becomes
-    invalid once the PG is destroyed. This also releases the symm-mem pool, so
-    a caller that used ``symm_mem_alloc(use_pool=True)`` does not need a separate
-    ``release_symm_mem_pool()`` before destroying the PG.
+    invalid once the PG is destroyed.
     """
     global _BOOTSTRAPPED, _EP_GROUP, _EAGER, _BOOTSTRAP_SETTINGS
     if not _BOOTSTRAPPED:
         return
     try:
-        # Deregister pooled symm-mem windows while the group's comm is still valid.
-        release_symm_mem_pool()
         tex.ep_finalize()
     finally:
         _BOOTSTRAPPED = False
         _EP_GROUP = None
         _EAGER = False
         _BOOTSTRAP_SETTINGS = None
-
-
-def is_symm_backed(t: torch.Tensor) -> bool:
-    """Whether ``t`` is symm-mem-backed on the EP group. Prefer torch's local ``is_symm_mem_tensor``
-    when the build provides it (no collective, no exception); otherwise fall back to the rendezvous
-    probe the C++ ep kernel uses (``maybe_make_window``): cached for an already-registered tensor,
-    raises for a plain one."""
-    from torch.distributed import _symmetric_memory as _symm
-
-    if hasattr(_symm, "is_symm_mem_tensor"):
-        return bool(_symm.is_symm_mem_tensor(t))
-    if _EP_GROUP is None:
-        raise RuntimeError(
-            "is_symm_backed called before ensure_nccl_ep_bootstrapped(); no EP group registered."
-        )
-    try:
-        _symm.rendezvous(t, _EP_GROUP.group_name)
-        return True
-    except Exception:  # pylint: disable=broad-exception-caught
-        return False
 
 
 # Buffer
@@ -326,7 +272,6 @@ class EpBuffer:
         "device",
         "tokens_per_expert",
         "num_local_tokens",
-        "zero_copy",
         "eager",
         "total_recv_tokens",
         "dispatch_fwd_quant_recipe",
@@ -369,7 +314,6 @@ class EpBuffer:
         self.num_local_experts = int(num_local_experts)
         self.payload_dtype = payload_dtype
         self.device = device
-        self.zero_copy = bool(tex.ep_get_zero_copy())
         self.dispatch_fwd_quant_recipe = dispatch_fwd_quant_recipe
         self.combine_bwd_quant_recipe = combine_bwd_quant_recipe
 
@@ -681,7 +625,6 @@ def _ep_prepare_and_dispatch_fwd(
         recv_scale_inv = outs[2] if is_scaled else None
     else:
         device = tokens_data.device
-        zero_copy = buffer.zero_copy
         if is_scaled:
             # recv data + scales share one buffer (data then scales); carve or allocate here.
             recv_tokens, recv_scale_inv = _scale_alloc_io(
@@ -692,12 +635,11 @@ def _ep_prepare_and_dispatch_fwd(
                 tokens_data.dtype,
                 tokens_scale_inv.dtype,
                 device,
-                zero_copy,
             )
         elif recv_tokens is None:
-            recv_tokens = _alloc_io((num_recv_tokens, hidden), payload_dtype, device, zero_copy)
+            recv_tokens = _alloc_io((num_recv_tokens, hidden), payload_dtype, device)
         if recv_topk_weights is None:
-            recv_topk_weights = _alloc_io((num_recv_tokens,), torch.float32, device, zero_copy)
+            recv_topk_weights = _alloc_io((num_recv_tokens,), torch.float32, device)
         dispatch_recv = recv_tokens.view(torch.float8_e4m3fn) if is_scaled else recv_tokens
         torch.ops.transformer_engine_ep.prepare_and_dispatch(
             handle_mem,
@@ -780,9 +722,8 @@ class _EpPrepareAndDispatch(torch.autograd.Function):
     """Autograd prepare and dispatch grouped into one C++ op (two kernel launches, not a fused
     kernel). In eager mode the op sizes and allocates the recv outputs from the per-step host
     recv-count, so no Python runs between the count read and the dispatch launch; caller-supplied
-    buffers and zero-copy are then forbidden. Otherwise the recv outputs are allocated here to the
-    static recv capacity (caller-supplied or symm-mem-backed under zero-copy) and passed in. When
-    MXFP8 is configured, forward quantizes ``tokens`` to lightweight storage locally while
+    buffers are then forbidden. Otherwise the recv outputs are allocated here to the
+    static recv capacity and passed in. When MXFP8 is configured, forward quantizes ``tokens`` to lightweight storage locally while
     keeping the high-precision tensor as the autograd operand. The compute lives in
     ``_ep_prepare_and_dispatch_fwd`` / ``_ep_dispatch_bwd``; this wrapper only bridges autograd
     context handling."""
@@ -848,7 +789,6 @@ class _CombineState:
     expert_out_dtype: torch.dtype
     device: torch.device
     eager: bool
-    zero_copy: bool
 
 
 def _ep_combine_fwd(
@@ -879,7 +819,6 @@ def _ep_combine_fwd(
         expert_out_dtype=expert_out.dtype,
         device=device,
         eager=eager,
-        zero_copy=buffer.zero_copy,
     )
     return result, state
 
@@ -897,7 +836,7 @@ def _ep_combine_bwd(state: "_CombineState", g_result: torch.Tensor):
         grad_expert_out = state.grad_out
         if grad_expert_out is None:
             grad_expert_out = _alloc_io(
-                state.expert_out_shape, state.expert_out_dtype, state.device, state.zero_copy
+                state.expert_out_shape, state.expert_out_dtype, state.device
             )
         if state.eager:
             tex.ep_combine_bwd(handle_mem, g_result, grad_expert_out, None, None)
@@ -923,7 +862,6 @@ def _ep_combine_bwd(state: "_CombineState", g_result: torch.Tensor):
             g_data.dtype,
             grad_scale_inv.dtype,
             state.device,
-            state.zero_copy,
         )
         # The backend keys on the fp8 scaling mode; reinterpret the byte-backed data as fp8.
         g_data_fp8 = g_data.view(torch.float8_e4m3fn)
@@ -943,8 +881,8 @@ def _ep_combine_bwd(state: "_CombineState", g_result: torch.Tensor):
 class _EpCombine(torch.autograd.Function):
     """Autograd combine; bwd scatters the expert_out grad into ``grad_out``. When the caller
     supplies it that buffer is used as-is; otherwise it is allocated in the backward from the
-    symm-mem pool in zero-copy mode (one-sided target) or a plain tensor in normal mode (keeps
-    allocation torch.compile / CUDA-graph safe and lets autograd own the grad's lifetime).
+    ordinary allocator (keeps allocation torch.compile / CUDA-graph safe and lets autograd
+    own the grad's lifetime).
 
     Only ``expert_out`` is differentiable; the non-diff buffer tensors ride on ``buffer`` to keep
     the operand list short. The compute lives in ``_ep_combine_fwd`` / ``_ep_combine_bwd``; this
@@ -995,23 +933,8 @@ def _require_bf16(name: str, t: torch.Tensor) -> None:
         )
 
 
-def _alloc_io(shape, dtype: torch.dtype, device, zero_copy: bool) -> torch.Tensor:
-    """Allocate a dispatch/combine IO tensor the caller did not supply: from the symm-mem pool in
-    zero-copy mode (auto-registered segment, lifecycle managed by torch refcount), else plain.
-
-    The zero-copy pool path is not CUDA-graph capturable; supply persistent recv_tokens / grad_out
-    buffers to capture a graph."""
-    if zero_copy:
-        if torch.cuda.is_current_stream_capturing():
-            raise RuntimeError(
-                "EP zero-copy pool allocation is not CUDA-graph capturable; supply persistent "
-                "recv_tokens / grad_out buffers (allocated once via symm_mem_alloc) before capture."
-            )
-        t = symm_mem_alloc(shape, dtype, _EP_GROUP, device=device, use_pool=True)
-        # symm-mem storage is non-resizable; exempt it from CPU activation offloading (which
-        # releases via storage.resize_(0)). Matters for bf16 recv_tokens (the saved activation).
-        mark_not_offload(t)
-        return t
+def _alloc_io(shape, dtype: torch.dtype, device) -> torch.Tensor:
+    """Allocate a dispatch/combine IO tensor the caller did not supply."""
     return torch.empty(*shape, dtype=dtype, device=device)
 
 
@@ -1079,12 +1002,12 @@ def _quantize_mxfp8(
     return quantized, scale_inv
 
 
-def _scale_alloc_io(buf, rows, data_cols, scale_cols, data_dtype, scale_dtype, device, zero_copy):
+def _scale_alloc_io(buf, rows, data_cols, scale_cols, data_dtype, scale_dtype, device):
     """Block-scaled output data + scale buffers, each ``rows`` tall, laid out back-to-back
     (``[rows, data_cols]`` data of ``data_dtype`` then ``[rows, scale_cols]`` scales of
     ``scale_dtype``). Carve both from a single caller ``buf`` when it is large enough, so one
-    symm-mem window backs both views; else allocate them (symm-mem pool under zero-copy, else
-    plain). Recipe-agnostic: byte sizes come from the element sizes."""
+    allocation backs both views; else allocate them separately. Recipe-agnostic: byte sizes
+    come from the element sizes."""
     data_bytes = rows * data_cols * data_dtype.itemsize
     scale_bytes = rows * scale_cols * scale_dtype.itemsize
     if buf is not None:
@@ -1103,8 +1026,8 @@ def _scale_alloc_io(buf, rows, data_cols, scale_cols, data_dtype, scale_dtype, d
             flat[data_bytes : data_bytes + scale_bytes].view(scale_dtype).reshape(rows, scale_cols)
         )
         return data, scale_inv
-    data = _alloc_io((rows, data_cols), data_dtype, device, zero_copy)
-    scale_inv = _alloc_io((rows, scale_cols), scale_dtype, device, zero_copy)
+    data = _alloc_io((rows, data_cols), data_dtype, device)
+    scale_inv = _alloc_io((rows, scale_cols), scale_dtype, device)
     return data, scale_inv
 
 
@@ -1149,11 +1072,10 @@ def ep_dispatch(
     stays bfloat16. A pre-quantized ``tokens`` is not accepted.
 
     ``recv_tokens`` / ``recv_topk_weights`` are the recv outputs: pass caller-owned buffers
-    (symm-mem-backed under zero-copy) or leave them None to allocate. For MXFP8 the recv data and
+    or leave them None to allocate. For MXFP8 the recv data and
     scales share ``recv_tokens`` (data then scales), so size it to at least
     ``recv_capacity_per_rank * (hidden + hidden/block)`` bytes. Eager mode sizes the recv outputs
-    per step and forbids caller-supplied buffers. Under zero-copy, leaving them None allocates from
-    the symm-mem pool, which is not CUDA-graph capturable; pass persistent buffers to capture a graph.
+    per step and forbids caller-supplied buffers.
 
     Returns (recv_tokens, recv_topk_weights, tokens_per_expert); tokens_per_expert is non-diff. See
     ``buffer.total_recv_tokens`` for the per-step recv total.
@@ -1186,7 +1108,7 @@ def ep_dispatch(
 
     # Fused prepare + dispatch in one C++ op. Eager sizes the recv outputs from the per-step host
     # recv-count (allocated in C++, no caller buffers); non-eager sizes them to the static recv
-    # capacity here (caller-supplied or symm-mem-backed under zero-copy) and passes them in.
+    # capacity here and passes them in.
     recv_out, recv_topk_weights = _EpPrepareAndDispatch.apply(
         tokens,
         topk_weights,
@@ -1207,13 +1129,12 @@ def ep_combine(
 ):
     """Combine with autograd; caller pre-applies topk weighting.
 
-    ``expert_out`` is the combine input (symm-mem-backed under zero-copy). ``grad_out`` is the
+    ``expert_out`` is the combine input. ``grad_out`` is the
     backward's grad target: pass a caller-owned buffer or leave it None to allocate. For MXFP8 the
     grad data and scales share ``grad_out`` (data then scales), so size it to at least
-    ``recv_capacity_per_rank * (hidden + hidden/block)`` bytes (non-zero-copy only). Eager mode sizes
-    the grad target per step and forbids a caller-supplied buffer. Under zero-copy, leaving it None
-    allocates from the symm-mem pool, which is not CUDA-graph capturable; pass a persistent buffer to
-    capture a graph. Result shape is (num_local_tokens, hidden_dim); num_local_tokens defaults to
+    ``recv_capacity_per_rank * (hidden + hidden/block)`` bytes. Eager mode sizes
+    the grad target per step and forbids a caller-supplied buffer.
+    Result shape is (num_local_tokens, hidden_dim); num_local_tokens defaults to
     buffer.max_tokens_per_rank.
     """
     _require_bf16("expert_out", expert_out)

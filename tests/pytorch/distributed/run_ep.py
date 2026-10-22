@@ -27,15 +27,11 @@ from transformer_engine.pytorch.ep import (
     ep_prepare,
     ep_dispatch,
     ep_combine,
-    symm_mem_alloc,
-    release_symm_mem_pool,
-    is_symm_backed,
     _ep_combine_raw,
     _ep_dispatch_raw,
 )
 from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8Tensor
 
-ZERO_COPY = os.environ.get("NVTE_EP_ZERO_COPY", "0") == "1"
 EAGER = os.environ.get("NVTE_EP_EAGER", "0") == "1"
 OVERFLOW = os.environ.get("NVTE_EP_OVERFLOW", "0") == "1"
 # Fused prepare+dispatch (caller-supplied recv buffers) is opt-in on the C++ side; the tests
@@ -52,12 +48,6 @@ NUM_LOCAL_EXPERTS = 2
 HIDDEN_DIM = int(os.environ.get("NVTE_EP_HIDDEN_DIM", "512"))
 TOP_K = 2
 TOKENS_PER_RANK = int(os.environ.get("NVTE_EP_TOKENS_PER_RANK", "32"))
-
-
-def _zero_copy_test_include(fn):
-    """Mark a test to also run in the zero-copy pass; others skip there."""
-    fn._zero_copy_test_include = True
-    return fn
 
 
 def _eager_test_include(fn):
@@ -82,38 +72,6 @@ def _mxfp8_align_test(fn):
     """Mark a test that dispatches with alignment=256; runs only in the MXFP8 pass."""
     fn._mxfp8_align_test = True
     return fn
-
-
-class _StageToSymm(torch.autograd.Function):
-    """Identity op that stages ``src`` into a symm-mem buffer; grad passes through.
-    Lets a test feed a symm-mem-backed, autograd-tracked tensor into ep_combine.
-    """
-
-    @staticmethod
-    def forward(ctx, src, symm_buf):  # type: ignore[override]
-        symm_buf.copy_(src)
-        return symm_buf
-
-    @staticmethod
-    def backward(ctx, g):  # type: ignore[override]
-        return g, None
-
-
-class _GradToSymm(torch.autograd.Function):
-    """Identity fwd; bwd stages the upstream grad into a symm-mem buffer and
-    returns it, so the next backward (dispatch_bwd) receives a symm-window grad
-    input — which zero-copy ncclEpCombine requires.
-    """
-
-    @staticmethod
-    def forward(ctx, x, symm_buf):  # type: ignore[override]
-        ctx.symm_buf = symm_buf
-        return x
-
-    @staticmethod
-    def backward(ctx, g):  # type: ignore[override]
-        ctx.symm_buf.copy_(g)
-        return ctx.symm_buf, None
 
 
 def _device_sm() -> int:
@@ -247,7 +205,6 @@ class _EpTestCase(unittest.TestCase):
             num_topk=TOP_K,
             # Omit recv_capacity_per_rank to select eager mode.
             recv_capacity_per_rank=None if EAGER else cls.cfg.recv_capacity_per_rank,
-            zero_copy=ZERO_COPY,
             drop_on_overflow=OVERFLOW,
         )
 
@@ -262,11 +219,6 @@ class _EpTestCase(unittest.TestCase):
         # MXFP8 quantization requires Blackwell (SM 10.0) or newer.
         if is_mxfp8_align and torch.cuda.get_device_capability() < (10, 0):
             self.skipTest("MXFP8 EP tests require Blackwell (SM 10.0) or newer")
-        # Only the zero-copy-capable tests run in the zero-copy pass.
-        if ZERO_COPY and not getattr(
-            getattr(self, self._testMethodName), "_zero_copy_test_include", False
-        ):
-            self.skipTest("not exercised in zero-copy mode")
         # Only the eager-capable tests run in the eager pass.
         if EAGER and not getattr(getattr(self, self._testMethodName), "_eager_test_include", False):
             self.skipTest("not exercised in eager mode")
@@ -293,7 +245,6 @@ class _EpTestCase(unittest.TestCase):
             recv_capacity_per_rank=None if EAGER else self.cfg.recv_capacity_per_rank,
             ep_group=self.ep_group,
             alignment=alignment,
-            zero_copy=ZERO_COPY,
             drop_on_overflow=OVERFLOW,
             dispatch_fwd_quant_recipe=dispatch_fwd_quant_recipe,
             combine_bwd_quant_recipe=combine_bwd_quant_recipe,
@@ -342,25 +293,6 @@ class TestEP(_EpTestCase):
     def test_bootstrap_accessors(self):
         self.assertIs(get_ep_group(), self.ep_group)
         self.assertEqual(get_ep_drop_on_overflow(), OVERFLOW)
-
-    def _expert_out(self, expert_out):
-        """Stage the combine input into symm-mem under zero-copy (combine requires it)."""
-        if not ZERO_COPY:
-            return expert_out
-        symm_buf = symm_mem_alloc(
-            tuple(expert_out.shape), expert_out.dtype, self.ep_group, use_pool=True
-        )
-        return _StageToSymm.apply(expert_out, symm_buf)
-
-    def _stage_grad_symm(self, x, symm_buf=None):
-        """Route x's upstream grad through a symm-mem buffer so dispatch_bwd gets
-        a symm-window grad input under zero-copy; passthrough otherwise. Pass a
-        pre-allocated symm_buf to avoid allocating during an interleaved schedule."""
-        if not ZERO_COPY:
-            return x
-        if symm_buf is None:
-            symm_buf = symm_mem_alloc(tuple(x.shape), x.dtype, self.ep_group)
-        return _GradToSymm.apply(x, symm_buf)
 
     def _make_raw_recv(self, dtype=torch.bfloat16):
         """Raw recv tensors + tokens_per_expert for the primitive tests."""
@@ -493,19 +425,14 @@ class TestEP(_EpTestCase):
 
     # Autograd
 
-    @_zero_copy_test_include
     def test_dispatch_autograd(self):
         """0.5*||recv_tokens||^2 ; grad_tokens equals TOP_K * tokens. Covers the
-        EpBuffer-owned recv tokens (symm-mem under zero-copy) and, in normal
-        mode, a caller-supplied recv_tokens buffer."""
-        if ZERO_COPY:
-            cases = [("buffer_owned", None)]
-        else:
-            rt_buf, _rw_buf, _ = self._make_raw_recv()
-            cases = [
-                ("default_alloc", None),
-                ("caller_recv", rt_buf),
-            ]
+        automatically allocated recv tokens and a caller-supplied recv_tokens buffer."""
+        rt_buf, _rw_buf, _ = self._make_raw_recv()
+        cases = [
+            ("default_alloc", None),
+            ("caller_recv", rt_buf),
+        ]
         for label, recv_tokens in cases:
             with self.subTest(case=label):
                 buf = self._make_buffer()
@@ -514,8 +441,6 @@ class TestEP(_EpTestCase):
                 rt, rw, _tc = ep_dispatch(buf, tokens_p, topk_idx, w, recv_tokens=recv_tokens)
                 if recv_tokens is not None:  # caller-supplied recv_tokens must be used in place
                     self.assertEqual(rt.data_ptr(), recv_tokens.data_ptr())
-                rt = self._stage_grad_symm(rt)
-                rw = self._stage_grad_symm(rw)
                 (0.5 * (rt.float() ** 2).sum() + 0.0 * rw.float().sum()).backward()
                 torch.cuda.synchronize()
                 torch.testing.assert_close(
@@ -547,19 +472,14 @@ class TestEP(_EpTestCase):
             )
 
     @_eager_test_include
-    @_zero_copy_test_include
     @_mxfp8_align_test
     def test_dispatch_mxfp8(self):
         """MXFP8 dispatch quantizes bf16 tokens internally; recv (a per-expert GroupedTensor)
-        dequantized matches a bf16 dispatch of the same tokens. Under zero-copy the recv data and
-        scales are symm-mem backed."""
+        dequantized matches a bf16 dispatch of the same tokens."""
         self._require_mxfp8_shapes()
         topk_idx, tokens, w = _make_identity_inputs(self.cfg.rank, self.cfg.ep_size)
         buf = self._make_buffer(dispatch_fwd_quant_recipe=MXFP8BlockScaling(), alignment=256)
         recv_mx, _rw, tc = ep_dispatch(buf, tokens, topk_idx, w)
-        if ZERO_COPY:
-            self.assertTrue(is_symm_backed(recv_mx.rowwise_data))
-            self.assertTrue(is_symm_backed(recv_mx.scale_inv))
         self._assert_mxfp8_matches_bf16(recv_mx, tokens, topk_idx, w, tc)
 
     @_eager_test_include
@@ -583,7 +503,6 @@ class TestEP(_EpTestCase):
             rtol=5e-2,
         )
 
-    @_zero_copy_test_include
     @_mxfp8_align_test
     def test_caller_provides_dispatch_recv_mxfp8(self):
         """One caller-supplied buffer holds the recv data followed by the e8m0 scales; ep_dispatch
@@ -594,10 +513,7 @@ class TestEP(_EpTestCase):
         rc = self.cfg.recv_capacity_per_rank
         cols = HIDDEN_DIM // MXFP8_BLOCK_SCALING_SIZE
         nbytes = rc * (HIDDEN_DIM + cols)  # fp8 data + e8m0 scales, one byte per element
-        if ZERO_COPY:
-            recv_buf = symm_mem_alloc((nbytes,), torch.uint8, self.ep_group)
-        else:
-            recv_buf = torch.empty(nbytes, dtype=torch.uint8, device=self.cfg.device)
+        recv_buf = torch.empty(nbytes, dtype=torch.uint8, device=self.cfg.device)
         buf = self._make_buffer(dispatch_fwd_quant_recipe=MXFP8BlockScaling(), alignment=256)
         topk_idx, tokens, w = _make_identity_inputs(self.cfg.rank, self.cfg.ep_size)
         recv_mx, _rw, tc = ep_dispatch(buf, tokens, topk_idx, w, recv_tokens=recv_buf)
@@ -606,45 +522,32 @@ class TestEP(_EpTestCase):
         self.assertEqual(recv_mx.scale_inv.data_ptr(), recv_buf.data_ptr() + rc * HIDDEN_DIM)
         self._assert_mxfp8_matches_bf16(recv_mx, tokens, topk_idx, w, tc)
 
-    @_zero_copy_test_include
     def test_caller_provides_dispatch_recv_tokens(self):
-        """Caller-supplied recv_tokens (symm-mem-backed in zero-copy): ep_dispatch
+        """Caller-supplied recv_tokens: ep_dispatch
         writes into it and returns a view of the caller's buffer."""
-        if ZERO_COPY:
-            rc = self.cfg.recv_capacity_per_rank
-            rt_buf = symm_mem_alloc((rc, HIDDEN_DIM), torch.bfloat16, self.ep_group)
-        else:
-            rt_buf, _rw_buf, _ = self._make_raw_recv()
+        rt_buf, _rw_buf, _ = self._make_raw_recv()
         buf = self._make_buffer()
         topk_idx, tokens, w = _make_identity_inputs(self.cfg.rank, self.cfg.ep_size)
         tokens_p = tokens.detach().clone().requires_grad_(True)
         rt, rw, _ = ep_dispatch(buf, tokens_p, topk_idx, w, recv_tokens=rt_buf)
         self.assertEqual(rt.data_ptr(), rt_buf.data_ptr())
-        rt = self._stage_grad_symm(rt)
-        rw = self._stage_grad_symm(rw)
         (0.5 * (rt.float() ** 2).sum() + 0.0 * rw.float().sum()).backward()
         torch.cuda.synchronize()
         torch.testing.assert_close(
             tokens_p.grad.float(), tokens.float() * float(TOP_K), atol=5e-2, rtol=5e-2
         )
 
-    @_zero_copy_test_include
     def test_caller_provides_grad_expert_out(self):
-        """Caller-supplied grad_out (symm-mem-backed in zero-copy): ep_combine's
+        """Caller-supplied grad_out: ep_combine's
         backward scatters the expert-out grad into it."""
         rc = self.cfg.recv_capacity_per_rank
-        if ZERO_COPY:
-            gbuf = symm_mem_alloc((rc, HIDDEN_DIM), torch.bfloat16, self.ep_group)
-        else:
-            gbuf = torch.empty(rc, HIDDEN_DIM, dtype=torch.bfloat16, device=self.cfg.device)
+        gbuf = torch.empty(rc, HIDDEN_DIM, dtype=torch.bfloat16, device=self.cfg.device)
         gbuf.zero_()
         buf = self._make_buffer()
         topk_idx, tokens, w = _make_identity_inputs(self.cfg.rank, self.cfg.ep_size)
         tokens_p = tokens.detach().clone().requires_grad_(True)
         recv_t, recv_w, _ = ep_dispatch(buf, tokens_p, topk_idx, w)
-        recv_t = self._stage_grad_symm(recv_t)
-        recv_w = self._stage_grad_symm(recv_w)
-        expert_out = self._expert_out(self._weighted(recv_t, recv_w))
+        expert_out = self._weighted(recv_t, recv_w)
         out = ep_combine(buf, expert_out, grad_out=gbuf)
         (0.5 * (out.float() ** 2).sum()).backward()
         torch.cuda.synchronize()
@@ -653,13 +556,11 @@ class TestEP(_EpTestCase):
         # the caller-owned buffer was used as the combine-bwd scatter target
         self.assertGreater(gbuf.abs().sum().item(), 0.0)
 
-    @_zero_copy_test_include
     @_mxfp8_align_test
     def test_combine_bwd_mxfp8_caller_grad_out(self):
         """MXFP8 combine backward into a single caller buffer sliced into data + e8m0 scales: the
         returned per-expert GroupedTensor views those regions and, dequantized, matches a bf16
-        combine backward reference on the same routing. Under zero-copy the caller buffer and combine
-        input are symm-mem backed."""
+        combine backward reference on the same routing."""
         self._require_mxfp8_shapes()
         from transformer_engine.pytorch.constants import MXFP8_BLOCK_SCALING_SIZE
 
@@ -675,12 +576,9 @@ class TestEP(_EpTestCase):
         buf_mx = self._make_buffer(combine_bwd_quant_recipe=MXFP8BlockScaling(), alignment=256)
         _recv, _rw, tc = ep_dispatch(buf_mx, tokens, topk_idx, w)  # seeds the routing
         nbytes = rc * (HIDDEN_DIM + cols)
-        if ZERO_COPY:
-            grad_buf = symm_mem_alloc((nbytes,), torch.uint8, self.ep_group)
-        else:
-            grad_buf = torch.empty(nbytes, dtype=torch.uint8, device=self.cfg.device)
+        grad_buf = torch.empty(nbytes, dtype=torch.uint8, device=self.cfg.device)
         src_mx = eo_vals.detach().clone().requires_grad_(True)
-        out_mx = ep_combine(buf_mx, self._expert_out(src_mx), grad_out=grad_buf)
+        out_mx = ep_combine(buf_mx, src_mx, grad_out=grad_buf)
         (0.5 * (out_mx.float() ** 2).sum()).backward()
         g_mx = src_mx.grad  # per-expert GroupedTensor viewing grad_buf
         self.assertEqual(g_mx.rowwise_data.data_ptr(), grad_buf.data_ptr())
@@ -689,7 +587,7 @@ class TestEP(_EpTestCase):
         buf_bf = self._make_buffer(alignment=256)
         ep_dispatch(buf_bf, tokens, topk_idx, w)
         src_bf = eo_vals.detach().clone().requires_grad_(True)
-        out_bf = ep_combine(buf_bf, self._expert_out(src_bf))
+        out_bf = ep_combine(buf_bf, src_bf)
         (0.5 * (out_bf.float() ** 2).sum()).backward()
         torch.cuda.synchronize()
         n = int(tc.sum())
@@ -698,12 +596,10 @@ class TestEP(_EpTestCase):
         )
 
     @_eager_test_include
-    @_zero_copy_test_include
     @_mxfp8_align_test
     def test_combine_bwd_mxfp8(self):
         """MXFP8 combine backward with an internally allocated grad target: the returned per-expert
         GroupedTensor, dequantized, matches a bf16 combine backward reference on the same routing.
-        Under zero-copy the combine input is symm-mem backed.
         """
         self._require_mxfp8_shapes()
         topk_idx, tokens, w = _make_identity_inputs(self.cfg.rank, self.cfg.ep_size)
@@ -717,41 +613,20 @@ class TestEP(_EpTestCase):
             .to(torch.bfloat16)
         )
         src_mx = eo_vals.detach().clone().requires_grad_(True)
-        out_mx = ep_combine(buf_mx, self._expert_out(src_mx))
+        out_mx = ep_combine(buf_mx, src_mx)
         (0.5 * (out_mx.float() ** 2).sum()).backward()
         g_mx = src_mx.grad  # per-expert GroupedTensor
         # bf16 reference combine backward on the same routing
         buf_bf = self._make_buffer(alignment=256)
         ep_dispatch(buf_bf, tokens, topk_idx, w)
         src_bf = eo_vals.detach().clone().requires_grad_(True)
-        out_bf = ep_combine(buf_bf, self._expert_out(src_bf))
+        out_bf = ep_combine(buf_bf, src_bf)
         (0.5 * (out_bf.float() ** 2).sum()).backward()
         torch.cuda.synchronize()
         n = int(tc.sum())
         torch.testing.assert_close(
             _degroup_mxfp8(g_mx).float(), src_bf.grad.float()[:n], atol=5e-2, rtol=5e-2
         )
-
-    @_zero_copy_test_include
-    def test_zero_copy_pool_auto_alloc(self):
-        """Zero-copy with recv/grad left None: ep_dispatch/ep_combine allocate their IO
-        tensors from the symm-mem pool (is_symm_backed). This is the primary mcore
-        path — mcore hands no caller buffers, TE pools them on the fly."""
-        if not ZERO_COPY:
-            self.skipTest("zero-copy pool auto-alloc only")
-        buf = self._make_buffer()
-        topk_idx, tokens, w = _make_identity_inputs(self.cfg.rank, self.cfg.ep_size)
-        tokens_p = tokens.detach().clone().requires_grad_(True)
-        recv_t, recv_w, _ = ep_dispatch(buf, tokens_p, topk_idx, w)  # recv_tokens=None -> pool
-        self.assertTrue(is_symm_backed(recv_t))  # dispatch recv came from the symm-mem pool
-        recv_t = self._stage_grad_symm(recv_t)
-        recv_w = self._stage_grad_symm(recv_w)
-        expert_out = self._expert_out(self._weighted(recv_t, recv_w))
-        out = ep_combine(buf, expert_out)  # grad_out=None -> bwd allocs the grad from the pool
-        (0.5 * (out.float() ** 2).sum()).backward()
-        torch.cuda.synchronize()
-        torch.testing.assert_close(out.float(), tokens.float(), atol=5e-2, rtol=5e-2)
-        torch.testing.assert_close(tokens_p.grad.float(), tokens.float(), atol=5e-2, rtol=5e-2)
 
     # Multi-iter stability
 
@@ -1003,7 +878,6 @@ class TestEP(_EpTestCase):
 
     # PP-1F1B handle isolation
 
-    @_zero_copy_test_include
     def test_pp_1f1b_two_handles(self):
         """PP-1F1B interleave (F0 F1 B0 F2 B1 B2) over 3 per-microbatch buffers,
         run eagerly and replayed from a CUDA graph capturing the full fwd+bwd
@@ -1026,20 +900,7 @@ class TestEP(_EpTestCase):
             tokens_p.append(t.detach().clone().requires_grad_(True))
 
         recv = [None, None, None]
-        # Per-microbatch grad-staging buffers, symm-mem under zero-copy and
-        # pre-allocated so nothing is allocated/freed mid-interleave.
         recv_w = [None, None, None]
-        rc = self.cfg.recv_capacity_per_rank
-        if ZERO_COPY:
-            gbuf_t = [symm_mem_alloc((rc, H), torch.bfloat16, self.ep_group) for _ in scales]
-            gbuf_w = [symm_mem_alloc((rc,), torch.float32, self.ep_group) for _ in scales]
-            # Persistent symm-mem recv buffers per microbatch: leaving recv None
-            # pool-allocates, which is not CUDA-graph capturable.
-            rbuf_t = [symm_mem_alloc((rc, H), torch.bfloat16, self.ep_group) for _ in scales]
-            rbuf_w = [symm_mem_alloc((rc,), torch.float32, self.ep_group) for _ in scales]
-        else:
-            gbuf_t = gbuf_w = [None, None, None]
-            rbuf_t = rbuf_w = [None, None, None]
 
         def fwd(k):
             rt, rw, _ = ep_dispatch(
@@ -1047,11 +908,9 @@ class TestEP(_EpTestCase):
                 tokens_p[k],
                 idx,
                 w,
-                recv_tokens=rbuf_t[k],
-                recv_topk_weights=rbuf_w[k],
             )
-            recv[k] = self._stage_grad_symm(rt, gbuf_t[k])
-            recv_w[k] = self._stage_grad_symm(rw, gbuf_w[k])
+            recv[k] = rt
+            recv_w[k] = rw
 
         def bwd(k):
             (0.5 * (recv[k].float() ** 2).sum() + 0.0 * recv_w[k].float().sum()).backward()
@@ -1102,17 +961,14 @@ class TestEP(_EpTestCase):
                 rtol=5e-2,
             )
 
-    @_zero_copy_test_include
     @_eager_test_include
     def test_combine_autograd(self):
-        """ep_combine fwd+bwd; bwd grad target is the EpBuffer symm buffer (zc) or in-flight."""
+        """ep_combine fwd+bwd with an automatically allocated grad target."""
         buf = self._make_buffer()
         topk_idx, tokens, w = _make_identity_inputs(self.cfg.rank, self.cfg.ep_size)
         tokens_p = tokens.detach().clone().requires_grad_(True)
         recv_t, recv_w, _ = ep_dispatch(buf, tokens_p, topk_idx, w)
-        recv_t = self._stage_grad_symm(recv_t)
-        recv_w = self._stage_grad_symm(recv_w)
-        expert_out = self._expert_out(self._weighted(recv_t, recv_w))
+        expert_out = self._weighted(recv_t, recv_w)
         out = ep_combine(buf, expert_out)
         (0.5 * (out.float() ** 2).sum()).backward()
         torch.cuda.synchronize()
@@ -1170,7 +1026,6 @@ class TestMoeEpSequential(_EpTestCase):
             "recv_capacity_per_rank": config.recv_capacity_per_rank + 1,
             "alignment": 1,
             "payload_dtype": torch.float16,
-            "zero_copy": not config.zero_copy,
         }
         for field_name, wrong_value in replacements.items():
             with self.subTest(field_name=field_name):
@@ -1670,12 +1525,6 @@ class TestMoeEpSequential(_EpTestCase):
 def _init_distributed():
     dist.init_process_group(backend="nccl")
     torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
-    try:
-        from torch.distributed import _symmetric_memory as _symm_mem
-
-        _symm_mem.set_backend("NCCL")
-    except (ImportError, RuntimeError):
-        pass
 
 
 if __name__ == "__main__":
@@ -1694,7 +1543,5 @@ if __name__ == "__main__":
     result = runner.run(suite)
     dist.barrier()
     ep_finalize()
-    # Deregister symm-mem windows while the comm is still valid.
-    release_symm_mem_pool()
     dist.destroy_process_group()
     sys.exit(0 if result.wasSuccessful() else 1)
