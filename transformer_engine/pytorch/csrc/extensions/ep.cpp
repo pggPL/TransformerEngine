@@ -14,120 +14,25 @@
 #include <nccl.h>
 #include <torch/extension.h>
 
-#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <string>
 #include <tuple>
 #include <vector>
 
-#include "transformer_engine/comm_window.h"
-
-// torch's NCCL symm-mem headers (zero-copy path) exist only since torch 2.11;
-// without them NCCL_HAS_SYMMEM_SUPPORT stays undefined and zero-copy is compiled out.
-#if __has_include(<torch/csrc/distributed/c10d/symm_mem/nccl_dev_cap.hpp>)
-#include <torch/csrc/distributed/c10d/symm_mem/SymmetricMemory.hpp>
-#include <torch/csrc/distributed/c10d/symm_mem/nccl_dev_cap.hpp>
-#endif
-
-#ifdef NCCL_HAS_SYMMEM_SUPPORT
-#include <torch/csrc/distributed/c10d/symm_mem/NCCLSymmetricMemory.hpp>
-#endif
-
 #include "../common.h"
 #include "../extensions.h"
+#include "transformer_engine/comm_window.h"
 #include "transformer_engine/gemm.h"
 
 namespace transformer_engine::pytorch {
 
 namespace {
 
-// EP process group name, captured at ep_initialize. Used by the symm-mem
-// window resolver below to look up SymmetricMemory for payload tensors.
-// Empty until ep_initialize.
-std::string g_ep_group_name;  // NOLINT(runtime/string)
-
 // True while the EP backend holds a borrowed reference to torch's NCCL comm.
 bool g_ep_initialized = false;
 
-// Zero-copy IO toggle captured at ep_initialize. Atomic so the Python-side
-// toggle is safe against concurrent ep_dispatch/combine (which release the GIL).
-std::atomic<bool> g_zero_copy_enabled{false};
-
-// Sentinel returned by maybe_make_window when zero-copy is off or the tensor
-// is not symm-mem-backed; the backend treats it as "no window, use staged copy".
-constexpr NVTECommWindow kNoWindow = {nullptr, 0};
-
-#ifdef NCCL_HAS_SYMMEM_SUPPORT
-// Offset of a symm-mem allocation relative to the start of its NCCL window.
-// Newer torch places the signal pad at the front of the allocation and exposes
-// get_window_offset() for it; on older torch the window starts at the buffer
-// base, where get_offset() is already window-relative.
-template <typename T>
-auto symm_mem_window_offset(T* sm, int) -> decltype(sm->get_window_offset()) {
-  return sm->get_window_offset();
-}
-template <typename T>
-size_t symm_mem_window_offset(T* sm, ...) {
-  return sm->get_offset();
-}
-#endif
-
-// Resolve ``t`` to an NCCL symm-mem window for the zero-copy one-sided path.
-// Returns ``kNoWindow`` when symm-mem support isn't compiled in, zero-copy is
-// disabled, no group is set, or ``t`` isn't symm-mem-backed; callers pass the
-// resulting window unconditionally to the backend.
-NVTECommWindow maybe_make_window(const at::Tensor& t) {
-#ifdef NCCL_HAS_SYMMEM_SUPPORT
-  if (!g_zero_copy_enabled.load(std::memory_order_relaxed)) return kNoWindow;
-  if (g_ep_group_name.empty()) return kNoWindow;
-  c10::intrusive_ptr<c10d::symmetric_memory::SymmetricMemory> sm;
-  try {
-    sm = c10d::symmetric_memory::rendezvous(t, g_ep_group_name);
-  } catch (const std::exception&) {
-    return kNoWindow;  // Tensor not symm-mem-backed; fall back to staged copy.
-  }
-  if (sm == nullptr) return kNoWindow;
-  auto* nccl_sm = dynamic_cast<c10d::symmetric_memory::NCCLSymmetricMemory*>(sm.get());
-  NVTE_CHECK(nccl_sm != nullptr,
-             "Symm-mem backend mismatch: expected NCCLSymmetricMemory. Set the backend to "
-             "\"NCCL\" before allocating EP payload buffers.");
-  // NCCL EP consumes window-relative offsets. Add ``t``'s own storage offset so a
-  // slice/view of a symm-mem allocation (e.g. the scale region carved from a shared
-  // recv buffer) resolves to its true position in the window.
-  const uint64_t offset =
-      static_cast<uint64_t>(symm_mem_window_offset(nccl_sm, 0)) +
-      static_cast<uint64_t>(t.storage_offset()) * static_cast<uint64_t>(t.element_size());
-  return NVTECommWindow{static_cast<ncclWindow_t>(nccl_sm->get_window()), offset};
-#else
-  (void)t;
-  return kNoWindow;
-#endif
-}
-
-// When zero-copy is enabled, the named tensor must be symm-mem-backed on the
-// EP group. Throws a clear error otherwise. No-op when zero-copy is off or
-// symm-mem support isn't compiled in. Mirrors maybe_make_window's resolution
-// path but turns the "not symm-mem" outcome into a hard error.
-void check_symm_mem_required(const at::Tensor& t, const char* name) {
-#ifdef NCCL_HAS_SYMMEM_SUPPORT
-  if (!g_zero_copy_enabled.load(std::memory_order_relaxed)) return;
-  NVTE_CHECK(!g_ep_group_name.empty(),
-             "Zero-copy is enabled but EP group name is unset; call ep_initialize first.");
-  c10::intrusive_ptr<c10d::symmetric_memory::SymmetricMemory> sm;
-  try {
-    sm = c10d::symmetric_memory::rendezvous(t, g_ep_group_name);
-  } catch (const std::exception&) {
-    sm = nullptr;
-  }
-  NVTE_CHECK(sm != nullptr, "ep zero-copy: ", name,
-             " must be symm-mem-backed on the EP group (allocate via symm_mem_alloc).");
-#else
-  (void)t;
-  (void)name;
-#endif
-}
+constexpr NVTECommWindow kNoWindow = {nullptr, 0, nullptr, 0};
 
 // Validates topk_idx is int32 or int64 and returns the matching TE dtype.
 DType check_topk_idx_dtype(at::Tensor topk_idx) {
@@ -147,9 +52,9 @@ bool is_mxfp8_scaled(bool is_scaled, const at::Tensor& data) {
 
 // Validate the scale-inverse pair of a block-scaled EP op and return the scale column count
 // (hidden/block). Both scales must be 2D contiguous with matching cols dividing H and numels
-// equal to their row counts times cols; the recv scale must be symm-mem-backed under zero-copy.
+// equal to their row counts times cols.
 size_t check_mxfp8_scale_pair(const at::Tensor& send_scale, const at::Tensor& recv_scale,
-                              size_t send_rows, size_t recv_rows, size_t H, const char* recv_name) {
+                              size_t send_rows, size_t recv_rows, size_t H) {
   NVTE_CHECK(send_scale.dim() >= 2 && recv_scale.dim() >= 2,
              "scale-inverses must be at least 2D [., H/block]");
   NVTE_CHECK(send_scale.is_contiguous() && recv_scale.is_contiguous(),
@@ -163,31 +68,17 @@ size_t check_mxfp8_scale_pair(const at::Tensor& send_scale, const at::Tensor& re
              "send scale numel must equal rows * cols");
   NVTE_CHECK(static_cast<size_t>(recv_scale.numel()) == recv_rows * sc_cols,
              "recv scale numel must equal rows * cols");
-  check_symm_mem_required(recv_scale, recv_name);
   return sc_cols;
 }
 
 }  // namespace
 
-bool ep_get_zero_copy() { return g_zero_copy_enabled.load(std::memory_order_relaxed); }
-
-bool ep_zero_copy_supported() {
-#ifdef NCCL_HAS_SYMMEM_SUPPORT
-  return true;
-#else
-  return false;
-#endif
-}
-
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 // ``comm_ptr`` is torch's borrowed NCCL host comm (see get_nccl_comm_ptr).
-// ``group_name`` is captured for the symm-mem window resolver.
 
-void ep_initialize(uintptr_t comm_ptr, const std::string& group_name, int64_t num_experts,
-                   int64_t max_tokens_per_rank, int64_t max_recv_tokens_per_rank,
-                   int64_t hidden_dim, int64_t max_num_sms, pybind11::object max_token_dtype,
-                   bool zero_copy, int64_t num_topk, bool drop_on_overflow) {
-  NVTE_CHECK(!group_name.empty(), "group_name must be non-empty (used for symm-mem lookup)");
+void ep_initialize(uintptr_t comm_ptr, int64_t num_experts, int64_t max_tokens_per_rank,
+                   int64_t max_recv_tokens_per_rank, int64_t hidden_dim, int64_t max_num_sms,
+                   pybind11::object max_token_dtype, int64_t num_topk, bool drop_on_overflow) {
   NVTE_CHECK(comm_ptr != 0, "comm_ptr must be non-null (torch NCCL host comm pointer)");
   NVTE_CHECK(!g_ep_initialized, "ep_initialize called twice without ep_finalize");
 
@@ -204,7 +95,7 @@ void ep_initialize(uintptr_t comm_ptr, const std::string& group_name, int64_t nu
       .hidden_dim = static_cast<int>(hidden_dim),
       .num_comm_sms = static_cast<int>(max_num_sms),
       .max_token_dtype = static_cast<NVTEDType>(GetTransformerEngineDType(torch_dtype)),
-      .zero_copy = zero_copy ? 1 : 0,
+      .zero_copy = 0,
       .num_topk = static_cast<int>(num_topk),
       .drop_on_overflow = drop_on_overflow ? 1 : 0,
   };
@@ -215,18 +106,14 @@ void ep_initialize(uintptr_t comm_ptr, const std::string& group_name, int64_t nu
     pybind11::gil_scoped_release nogil;
     nvte_ep_initialize(static_cast<void*>(ep_comm), &cfg);
   }
-  g_zero_copy_enabled.store(zero_copy, std::memory_order_relaxed);
   g_ep_initialized = true;
-  g_ep_group_name = group_name;
 }
 
 void ep_finalize() {
   if (!g_ep_initialized) return;
-  // The borrowed comm is owned by torch's symm-mem layer; don't destroy it.
+  // The borrowed comm is owned by torch; don't destroy it.
   nvte_ep_shutdown();
   g_ep_initialized = false;
-  g_ep_group_name.clear();
-  g_zero_copy_enabled.store(false, std::memory_order_relaxed);
 }
 
 namespace {
@@ -313,8 +200,6 @@ void ep_dispatch(at::Tensor handle_mem, at::Tensor topk_idx, at::Tensor tokens,
   NVTE_CHECK(recv_tokens.scalar_type() == tokens.scalar_type(), "recv_tokens dtype (",
              c10::toString(recv_tokens.scalar_type()), ") must match tokens dtype (",
              c10::toString(tokens.scalar_type()), ")");
-  check_symm_mem_required(recv_tokens, "recv_tokens");
-  check_symm_mem_required(recv_topk_weights, "recv_topk_weights");
 
   // Block-scaled dispatch: tokens carry e4m3 data and the scale tensors carry
   // unswizzled e8m0 scale-inverses [T, H/block]. Scales ride in the tensor; the
@@ -328,8 +213,7 @@ void ep_dispatch(at::Tensor handle_mem, at::Tensor topk_idx, at::Tensor tokens,
     NVTE_CHECK(recv_scale_inv.has_value(),
                "recv_scale_inv must be provided together with tokens_scale_inv");
     NVTE_CHECK(is_mxfp8, "EP dispatch currently supports only E4M3 MXFP8 block scaling");
-    sc_cols = check_mxfp8_scale_pair(*tokens_scale_inv, *recv_scale_inv, T_flat, recv_pr, H,
-                                     "recv_scale_inv");
+    sc_cols = check_mxfp8_scale_pair(*tokens_scale_inv, *recv_scale_inv, T_flat, recv_pr, H);
   }
 
   auto tok_dtype = GetTransformerEngineDType(tokens.scalar_type());
@@ -354,24 +238,9 @@ void ep_dispatch(at::Tensor handle_mem, at::Tensor topk_idx, at::Tensor tokens,
 
   // top_k / alignment are carried by the cached layer_cfg seeded at ep_prepare;
   // per-step ops look them up by handle_mem pointer in the backend.
-  NVTECommWindow tokens_win = maybe_make_window(tokens);
-  NVTECommWindow topk_w_win = maybe_make_window(topk_weights);
-  NVTECommWindow recv_tokens_win = maybe_make_window(recv_tokens);
-  NVTECommWindow recv_topk_w_win = maybe_make_window(recv_topk_weights);
-  // Block-scaled zero-copy: the scale-inverse rides on the data tensor's window.
-  // Send scales (tokens_scale_inv) stay staged like the send data; recv scales
-  // are the one-sided write target and must be symm-mem-backed under zero-copy.
-  if (is_scaled) {
-    const NVTECommWindow tsi_win = maybe_make_window(*tokens_scale_inv);
-    const NVTECommWindow rsi_win = maybe_make_window(*recv_scale_inv);
-    tokens_win.scale_window = tsi_win.window;
-    tokens_win.scale_offset = tsi_win.offset;
-    recv_tokens_win.scale_window = rsi_win.window;
-    recv_tokens_win.scale_offset = rsi_win.offset;
-  }
-  nvte_ep_dispatch(handle_mem_te.data(), topk_idx_te.data(), tokens_te.data(), tokens_win,
-                   topk_w_te.data(), topk_w_win, recv_tokens_te.data(), recv_tokens_win,
-                   recv_topk_w_te.data(), recv_topk_w_win, stream);
+  nvte_ep_dispatch(handle_mem_te.data(), topk_idx_te.data(), tokens_te.data(), kNoWindow,
+                   topk_w_te.data(), kNoWindow, recv_tokens_te.data(), kNoWindow,
+                   recv_topk_w_te.data(), kNoWindow, stream);
 }
 
 namespace {
@@ -425,8 +294,6 @@ void ep_prepare_and_dispatch_fused(at::Tensor handle_mem, at::Tensor topk_idx, a
   NVTE_CHECK(recv_tokens.scalar_type() == tokens.scalar_type(), "recv_tokens dtype (",
              c10::toString(recv_tokens.scalar_type()), ") must match tokens dtype (",
              c10::toString(tokens.scalar_type()), ")");
-  check_symm_mem_required(recv_tokens, "recv_tokens");
-  check_symm_mem_required(recv_topk_weights, "recv_topk_weights");
 
   const bool is_scaled = tokens_scale_inv.has_value();
   const bool is_mxfp8 = is_mxfp8_scaled(is_scaled, tokens);
@@ -435,8 +302,7 @@ void ep_prepare_and_dispatch_fused(at::Tensor handle_mem, at::Tensor topk_idx, a
     NVTE_CHECK(recv_scale_inv.has_value(),
                "recv_scale_inv must be provided together with tokens_scale_inv");
     NVTE_CHECK(is_mxfp8, "EP dispatch currently supports only E4M3 MXFP8 block scaling");
-    sc_cols = check_mxfp8_scale_pair(*tokens_scale_inv, *recv_scale_inv, T_flat, recv_pr, H,
-                                     "recv_scale_inv");
+    sc_cols = check_mxfp8_scale_pair(*tokens_scale_inv, *recv_scale_inv, T_flat, recv_pr, H);
   }
 
   auto tok_dtype = GetTransformerEngineDType(tokens.scalar_type());
@@ -465,22 +331,10 @@ void ep_prepare_and_dispatch_fused(at::Tensor handle_mem, at::Tensor topk_idx, a
       total_recv_tokens.data_ptr(), Shape{static_cast<size_t>(total_recv_tokens.numel())},
       GetTransformerEngineDType(total_recv_tokens.scalar_type()));
 
-  NVTECommWindow tokens_win = maybe_make_window(tokens);
-  NVTECommWindow topk_w_win = maybe_make_window(topk_weights);
-  NVTECommWindow recv_tokens_win = maybe_make_window(recv_tokens);
-  NVTECommWindow recv_topk_w_win = maybe_make_window(recv_topk_weights);
-  if (is_scaled) {
-    const NVTECommWindow tsi_win = maybe_make_window(*tokens_scale_inv);
-    const NVTECommWindow rsi_win = maybe_make_window(*recv_scale_inv);
-    tokens_win.scale_window = tsi_win.window;
-    tokens_win.scale_offset = tsi_win.offset;
-    recv_tokens_win.scale_window = rsi_win.window;
-    recv_tokens_win.scale_offset = rsi_win.offset;
-  }
   auto layer_cfg = make_layer_cfg(top_k, dispatch_output_per_expert_alignment);
   nvte_ep_prepare_and_dispatch(
-      handle_mem_te.data(), topk_idx_te.data(), tokens_te.data(), tokens_win, topk_w_te.data(),
-      topk_w_win, recv_tokens_te.data(), recv_tokens_win, recv_topk_w_te.data(), recv_topk_w_win,
+      handle_mem_te.data(), topk_idx_te.data(), tokens_te.data(), kNoWindow, topk_w_te.data(),
+      kNoWindow, recv_tokens_te.data(), kNoWindow, recv_topk_w_te.data(), kNoWindow,
       tokens_per_expert_te.data(), total_recv_tokens_te.data(), &layer_cfg, stream);
 }
 
@@ -531,7 +385,7 @@ std::vector<at::Tensor> ep_prepare_and_dispatch(
     NVTE_CHECK(total_recv_tokens.is_pinned(), "eager total_recv_tokens must be pinned host memory");
     NVTE_CHECK_CUDA(cudaStreamSynchronize(stream));
     const int64_t num_recv = *total_recv_tokens.data_ptr<int64_t>();
-    // Recv outputs sized to the host count (eager forbids zero-copy, so plain allocations).
+    // Recv outputs sized to the host count.
     const int64_t H = tokens.size(-1);
     rt = at::empty({num_recv, H}, tokens.options());
     rw = at::empty({num_recv}, topk_weights.options());
@@ -568,7 +422,6 @@ void ep_combine(at::Tensor handle_mem, at::Tensor expert_out, at::Tensor result)
   NVTE_CHECK(result.scalar_type() == expert_out.scalar_type(), "result dtype (",
              c10::toString(result.scalar_type()), ") must match expert_out dtype (",
              c10::toString(expert_out.scalar_type()), ")");
-  check_symm_mem_required(expert_out, "expert_out");
 
   auto eo_dtype = GetTransformerEngineDType(expert_out.scalar_type());
   auto handle_mem_te = makeTransformerEngineTensor(
@@ -577,9 +430,7 @@ void ep_combine(at::Tensor handle_mem, at::Tensor expert_out, at::Tensor result)
       makeTransformerEngineTensor(expert_out.data_ptr(), Shape{recv_pr, H}, eo_dtype);
   auto result_te = makeTransformerEngineTensor(result.data_ptr(), Shape{T_flat, H}, eo_dtype);
 
-  NVTECommWindow expert_out_win = maybe_make_window(expert_out);
-  nvte_ep_combine(handle_mem_te.data(), expert_out_te.data(), expert_out_win, result_te.data(),
-                  stream);
+  nvte_ep_combine(handle_mem_te.data(), expert_out_te.data(), kNoWindow, result_te.data(), stream);
 }
 
 void ep_dispatch_bwd(at::Tensor handle_mem, at::Tensor grad, at::Tensor g_recv_topk_weights,
@@ -618,10 +469,8 @@ void ep_dispatch_bwd(at::Tensor handle_mem, at::Tensor grad, at::Tensor g_recv_t
   auto grad_topk_w_te = makeTransformerEngineTensor(grad_topk_weights.data_ptr(),
                                                     Shape{T_flat, topk_n}, DType::kFloat32);
 
-  NVTECommWindow grad_win = maybe_make_window(grad);
-  NVTECommWindow g_recv_w_win = maybe_make_window(g_recv_topk_weights);
-  nvte_ep_dispatch_bwd(handle_mem_te.data(), grad_te.data(), grad_win, g_recv_w_te.data(),
-                       g_recv_w_win, grad_tokens_te.data(), grad_topk_w_te.data(), stream);
+  nvte_ep_dispatch_bwd(handle_mem_te.data(), grad_te.data(), kNoWindow, g_recv_w_te.data(),
+                       kNoWindow, grad_tokens_te.data(), grad_topk_w_te.data(), stream);
 }
 
 void ep_combine_bwd(at::Tensor handle_mem, at::Tensor grad, at::Tensor grad_expert_out,
@@ -642,8 +491,7 @@ void ep_combine_bwd(at::Tensor handle_mem, at::Tensor grad, at::Tensor grad_expe
              c10::toString(grad_expert_out.scalar_type()), ") must match grad dtype (",
              c10::toString(grad.scalar_type()), ")");
   // grad is autograd-allocated (staged-copy path); grad_expert_out is the
-  // EpBuffer-owned scatter target and must be symm-mem in zero-copy mode.
-  check_symm_mem_required(grad_expert_out, "grad_expert_out");
+  // scatter target for the expert-output gradient.
 
   // Block-scaled (MXFP8) backward: grad/grad_expert_out carry e4m3 data and the scale
   // tensors carry the unswizzled e8m0 scale-inverses [., H/block]; the reverse-direction
@@ -656,8 +504,8 @@ void ep_combine_bwd(at::Tensor handle_mem, at::Tensor grad, at::Tensor grad_expe
     NVTE_CHECK(grad_expert_out_scale_inv.has_value(),
                "grad_expert_out_scale_inv must be provided together with grad_scale_inv");
     NVTE_CHECK(is_mxfp8, "EP combine backward currently supports only E4M3 MXFP8 block scaling");
-    sc_cols = check_mxfp8_scale_pair(*grad_scale_inv, *grad_expert_out_scale_inv, T_flat, recv_pr,
-                                     H, "grad_expert_out_scale_inv");
+    sc_cols =
+        check_mxfp8_scale_pair(*grad_scale_inv, *grad_expert_out_scale_inv, T_flat, recv_pr, H);
   }
 
   auto g_dtype = GetTransformerEngineDType(grad.scalar_type());
@@ -675,38 +523,19 @@ void ep_combine_bwd(at::Tensor handle_mem, at::Tensor grad, at::Tensor grad_expe
                                         Shape{recv_pr, sc_cols}, NVTE_MXFP8_1D_SCALING)
           : makeTransformerEngineTensor(grad_expert_out.data_ptr(), Shape{recv_pr, H}, g_dtype);
 
-  // grad is autograd-allocated (staged); grad_expert_out resolves to a symm-mem
-  // window in zero-copy mode, else kNoWindow for the staged path.
-  NVTECommWindow grad_win = maybe_make_window(grad);
-  NVTECommWindow grad_expert_out_win = maybe_make_window(grad_expert_out);
-  // Block-scaled zero-copy: the scale-inverse rides on the data tensor's window,
-  // mirroring the forward dispatch. Send scales stay staged like the send data;
-  // recv scales are the one-sided write target and must be symm-mem-backed.
-  if (is_scaled) {
-    const NVTECommWindow gsi_win = maybe_make_window(*grad_scale_inv);
-    const NVTECommWindow gesi_win = maybe_make_window(*grad_expert_out_scale_inv);
-    grad_win.scale_window = gsi_win.window;
-    grad_win.scale_offset = gsi_win.offset;
-    grad_expert_out_win.scale_window = gesi_win.window;
-    grad_expert_out_win.scale_offset = gesi_win.offset;
-  }
-  nvte_ep_combine_bwd(handle_mem_te.data(), grad_te.data(), grad_win, grad_expert_out_te.data(),
-                      grad_expert_out_win, stream);
+  nvte_ep_combine_bwd(handle_mem_te.data(), grad_te.data(), kNoWindow, grad_expert_out_te.data(),
+                      kNoWindow, stream);
 }
 
 void register_ep_bindings(pybind11::module_& m) {
   namespace py = pybind11;
   m.def("ep_initialize", &ep_initialize,
         "Initialize the EP backend; borrows torch's NCCL comm pointed to by ``comm_ptr``.",
-        py::arg("comm_ptr"), py::arg("group_name"), py::arg("num_experts"),
-        py::arg("max_tokens_per_rank"), py::arg("max_recv_tokens_per_rank"), py::arg("hidden_dim"),
-        py::arg("max_num_sms") = 0, py::arg("max_token_dtype"), py::arg("zero_copy") = false,
-        py::arg("num_topk") = 0, py::arg("drop_on_overflow") = false);
+        py::arg("comm_ptr"), py::arg("num_experts"), py::arg("max_tokens_per_rank"),
+        py::arg("max_recv_tokens_per_rank"), py::arg("hidden_dim"), py::arg("max_num_sms") = 0,
+        py::arg("max_token_dtype"), py::arg("num_topk") = 0, py::arg("drop_on_overflow") = false);
   m.def("ep_finalize", &ep_finalize, "Tear down the EP backend. Idempotent.",
         py::call_guard<py::gil_scoped_release>());
-  m.def("ep_get_zero_copy", &ep_get_zero_copy, "Return the current EP zero-copy toggle state.");
-  m.def("ep_zero_copy_supported", &ep_zero_copy_supported,
-        "Return True when the extension was built with NCCL symm-mem (zero-copy) support.");
   m.def("ep_handle_mem_size", &ep_handle_mem_size,
         "Return the handle_mem byte size for the given layer config.", py::arg("top_k"),
         py::arg("dispatch_output_per_expert_alignment") = 0);

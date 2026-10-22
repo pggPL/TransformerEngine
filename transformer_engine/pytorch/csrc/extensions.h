@@ -744,17 +744,11 @@ void grouped_swizzle_for_gemm(py::handle &tensor, bool rowwise, bool columnwise)
 int64_t get_nccl_comm_ptr(c10d::ProcessGroup *process_group);
 
 // Borrows torch's NCCL host comm (``comm_ptr`` from ``get_nccl_comm_ptr``).
-// ``group_name`` is the PG name used by the symm-mem window resolver.
-// ``zero_copy`` is forwarded into ``NVTEEpGroupConfig.zero_copy``.
-void ep_initialize(uintptr_t comm_ptr, const std::string &group_name, int64_t num_experts,
-                   int64_t max_tokens_per_rank, int64_t max_recv_tokens_per_rank,
-                   int64_t hidden_dim, int64_t max_num_sms, pybind11::object max_token_dtype,
-                   bool zero_copy, int64_t num_topk, bool drop_on_overflow);
+void ep_initialize(uintptr_t comm_ptr, int64_t num_experts, int64_t max_tokens_per_rank,
+                   int64_t max_recv_tokens_per_rank, int64_t hidden_dim, int64_t max_num_sms,
+                   pybind11::object max_token_dtype, int64_t num_topk, bool drop_on_overflow);
 
 void ep_finalize();
-
-// Returns the zero-copy mode captured at ep_initialize.
-bool ep_get_zero_copy();
 
 // Returns the handle_mem byte size for the given layer config.
 int64_t ep_handle_mem_size(int64_t top_k, int64_t dispatch_output_per_expert_alignment);

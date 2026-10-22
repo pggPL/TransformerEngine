@@ -96,7 +96,6 @@ def validate_ep_buffer(
             "recv_capacity_per_rank",
             "alignment",
             "payload_dtype",
-            "zero_copy",
         )
         if getattr(buffer, name) != getattr(expected_config, name)
     }
