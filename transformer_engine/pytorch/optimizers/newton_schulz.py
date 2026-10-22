@@ -12,6 +12,8 @@ import torch.distributed as dist
 
 import transformer_engine_torch as tex
 
+from ..distributed import get_nccl_comm_ptr
+
 
 _COEFFICIENT_SETS = {
     # Values are rounded to closest representable in single precision.
@@ -148,7 +150,7 @@ class CusolverMpCtx:
         if self.rank < 0:
             raise RuntimeError("The current process is not a member of the supplied process group")
 
-        comm_ptr = _get_nccl_comm_ptr(group)
+        comm_ptr = get_nccl_comm_ptr(group)
         self._ptr = tex.cusolvermp_ctx_create(comm_ptr, self.nranks, self.rank)
 
     @property
@@ -170,21 +172,6 @@ class CusolverMpCtx:
     def __del__(self) -> None:
         # Called when the context is manually destroyed or during Python teardown
         self.destroy()
-
-
-def _get_nccl_comm_ptr(group: dist.ProcessGroup) -> int:
-    """Materialize and borrow a raw NCCL communicator from a process group."""
-    backend = dist.get_backend(group)
-    if backend != "nccl":
-        raise RuntimeError(f"Newton-Schulz requires NCCL backend, got '{backend}'")
-
-    # The NCCL backend creates communicators lazily; this collective materializes
-    # the borrowed communicator on every rank first.
-    dist.barrier(group=group, device_ids=[torch.cuda.current_device()])
-    comm_ptr = tex.get_nccl_comm_ptr(group)
-    if not isinstance(comm_ptr, int) or comm_ptr == 0:
-        raise RuntimeError("NCCL backend returned an invalid communicator pointer")
-    return comm_ptr
 
 
 def newton_schulz(

@@ -180,7 +180,7 @@ bool ep_zero_copy_supported() {
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
-// ``comm_ptr`` is torch's borrowed NCCL host comm (see get_nccl_comm_ptr).
+// ``comm_ptr`` is torch's borrowed NCCL host comm passed from Python.
 // ``group_name`` is captured for the symm-mem window resolver.
 
 void ep_initialize(uintptr_t comm_ptr, const std::string& group_name, int64_t num_experts,

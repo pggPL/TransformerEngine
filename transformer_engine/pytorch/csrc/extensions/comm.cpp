@@ -4,6 +4,8 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#ifdef NVTE_WITH_TORCH_NCCL_COMM
+
 // NCCL backend headers, for borrowing the raw ncclComm_t. The NCCL2 backend
 // header exists only on torch builds that ship it.
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
@@ -45,18 +47,16 @@ int64_t borrow_comm_ptr(PG* pg) {
 
 }  // namespace
 
-int64_t get_nccl_comm_ptr(c10d::ProcessGroup* process_group) {
-  NVTE_CHECK(process_group != nullptr, "get_nccl_comm_ptr: process_group must be non-null");
-  auto backend = process_group->getBackend(c10::DeviceType::CUDA);
-  NVTE_CHECK(backend, "get_nccl_comm_ptr: process group has no CUDA backend");
+int64_t get_nccl_comm_ptr(c10d::Backend* backend) {
+  NVTE_CHECK(backend != nullptr, "get_nccl_comm_ptr: backend must be non-null");
 
   // Classic backend (ProcessGroupNCCL._comm_ptr() in Python).
-  if (auto* nccl_pg = dynamic_cast<c10d::ProcessGroupNCCL*>(backend.get())) {
+  if (auto* nccl_pg = dynamic_cast<c10d::ProcessGroupNCCL*>(backend)) {
     return borrow_comm_ptr(nccl_pg);
   }
   // NCCL2 backend, default on recent torch.
 #ifdef NVTE_HAS_NCCL2_PG
-  if (auto* nccl2_pg = dynamic_cast<c10d::nccl2::ProcessGroupNCCL*>(backend.get())) {
+  if (auto* nccl2_pg = dynamic_cast<c10d::nccl2::ProcessGroupNCCL*>(backend)) {
     return borrow_comm_ptr(nccl2_pg);
   }
 #endif
@@ -66,3 +66,5 @@ int64_t get_nccl_comm_ptr(c10d::ProcessGroup* process_group) {
 }
 
 }  // namespace transformer_engine::pytorch
+
+#endif  // NVTE_WITH_TORCH_NCCL_COMM
