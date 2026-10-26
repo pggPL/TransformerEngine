@@ -80,16 +80,16 @@ def fake_activation(
     input_: TensorSpec,
     quantizer: Optional[Quantizer] = None,
     *,
-    dtype: Optional[torch.dtype] = None,
     gated: bool = False,
+    dtype: Optional[torch.dtype] = None,
+    fused_quantization: bool = True,
 ) -> TensorSpec:
-    """Describe an activation, including optional output quantization."""
-    shape = input_.shape
-    if gated:
-        shape = (*shape[:-1], shape[-1] // 2)
-    return _make_fused_quantization_output_spec(
-        shape, dtype or input_.dtype, input_.device, quantizer
-    )
+    """Describe an activation output, including optional fused quantization."""
+    shape = (*input_.shape[:-1], input_.shape[-1] // 2 if gated else input_.shape[-1])
+    dtype = dtype or input_.dtype
+    if fused_quantization:
+        return _make_fused_quantization_output_spec(shape, dtype, input_.device, quantizer)
+    return TensorSpec(shape=shape, dtype=dtype, device=input_.device, quantizer=quantizer)
 
 
 def fake_activation_backward(
