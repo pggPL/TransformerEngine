@@ -76,19 +76,48 @@ def _make_fused_quantization_output_spec(
     return spec
 
 
+def fake_activation(
+    input_: TensorSpec,
+    quantizer: Optional[Quantizer] = None,
+    *,
+    gated: bool = False,
+    dtype: Optional[torch.dtype] = None,
+    fused_quantization: bool = True,
+) -> TensorSpec:
+    """Describe an activation output, including optional fused quantization."""
+    shape = (*input_.shape[:-1], input_.shape[-1] // 2 if gated else input_.shape[-1])
+    dtype = dtype or input_.dtype
+    if fused_quantization:
+        return _make_fused_quantization_output_spec(shape, dtype, input_.device, quantizer)
+    return TensorSpec(shape=shape, dtype=dtype, device=input_.device, quantizer=quantizer)
+
+
+def fake_activation_backward(
+    input_: TensorSpec,
+    quantizer: Optional[Quantizer] = None,
+    *,
+    dtype: Optional[torch.dtype] = None,
+) -> TensorSpec:
+    """Describe the gradient of the original, pre-activation input."""
+    return _make_fused_quantization_output_spec(
+        input_.shape, dtype or input_.dtype, input_.device, quantizer
+    )
+
+
 def fake_bgrad(
     grad_output: TensorSpec,
     quantizer: Optional[Quantizer] = None,
+    *,
+    dtype: Optional[torch.dtype] = None,
 ) -> tuple[TensorSpec, TensorSpec]:
     """Describe bias reduction and optional gradient quantization, in native order."""
-    db = TensorSpec(
-        shape=(grad_output.shape[-1],), dtype=grad_output.dtype, device=grad_output.device
-    )
+    dtype = dtype or grad_output.dtype
+    db = TensorSpec(shape=(grad_output.shape[-1],), dtype=dtype, device=grad_output.device)
     dx = (
         grad_output
-        if quantizer is None
+        if quantizer is None and dtype == grad_output.dtype
         else _make_fused_quantization_output_spec(
-            grad_output.shape, grad_output.dtype, grad_output.device, quantizer
+            grad_output.shape, dtype, grad_output.device, quantizer
         )
     )
     return db, dx
