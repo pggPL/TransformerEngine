@@ -402,6 +402,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
 
   // Other granular functions
+  m.def("normalization_scale_layout", &transformer_engine::pytorch::normalization_scale_layout,
+        py::arg("normalization"), py::arg("quantizer"), py::arg("use_cudnn"));
   m.def("layernorm_fwd", &transformer_engine::pytorch::layernorm_fwd, "LayerNorm", py::arg("input"),
         py::arg("weight"), py::arg("bias"), py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"),
         py::arg("otype"), py::arg("sm_margin"), py::arg("zero_centered_gamma"));
@@ -625,7 +627,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("splits_to_offsets_multi", &transformer_engine::pytorch::splits_to_offsets_multi,
         "Compute multiple scaled inclusive-scan offsets from a split-sizes vector",
         py::arg("split_sizes"), py::arg("device"), py::kw_only(), py::arg("strides"),
-        py::arg("include_leading_zero"), py::arg("dtypes"), py::arg("bulk_allocate") = false);
+        py::arg("include_leading_zero"), py::arg("dtypes"), py::arg("bulk_allocate") = false,
+        py::arg("split_alignment") = 1);
   m.def("get_num_cublas_streams", &nvte_get_num_compute_streams, "Get number of compute streams",
         py::call_guard<py::gil_scoped_release>());
 
