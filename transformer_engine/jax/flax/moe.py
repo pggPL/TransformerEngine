@@ -34,7 +34,13 @@ import jax.numpy as jnp
 from flax import linen as nn
 
 from transformer_engine.common.recipe import Recipe
-from ..moe import RouterComputationInfo, _moe_mesh_axes, _resolve_moe_mesh_resource, moe
+from ..moe import (
+    RouterComputationInfo,
+    SiTUActivation,
+    _moe_mesh_axes,
+    _resolve_moe_mesh_resource,
+    moe,
+)
 from ..quantize import QuantizerSet
 from ..router import ScoreFunction
 from ..sharding import MeshResource, _get_mesh, global_shard_guard
@@ -67,9 +73,11 @@ class _MoEBlock(TransformerEngineBase):
         Top-k value for routing.
     intermediate_size : int
         Hidden dim of the per-expert FFN (the inner ``mlp`` axis).
-    activation_type : str
+    activation_type : Union[str, SiTUActivation]
         Activation between ``layer_w0 @ wi_0`` and the elementwise
-        product with ``layer_w0 @ wi_1``. Default ``"silu"``.
+        product with ``layer_w0 @ wi_1``. Default ``"silu"``. Pass
+        :class:`~transformer_engine.jax.moe.SiTUActivation` to soft-cap both
+        branches in FP32 using the unfused grouped-GEMM path.
 
     score_function : Union[str, ScoreFunction]
         ``"softmax"`` (default), ``"sigmoid"``, or ``"sqrtsoftplus"`` for the routing scores.
@@ -140,7 +148,7 @@ class _MoEBlock(TransformerEngineBase):
     num_experts: int = 8
     num_experts_per_tok: int = 2
     intermediate_size: int = 2048
-    activation_type: str = "silu"
+    activation_type: Union[str, SiTUActivation] = "silu"
 
     # Routing
     score_function: Union[str, ScoreFunction] = "softmax"
@@ -229,7 +237,7 @@ class _MoEBlock(TransformerEngineBase):
             (hidden_size, self.num_experts),
             self.dtype,
         )
-        # FC1 is stored as one gated-SwiGLU kernel.  Keeping its two
+        # FC1 is stored as one gated FFN kernel. Keeping its two
         # projections contiguous lets the functional MoE path quantize and
         # all-gather one FP8 data buffer (and one scale buffer), rather than
         # materializing a concatenate inside the custom-VJP.

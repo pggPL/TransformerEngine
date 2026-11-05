@@ -2,7 +2,7 @@
 #
 # See LICENSE for license information.
 
-"""MoE resource resolution and MeshResource-only API without EP kernels."""
+"""MoE resource and activation API contracts without EP kernels."""
 
 import importlib
 import inspect
@@ -16,10 +16,51 @@ from jax.sharding import Mesh
 from transformer_engine.jax.flax import _MoEBlock
 from transformer_engine.jax.moe import (
     RouterComputationInfo,
+    SiTUActivation,
+    _apply_ffn_activation,
     _moe_mesh_axes,
     _resolve_moe_mesh_resource,
 )
 from transformer_engine.jax.sharding import MeshResource, global_mesh_resource, global_shard_guard
+
+
+@pytest.mark.parametrize("betas", [(4.0, 25.0), (2.0, 7.0)])
+def test_situ_value_and_both_branch_derivatives(betas):
+    gate_beta, up_beta = betas
+    gate = jnp.asarray([-10000.0, -12.0, -0.5, 0.0, 0.5, 12.0, 10000.0])
+    up = jnp.asarray([10000.0, 40.0, -3.0, 2.0, 3.0, -40.0, -10000.0])
+    activation = SiTUActivation(gate_beta, up_beta)
+    output, pullback = jax.vjp(lambda g, u: _apply_ffn_activation(activation, g, u), gate, up)
+    dg, du = pullback(jnp.ones_like(output))
+
+    g, u = np.asarray(gate, np.float64), np.asarray(up, np.float64)
+    sigmoid = 0.5 + 0.5 * np.tanh(g / 2)
+    tg, tu = np.tanh(g / gate_beta), np.tanh(u / up_beta)
+    capped_gate, capped_up = gate_beta * tg * sigmoid, up_beta * tu
+    derivative_gate = (1 - tg**2) * sigmoid + gate_beta * tg * sigmoid * (1 - sigmoid)
+    for actual, expected in (
+        (output, capped_gate * capped_up),
+        (dg, derivative_gate * capped_up),
+        (du, capped_gate * (1 - tu**2)),
+    ):
+        np.testing.assert_allclose(actual, expected, atol=2e-5, rtol=2e-5)
+
+
+def test_situ_bf16_uses_fp32_before_final_cast():
+    gate = jnp.asarray([0.25, 1.5, -3.0, 12.0, 64.0], dtype=jnp.bfloat16)
+    up = jnp.asarray([0.75, -2.0, 32.0, 64.0, -128.0], dtype=jnp.bfloat16)
+    actual = _apply_ffn_activation(SiTUActivation(), gate, up)
+    g, u = np.asarray(gate, np.float64), np.asarray(up, np.float64)
+    expected = jnp.asarray(100 * np.tanh(g / 4) / (1 + np.exp(-g)) * np.tanh(u / 25), jnp.bfloat16)
+    assert actual.dtype == jnp.bfloat16
+    np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
+@pytest.mark.parametrize("field", ["gate_beta", "up_beta"])
+def test_situ_rejects_invalid_soft_caps(field, value):
+    with pytest.raises(ValueError, match=field):
+        SiTUActivation(**{field: value})
 
 
 @pytest.fixture(autouse=True)
