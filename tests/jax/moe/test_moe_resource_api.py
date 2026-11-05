@@ -36,6 +36,39 @@ def test_resource_required_for_function_and_block():
         _MoEBlock().init(jax.random.PRNGKey(0), jnp.ones((1, 1, 4)))
 
 
+@pytest.mark.parametrize("shape", [(1, 4), (2, 1, 8), (1, 2, 8)])
+def test_router_input_shape_is_validated(shape):
+    module = importlib.import_module("transformer_engine.jax.moe")
+    router = RouterComputationInfo(
+        gate_kernel=jnp.ones((8, 2)), num_experts_per_tok=1, router_input=jnp.ones(shape)
+    )
+    with pytest.raises(ValueError, match="router_input must have shape"):
+        module.moe(
+            jnp.ones((1, 1, 4)),
+            router,
+            None,
+            None,
+            num_experts=2,
+            mesh_resource=MeshResource(ep_resource="ep"),
+        )
+
+
+def test_gate_kernel_uses_router_width():
+    module = importlib.import_module("transformer_engine.jax.moe")
+    router = RouterComputationInfo(
+        gate_kernel=jnp.ones((4, 2)), num_experts_per_tok=1, router_input=jnp.ones((1, 1, 8))
+    )
+    with pytest.raises(ValueError, match="gate_kernel must have shape"):
+        module.moe(
+            jnp.ones((1, 1, 4)),
+            router,
+            None,
+            None,
+            num_experts=2,
+            mesh_resource=MeshResource(ep_resource="ep"),
+        )
+
+
 def test_explicit_resource_overrides_global_and_is_snapshotted():
     explicit = MeshResource(dp_resource="dp", fsdp_resource="fsdp", ep_resource="ep")
     enclosing = MeshResource(ep_resource="other")

@@ -88,7 +88,8 @@ class RouterComputationInfo:
     Parameters
     ----------
     gate_kernel : jnp.ndarray
-        ``[hidden, num_experts]`` router projection.
+        ``[router_hidden, num_experts]`` router projection; ``router_hidden``
+        is the width of ``router_input``, or ``x`` when no separate input is given.
     num_experts_per_tok : int
         Top-k value for routing.
     expert_bias : Optional[jnp.ndarray]
@@ -113,6 +114,15 @@ class RouterComputationInfo:
         view; this lives off the dispatch critical path.
     gate_kernel_axes : Tuple[Optional[str], ...]
         Logical sharding axes of ``gate_kernel``.
+    router_input : Optional[jnp.ndarray]
+        Separate ``[batch, sequence, router_hidden]`` activations for the gate.
+        ``None`` uses the expert input ``x``. Batch and sequence dimensions must
+        match ``x``; hidden dimensions may differ. Gradients flow to this input
+        independently of the expert-input gradient and retain its dtype.
+        The gate kernel is cast to this input's dtype for the projection.
+    router_input_axes : Tuple[Optional[str], ...]
+        Logical sharding axes of ``router_input``. Its physical token layout
+        follows the same DP/FSDP/EP placement as ``x``.
     """
 
     gate_kernel: jnp.ndarray
@@ -127,6 +137,8 @@ class RouterComputationInfo:
     scaling_factor: float = flax.struct.field(pytree_node=False, default=1.0)
     aux_loss_coeff: float = flax.struct.field(pytree_node=False, default=0.0)
     gate_kernel_axes: Tuple[Optional[str], ...] = flax.struct.field(pytree_node=False, default=())
+    router_input: Optional[jnp.ndarray] = None
+    router_input_axes: Tuple[Optional[str], ...] = flax.struct.field(pytree_node=False, default=())
 
 
 @flax.struct.dataclass
@@ -1325,6 +1337,12 @@ def _moe_fwd_rule(
         compute_aux_loss = router is not None and router.aux_loss_coeff > 0.0
 
         x = with_sharding_constraint_by_logical_axes(x, input_axes)
+        if router is not None and router.router_input is not None:
+            router = router.replace(
+                router_input=with_sharding_constraint_by_logical_axes(
+                    router.router_input, router.router_input_axes
+                )
+            )
 
         mesh = _get_mesh()
         if mesh is None or mesh.empty:
@@ -1451,8 +1469,10 @@ def _moe_fwd_rule(
             # accumulate at low precision and silently produce NaNs on tokens
             # whose normalised weights underflow. Cast to fp32 here to stay in
             # the validated regime.
-            gate_kernel_cast = router.gate_kernel.astype(x.dtype)
-            gate_logits = jnp.einsum("bsh,he->bse", x, gate_kernel_cast)
+            gate_input = x if router.router_input is None else router.router_input
+            gate_input = jax.lax.with_sharding_constraint(gate_input, NamedSharding(mesh, ep3_spec))
+            gate_kernel_cast = router.gate_kernel.astype(gate_input.dtype)
+            gate_logits = jnp.einsum("bsh,he->bse", gate_input, gate_kernel_cast)
             logits_2d = gate_logits.reshape(-1, num_experts).astype(jnp.float32)
 
             # ---------------- Routing (global view) ----------------
@@ -1945,19 +1965,28 @@ def _moe_bwd_rule(
 
             # ---------------- Gate bwd (global view) ----------------
             d_gate_logits = d_logits_2d.reshape(B, S, num_experts)
-            gate_kernel_cast = router.gate_kernel.astype(ctx.x.dtype)
-            d_x_from_gate = jnp.einsum("bse,he->bsh", d_gate_logits, gate_kernel_cast)
-            d_gate_kernel = jnp.einsum("bsh,bse->he", ctx.x, d_gate_logits).astype(
+            gate_input = ctx.x if router.router_input is None else router.router_input
+            gate_kernel_cast = router.gate_kernel.astype(gate_input.dtype)
+            d_gate_input = jnp.einsum("bse,he->bsh", d_gate_logits, gate_kernel_cast)
+            d_gate_kernel = jnp.einsum("bsh,bse->he", gate_input, d_gate_logits).astype(
                 router.gate_kernel.dtype
             )
             d_gate_kernel = with_sharding_constraint_by_logical_axes(
                 d_gate_kernel, router.gate_kernel_axes
             )
-            d_x = d_x_from_gate + d_x_from_dispatch
+            if router.router_input is None:
+                d_x = d_gate_input + d_x_from_dispatch
+                d_router_input = None
+            else:
+                d_x = d_x_from_dispatch
+                d_router_input = with_sharding_constraint_by_logical_axes(
+                    d_gate_input.astype(router.router_input.dtype), router.router_input_axes
+                )
             # expert_bias has no learnable bwd path through fused_topk: the
             # primitive's bwd returns None for the bias slot, so its cotangent is zero.
             d_router_info = router.replace(
                 gate_kernel=d_gate_kernel,
+                router_input=d_router_input,
                 expert_bias=(
                     None if router.expert_bias is None else jnp.zeros_like(router.expert_bias)
                 ),
@@ -2216,6 +2245,17 @@ def moe(
     ep_axis, data_parallelism_axes = _moe_mesh_axes(mesh_resource)
 
     if isinstance(router_info, RouterComputationInfo):
+        gate_input = x if router_info.router_input is None else router_info.router_input
+        if gate_input.ndim != 3 or gate_input.shape[:2] != x.shape[:2]:
+            raise ValueError(
+                "router_input must have shape [batch, sequence, router_hidden] matching x, "
+                f"got x={x.shape}, router_input={gate_input.shape}."
+            )
+        if router_info.gate_kernel.shape != (gate_input.shape[-1], num_experts):
+            raise ValueError(
+                "gate_kernel must have shape [router_hidden, num_experts], got "
+                f"{router_info.gate_kernel.shape} for router_input={gate_input.shape}."
+            )
         router_info = router_info.replace(
             score_function=_validate_score_function(router_info.score_function),
             aux_loss_coeff=float(router_info.aux_loss_coeff),
@@ -2250,6 +2290,15 @@ def moe(
         # so ep MUST be innermost in the partition spec. Soft re-pin: free if
         # upstream already matches, single reshard otherwise.
         x = _prepare_moe_input(x, ep_axis, data_parallelism_axes, caller="moe")
+        if isinstance(router_info, RouterComputationInfo) and router_info.router_input is not None:
+            router_info = router_info.replace(
+                router_input=_prepare_moe_input(
+                    router_info.router_input,
+                    ep_axis,
+                    data_parallelism_axes,
+                    caller="moe router_input",
+                )
+            )
 
         cudnn_native_weight_layout = _resolve_cudnn_native_weight_layout(
             wi, x.shape[-1], cudnn_native_weight_layout
