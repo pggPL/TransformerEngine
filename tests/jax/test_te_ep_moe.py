@@ -294,6 +294,7 @@ def _pure_jax_moe_reference(
     expert_bias=None,
     hash_input_ids=None,
     hash_tid2eid=None,
+    router_input=None,
     *,
     num_experts,
     num_experts_per_tok,
@@ -307,8 +308,9 @@ def _pure_jax_moe_reference(
     K = num_experts_per_tok
     x_2d = x.reshape(T, H)
 
-    gate_kernel_cast = gate_kernel.astype(x.dtype)
-    logits = (x_2d @ gate_kernel_cast).astype(jnp.float32)  # [T, E]
+    gate_input = x if router_input is None else router_input
+    gate_kernel_cast = gate_kernel.astype(gate_input.dtype)
+    logits = (gate_input.reshape(T, -1) @ gate_kernel_cast).astype(jnp.float32)  # [T, E]
 
     if hash_input_ids is not None:
         if score_function != "sqrtsoftplus" or hash_tid2eid is None:
@@ -748,6 +750,92 @@ def test_mesh_resource_api_forward_and_backward(mesh, quant_before_fsdp_ag, make
         _to_global_numpy(baseline_dx, mesh).astype(np.float32),
         **GRAD_FFN_TOLERANCE["mxfp8"],
     )
+
+
+@pytest.mark.parametrize("quantization", _QUANTIZATION_CASES)
+@pytest.mark.parametrize("early_weighting", [False, True])
+@pytest.mark.parametrize("router_dtype", [DTYPE, jnp.float32])
+def test_separate_router_input_latent_projection(
+    mesh, quantization, early_weighting, router_dtype, make_block
+):
+    block = make_block(
+        score_function="sigmoid",
+        use_expert_routing_bias=True,
+        expert_bias_init=_strong_expert_bias_init,
+        aux_loss_coeff=1e-2,
+        apply_topk_weights_early=early_weighting,
+        quantization_recipe=_quantization_recipe(quantization),
+    )
+    hidden = jax.random.normal(jax.random.PRNGKey(71), (BATCH, SEQ, 2 * HIDDEN), router_dtype)
+    projection = jax.random.normal(jax.random.PRNGKey(72), (2 * HIDDEN, HIDDEN), DTYPE)
+    projection = projection / jnp.sqrt(jnp.asarray(2 * HIDDEN, DTYPE))
+    with _ctx(mesh):
+        hidden_sh = _shard_inputs(hidden, mesh)
+        variables = jax.jit(block.init)(
+            jax.random.PRNGKey(73), (hidden_sh @ projection).astype(DTYPE), router_input=hidden_sh
+        )
+
+        def loss_fn(v, h, p):
+            output, aux, _, _ = block.apply(v, (h @ p).astype(DTYPE), router_input=h)
+            return jnp.mean(output.astype(jnp.float32) ** 2) + aux
+
+        grads, dh, dp = jax.jit(jax.grad(jax.checkpoint(loss_fn), argnums=(0, 1, 2)))(
+            variables, hidden_sh, projection
+        )
+        output, aux, _, _ = jax.jit(block.apply)(
+            variables, (hidden_sh @ projection).astype(DTYPE), router_input=hidden_sh
+        )
+    params_np = _params_global_numpy(variables, mesh)
+    assert params_np["gate_kernel"].shape == (2 * HIDDEN, NUM_EXPERTS)
+    assert params_np["wi"].shape == (NUM_EXPERTS, HIDDEN, 2 * INTER)
+
+    def reference(params, h, p):
+        return _pure_jax_moe_reference(
+            (h @ p).astype(DTYPE),
+            params["gate_kernel"],
+            params["wi"],
+            params["wo"],
+            params["expert_bias"],
+            router_input=h,
+            num_experts=NUM_EXPERTS,
+            num_experts_per_tok=TOPK,
+            score_function="sigmoid",
+            aux_loss_coeff=1e-2,
+        )
+
+    def ref_loss(params, h, p):
+        out, aux_loss = reference(params, h, p)
+        return jnp.mean(out.astype(jnp.float32) ** 2) + aux_loss
+
+    ref_params = {k: jnp.asarray(v) for k, v in params_np.items()}
+    out_ref, aux_ref = reference(ref_params, hidden, projection)
+    grads_ref, dh_ref, dp_ref = jax.jit(jax.grad(ref_loss, argnums=(0, 1, 2)))(
+        ref_params, hidden, projection
+    )
+    np.testing.assert_allclose(
+        _to_global_numpy(output, mesh).astype(np.float32),
+        np.asarray(out_ref).astype(np.float32),
+        **FWD_TOLERANCE[quantization],
+    )
+    np.testing.assert_allclose(
+        _to_global_numpy(aux, mesh).astype(np.float32),
+        np.asarray(aux_ref).astype(np.float32),
+        **AUX_TOLERANCE,
+    )
+    for name in ("gate_kernel", "wi", "wo"):
+        tolerance = GRAD_GATE_TOLERANCE if name == "gate_kernel" else GRAD_FFN_TOLERANCE
+        np.testing.assert_allclose(
+            _to_global_numpy(_unwrap(grads["params"][name]), mesh).astype(np.float32),
+            np.asarray(grads_ref[name]).astype(np.float32),
+            **tolerance[quantization],
+        )
+    for actual, expected, primal in ((dh, dh_ref, hidden), (dp, dp_ref, projection)):
+        assert actual.shape == primal.shape and actual.dtype == primal.dtype
+        np.testing.assert_allclose(
+            _to_global_numpy(actual, mesh).astype(np.float32),
+            np.asarray(expected).astype(np.float32),
+            **GRAD_FFN_TOLERANCE[quantization],
+        )
 
 
 def _reference_kwargs_from_config(config, params_np):

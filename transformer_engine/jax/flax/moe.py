@@ -96,7 +96,7 @@ class _MoEBlock(TransformerEngineBase):
         If ``> 0``, return the MoE auxiliary load-balancing loss scalar
         in addition to the main output.
 
-    gate_kernel_axes, wi_kernel_axes, wo_kernel_axes, input_axes :
+    gate_kernel_axes, wi_kernel_axes, wo_kernel_axes, input_axes, router_input_axes :
         Logical sharding axis tuples (consumed by Flax's
         :func:`with_logical_partitioning` and our internal
         :func:`with_sharding_constraint_by_logical_axes`).
@@ -164,6 +164,7 @@ class _MoEBlock(TransformerEngineBase):
     wi_kernel_axes: Tuple[Optional[str], ...] = ("exp", "embed", "mlp")
     wo_kernel_axes: Tuple[Optional[str], ...] = ("exp", "mlp", "embed")
     input_axes: Tuple[Optional[str], ...] = ()
+    router_input_axes: Tuple[Optional[str], ...] = ()
 
     # Parallelism
     mesh_resource: Optional[MeshResource] = None
@@ -196,13 +197,19 @@ class _MoEBlock(TransformerEngineBase):
         super().__post_init__()
 
     @nn.compact
-    def __call__(self, inputs: Array) -> Tuple[Array, Optional[Array], Array, Array]:
+    def __call__(
+        self, inputs: Array, *, router_input: Optional[Array] = None
+    ) -> Tuple[Array, Optional[Array], Array, Array]:
         """Run the MoE forward pass.
 
         Parameters
         ----------
         inputs : jnp.ndarray
             ``[batch, sequence, hidden]``.
+        router_input : Optional[jnp.ndarray]
+            Separate gate input ``[batch, sequence, router_hidden]``. ``None``
+            uses ``inputs``. Only the gate kernel uses ``router_hidden``;
+            expert kernels and EP buffers retain ``hidden``.
 
         Returns
         -------
@@ -226,6 +233,11 @@ class _MoEBlock(TransformerEngineBase):
             inputs.ndim == 3
         ), f"_MoEBlock expects [batch, sequence, hidden] input, got shape {inputs.shape}"
         _, _, hidden_size = inputs.shape
+        if router_input is not None and (
+            router_input.ndim != 3 or router_input.shape[:2] != inputs.shape[:2]
+        ):
+            raise ValueError("router_input must match the batch and sequence dimensions of inputs.")
+        router_hidden_size = hidden_size if router_input is None else router_input.shape[-1]
 
         # Param registrations -- must run OUTSIDE any JAX transform that
         # alters the variable scope (e.g. shard_map). The functional
@@ -234,7 +246,7 @@ class _MoEBlock(TransformerEngineBase):
         gate_kernel = self.param(
             "gate_kernel",
             nn.with_logical_partitioning(self.kernel_init, self.gate_kernel_axes),
-            (hidden_size, self.num_experts),
+            (router_hidden_size, self.num_experts),
             self.dtype,
         )
         # FC1 is stored as one gated FFN kernel. Keeping its two
@@ -326,6 +338,8 @@ class _MoEBlock(TransformerEngineBase):
                 scaling_factor=self.scaling_factor,
                 aux_loss_coeff=self.aux_loss_coeff,
                 gate_kernel_axes=self.gate_kernel_axes,
+                router_input=router_input,
+                router_input_axes=self.router_input_axes,
             )
             return moe(
                 inputs,
