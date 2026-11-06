@@ -124,6 +124,7 @@ from transformer_engine.jax.flax import _MoEBlock as MoEBlock
 from transformer_engine.jax.moe import (
     RouterComputationInfo,
     RoutingMapInfo,
+    SiTUActivation,
     get_moe_recv_capacity_per_rank,
     moe,
     record_ep_bootstrap_signature_for_moe,
@@ -282,6 +283,7 @@ def mesh(use_cudnn_fusion):
         "num_experts_per_tok",
         "aux_loss_coeff",
         "score_function",
+        "activation_type",
     ),
 )
 def _pure_jax_moe_reference(
@@ -299,6 +301,7 @@ def _pure_jax_moe_reference(
     aux_loss_coeff: float = 0.0,
     score_function: str = "softmax",
     scaling_factor: float = 1.0,
+    activation_type="silu",
 ):
     B, S, H = x.shape
     T = B * S
@@ -344,10 +347,18 @@ def _pure_jax_moe_reference(
     wi_0, wi_1 = jnp.split(wi, 2, axis=-1)
     layer_w0 = jnp.einsum("th,ehm->tem", x_2d, wi_0)
     layer_w1 = jnp.einsum("th,ehm->tem", x_2d, wi_1)
-    # Activation runs in x.dtype (typically bf16) to mirror the impl --
-    # the impl keeps silu+multiply in the wi GEMM output dtype because
-    # storing higher precision than the consumer (wo) GEMM buys nothing.
-    intermediate = jax.nn.silu(layer_w0) * layer_w1
+    # SiTU evaluates both branches in FP32 before the final cast.
+    if isinstance(activation_type, SiTUActivation):
+        gate, up = layer_w0.astype(jnp.float32), layer_w1.astype(jnp.float32)
+        intermediate = (
+            activation_type.gate_beta
+            * jnp.tanh(gate / activation_type.gate_beta)
+            * jax.nn.sigmoid(gate)
+            * activation_type.up_beta
+            * jnp.tanh(up / activation_type.up_beta)
+        ).astype(layer_w0.dtype)
+    else:
+        intermediate = jax.nn.silu(layer_w0) * layer_w1
     expert_out = jnp.einsum("tem,emh->teh", intermediate, wo)  # [T, E, H]
     output_2d = jnp.einsum("te,teh->th", routing_weights_full.astype(x.dtype), expert_out)
     output = output_2d.reshape(B, S, H).astype(x.dtype)
@@ -386,6 +397,7 @@ def _pure_jax_moe_reference(
 
 def _make_block(
     *,
+    activation_type="silu",
     apply_topk_weights_early=False,
     aux_loss_coeff=0.0,
     use_expert_routing_bias=False,
@@ -403,6 +415,7 @@ def _make_block(
         num_experts=NUM_EXPERTS,
         num_experts_per_tok=TOPK,
         intermediate_size=INTER,
+        activation_type=activation_type,
         mesh_resource=mesh_resource,
         apply_topk_weights_early=apply_topk_weights_early,
         aux_loss_coeff=aux_loss_coeff,
@@ -574,6 +587,19 @@ def _quantization_recipe(quantization):
 # -----------------------------------------------------------------------------
 
 _CONFIGS = [
+    *[
+        pytest.param(
+            dict(
+                activation_type=SiTUActivation(),
+                score_function="sigmoid",
+                use_expert_routing_bias=True,
+                expert_bias_init=_strong_expert_bias_init,
+                apply_topk_weights_early=early,
+            ),
+            id=f"situ-{'early' if early else 'late'}-weighting",
+        )
+        for early in (False, True)
+    ],
     pytest.param(
         dict(score_function="softmax"),
         id="softmax",
@@ -815,6 +841,7 @@ def test_separate_router_input_latent_projection(
 def _reference_kwargs_from_config(config, params_np):
     """Pick out the reference-relevant pieces of a parametrize config."""
     return dict(
+        activation_type=config.get("activation_type", "silu"),
         score_function=config.get("score_function", "softmax"),
         expert_bias=(
             jnp.asarray(params_np["expert_bias"])

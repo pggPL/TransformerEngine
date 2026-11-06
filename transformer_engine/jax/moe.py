@@ -41,7 +41,7 @@ stateful recipes follow the same update semantics as the other TE MLPs.
 
 import math
 import warnings
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import Any, Optional, Tuple, Union
 
@@ -72,11 +72,49 @@ from .router import ScoreFunction, _validate_score_function
 from .sharding import MeshResource, _get_mesh, global_mesh_resource, global_shard_guard
 
 __all__ = [
+    "SiTUActivation",
     "RouterComputationInfo",
     "RoutingMapInfo",
     "get_moe_recv_capacity_per_rank",
     "moe",
 ]
+
+
+@dataclass(frozen=True)
+class SiTUActivation:
+    """Two-branch SiTU-GLU for MoE experts.
+
+    Computes ``gate_beta * tanh(gate / gate_beta) * sigmoid(gate)`` times
+    ``up_beta * tanh(up / up_beta)`` in FP32, then casts to the gate dtype.
+    The defaults match Kimi-K3. Both soft-cap parameters must be finite and
+    positive. Pass an instance as ``moe(..., activation_type=...)``.
+
+    This activation uses the unfused grouped-GEMM path for BF16 and MXFP8;
+    requesting cuDNN fusion retains its normal warning and fallback behavior.
+    """
+
+    gate_beta: float = 4.0
+    up_beta: float = 25.0
+
+    def __post_init__(self):
+        for name in ("gate_beta", "up_beta"):
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive, got {value}")
+            object.__setattr__(self, name, value)
+
+
+def _apply_ffn_activation(activation_type, gate, up):
+    if isinstance(activation_type, SiTUActivation):
+        gate_fp32, up_fp32 = gate.astype(jnp.float32), up.astype(jnp.float32)
+        gated = (
+            activation_type.gate_beta
+            * jnp.tanh(gate_fp32 / activation_type.gate_beta)
+            * jax.nn.sigmoid(gate_fp32)
+        )
+        linear = activation_type.up_beta * jnp.tanh(up_fp32 / activation_type.up_beta)
+        return (gated * linear).astype(gate.dtype)
+    return _convert_to_activation_function(activation_type)(gate) * up
 
 
 @flax.struct.dataclass
@@ -902,7 +940,7 @@ def _ffn_fwd_per_shard(
     quantizer_sets: Tuple[QuantizerSet, QuantizerSet],
     *,
     num_local_experts: int,
-    activation_type: str,
+    activation_type: Union[str, SiTUActivation],
     apply_topk_weights_early: bool,
     use_cudnn_jax_fusion: bool,
     wi_0_checkpoint_name: Optional[str],
@@ -1048,14 +1086,10 @@ def _ffn_fwd_per_shard(
         if wi_1_checkpoint_name is not None:
             up_proj_out = checkpoint_name(up_proj_out, wi_1_checkpoint_name)
 
-    # Activation inputs (gate_proj_out, up_proj_out) stay in the wi GEMM
-    # output dtype; the activation output (`intermediate`) stays in the
-    # dtype the wo GEMM / wo's quantized input consumes. For bf16 compute
-    # that's all bf16; for FP8/FP4 the downstream grouped_quantize is what
-    # transitions to the target precision.
-    act_fn = _convert_to_activation_function(activation_type)
+    # Keep projection residuals and activation output in the GEMM dtype;
+    # SiTU evaluates its internal arithmetic in FP32 before casting back.
     if not use_cudnn_jax_fusion:
-        intermediate = act_fn(gate_proj_out) * up_proj_out
+        intermediate = _apply_ffn_activation(activation_type, gate_proj_out, up_proj_out)
     if apply_topk_weights_early and not use_cudnn_jax_fusion:
         # Fold the per-token combine weights into the FFN intermediate;
         # the downstream wo GEMM is linear so this is equivalent to the
@@ -1114,7 +1148,7 @@ def _ffn_bwd_per_shard(
     recv_topk_weights_local: jnp.ndarray,
     quantizer_sets: Tuple[QuantizerSet, QuantizerSet],
     *,
-    activation_type: str,
+    activation_type: Union[str, SiTUActivation],
     apply_topk_weights_early: bool,
     has_bias: bool,
     use_cudnn_jax_fusion: bool,
@@ -1218,12 +1252,13 @@ def _ffn_bwd_per_shard(
             casted_wo_rhs_trans,
             contracting_dims=((1,), (2,)),
         )
-        act_fn = _convert_to_activation_function(activation_type)
         if apply_topk_weights_early:
             # intermediate' = intermediate * w.
             # Masking is not required as grouped GEMMs consume only group-size rows.
             w_b = recv_w_flat[:, None].astype(d_intermediate.dtype)
-            intermediate_unweighted = act_fn(gate_proj_out) * up_proj_out
+            intermediate_unweighted = _apply_ffn_activation(
+                activation_type, gate_proj_out, up_proj_out
+            )
             d_recv_w_from_intermediate = jnp.sum(
                 d_intermediate * intermediate_unweighted,
                 axis=-1,
@@ -1232,10 +1267,16 @@ def _ffn_bwd_per_shard(
         else:
             d_recv_w_from_intermediate = jnp.zeros_like(recv_w_flat)
 
-        # Activation bwd stays in the GEMM dtype, matching the forward path.
-        act_gp, dact_pullback = jax.vjp(act_fn, gate_proj_out)
-        d_up_proj_out = d_intermediate * act_gp
-        (d_gate_proj_out,) = dact_pullback(d_intermediate * up_proj_out)
+        if isinstance(activation_type, SiTUActivation):
+            _, dact_pullback = jax.vjp(
+                partial(_apply_ffn_activation, activation_type), gate_proj_out, up_proj_out
+            )
+            d_gate_proj_out, d_up_proj_out = dact_pullback(d_intermediate)
+        else:
+            act_fn = _convert_to_activation_function(activation_type)
+            act_gp, dact_pullback = jax.vjp(act_fn, gate_proj_out)
+            d_up_proj_out = d_intermediate * act_gp
+            (d_gate_proj_out,) = dact_pullback(d_intermediate * up_proj_out)
         d_combined_for_bias = jnp.concatenate([d_gate_proj_out, d_up_proj_out], axis=-1)
         casted_d_combined = tex.grouped_quantize(
             d_combined_for_bias,
@@ -2123,7 +2164,7 @@ def moe(
     wo_bias: Optional[jnp.ndarray] = None,
     *,
     num_experts: int,
-    activation_type: str = "silu",
+    activation_type: Union[str, SiTUActivation] = "silu",
     apply_topk_weights_early: bool = False,
     quantizer_sets: Tuple[QuantizerSet, QuantizerSet] = (
         noop_quantizer_set,
@@ -2156,6 +2197,11 @@ def moe(
 
     Parameters
     ----------
+    activation_type : Union[str, SiTUActivation]
+        Gate activation name (default ``"silu"``), or :class:`SiTUActivation`
+        for FP32 soft-capping of both gate and up branches. SiTU uses unfused
+        grouped GEMMs with BF16 or MXFP8 quantizer sets; cuDNN GLU/dGLU does
+        not implement it and follows the existing fallback path.
     router_info : Union[RouterComputationInfo, RoutingMapInfo]
         :class:`RouterComputationInfo` makes TE compute the gate and top-k
         from the given router parameters. :class:`RoutingMapInfo` supplies
