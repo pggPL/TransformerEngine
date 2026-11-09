@@ -176,6 +176,8 @@ class _MoEBlock(TransformerEngineBase):
     recv_capacity_per_rank: Optional[int] = None
     dispatch_checkpoint_name: Optional[str] = None
     collect_expert_counts: bool = True
+    qb_num_bins: int = 1000
+    qb_histogram_mode: str = "fused_atomic"
 
     # Dtypes / init / misc
     dtype: DType = jnp.float32
@@ -198,8 +200,12 @@ class _MoEBlock(TransformerEngineBase):
 
     @nn.compact
     def __call__(
-        self, inputs: Array, *, router_input: Optional[Array] = None
-    ) -> Tuple[Array, Optional[Array], Array, Array]:
+        self,
+        inputs: Array,
+        *,
+        router_input: Optional[Array] = None,
+        qb_bin_bounds: Optional[Array] = None,
+    ) -> tuple:
         """Run the MoE forward pass.
 
         Parameters
@@ -210,6 +216,10 @@ class _MoEBlock(TransformerEngineBase):
             Separate gate input ``[batch, sequence, router_hidden]``. ``None``
             uses ``inputs``. Only the gate kernel uses ``router_hidden``;
             expert kernels and EP buffers retain ``hidden``.
+        qb_bin_bounds : Optional[jnp.ndarray]
+            FP32 ``[lower, upper]`` enables QB histogram collection. Requires
+            sigmoid routing, expert bias, no groups and zero auxiliary loss.
+            All input rows must be valid tokens; padding is not masked.
 
         Returns
         -------
@@ -223,6 +233,10 @@ class _MoEBlock(TransformerEngineBase):
             overflow when ``drop_on_overflow`` is set at ep_bootstrap.
         expert_counts : jnp.ndarray
             Global assignment counts for each expert.
+        qb_histograms : jnp.ndarray, optional
+            Fifth result only when ``qb_bin_bounds`` is supplied; int32
+            ``[token_shards, experts, qb_num_bins]``. Reduce over token shards
+            and microbatches before updating the bias in the training loop.
         """
         mesh_resource, quant_before_fsdp_ag = _resolve_moe_mesh_resource(
             self.mesh_resource,
@@ -340,6 +354,9 @@ class _MoEBlock(TransformerEngineBase):
                 gate_kernel_axes=self.gate_kernel_axes,
                 router_input=router_input,
                 router_input_axes=self.router_input_axes,
+                qb_bin_bounds=qb_bin_bounds,
+                qb_num_bins=self.qb_num_bins,
+                qb_histogram_mode=self.qb_histogram_mode,
             )
             return moe(
                 inputs,

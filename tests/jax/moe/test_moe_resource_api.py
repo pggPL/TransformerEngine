@@ -122,6 +122,40 @@ def test_gate_kernel_uses_router_width():
         )
 
 
+@pytest.mark.parametrize(
+    "overrides,match",
+    [
+        ({"score_function": "softmax"}, "requires sigmoid"),
+        ({"num_groups": 2, "group_topk": 1}, "ungrouped"),
+        ({"aux_loss_coeff": 0.1}, "aux_loss_coeff"),
+        ({"aux_loss_coeff": -0.1}, "aux_loss_coeff"),
+        ({"use_pre_softmax": True}, "use_pre_softmax"),
+        ({"qb_num_bins": 0}, "num_bins"),
+        ({"expert_bias": None}, "expert_bias"),
+        ({"qb_histogram_mode": "invalid"}, "histogram_mode"),
+    ],
+)
+def test_qb_configuration_rejected_before_ep(overrides, match):
+    module = importlib.import_module("transformer_engine.jax.moe")
+    kwargs = dict(
+        gate_kernel=jnp.ones((4, 2)),
+        num_experts_per_tok=1,
+        score_function="sigmoid",
+        expert_bias=jnp.zeros(2, jnp.float32),
+        qb_bin_bounds=jnp.asarray([-1.0, 1.0], jnp.float32),
+    )
+    kwargs.update(overrides)
+    with pytest.raises(ValueError, match=match):
+        module.moe(
+            jnp.ones((1, 1, 4)),
+            RouterComputationInfo(**kwargs),
+            None,
+            None,
+            num_experts=2,
+            mesh_resource=MeshResource(ep_resource="ep"),
+        )
+
+
 def test_explicit_resource_overrides_global_and_is_snapshotted():
     explicit = MeshResource(dp_resource="dp", fsdp_resource="fsdp", ep_resource="ep")
     enclosing = MeshResource(ep_resource="other")

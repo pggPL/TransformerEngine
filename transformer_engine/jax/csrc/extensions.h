@@ -204,6 +204,7 @@ XLA_FFI_DECLARE_HANDLER_SYMBOL(CublasHandleInitHandler);
 
 // Router
 XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedTopkWithScoreFunctionForwardHandler);
+XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedTopkWithScoreFunctionQBForwardHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedTopkWithScoreFunctionBackwardHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedMoEAuxLossForwardHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedMoEAuxLossBackwardHandler);

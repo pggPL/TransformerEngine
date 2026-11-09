@@ -102,6 +102,93 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(FusedTopkWithScoreFunctionForwardHandler,
                                   .Attr<JAXX_Routing_Map_Format>("routing_map_format"),
                               FFI_CudaGraph_Traits);
 
+Error_Type FusedTopkWithScoreFunctionQBForwardFFI(
+    cudaStream_t stream, Buffer_Type logits_buf, Buffer_Type expert_bias_buf,
+    Buffer_Type bin_bounds_buf, Buffer_Type histogram_buf, Result_Type probs_buf,
+    Result_Type routing_map_buf, Result_Type intermediate_buf, Result_Type cutoff_buf,
+    Result_Type histogram_out_buf, int64_t topk, double scaling_factor, int64_t histogram_mode,
+    JAXX_Routing_Map_Format routing_map_format) {
+  auto dims = logits_buf.dimensions();
+  auto bias_dims = expert_bias_buf.dimensions();
+  auto bounds_dims = bin_bounds_buf.dimensions();
+  auto hist_dims = histogram_buf.dimensions();
+  NVTE_CHECK(dims.size() == 2 && dims[0] > 0 && dims[1] > 0,
+             "QB logits must have shape [tokens, experts] with positive dimensions.");
+  const auto num_tokens = static_cast<int>(dims[0]);
+  const auto num_experts = static_cast<int>(dims[1]);
+  NVTE_CHECK(topk > 0 && topk < num_experts, "QB requires 0 < topk < num_experts.");
+  NVTE_CHECK(bias_dims.size() == 1 && bias_dims[0] == num_experts,
+             "QB expert_bias must have shape [experts].");
+  NVTE_CHECK(bounds_dims.size() == 1 && bounds_dims[0] == 2, "QB bin_bounds must have shape [2].");
+  NVTE_CHECK(hist_dims.size() == 2 && hist_dims[0] == num_experts && hist_dims[1] > 0,
+             "QB histogram must have shape [experts, bins].");
+  NVTE_CHECK(
+      convert_ffi_datatype_to_te_dtype(logits_buf.element_type()) == DType::kFloat32 &&
+          convert_ffi_datatype_to_te_dtype(expert_bias_buf.element_type()) == DType::kFloat32 &&
+          convert_ffi_datatype_to_te_dtype(bin_bounds_buf.element_type()) == DType::kFloat32,
+      "QB logits, expert_bias and bin_bounds must be float32.");
+  NVTE_CHECK(convert_ffi_datatype_to_te_dtype(histogram_buf.element_type()) == DType::kInt32,
+             "QB histogram must be int32.");
+  NVTE_CHECK(histogram_buf.untyped_data() == histogram_out_buf->untyped_data(),
+             "QB histogram input and output must alias.");
+  NVTE_CHECK(histogram_mode == NVTE_QB_HISTOGRAM_TWO_KERNEL ||
+                 histogram_mode == NVTE_QB_HISTOGRAM_FUSED_ATOMIC,
+             "Invalid QB histogram mode.");
+
+  const std::vector<size_t> shape{static_cast<size_t>(num_tokens),
+                                  static_cast<size_t>(num_experts)};
+  const auto format = static_cast<NVTERoutingMapFormat>(routing_map_format);
+  const size_t map_width = format == NVTE_ROUTING_MAP_FORMAT_BITMAP_U8
+                               ? static_cast<size_t>((num_experts + 7) / 8)
+                               : static_cast<size_t>(num_experts);
+  auto logits = TensorWrapper(logits_buf.untyped_data(), shape, DType::kFloat32);
+  auto bias = TensorWrapper(expert_bias_buf.untyped_data(),
+                            std::vector<size_t>{static_cast<size_t>(num_experts)}, DType::kFloat32);
+  auto bounds =
+      TensorWrapper(bin_bounds_buf.untyped_data(), std::vector<size_t>{2}, DType::kFloat32);
+  auto probs = TensorWrapper(probs_buf->untyped_data(), shape, DType::kFloat32);
+  auto routing_map =
+      TensorWrapper(routing_map_buf->untyped_data(),
+                    std::vector<size_t>{static_cast<size_t>(num_tokens), map_width}, DType::kByte);
+  auto intermediate = TensorWrapper(intermediate_buf->untyped_data(), shape, DType::kFloat32);
+  auto cutoff =
+      TensorWrapper(cutoff_buf->untyped_data(),
+                    std::vector<size_t>{static_cast<size_t>(num_tokens)}, DType::kFloat32);
+  auto histogram = TensorWrapper(
+      histogram_out_buf->untyped_data(),
+      std::vector<size_t>{static_cast<size_t>(num_experts), static_cast<size_t>(hist_dims[1])},
+      DType::kInt32);
+  const auto mode = static_cast<NVTEQBHistogramMode>(histogram_mode);
+  nvte_fused_topk_with_score_function_forward_qb_v2(
+      logits.data(), num_tokens, num_experts, static_cast<int>(topk),
+      static_cast<float>(scaling_factor), bias.data(), probs.data(), routing_map.data(), format,
+      intermediate.data(), cutoff.data(), histogram.data(), bounds.data(), mode, stream);
+  if (mode == NVTE_QB_HISTOGRAM_TWO_KERNEL) {
+    nvte_qb_histogram_accumulate(intermediate.data(), cutoff.data(), bounds.data(),
+                                 histogram.data(), stream);
+  }
+  return ffi_with_cuda_error_check();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(FusedTopkWithScoreFunctionQBForwardHandler,
+                              FusedTopkWithScoreFunctionQBForwardFFI,
+                              FFI::Bind()
+                                  .Ctx<FFI_Stream_Type>()
+                                  .Arg<Buffer_Type>()  // logits
+                                  .Arg<Buffer_Type>()  // expert_bias
+                                  .Arg<Buffer_Type>()  // bin_bounds
+                                  .Arg<Buffer_Type>()  // histogram
+                                  .Ret<Buffer_Type>()  // probs
+                                  .Ret<Buffer_Type>()  // routing_map
+                                  .Ret<Buffer_Type>()  // intermediate
+                                  .Ret<Buffer_Type>()  // cutoff
+                                  .Ret<Buffer_Type>()  // updated histogram
+                                  .Attr<int64_t>("topk")
+                                  .Attr<double>("scaling_factor")
+                                  .Attr<int64_t>("histogram_mode")
+                                  .Attr<JAXX_Routing_Map_Format>("routing_map_format"),
+                              FFI_CudaGraph_Traits);
+
 // ============================================================================
 // Fused Top-K with Score Function - Backward
 // ============================================================================

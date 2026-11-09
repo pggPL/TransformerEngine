@@ -10,6 +10,7 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 from utils import pytest_parametrize_wrapper
@@ -109,6 +110,170 @@ DTYPES = {
 }
 
 SEED = 42
+
+
+def reference_qb_histogram(logits, expert_bias, bounds, topk, num_bins):
+    scores = np.asarray(jax.nn.sigmoid(jnp.asarray(logits, jnp.float32)))
+    selected, _ = jax.lax.top_k(jnp.asarray(scores + np.asarray(expert_bias)), topk + 1)
+    required_bias = np.asarray(selected)[:, -1:] - scores
+    lower, upper = np.asarray(bounds)
+    bins = np.floor((required_bias - lower) * (num_bins / (upper - lower))).astype(np.int32)
+    bins = np.clip(bins, 0, num_bins - 1)
+    histogram = np.zeros((scores.shape[-1], num_bins), np.int32)
+    np.add.at(histogram, (np.arange(scores.shape[-1])[None, :], bins), 1)
+    return histogram
+
+
+@pytest.mark.parametrize("histogram_mode", ["two_kernel", "fused_atomic"])
+@pytest.mark.parametrize("routing_map_format", ["bytemap", "bitmap_u8"])
+@pytest.mark.parametrize("topk", [1, 4])
+def test_qb_router_forward_backward_and_remat(histogram_mode, routing_map_format, topk):
+    from transformer_engine.jax.router import fused_topk_with_score_function_qb
+
+    logits = jax.random.normal(jax.random.PRNGKey(801), (128, 32))
+    bias = jax.random.uniform(jax.random.PRNGKey(802), (32,), minval=-0.1, maxval=0.1)
+    bounds = jnp.asarray([-1.1, 1.1], jnp.float32)
+    coefficients = jax.random.normal(jax.random.PRNGKey(803), logits.shape)
+
+    def loss(x, b, limits):
+        probs, routing, histogram = fused_topk_with_score_function_qb(
+            x,
+            topk,
+            b,
+            limits,
+            num_bins=64,
+            scaling_factor=1.5,
+            histogram_mode=histogram_mode,
+            routing_map_format=routing_map_format,
+        )
+        return jnp.sum(probs * coefficients), (probs, routing, histogram)
+
+    (_, (probs, routing, histogram)), (dx, db, dbounds) = jax.jit(
+        jax.value_and_grad(jax.checkpoint(loss), argnums=(0, 1, 2), has_aux=True)
+    )(logits, bias, bounds)
+
+    def reference(x):
+        probs, _ = reference_topk_with_score_function(
+            x,
+            topk,
+            score_function="sigmoid",
+            expert_bias=bias,
+            scaling_factor=1.5,
+        )
+        return jnp.sum(probs * coefficients), probs
+
+    (_, expected_probs), expected_dx = jax.value_and_grad(reference, has_aux=True)(logits)
+    np.testing.assert_allclose(probs, expected_probs, rtol=2e-5, atol=2e-6)
+    np.testing.assert_allclose(dx, expected_dx, rtol=2e-4, atol=2e-6)
+    np.testing.assert_array_equal(db, jnp.zeros_like(bias))
+    np.testing.assert_array_equal(dbounds, jnp.zeros_like(bounds))
+    np.testing.assert_array_equal(histogram, reference_qb_histogram(logits, bias, bounds, topk, 64))
+    expected_map = np.asarray(expected_probs != 0)
+    if routing_map_format == "bitmap_u8":
+        expected_map = np.packbits(expected_map, axis=-1, bitorder="little")
+    np.testing.assert_array_equal(routing, expected_map)
+
+
+@pytest.mark.parametrize("histogram_mode", ["two_kernel", "fused_atomic"])
+def test_qb_scan_accumulation_preserves_initial_histogram(histogram_mode):
+    from transformer_engine.jax.router import fused_topk_with_score_function_qb
+
+    logits = jax.random.normal(jax.random.PRNGKey(811), (3, 64, 32))
+    bias = jnp.linspace(-0.1, 0.1, 32, dtype=jnp.float32)
+    bounds = jnp.asarray([-1.1, 1.1], jnp.float32)
+    initial = jnp.full((32, 64), 7, jnp.int32)
+
+    def accumulate(histogram, x):
+        _, _, updated = fused_topk_with_score_function_qb(
+            x,
+            4,
+            bias,
+            bounds,
+            num_bins=64,
+            histogram=histogram,
+            histogram_mode=histogram_mode,
+        )
+        return updated, None
+
+    @jax.jit
+    def run(histogram, x):
+        total, _ = jax.lax.scan(accumulate, histogram, x)
+        return total, histogram + 1
+
+    actual, still_live = run(initial, logits)
+    expected = np.full((32, 64), 7, np.int32)
+    for microbatch in np.asarray(logits):
+        expected += reference_qb_histogram(microbatch, bias, bounds, 4, 64)
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(still_live, np.full((32, 64), 8, np.int32))
+    np.testing.assert_array_equal(initial, np.full((32, 64), 7, np.int32))
+
+
+@pytest.mark.parametrize("histogram_mode", ["two_kernel", "fused_atomic"])
+def test_qb_bounds_change_and_clamp(histogram_mode):
+    from transformer_engine.jax.router import fused_topk_with_score_function_qb
+
+    logits = jax.random.normal(jax.random.PRNGKey(821), (64, 32))
+    bias = jnp.linspace(-0.2, 0.2, 32, dtype=jnp.float32)
+    route = jax.jit(
+        partial(
+            fused_topk_with_score_function_qb,
+            topk=4,
+            expert_bias=bias,
+            num_bins=32,
+            histogram_mode=histogram_mode,
+        )
+    )
+    results = []
+    for limits in ([-1.2, 1.2], [-0.025, 0.025]):
+        bounds = jnp.asarray(limits, jnp.float32)
+        _, _, histogram = route(logits, bin_bounds=bounds)
+        np.testing.assert_array_equal(
+            histogram, reference_qb_histogram(logits, bias, bounds, 4, 32)
+        )
+        np.testing.assert_array_equal(np.asarray(histogram).sum(axis=-1), np.full(32, 64))
+        results.append(np.asarray(histogram))
+    assert not np.array_equal(*results)
+
+
+@pytest.mark.parametrize("histogram_mode", ["two_kernel", "fused_atomic"])
+def test_qb_tied_cutoff_counts_each_token_once(histogram_mode):
+    from transformer_engine.jax.router import fused_topk_with_score_function_qb
+
+    _, routing, histogram = jax.jit(
+        partial(
+            fused_topk_with_score_function_qb,
+            topk=4,
+            num_bins=32,
+            histogram_mode=histogram_mode,
+        )
+    )(jnp.zeros((64, 32)), expert_bias=jnp.zeros(32), bin_bounds=jnp.asarray([-1.0, 1.0]))
+    np.testing.assert_array_equal(np.asarray(routing).sum(axis=-1), np.full(64, 4))
+    expected = np.zeros((32, 32), np.int32)
+    expected[:, 16] = 64
+    np.testing.assert_array_equal(histogram, expected)
+
+
+@pytest.mark.parametrize(
+    "overrides,match",
+    [
+        ({"topk": 32}, "topk"),
+        ({"expert_bias": None}, "expert_bias"),
+        ({"num_bins": 0}, "num_bins"),
+        ({"histogram_mode": "unknown"}, "histogram_mode"),
+        ({"bin_bounds": jnp.zeros(3, jnp.float32)}, "bin_bounds"),
+        ({"histogram": jnp.zeros((32, 64), jnp.float32)}, "histogram"),
+    ],
+)
+def test_qb_router_rejects_invalid_inputs(overrides, match):
+    from transformer_engine.jax.router import fused_topk_with_score_function_qb
+
+    kwargs = dict(
+        topk=4, expert_bias=jnp.zeros(32), bin_bounds=jnp.asarray([-1.0, 1.0]), num_bins=64
+    )
+    kwargs.update(overrides)
+    with pytest.raises(ValueError, match=match):
+        fused_topk_with_score_function_qb(jnp.zeros((64, 32)), **kwargs)
 
 
 # =============================================================================

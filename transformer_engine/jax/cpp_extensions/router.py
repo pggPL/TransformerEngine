@@ -6,7 +6,7 @@
 from enum import IntEnum
 
 import jax.numpy as jnp
-from jax import dtypes, ffi
+from jax import ShapeDtypeStruct, dtypes, ffi
 from jax.sharding import NamedSharding, PartitionSpec
 from transformer_engine_jax import JAXX_Routing_Map_Format, JAXX_Score_Function
 
@@ -18,6 +18,7 @@ __all__ = [
     "RoutingMapFormat",
     "fused_topk_with_score_function_fwd",
     "fused_topk_with_score_function_bwd",
+    "fused_topk_with_score_function_qb_fwd",
     "fused_moe_aux_loss_fwd",
     "fused_moe_aux_loss_bwd",
 ]
@@ -728,6 +729,51 @@ def fused_topk_with_score_function_fwd(
         scaling_factor=float(scaling_factor),
         score_function=int(score_function),
         compute_aux_scores=int(compute_aux_scores),
+        routing_map_format=int(routing_map_format),
+    )
+
+
+def fused_topk_with_score_function_qb_fwd(
+    logits,
+    expert_bias,
+    bin_bounds,
+    histogram,
+    *,
+    topk,
+    scaling_factor,
+    histogram_mode,
+    routing_map_format=int(RoutingMapFormat.BYTEMAP),
+):
+    """Shard-local QB forward; histogram input aliases the updated output."""
+    num_tokens, num_experts = logits.shape
+    map_shape = (
+        (num_tokens, (num_experts + 7) // 8)
+        if int(routing_map_format) == int(RoutingMapFormat.BITMAP_U8)
+        else logits.shape
+    )
+    map_dtype = (
+        jnp.uint8 if int(routing_map_format) == int(RoutingMapFormat.BITMAP_U8) else jnp.bool_
+    )
+    outputs = (
+        ShapeDtypeStruct(logits.shape, jnp.float32),
+        ShapeDtypeStruct(map_shape, map_dtype),
+        ShapeDtypeStruct(logits.shape, jnp.float32),
+        ShapeDtypeStruct((num_tokens,), jnp.float32),
+        ShapeDtypeStruct(histogram.shape, jnp.int32),
+    )
+    return ffi.ffi_call(
+        "te_fused_topk_with_score_function_qb_forward_ffi",
+        outputs,
+        input_output_aliases={3: 4},
+        vmap_method="sequential",
+    )(
+        logits,
+        expert_bias,
+        bin_bounds,
+        histogram,
+        topk=int(topk),
+        scaling_factor=float(scaling_factor),
+        histogram_mode=int(histogram_mode),
         routing_map_format=int(routing_map_format),
     )
 
