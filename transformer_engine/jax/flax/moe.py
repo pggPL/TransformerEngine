@@ -77,7 +77,9 @@ class _MoEBlock(TransformerEngineBase):
         Activation between ``layer_w0 @ wi_0`` and the elementwise
         product with ``layer_w0 @ wi_1``. Default ``"silu"``. Pass
         :class:`~transformer_engine.jax.moe.SiTUActivation` to soft-cap both
-        branches in FP32 using native grouped SiTU and separate grouped GEMMs.
+        branches in FP32. Compatible MXFP8 calls can use cuDNN SiTU fusion
+        on SM100/SM103; other configurations use native grouped SiTU kernels
+        with separate grouped GEMMs.
 
     score_function : Union[str, ScoreFunction]
         ``"softmax"`` (default), ``"sigmoid"``, or ``"sqrtsoftplus"`` for the routing scores.

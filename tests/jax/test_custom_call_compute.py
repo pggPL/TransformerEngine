@@ -2156,6 +2156,11 @@ class TestGroupedGemmGluFallback:
                     if change == "positional" and name == "a_tensor"
                     else inspect.Parameter.POSITIONAL_OR_KEYWORD
                 ),
+                default=(
+                    4.0
+                    if name == "situ_beta1"
+                    else 25.0 if name == "situ_beta2" else inspect.Parameter.empty
+                ),
             )
             for name in arguments
             if not (change == "renamed" and name == "discrete_col_sfd")
@@ -2282,6 +2287,61 @@ class TestGroupedGemmGluFallback:
         assert available == (change == "optional")
         assert bool(reason) == (change != "optional")
 
+    @pytest.mark.parametrize("missing", [None, "situ_beta1", "situ_beta2"])
+    @pytest.mark.parametrize(
+        "name,arguments",
+        [
+            ("grouped_gemm_glu_wrapper_sm100", _glu_adapter._FORWARD_ARGS),
+            ("grouped_gemm_dglu_wrapper_sm100", _glu_adapter._BACKWARD_ARGS),
+            ("grouped_gemm_glu_jax_sm100", _glu_adapter._JAX_FORWARD_ARGS),
+            ("grouped_gemm_dglu_jax_sm100", _glu_adapter._JAX_BACKWARD_ARGS),
+        ],
+    )
+    def test_situ_requires_scalar_parameters_in_both_framework_apis(
+        self, frontend, name, arguments, missing
+    ):
+        apis = (
+            ("grouped_gemm_glu_wrapper_sm100", _glu_adapter._FORWARD_ARGS),
+            ("grouped_gemm_dglu_wrapper_sm100", _glu_adapter._BACKWARD_ARGS),
+            ("grouped_gemm_glu_jax_sm100", _glu_adapter._JAX_FORWARD_ARGS),
+            ("grouped_gemm_dglu_jax_sm100", _glu_adapter._JAX_BACKWARD_ARGS),
+        )
+        for api_name, args in apis:
+            setattr(frontend, api_name, self._api(args + ("situ_beta1", "situ_beta2")))
+        if missing:
+            setattr(
+                frontend,
+                name,
+                self._api(
+                    arguments + tuple(arg for arg in ("situ_beta1", "situ_beta2") if arg != missing)
+                ),
+            )
+        assert _glu_adapter.grouped_gemm_glu_dependencies_available()[0]
+        available, reason = _glu_adapter.grouped_gemm_glu_dependencies_available(require_situ=True)
+        assert available is (missing is None)
+        if missing:
+            assert name in reason and missing in reason
+
+    @pytest.mark.parametrize("capability", [90, 100, 103, 107, 120])
+    def test_situ_fusion_device_support(self, frontend, monkeypatch, capability):
+        for name, args in (
+            ("grouped_gemm_glu_wrapper_sm100", _glu_adapter._FORWARD_ARGS),
+            ("grouped_gemm_dglu_wrapper_sm100", _glu_adapter._BACKWARD_ARGS),
+            ("grouped_gemm_glu_jax_sm100", _glu_adapter._JAX_FORWARD_ARGS),
+            ("grouped_gemm_dglu_jax_sm100", _glu_adapter._JAX_BACKWARD_ARGS),
+        ):
+            setattr(frontend, name, self._api(args + ("situ_beta1", "situ_beta2")))
+        monkeypatch.setattr(
+            transformer_engine_jax, "get_device_compute_capability", lambda _: capability
+        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            selected = _moe_module._select_cudnn_jax_fusion(
+                [], activation_type=_moe_module.SiTUActivation()
+            )
+        assert selected is (capability in (100, 103))
+        assert bool(caught) is not selected
+
     @pytest.mark.parametrize("name", ["grouped_gemm_glu_jax_sm100", "grouped_gemm_dglu_jax_sm100"])
     def test_bf16_only_jax_api_falls_back(self, frontend, monkeypatch, name):
         # Frontend 1.29 exposes JAX entry points for BF16 discrete weights, but
@@ -2396,7 +2456,7 @@ class TestGroupedGemmGluFallback:
             assert bound["use_cudnn_fusion"] is (request_fusion is not False)
             assert bound["cudnn_native_weight_layout"] is native_layout
             received.append(bound["use_cudnn_jax_fusion"])
-            return args[0], None, jnp.asarray(0), jnp.zeros((2,), jnp.int32)
+            return args[0], None, jnp.asarray(0), jnp.zeros((2,), jnp.int32), None
 
         monkeypatch.setattr(_moe_module, "_moe", execute)
         x = jnp.ones((1, 1, 128), jnp.bfloat16)
