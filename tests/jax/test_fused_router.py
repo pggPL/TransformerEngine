@@ -254,6 +254,38 @@ def test_qb_tied_cutoff_counts_each_token_once(histogram_mode):
     np.testing.assert_array_equal(histogram, expected)
 
 
+@pytest.mark.parametrize("histogram_mode", ["two_kernel", "fused_atomic"])
+@pytest.mark.parametrize("valid_rows", [0, 17, 64])
+def test_qb_masked_histogram_and_gradients(histogram_mode, valid_rows):
+    from transformer_engine.jax.router import fused_topk_with_score_function_qb
+
+    logits = jax.random.normal(jax.random.PRNGKey(851), (64, 32))
+    bias = jnp.linspace(-0.1, 0.1, 32)
+    bounds = jnp.asarray([-1.1, 1.1], jnp.float32)
+    mask = jnp.arange(64) < valid_rows
+
+    def loss(x):
+        probs, _, counts = fused_topk_with_score_function_qb(
+            x,
+            4,
+            bias,
+            bounds,
+            token_mask=mask,
+            num_bins=64,
+            histogram_mode=histogram_mode,
+        )
+        return jnp.sum(probs * x), counts
+
+    (_, counts), gradient = jax.jit(jax.value_and_grad(jax.checkpoint(loss), has_aux=True))(logits)
+    if valid_rows:
+        expected = reference_qb_histogram(logits[:valid_rows], bias, bounds, 4, 64)
+    else:
+        expected = np.zeros((32, 64), np.int32)
+    np.testing.assert_array_equal(counts, expected)
+    np.testing.assert_array_equal(np.asarray(counts).sum(axis=-1), np.full(32, valid_rows))
+    assert np.isfinite(np.asarray(gradient)).all()
+
+
 @pytest.mark.parametrize(
     "overrides,match",
     [

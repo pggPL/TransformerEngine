@@ -205,6 +205,7 @@ class _MoEBlock(TransformerEngineBase):
         *,
         router_input: Optional[Array] = None,
         qb_bin_bounds: Optional[Array] = None,
+        qb_token_mask: Optional[Array] = None,
     ) -> tuple:
         """Run the MoE forward pass.
 
@@ -219,7 +220,8 @@ class _MoEBlock(TransformerEngineBase):
         qb_bin_bounds : Optional[jnp.ndarray]
             FP32 ``[lower, upper]`` enables QB histogram collection. Requires
             sigmoid routing, expert bias, no groups and zero auxiliary loss.
-            All input rows must be valid tokens; padding is not masked.
+        qb_token_mask : Optional[jnp.ndarray]
+            Boolean ``[batch, sequence]`` mask excluding padding from QB statistics.
 
         Returns
         -------
@@ -355,6 +357,7 @@ class _MoEBlock(TransformerEngineBase):
                 router_input=router_input,
                 router_input_axes=self.router_input_axes,
                 qb_bin_bounds=qb_bin_bounds,
+                qb_token_mask=qb_token_mask,
                 qb_num_bins=self.qb_num_bins,
                 qb_histogram_mode=self.qb_histogram_mode,
             )

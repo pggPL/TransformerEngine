@@ -114,8 +114,11 @@ QB kernels provide ``fused_atomic`` and ``two_kernel`` modes, selected by
 
 The bounds must be finite and ordered; their values are read on device without
 host validation. Kimi uses ``[min(bias)-1, max(bias)+1]``. Keep both bias and
-bounds unchanged throughout every microbatch in a training step. All token rows
-must be valid: neither mode excludes sequence-padding tokens.
+bounds unchanged throughout every microbatch in a training step. With no mask, all token rows must be valid. Optional ``qb_token_mask``
+(``[batch, sequence]``) excludes padding: CUDA computes scores and cutoff,
+while a JAX histogram counts only valid rows. This masked path does not use
+CUDA histogram accumulation. The standalone router accepts ``token_mask``
+with shape ``[tokens]`` for the same behavior.
 
 With QB enabled, ``moe`` returns a fifth result, an int32 histogram array of
 shape ``[token_shards, experts, bins]``. Its leading axis is sharded across the

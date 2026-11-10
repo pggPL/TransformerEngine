@@ -161,8 +161,11 @@ class RouterComputationInfo:
         follows the same DP/FSDP/EP placement as ``x``.
     qb_bin_bounds : Optional[jnp.ndarray]
         FP32 ``[lower, upper]`` enables QB statistics with sigmoid, no groups and
-        no auxiliary loss. All token rows must be valid; padding is not masked.
+        no auxiliary loss. Set ``qb_token_mask`` to exclude sequence padding.
         Bounds must be finite and ordered, and remain fixed throughout a step.
+    qb_token_mask : Optional[jnp.ndarray]
+        Boolean ``[batch, sequence]`` valid-token mask. With a mask, JAX builds
+        the histogram from CUDA router scores/cutoffs; without it CUDA collects it.
     qb_num_bins, qb_histogram_mode : int, str
         Histogram size and ``"fused_atomic"`` or ``"two_kernel"`` implementation.
         The caller owns histogram reduction and bias updates.
@@ -183,6 +186,7 @@ class RouterComputationInfo:
     router_input: Optional[jnp.ndarray] = None
     router_input_axes: Tuple[Optional[str], ...] = flax.struct.field(pytree_node=False, default=())
     qb_bin_bounds: Optional[jnp.ndarray] = None
+    qb_token_mask: Optional[jnp.ndarray] = None
     qb_num_bins: int = flax.struct.field(pytree_node=False, default=1000)
     qb_histogram_mode: str = flax.struct.field(pytree_node=False, default="fused_atomic")
 
@@ -1553,7 +1557,7 @@ def _moe_fwd_rule(
             else:
                 mode = {"two_kernel": 0, "fused_atomic": 1}[router.qb_histogram_mode]
 
-                def route_and_observe(local_logits, bias, bounds):
+                def route_and_observe(local_logits, bias, bounds, *mask):
                     histogram = jnp.zeros((num_experts, router.qb_num_bins), dtype=jnp.int32)
                     probs, rmap, scores, _, histogram = tex.fused_topk_with_score_function_qb_fwd(
                         local_logits,
@@ -1563,16 +1567,27 @@ def _moe_fwd_rule(
                         topk=K,
                         scaling_factor=router.scaling_factor,
                         histogram_mode=mode,
+                        token_mask=mask[0] if mask else None,
                     )
                     return probs, rmap, scores, histogram[None]
 
                 sparse_probs, routing_map, saved_scores, qb_histograms = shard_map(
                     route_and_observe,
                     mesh=mesh,
-                    in_specs=(ep2_spec, P(None), P(None)),
+                    in_specs=(ep2_spec, P(None), P(None))
+                    + ((P(batch_pspec_axis),) if router.qb_token_mask is not None else ()),
                     out_specs=(ep2_spec, ep2_spec, ep2_spec, P(batch_pspec_axis, None, None)),
                     check_rep=False,
-                )(logits_2d, router.expert_bias, router.qb_bin_bounds)
+                )(
+                    logits_2d,
+                    router.expert_bias,
+                    router.qb_bin_bounds,
+                    *(
+                        (router.qb_token_mask.reshape(-1),)
+                        if router.qb_token_mask is not None
+                        else ()
+                    ),
+                )
             sparse_probs = sparse_probs.astype(dtype)
             # argsort on a bool tensor places True last (False=0 < True=1), so the
             # last K indices are the selected expert IDs.
@@ -2069,6 +2084,7 @@ def _moe_bwd_rule(
                 qb_bin_bounds=(
                     None if router.qb_bin_bounds is None else jnp.zeros_like(router.qb_bin_bounds)
                 ),
+                qb_token_mask=None,
                 expert_bias=(
                     None if router.expert_bias is None else jnp.zeros_like(router.expert_bias)
                 ),
@@ -2356,6 +2372,11 @@ def moe(
         )
         has_aux_loss = router_info.aux_loss_coeff > 0.0
         if router_info.qb_bin_bounds is not None:
+            if router_info.qb_token_mask is not None and (
+                router_info.qb_token_mask.shape != x.shape[:2]
+                or router_info.qb_token_mask.dtype != jnp.bool_
+            ):
+                raise ValueError("MoE qb_token_mask must be bool with shape [batch, sequence].")
             if (
                 router_info.score_function != ScoreFunction.SIGMOID
                 or router_info.use_pre_softmax

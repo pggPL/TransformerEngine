@@ -864,7 +864,8 @@ def test_separate_router_input_latent_projection(
 
 
 @pytest.mark.parametrize("histogram_mode", ["two_kernel", "fused_atomic"])
-def test_qb_moe_histograms_and_remat_gradients(mesh, make_block, histogram_mode):
+@pytest.mark.parametrize("masked", [False, True])
+def test_qb_moe_histograms_and_remat_gradients(mesh, make_block, histogram_mode, masked):
     from test_fused_router import reference_qb_histogram
 
     def bias_init(key, shape, dtype):
@@ -879,12 +880,19 @@ def test_qb_moe_histograms_and_remat_gradients(mesh, make_block, histogram_mode)
     bounds = jnp.asarray([-1.1, 1.1], jnp.float32)
     x = jax.random.normal(jax.random.PRNGKey(841), (BATCH, SEQ, HIDDEN), DTYPE)
 
+    token_mask = (jnp.arange(BATCH * SEQ).reshape(BATCH, SEQ) % 2 == 0) if masked else None
+
     with _ctx(mesh):
         x_sharded = _shard_inputs(x, mesh)
         variables = jax.jit(block.init)(jax.random.PRNGKey(842), x_sharded)
 
         def loss(v, activations, limits):
-            result = block.apply(v, activations, qb_bin_bounds=limits)
+            result = block.apply(
+                v,
+                activations,
+                qb_bin_bounds=limits,
+                qb_token_mask=token_mask if limits is not None else None,
+            )
             return jnp.mean(result[0].astype(jnp.float32) ** 2), result
 
         (_, baseline), (baseline_dv, baseline_dx) = jax.jit(
@@ -907,8 +915,11 @@ def test_qb_moe_histograms_and_remat_gradients(mesh, make_block, histogram_mode)
     assert histogram_parts.shape == (mesh.size, NUM_EXPERTS, 64)
     params = _params_global_numpy(variables, mesh)
     logits = (x @ jnp.asarray(params["gate_kernel"], DTYPE)).astype(jnp.float32)
+    histogram_logits = logits.reshape(-1, NUM_EXPERTS)
+    if token_mask is not None:
+        histogram_logits = histogram_logits[np.asarray(token_mask).reshape(-1)]
     expected_histogram = reference_qb_histogram(
-        logits.reshape(-1, NUM_EXPERTS),
+        histogram_logits,
         params["expert_bias"],
         bounds,
         TOPK,

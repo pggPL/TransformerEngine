@@ -743,6 +743,7 @@ def fused_topk_with_score_function_qb_fwd(
     scaling_factor,
     histogram_mode,
     routing_map_format=int(RoutingMapFormat.BYTEMAP),
+    token_mask=None,
 ):
     """Shard-local QB forward; histogram input aliases the updated output."""
     num_tokens, num_experts = logits.shape
@@ -761,7 +762,7 @@ def fused_topk_with_score_function_qb_fwd(
         ShapeDtypeStruct((num_tokens,), jnp.float32),
         ShapeDtypeStruct(histogram.shape, jnp.int32),
     )
-    return ffi.ffi_call(
+    result = ffi.ffi_call(
         "te_fused_topk_with_score_function_qb_forward_ffi",
         outputs,
         input_output_aliases={3: 4},
@@ -774,8 +775,19 @@ def fused_topk_with_score_function_qb_fwd(
         topk=int(topk),
         scaling_factor=float(scaling_factor),
         histogram_mode=int(histogram_mode),
+        collect_histogram=int(token_mask is None),
         routing_map_format=int(routing_map_format),
     )
+    if token_mask is not None:
+        probs, routing_map, scores, cutoff, updated_histogram = result
+        lower, upper = bin_bounds[0], bin_bounds[1]
+        num_bins = histogram.shape[1]
+        bins = jnp.floor((cutoff[:, None] - scores - lower) * (num_bins / (upper - lower)))
+        bins = jnp.clip(bins.astype(jnp.int32), 0, num_bins - 1)
+        counts = token_mask.astype(jnp.int32)[:, None]
+        updated_histogram = updated_histogram.at[jnp.arange(num_experts)[None, :], bins].add(counts)
+        result = probs, routing_map, scores, cutoff, updated_histogram
+    return result
 
 
 def fused_topk_with_score_function_bwd(

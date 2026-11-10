@@ -107,7 +107,7 @@ Error_Type FusedTopkWithScoreFunctionQBForwardFFI(
     Buffer_Type bin_bounds_buf, Buffer_Type histogram_buf, Result_Type probs_buf,
     Result_Type routing_map_buf, Result_Type intermediate_buf, Result_Type cutoff_buf,
     Result_Type histogram_out_buf, int64_t topk, double scaling_factor, int64_t histogram_mode,
-    JAXX_Routing_Map_Format routing_map_format) {
+    int64_t collect_histogram, JAXX_Routing_Map_Format routing_map_format) {
   auto dims = logits_buf.dimensions();
   auto bias_dims = expert_bias_buf.dimensions();
   auto bounds_dims = bin_bounds_buf.dimensions();
@@ -158,12 +158,13 @@ Error_Type FusedTopkWithScoreFunctionQBForwardFFI(
       histogram_out_buf->untyped_data(),
       std::vector<size_t>{static_cast<size_t>(num_experts), static_cast<size_t>(hist_dims[1])},
       DType::kInt32);
-  const auto mode = static_cast<NVTEQBHistogramMode>(histogram_mode);
+  const auto mode = collect_histogram ? static_cast<NVTEQBHistogramMode>(histogram_mode)
+                                      : NVTE_QB_HISTOGRAM_TWO_KERNEL;
   nvte_fused_topk_with_score_function_forward_qb_v2(
       logits.data(), num_tokens, num_experts, static_cast<int>(topk),
       static_cast<float>(scaling_factor), bias.data(), probs.data(), routing_map.data(), format,
       intermediate.data(), cutoff.data(), histogram.data(), bounds.data(), mode, stream);
-  if (mode == NVTE_QB_HISTOGRAM_TWO_KERNEL) {
+  if (collect_histogram && mode == NVTE_QB_HISTOGRAM_TWO_KERNEL) {
     nvte_qb_histogram_accumulate(intermediate.data(), cutoff.data(), bounds.data(),
                                  histogram.data(), stream);
   }
@@ -186,6 +187,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(FusedTopkWithScoreFunctionQBForwardHandler,
                                   .Attr<int64_t>("topk")
                                   .Attr<double>("scaling_factor")
                                   .Attr<int64_t>("histogram_mode")
+                                  .Attr<int64_t>("collect_histogram")
                                   .Attr<JAXX_Routing_Map_Format>("routing_map_format"),
                               FFI_CudaGraph_Traits);
 

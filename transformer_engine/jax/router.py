@@ -341,6 +341,7 @@ def fused_topk_with_score_function_qb(
     *,
     num_bins: int = 1000,
     histogram: Optional[jnp.ndarray] = None,
+    token_mask: Optional[jnp.ndarray] = None,
     scaling_factor: float = 1.0,
     histogram_mode: str = "fused_atomic",
     routing_map_format: Union[str, RoutingMapFormat, int] = RoutingMapFormat.BYTEMAP,
@@ -355,7 +356,9 @@ def fused_topk_with_score_function_qb(
     with ``lower < upper``; bounds values are not synchronized to the host for
     validation. Kimi uses ``[min(bias)-1, max(bias)+1]`` throughout a training step.
     Each row contributes to every expert's histogram of ``cutoff - sigmoid(logits)``.
-    All input rows must be valid tokens: this kernel has no padding mask.
+    ``token_mask`` optionally selects valid rows. With a mask, CUDA computes the
+    routing and cutoff and JAX builds the masked histogram from the saved scores.
+    Without a mask, the existing CUDA histogram modes run unchanged.
 
     Returns ``(probs, routing_map, updated_histogram)``. The histogram is int32
     ``[experts, num_bins]`` and starts at zero when ``histogram=None``. Otherwise
@@ -374,6 +377,10 @@ def fused_topk_with_score_function_qb(
         logits, expert_bias, bin_bounds, histogram, topk, num_bins, scaling_factor, histogram_mode
     )
     routing_map_format = _validate_routing_map_format(routing_map_format)
+    if token_mask is not None and (
+        token_mask.shape != (logits.shape[0],) or token_mask.dtype != jnp.bool_
+    ):
+        raise ValueError("QB token_mask must be bool with shape [tokens].")
     if histogram is None:
         histogram = jnp.zeros((logits.shape[-1], num_bins), dtype=jnp.int32)
     return _fused_topk_with_score_function_qb(
@@ -381,6 +388,7 @@ def fused_topk_with_score_function_qb(
         expert_bias,
         bin_bounds,
         histogram,
+        token_mask,
         int(topk),
         float(scaling_factor),
         mode,
@@ -388,12 +396,13 @@ def fused_topk_with_score_function_qb(
     )
 
 
-@partial(jax.custom_vjp, nondiff_argnums=(4, 5, 6, 7))
+@partial(jax.custom_vjp, nondiff_argnums=(5, 6, 7, 8))
 def _fused_topk_with_score_function_qb(
     logits,
     expert_bias,
     bin_bounds,
     histogram,
+    token_mask,
     topk,
     scaling_factor,
     histogram_mode,
@@ -404,6 +413,7 @@ def _fused_topk_with_score_function_qb(
         expert_bias,
         bin_bounds,
         histogram,
+        token_mask,
         topk,
         scaling_factor,
         histogram_mode,
@@ -417,6 +427,7 @@ def _qb_router_fwd(
     expert_bias,
     bin_bounds,
     histogram,
+    token_mask,
     topk,
     scaling_factor,
     histogram_mode,
@@ -431,6 +442,7 @@ def _qb_router_fwd(
         scaling_factor=scaling_factor,
         histogram_mode=histogram_mode,
         routing_map_format=routing_map_format,
+        token_mask=token_mask,
     )
     return (probs, routing_map, updated_histogram), (routing_map, saved_scores)
 
@@ -449,7 +461,7 @@ def _qb_router_bwd(topk, scaling_factor, histogram_mode, routing_map_format, res
         False,
         routing_map_format,
     )
-    return d_logits, None, None, None
+    return d_logits, None, None, None, None
 
 
 _fused_topk_with_score_function_qb.defvjp(_qb_router_fwd, _qb_router_bwd)
