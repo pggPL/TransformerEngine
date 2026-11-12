@@ -4,9 +4,11 @@
  * See LICENSE for license information.
  ************************************************************************/
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <limits>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -424,3 +426,125 @@ INSTANTIATE_TEST_SUITE_P(
         ::testing::ValuesIn(test::all_fp_types),
         ::testing::Values(std::pair<size_t, size_t>{768, 2816})),
     test_name_generator);
+
+namespace {
+
+template <typename T>
+void test_grouped_situglu(const size_t hidden, const int alignment_mode, const int count_mode,
+                          const std::pair<float, float> caps) {
+  constexpr size_t rows = 13;
+  const size_t input_offset = alignment_mode == 1 ? 1 : 0;
+  const size_t output_offset = alignment_mode == 0 ? 0 : 1;
+  const size_t active = count_mode == 0 ? 8 : (count_mode == 1 ? rows : 0);
+  const DType dtype = test::TypeInfo<T>::dtype;
+  const std::vector<size_t> input_shape{rows, 2 * hidden}, output_shape{rows, hidden};
+  test::Tensor input("group_situ_input", std::vector<size_t>{rows * 2 * hidden + input_offset + 1},
+                     dtype);
+  test::Tensor grad("group_situ_grad", std::vector<size_t>{rows * hidden + input_offset + 1},
+                    dtype);
+  test::Tensor output("group_situ_output", std::vector<size_t>{rows * hidden + output_offset + 1},
+                      dtype);
+  test::Tensor dx("group_situ_dx", std::vector<size_t>{rows * 2 * hidden + output_offset + 1},
+                  dtype);
+  test::Tensor counts("group_situ_counts", std::vector<size_t>{3}, DType::kInt64);
+  for (test::Tensor *tensor : {&input, &grad, &output, &dx}) {
+    std::fill_n(tensor->rowwise_cpu_dptr<T>(), test::product(tensor->shape()),
+                static_cast<T>(std::numeric_limits<float>::quiet_NaN()));
+  }
+  auto *x = input.rowwise_cpu_dptr<T>() + input_offset;
+  auto *dy = grad.rowwise_cpu_dptr<T>() + input_offset;
+  for (size_t row = 0; row < active; ++row) {
+    for (size_t col = 0; col < hidden; ++col) {
+      x[row * 2 * hidden + col] = static_cast<T>(static_cast<float>(col % 11) - 5.25f);
+      x[row * 2 * hidden + hidden + col] = static_cast<T>(static_cast<float>(row) - 4.5f);
+      dy[row * hidden + col] = static_cast<T>(0.125f * static_cast<float>(col % 7) - 0.25f);
+    }
+  }
+  auto *sizes = counts.rowwise_cpu_dptr<int64_t>();
+  sizes[0] = count_mode == 2 ? 0 : 3;
+  sizes[1] = 0;
+  sizes[2] = count_mode == 2 ? 0 : 5;
+  for (test::Tensor *tensor : {&input, &grad, &output, &dx, &counts}) tensor->from_cpu();
+
+  GroupedTensorWrapper in_group(3, input_shape), grad_group(3, output_shape);
+  GroupedTensorWrapper out_group(3, output_shape), dx_group(3, input_shape);
+  in_group.set_rowwise_data(static_cast<T *>(input.rowwise_dptr()) + input_offset, dtype,
+                            input_shape);
+  grad_group.set_rowwise_data(static_cast<T *>(grad.rowwise_dptr()) + input_offset, dtype,
+                              output_shape);
+  out_group.set_rowwise_data(static_cast<T *>(output.rowwise_dptr()) + output_offset, dtype,
+                             output_shape);
+  dx_group.set_rowwise_data(static_cast<T *>(dx.rowwise_dptr()) + output_offset, dtype,
+                            input_shape);
+  if (count_mode != 1) {
+    in_group.set_first_dims(counts.rowwise_dptr(), DType::kInt64, std::vector<size_t>{3});
+  }
+  nvte_group_situglu(in_group.data(), out_group.data(), caps.first, caps.second, nullptr);
+  nvte_group_dsituglu(grad_group.data(), in_group.data(), dx_group.data(), caps.first, caps.second,
+                      nullptr);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  output.to_cpu();
+  dx.to_cpu();
+  const auto *y = output.rowwise_cpu_dptr<T>() + output_offset;
+  const auto *actual_dx = dx.rowwise_cpu_dptr<T>() + output_offset;
+  const double tolerance =
+      dtype == DType::kFloat32 ? 2e-5 : (dtype == DType::kFloat16 ? .003 : .02);
+  for (size_t row = 0; row < rows; ++row) {
+    for (size_t col = 0; col < hidden; ++col) {
+      double expected_y = 0, expected_gate = 0, expected_up = 0;
+      if (row < active) {
+        const double gate = static_cast<float>(x[row * 2 * hidden + col]);
+        const double up = static_cast<float>(x[row * 2 * hidden + hidden + col]);
+        const double upstream = static_cast<float>(dy[row * hidden + col]);
+        const double sigmoid = 1 / (1 + std::exp(-gate));
+        const double tg = std::tanh(gate / caps.first), tu = std::tanh(up / caps.second);
+        expected_y = caps.first * tg * sigmoid * caps.second * tu;
+        expected_gate = upstream *
+                        ((1 - tg * tg) * sigmoid + caps.first * tg * sigmoid * (1 - sigmoid)) *
+                        caps.second * tu;
+        expected_up = upstream * caps.first * tg * sigmoid * (1 - tu * tu);
+      }
+      EXPECT_NEAR(static_cast<float>(y[row * hidden + col]), expected_y,
+                  tolerance * (1 + std::abs(expected_y)));
+      EXPECT_NEAR(static_cast<float>(actual_dx[row * 2 * hidden + col]), expected_gate,
+                  tolerance * (1 + std::abs(expected_gate)));
+      EXPECT_NEAR(static_cast<float>(actual_dx[row * 2 * hidden + hidden + col]), expected_up,
+                  tolerance * (1 + std::abs(expected_up)));
+    }
+  }
+  for (test::Tensor *tensor : {&output, &dx}) {
+    const auto *data = tensor->rowwise_cpu_dptr<T>();
+    if (output_offset) EXPECT_TRUE(std::isnan(static_cast<float>(data[0])));
+    EXPECT_TRUE(std::isnan(static_cast<float>(data[test::product(tensor->shape()) - 1])));
+  }
+}
+
+class GroupedSiTUGLUTest : public ::testing::TestWithParam<
+                               std::tuple<DType, size_t, int, int, std::pair<float, float>>> {};
+
+TEST_P(GroupedSiTUGLUTest, AlignmentAndInactiveRows) {
+  const auto [dtype, hidden, alignment_mode, count_mode, caps] = GetParam();
+  switch (dtype) {
+    case DType::kFloat32:
+      test_grouped_situglu<float>(hidden, alignment_mode, count_mode, caps);
+      break;
+    case DType::kFloat16:
+      test_grouped_situglu<test::fp16>(hidden, alignment_mode, count_mode, caps);
+      break;
+    case DType::kBFloat16:
+      test_grouped_situglu<test::bf16>(hidden, alignment_mode, count_mode, caps);
+      break;
+    default:
+      FAIL() << "Unexpected test dtype";
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(Operator, GroupedSiTUGLUTest,
+                         ::testing::Combine(::testing::Values(DType::kFloat32, DType::kFloat16,
+                                                              DType::kBFloat16),
+                                            ::testing::Values(size_t{3}, size_t{16}, size_t{32}),
+                                            ::testing::Values(0, 1, 2), ::testing::Values(0, 1, 2),
+                                            ::testing::Values(std::pair<float, float>{4, 25},
+                                                              std::pair<float, float>{2, 8})));
+
+}  // namespace

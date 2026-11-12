@@ -403,14 +403,42 @@ void VectorizedUnaryGradKernelLauncher(const InputTypeGrad *grad, const InputTyp
   }
 }
 
+template <bool Grouped>
+__device__ __forceinline__ size_t gated_active_rows(const size_t capacity,
+                                                    const int64_t *group_sizes,
+                                                    const size_t num_groups) {
+  if constexpr (!Grouped) {
+    return capacity;
+  } else {
+    __shared__ size_t active_rows;
+    if (threadIdx.x < THREADS_PER_WARP) {
+      int64_t rows = 0;
+      if (group_sizes != nullptr) {
+        for (size_t group = threadIdx.x; group < num_groups; group += THREADS_PER_WARP) {
+          rows += group_sizes[group];
+        }
+      }
+      rows = warp_allreduce_sum(rows);
+      if (threadIdx.x == 0) {
+        active_rows = num_groups == 0 ? 0 : (group_sizes == nullptr ? capacity : rows);
+      }
+    }
+    __syncthreads();
+    return active_rows;
+  }
+}
+
 template <int nvec, bool aligned, typename ComputeType, typename Param,
-          ComputeType (*Activation)(const ComputeType, const Param &), typename InputType,
-          typename OutputType>
+          ComputeType (*Activation)(const ComputeType, const Param &), bool Grouped = false,
+          typename InputType, typename OutputType>
 __launch_bounds__(unary_kernel_threads) __global__
     void gated_act_kernel(const InputType *input, OutputType *output, const ComputeType *scale,
                           ComputeType *amax, ComputeType *scale_inv, const size_t m, const size_t n,
-                          const Param p, const size_t num_aligned_elements) {
+                          const Param p, const size_t num_aligned_elements,
+                          const int64_t *group_sizes, const size_t num_groups) {
   const size_t M = num_aligned_elements * m;
+  [[maybe_unused]] const size_t active_rows =
+      gated_active_rows<Grouped>(m, group_sizes, num_groups);
   ComputeType max = 0;
   ComputeType s = 1;
   const bool requires_amax = (amax != nullptr);
@@ -426,6 +454,14 @@ __launch_bounds__(unary_kernel_threads) __global__
     VectorizedLoader<InputType, nvec, aligned> loader1(input + id_y * n * 2 + n, n);
     VectorizedStorer<OutputType, nvec, aligned> storer(output + id_y * n, n);
 
+    if constexpr (Grouped) {
+      if (id_y >= active_rows) {
+#pragma unroll
+        for (int i = 0; i < nvec; ++i) storer.separate()[i] = static_cast<OutputType>(0);
+        storer.store(id_x, n);
+        continue;
+      }
+    }
     loader0.load(id_x, n);
     loader1.load(id_x, n);
 #pragma unroll
@@ -470,11 +506,13 @@ __launch_bounds__(unary_kernel_threads) __global__
 }
 
 template <int nvec, typename ComputeType, typename Param,
-          ComputeType (*Activation)(const ComputeType, const Param &), typename InputType,
-          typename OutputType>
+          ComputeType (*Activation)(const ComputeType, const Param &), bool Grouped = false,
+          typename InputType, typename OutputType>
 void GatedActivationKernelLauncher(const InputType *input, OutputType *output, const fp32 *scale,
                                    fp32 *amax, fp32 *scale_inv, const size_t m, const size_t n,
-                                   const Param &p, cudaStream_t stream) {
+                                   const Param &p, cudaStream_t stream,
+                                   const int64_t *group_sizes = nullptr,
+                                   const size_t num_groups = 0) {
   if (m != 0 && n != 0) {
     size_t num_aligned_elements = get_num_aligned_elements(input, n, nvec, sizeof(InputType));
     constexpr size_t threads = unary_kernel_threads;
@@ -484,19 +522,20 @@ void GatedActivationKernelLauncher(const InputType *input, OutputType *output, c
 
     switch (auto align = CheckAlignment(n, nvec, input, input + n, output)) {
       case Alignment::SAME_ALIGNED:
-        gated_act_kernel<nvec, true, ComputeType, Param, Activation>
+        gated_act_kernel<nvec, true, ComputeType, Param, Activation, Grouped>
             <<<num_blocks, threads, 0, stream>>>(input, output, scale, amax, scale_inv, m, n, p,
-                                                 num_aligned_elements);
+                                                 num_aligned_elements, group_sizes, num_groups);
         break;
       case Alignment::SAME_UNALIGNED:
-        gated_act_kernel<nvec, false, ComputeType, Param, Activation>
+        gated_act_kernel<nvec, false, ComputeType, Param, Activation, Grouped>
             <<<num_blocks, threads, 0, stream>>>(input, output, scale, amax, scale_inv, m, n, p,
-                                                 num_aligned_elements);
+                                                 num_aligned_elements, group_sizes, num_groups);
         break;
       case Alignment::DIFFERENT: {
         // If the pointers are aligned differently we cannot vectorize
-        gated_act_kernel<1, true, ComputeType, Param, Activation>
-            <<<num_blocks, threads, 0, stream>>>(input, output, scale, amax, scale_inv, m, n, p, n);
+        gated_act_kernel<1, true, ComputeType, Param, Activation, Grouped>
+            <<<num_blocks, threads, 0, stream>>>(input, output, scale, amax, scale_inv, m, n, p, n,
+                                                 group_sizes, num_groups);
         break;
       }
     }
@@ -506,14 +545,17 @@ void GatedActivationKernelLauncher(const InputType *input, OutputType *output, c
 
 template <int nvec, bool aligned, typename ComputeType, typename Param,
           ComputeType (*Activation)(const ComputeType, const Param &),
-          ComputeType (*Dactivation)(const ComputeType, const Param &), typename InputType,
-          typename OutputType>
+          ComputeType (*Dactivation)(const ComputeType, const Param &), bool Grouped = false,
+          typename InputType, typename OutputType>
 __launch_bounds__(unary_kernel_threads) __global__
     void dgated_act_kernel(const InputType *grad, const InputType *input, OutputType *output,
                            const ComputeType *scale, ComputeType *amax, ComputeType *scale_inv,
                            const size_t m, const size_t n, const Param p,
-                           const size_t num_aligned_elements) {
+                           const size_t num_aligned_elements, const int64_t *group_sizes,
+                           const size_t num_groups) {
   const size_t M = num_aligned_elements * m;
+  [[maybe_unused]] const size_t active_rows =
+      gated_active_rows<Grouped>(m, group_sizes, num_groups);
   ComputeType max = 0;
   ComputeType s = 1;
   const bool requires_amax = (amax != nullptr);
@@ -531,6 +573,18 @@ __launch_bounds__(unary_kernel_threads) __global__
     VectorizedStorer<OutputType, nvec, aligned> storer0(output + id_y * n * 2, n);
     VectorizedStorer<OutputType, nvec, aligned> storer1(output + id_y * n * 2 + n, n);
 
+    if constexpr (Grouped) {
+      if (id_y >= active_rows) {
+#pragma unroll
+        for (int i = 0; i < nvec; ++i) {
+          storer0.separate()[i] = static_cast<OutputType>(0);
+          storer1.separate()[i] = static_cast<OutputType>(0);
+        }
+        storer0.store(id_x, n);
+        storer1.store(id_x, n);
+        continue;
+      }
+    }
     grad_loader.load(id_x, n);
     input_loader0.load(id_x, n);
     input_loader1.load(id_x, n);
@@ -590,12 +644,13 @@ __launch_bounds__(unary_kernel_threads) __global__
 
 template <int nvec, typename ComputeType, typename Param,
           ComputeType (*Activation)(const ComputeType, const Param &),
-          ComputeType (*Dactivation)(const ComputeType, const Param &), typename InputType,
-          typename OutputType>
+          ComputeType (*Dactivation)(const ComputeType, const Param &), bool Grouped = false,
+          typename InputType, typename OutputType>
 void DGatedActivationKernelLauncher(const InputType *grad, const InputType *input,
                                     OutputType *output, const fp32 *scale, fp32 *amax,
                                     fp32 *scale_inv, const size_t m, const size_t n, const Param &p,
-                                    cudaStream_t stream) {
+                                    cudaStream_t stream, const int64_t *group_sizes = nullptr,
+                                    const size_t num_groups = 0) {
   if (m != 0 && n != 0) {
     size_t num_aligned_elements = get_num_aligned_elements(grad, n, nvec, sizeof(InputType));
     constexpr size_t threads = unary_kernel_threads;
@@ -605,20 +660,20 @@ void DGatedActivationKernelLauncher(const InputType *grad, const InputType *inpu
 
     switch (auto align = CheckAlignment(n, nvec, input, input + n, output, output + n)) {
       case Alignment::SAME_ALIGNED:
-        dgated_act_kernel<nvec, true, ComputeType, Param, Activation, Dactivation>
+        dgated_act_kernel<nvec, true, ComputeType, Param, Activation, Dactivation, Grouped>
             <<<num_blocks, threads, 0, stream>>>(grad, input, output, scale, amax, scale_inv, m, n,
-                                                 p, num_aligned_elements);
+                                                 p, num_aligned_elements, group_sizes, num_groups);
         break;
       case Alignment::SAME_UNALIGNED:
-        dgated_act_kernel<nvec, false, ComputeType, Param, Activation, Dactivation>
+        dgated_act_kernel<nvec, false, ComputeType, Param, Activation, Dactivation, Grouped>
             <<<num_blocks, threads, 0, stream>>>(grad, input, output, scale, amax, scale_inv, m, n,
-                                                 p, num_aligned_elements);
+                                                 p, num_aligned_elements, group_sizes, num_groups);
         break;
       case Alignment::DIFFERENT: {
         // If the pointers are aligned differently we cannot vectorize
-        dgated_act_kernel<1, true, ComputeType, Param, Activation, Dactivation>
+        dgated_act_kernel<1, true, ComputeType, Param, Activation, Dactivation, Grouped>
             <<<num_blocks, threads, 0, stream>>>(grad, input, output, scale, amax, scale_inv, m, n,
-                                                 p, n);
+                                                 p, n, group_sizes, num_groups);
         break;
       }
     }
