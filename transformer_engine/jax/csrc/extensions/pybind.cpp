@@ -24,6 +24,7 @@ pybind11::dict Registrations() {
   pybind11::dict dict;
 
   // Activation
+  dict["te_grouped_situglu_ffi"] = EncapsulateFFI(GroupedSiTUGLUHandler);
   dict["te_act_lu_ffi"] =
       pybind11::dict(pybind11::arg("initialize") = EncapsulateFFI(ActLuInitializeHandler),
                      pybind11::arg("execute") = EncapsulateFFI(ActLuHandler));

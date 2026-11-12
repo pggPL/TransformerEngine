@@ -2799,19 +2799,20 @@ class TestBasicOps:
         )
 
     @pytest.mark.parametrize("dtype", _dtypes)
-    @pytest.mark.parametrize("glu_interleave_size", (None, 32))
+    @pytest.mark.parametrize("hidden,glu_interleave_size", ((13, None), (96, None), (96, 32)))
     @pytest.mark.parametrize("betas", ((4.0, 25.0), (3.0, 12.0)))
     def test_situglu(
         self,
         *,
         dtype: torch.dtype,
+        hidden: int,
         glu_interleave_size: Optional[int],
         betas: tuple[float, float],
         device: torch.device = "cuda",
     ) -> None:
         """SiTU-GLU forward and backward."""
-        in_shape = (17, 192)
-        out_shape = (17, 96)
+        in_shape = (17, 2 * hidden)
+        out_shape = (17, hidden)
         beta1, beta2 = betas
         x_ref, x_test = make_reference_and_test_tensors(
             in_shape,

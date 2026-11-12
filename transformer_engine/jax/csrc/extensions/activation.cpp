@@ -9,10 +9,76 @@
 
 #include "../extensions.h"
 #include "transformer_engine/cast.h"
+#include "transformer_engine/gemm.h"
 #include "xla/ffi/api/c_api.h"
 
 namespace transformer_engine {
 namespace jax {
+
+Error_Type GroupedSiTUGLUFFI(cudaStream_t stream, Buffer_Type input_buf, Buffer_Type grad_buf,
+                             Buffer_Type sizes_buf, Result_Type output_buf,
+                             Result_Type workspace_buf, float beta1, float beta2, bool backward) {
+  const auto shape = input_buf.dimensions();
+  NVTE_CHECK(shape.size() == 2 && shape[1] > 0 && shape[1] % 2 == 0,
+             "Grouped SiTU input must have shape [capacity, 2H].");
+  NVTE_CHECK(
+      sizes_buf.dimensions().size() == 1 && sizes_buf.element_type() == xla::ffi::DataType::S32,
+      "Grouped SiTU group_sizes must be rank-1 int32.");
+  const size_t groups = sizes_buf.dimensions()[0];
+  NVTE_CHECK(product(workspace_buf->dimensions()) >= groups * sizeof(int64_t),
+             "Grouped SiTU metadata workspace is too small.");
+  const auto dtype = convert_ffi_datatype_to_te_dtype(input_buf.element_type());
+  NVTE_CHECK(convert_ffi_datatype_to_te_dtype(output_buf->element_type()) == dtype,
+             "Grouped SiTU input/output dtypes must match.");
+  const auto out_shape = output_buf->dimensions();
+  NVTE_CHECK(out_shape.size() == 2 && out_shape[0] == shape[0] &&
+                 out_shape[1] == (backward ? shape[1] : shape[1] / 2),
+             "Grouped SiTU output shape is invalid.");
+  auto *sizes = reinterpret_cast<int64_t *>(workspace_buf->untyped_data());
+  if (groups > 0) {
+    nvte_convert_int32_to_int64_with_multiplier(
+        static_cast<const int32_t *>(sizes_buf.untyped_data()), sizes, groups, 1, stream);
+  }
+  const auto scaling = get_nvte_scaling_mode(JAXX_Scaling_Mode::NO_SCALING);
+  const std::vector<size_t> input_shape{static_cast<size_t>(shape[0]),
+                                        static_cast<size_t>(shape[1])};
+  const std::vector<size_t> output_shape{static_cast<size_t>(out_shape[0]),
+                                         static_cast<size_t>(out_shape[1])};
+  const std::vector<size_t> grad_shape{static_cast<size_t>(shape[0]),
+                                       static_cast<size_t>(shape[1] / 2)};
+  const std::vector<size_t> sizes_shape{groups};
+  GroupedTensorWrapper input(groups, input_shape, scaling);
+  input.set_rowwise_data(input_buf.untyped_data(), dtype, input_shape)
+      .set_first_dims(sizes, DType::kInt64, sizes_shape);
+  GroupedTensorWrapper output(groups, output_shape, scaling);
+  output.set_rowwise_data(output_buf->untyped_data(), dtype, output_shape);
+  if (backward) {
+    const auto actual_grad_shape = grad_buf.dimensions();
+    NVTE_CHECK(actual_grad_shape.size() == 2 && actual_grad_shape[0] == shape[0] &&
+                   actual_grad_shape[1] == shape[1] / 2 &&
+                   convert_ffi_datatype_to_te_dtype(grad_buf.element_type()) == dtype,
+               "Grouped SiTU upstream gradient shape or dtype is invalid.");
+    GroupedTensorWrapper grad(groups, grad_shape, scaling);
+    grad.set_rowwise_data(grad_buf.untyped_data(), dtype, grad_shape);
+    nvte_group_dsituglu(grad.data(), input.data(), output.data(), beta1, beta2, stream);
+  } else {
+    nvte_group_situglu(input.data(), output.data(), beta1, beta2, stream);
+  }
+  return ffi_with_cuda_error_check();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(GroupedSiTUGLUHandler, GroupedSiTUGLUFFI,
+                              FFI::Bind()
+                                  .Ctx<FFI_Stream_Type>()
+                                  .Arg<Buffer_Type>()
+                                  .Arg<Buffer_Type>()
+                                  .Arg<Buffer_Type>()
+                                  .Ret<Buffer_Type>()
+                                  .Ret<Buffer_Type>()
+                                  .Attr<float>("beta1")
+                                  .Attr<float>("beta2")
+                                  .Attr<bool>("backward"),
+                              FFI_CudaGraph_Traits);
 
 Error_Type ActLuFFI(cudaStream_t stream, Buffer_Type input_buf, Buffer_Type scale_buf,
                     Buffer_Type amax_buf, Result_Type output_buf, Result_Type colwise_output_buf,
