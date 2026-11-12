@@ -89,8 +89,9 @@ class SiTUActivation:
     The defaults match Kimi-K3. Both soft-cap parameters must be finite and
     positive. Pass an instance as ``moe(..., activation_type=...)``.
 
-    BF16 and MXFP8 use native grouped SiTU forward/backward with separate GEMMs.
-    Requesting cuDNN fusion retains its normal warning and fallback behavior.
+    MXFP8 can use cuDNN's fused grouped GEMM on SM100/SM103 with compatible
+    JAX SiTU APIs. Other configurations use native grouped SiTU forward/backward
+    with separate grouped GEMMs.
     """
 
     gate_beta: float = 4.0
@@ -272,7 +273,7 @@ _ALIGN_SIZE = 128
 _CUDNN_JAX_ALIGN_SIZE = 256
 
 
-def _select_cudnn_jax_fusion(rejection_reasons: list[str]) -> bool:
+def _select_cudnn_jax_fusion(rejection_reasons: list[str], *, activation_type="silu") -> bool:
     """Select shared cuDNN GLU/dGLU fusion or the unfused TE path."""
     from transformer_engine_jax import get_device_compute_capability
 
@@ -284,8 +285,13 @@ def _select_cudnn_jax_fusion(rejection_reasons: list[str]) -> bool:
     else:
         if capability < 100:
             reasons.append(f"fused kernels require SM100+, got SM{capability}")
+        require_situ = isinstance(activation_type, SiTUActivation)
+        if require_situ and capability not in (100, 103):
+            reasons.append(f"SiTU fusion requires SM100/SM103, got SM{capability}")
         if not reasons:
-            available, error = tex.grouped_gemm_glu_dependencies_available()
+            available, error = tex.grouped_gemm_glu_dependencies_available(
+                require_situ=require_situ
+            )
             if available:
                 return True
             reasons.append(f"shared fused API is incompatible: {error}")
@@ -313,8 +319,8 @@ def _cudnn_jax_fusion_rejection_reasons(
 ) -> list[str]:
     """Return reasons this call cannot use cuDNN's shared grouped GLU/dGLU JAX APIs."""
     errors = []
-    if str(activation_type).lower() != "silu":
-        errors.append("requires activation_type='silu'")
+    if not isinstance(activation_type, SiTUActivation) and str(activation_type).lower() != "silu":
+        errors.append("requires activation_type='silu' or SiTUActivation")
     if wi_0_bias is not None or wi_1_bias is not None:
         errors.append("does not support FC1 gate/up bias")
     hidden = x.shape[-1]
@@ -1030,6 +1036,15 @@ def _ffn_fwd_per_shard(
             prob,
             compute_dtype=sorted_x.dtype,
             output_dtype=fc2_quantizer_set.x.q_dtype,
+            **(
+                {
+                    "act_func": "situglu",
+                    "situ_beta1": activation_type.gate_beta,
+                    "situ_beta2": activation_type.up_beta,
+                }
+                if isinstance(activation_type, SiTUActivation)
+                else {}
+            ),
         )
         combined_out = combined_out_3d.reshape(sorted_x.shape[0], combined)
         if wi_0_checkpoint_name is not None:
@@ -1214,6 +1229,15 @@ def _ffn_bwd_per_shard(
             padded_offsets,
             prob,
             output_dtype=fc1_quantizer_set.dgrad.q_dtype,
+            **(
+                {
+                    "act_func": "dsituglu",
+                    "situ_beta1": activation_type.gate_beta,
+                    "situ_beta2": activation_type.up_beta,
+                }
+                if isinstance(activation_type, SiTUActivation)
+                else {}
+            ),
         )
         d_recv_w_from_intermediate = (
             dprob.astype(recv_w_flat.dtype)
@@ -2263,9 +2287,9 @@ def moe(
     ----------
     activation_type : Union[str, SiTUActivation]
         Gate activation name (default ``"silu"``), or :class:`SiTUActivation`
-        for FP32 soft-capping of both gate and up branches. SiTU uses native
-        grouped activation kernels and separate grouped GEMMs with BF16 or
-        MXFP8 quantizer sets. cuDNN GLU/dGLU uses the existing fallback path.
+        for FP32 soft-capping of both gate and up branches. Compatible MXFP8
+        calls use cuDNN fusion on SM100/SM103; other configurations use native
+        grouped SiTU kernels with separate grouped GEMMs.
     router_info : Union[RouterComputationInfo, RoutingMapInfo]
         :class:`RouterComputationInfo` makes TE compute the gate and top-k
         from the given router parameters. :class:`RoutingMapInfo` supplies
@@ -2319,7 +2343,10 @@ def moe(
     use_cudnn_fusion : bool
         Defaults to ``True``: try cuDNN's shared JAX grouped MXFP8 GLU/dGLU APIs
         on SM100+ GPUs; cuDNN selects the architecture-specific kernels. ``False`` uses unfused TE grouped GEMM.
-        Requires cuDNN Frontend >= 1.32.0 with compatible JAX APIs.
+        Requires cuDNN Frontend >= 1.32.0 with compatible JAX APIs. SiTU
+        additionally requires SM100/SM103 and JAX GLU/dGLU APIs exposing
+        ``situ_beta1`` and ``situ_beta2``. Device offsets bound active expert
+        rows; unused receive-buffer capacity is not part of any expert.
         Frontends whose JAX GLU/dGLU entry points only support BF16 discrete
         weights fall back to unfused TE grouped GEMM.
         Ineligible calls warn and fall back to TE's regular grouped-GEMM
@@ -2453,7 +2480,9 @@ def moe(
                 activation_type=activation_type,
                 ep_axis=ep_axis,
             )
-            use_cudnn_jax_fusion = _select_cudnn_jax_fusion(rejection_reasons)
+            use_cudnn_jax_fusion = _select_cudnn_jax_fusion(
+                rejection_reasons, activation_type=activation_type
+            )
 
         output, aux_loss, total_recv_tokens, expert_counts, qb_histograms = _moe(
             x,
