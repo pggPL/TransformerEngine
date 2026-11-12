@@ -251,7 +251,7 @@ class QuantizedTensorStorage:
         for name, buf in zip(names, gathered):
             setattr(self, name, buf)
 
-    # ----- PyTorch subclass flatten protocol (torch.compile / TensorSpec) -----
+    # ----- PyTorch subclass flatten protocol (torch.compile) -----
 
     # Collected from the subclasses' :class:`InnerTensor` field annotations; everything
     # else returned by :meth:`get_metadata` is treated as non-tensor context.
@@ -264,7 +264,7 @@ class QuantizedTensorStorage:
     def _flatten_nontensor_kwargs(self) -> Dict[str, Any]:
         """Non-tensor constructor kwargs (scalars, dtype, quantizer)."""
         tensor_kwargs = {kwarg for _, kwarg in self._INNER_TENSORS}
-        return {k: v for k, v in self.get_metadata().items() if k not in tensor_kwargs}
+        return {k: v for k, v in type(self).get_metadata(self).items() if k not in tensor_kwargs}
 
     def __tensor_flatten__(self) -> Tuple[list, Dict[str, Any]]:
         """Return ``(inner_tensor_attr_names, context)``; see class comment."""
@@ -275,7 +275,7 @@ class QuantizedTensorStorage:
             "requires_grad": (
                 bool(self.requires_grad) if isinstance(self, QuantizedTensor) else False
             ),
-            "nontensor_kwargs": self._flatten_nontensor_kwargs(),
+            "nontensor_kwargs": QuantizedTensorStorage._flatten_nontensor_kwargs(self),
         }
         return present, ctx
 
@@ -579,7 +579,7 @@ class Quantizer(abc.ABC):
             result.requires_grad_(True)
         return result
 
-    # ----- Data-free inner-tensor/metadata primitives backing TensorSpec -----
+    # ----- Data-free inner-tensor/metadata primitives -----
 
     def inner_tensor_specs(
         self, shape: Tuple[int, ...]
@@ -593,7 +593,7 @@ class Quantizer(abc.ABC):
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} does not implement inner_tensor_specs; "
-            "it cannot be used with TensorSpec / pure-Python allocation"
+            "it cannot be used with pure-Python allocation"
         )
 
     def storage_metadata(self, fake_dtype: torch.dtype) -> Dict[str, Any]:
@@ -607,7 +607,7 @@ class Quantizer(abc.ABC):
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} does not implement storage_metadata; "
-            "it cannot be used with TensorSpec / pure-Python allocation"
+            "it cannot be used with pure-Python allocation"
         )
 
     def alloc_tensors(

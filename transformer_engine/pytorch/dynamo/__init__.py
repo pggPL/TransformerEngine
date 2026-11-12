@@ -5,7 +5,7 @@
 """torch.compile glue for Transformer Engine."""
 
 from .quantizer_opaque import register_value_opaque_quantizer, is_value_opaque_quantizer
-from .tensor_spec import TensorSpec, to_tensor_spec
+from .tensor import empty_tensor
 from .custom_op import (
     register_custom_op,
     register_custom_op_with_autograd,
@@ -15,8 +15,7 @@ from .custom_op import (
 __all__ = [
     "register_value_opaque_quantizer",
     "is_value_opaque_quantizer",
-    "TensorSpec",
-    "to_tensor_spec",
+    "empty_tensor",
     "register_custom_op",
     "register_custom_op_with_autograd",
     "TensorOrQuantized",

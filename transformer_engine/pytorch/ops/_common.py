@@ -12,7 +12,6 @@ import torch
 
 from transformer_engine_torch import FP8TensorMeta
 from transformer_engine.pytorch.device import te_device_type
-from ..dynamo.tensor_spec import TensorSpec
 from ..ep import (
     EpBuffer,
     EpConfig,
@@ -157,10 +156,8 @@ def validate_or_alloc_output(
     return buffer
 
 
-def is_quantized_tensor(tensor: torch.Tensor | QuantizedTensorStorage | TensorSpec) -> bool:
-    """Check whether a tensor or tensor spec represents quantized data."""
-    if isinstance(tensor, TensorSpec):
-        return tensor.is_quantized
+def is_quantized_tensor(tensor: torch.Tensor | QuantizedTensorStorage) -> bool:
+    """Check whether a tensor represents quantized data."""
     return isinstance(tensor, QuantizedTensorStorage)
 
 

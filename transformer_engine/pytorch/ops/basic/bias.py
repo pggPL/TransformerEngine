@@ -12,9 +12,11 @@ import torch
 
 import transformer_engine_torch as tex
 from transformer_engine.pytorch.device import te_device_type
-from ...dynamo import TensorOrQuantized, TensorSpec
+from ...dynamo import TensorOrQuantized
+from ...dynamo.tensor import tensor_dtype
 from ...dynamo.fake import fake_bgrad
 from ...quantization import FP8GlobalStateManager
+from ...quantized_tensor import QuantizedTensorStorage
 from ..op import BasicOperation
 from ...utils import canonicalize_device, canonicalize_dtype
 from ...tensor import Quantizer
@@ -157,15 +159,10 @@ class Bias(BasicOperation):
 
     @classmethod
     def forward_compute_fake(cls, args: BiasFwdArgs):
-        return (
-            TensorSpec(
-                shape=args.input_.shape,
-                dtype=torch.promote_types(args.input_.dtype, args.bias.dtype),
-                device=args.input_.device,
-            ),
-            [()],
-            (),
-        )
+        input_ = args.input_
+        if isinstance(input_, QuantizedTensorStorage):
+            input_ = torch.empty(input_.shape, dtype=tensor_dtype(input_), device=input_.device)
+        return input_ + args.bias, [()], ()
 
     def forward_setup_context(self, basic_op_ctxs, args, aux) -> None:
         basic_op_ctxs[0].grad_input_quantizer = args.grad_input_quantizer

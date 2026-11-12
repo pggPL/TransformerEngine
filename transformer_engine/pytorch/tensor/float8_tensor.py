@@ -400,7 +400,7 @@ class Float8CurrentScalingQuantizer(Quantizer):
         """
         return True
 
-    # ----- TensorSpec / pure-Python allocation -----
+    # ----- pure-Python allocation -----
 
     def storage_metadata(self, fake_dtype: torch.dtype) -> Dict[str, Any]:
         return {

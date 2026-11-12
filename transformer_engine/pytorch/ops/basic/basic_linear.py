@@ -14,7 +14,8 @@ from typing import Any, Optional
 import torch
 
 from ...cpp_extensions import general_gemm, get_cublas_workspace
-from ...dynamo import TensorOrQuantized, TensorSpec
+from ...dynamo import TensorOrQuantized, empty_tensor
+from ...dynamo.tensor import tensor_dtype, with_usage
 from ...cpu_offload import is_cpu_offload_enabled, mark_activation_offload
 from ...distributed import (
     CudaRNGStatesTracker,
@@ -1166,7 +1167,7 @@ class BasicLinear(BasicOperation):
                 shape[0] *= args.tensor_parallel_size
             elif args.tensor_parallel_mode == "row":
                 shape[0] //= args.tensor_parallel_size
-        output = TensorSpec(
+        output = empty_tensor(
             shape=tuple(shape),
             dtype=args.dtype,
             device=args.input_.device,
@@ -1188,8 +1189,11 @@ class BasicLinear(BasicOperation):
                     rowwise=args.backward_override is not None,
                     columnwise=args.backward_override is None,
                 )
-                spec = TensorSpec(
-                    shape=value.shape, dtype=value.dtype, device=value.device, quantizer=quantizer
+                spec = empty_tensor(
+                    shape=value.shape,
+                    dtype=tensor_dtype(value),
+                    device=value.device,
+                    quantizer=quantizer,
                 )
             saved.append(spec)
         return output, [()], tuple(saved)
@@ -1283,7 +1287,7 @@ class BasicLinear(BasicOperation):
                     shape[0] //= args.tensor_parallel_size
                 elif args.tensor_parallel_mode == "row":
                     shape[0] *= args.tensor_parallel_size
-            dx = TensorSpec(
+            dx = empty_tensor(
                 shape=tuple(shape),
                 dtype=args.dtype,
                 device=args.grad_output.device,
@@ -1293,11 +1297,11 @@ class BasicLinear(BasicOperation):
                     else None
                 ),
             )
-            if dx.is_quantized:
-                dx.update_usage(rowwise_usage=True, columnwise_usage=False)
+            if is_quantized_tensor(dx):
+                dx = with_usage(dx, rowwise_usage=True, columnwise_usage=False)
         dw = None
         if args.weight_requires_grad:
-            dw = TensorSpec(
+            dw = empty_tensor(
                 shape=(args.grad_output.shape[-1], args.input_.shape[-1]),
                 dtype=args.dtype,
                 device=args.grad_output.device,

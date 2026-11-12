@@ -66,7 +66,7 @@ from transformer_engine.pytorch.dynamo.custom_op import (
     TensorOrQuantized,
     register_custom_op_with_autograd,
 )
-from transformer_engine.pytorch.dynamo.tensor_spec import TensorSpec
+from transformer_engine.pytorch.dynamo.tensor import empty_tensor
 from transformer_engine.pytorch.attention.dot_product_attention.context_parallel import (
     attn_forward_func_with_cp,
 )
@@ -2468,7 +2468,7 @@ def _fused_attn_stats_shape(
 
 def _fused_attn_forward_fake(
     args: FusedAttnFwdArgs,
-) -> Tuple[TensorSpec, Optional[TensorSpec], Tuple[Any, ...], Dict[str, Any]]:
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Tuple[Any, ...], Dict[str, Any]]:
     """Data-free twin of :func:`_fused_attn_forward_impl` (non-FP8 only)."""
     q = args.q if args.q is not None else args.packed_qkv
     v = args.v
@@ -2476,14 +2476,14 @@ def _fused_attn_forward_fake(
         v = args.packed_qkv if args.packed_qkv is not None else args.packed_kv
     q_shape = _fused_attn_q_shape(args)
     _, o_format, _ = dpa_utils.get_qkv_format(args.qkv_layout)
-    out = TensorSpec(shape=(*q_shape[:-1], v.shape[-1]), dtype=q.dtype, device=q.device)
+    out = empty_tensor(shape=(*q_shape[:-1], v.shape[-1]), dtype=q.dtype, device=q.device)
     max_logit = None
     if args.return_max_logit:
-        max_logit = TensorSpec(shape=(q_shape[-2],), dtype=q.dtype, device=q.device)
-    softmax_stats = TensorSpec(
+        max_logit = empty_tensor(shape=(q_shape[-2],), dtype=q.dtype, device=q.device)
+    softmax_stats = empty_tensor(
         shape=_fused_attn_stats_shape(args, o_format, q_shape), dtype=torch.float32, device=q.device
     )
-    rng_state = TensorSpec(shape=(2,), dtype=torch.int64, device=q.device)
+    rng_state = empty_tensor(shape=(2,), dtype=torch.int64, device=q.device)
     has_bias = args.attn_bias_type not in ["no_bias", "alibi"] and args.attn_bias is not None
     has_softmax_offset = args.softmax_type != "vanilla" and args.softmax_offset is not None
     tensors_to_save = (*(None,) * 10, softmax_stats, rng_state, None, None)
@@ -2548,19 +2548,23 @@ def _fused_attn_backward_op_impl(
 
 def _fused_attn_backward_fake(
     args: FusedAttnBwdArgs,
-) -> Tuple[Optional[TensorSpec], ...]:
+) -> Tuple[Optional[torch.Tensor], ...]:
     """Data-free twin of :func:`_fused_attn_backward_op_impl`."""
     dq, dk, dv, dqkv, dkv = (
-        TensorSpec(shape=tuple(t.shape), dtype=t.dtype, device=t.device) if t is not None else None
+        (
+            empty_tensor(shape=tuple(t.shape), dtype=t.dtype, device=t.device)
+            if t is not None
+            else None
+        )
         for t in (args.q, args.k, args.v, args.packed_qkv, args.packed_kv)
     )
     q = args.q if args.q is not None else args.packed_qkv
     d_bias = None
     if args.aux_bias is not None:
-        d_bias = TensorSpec(shape=tuple(args.aux_bias.shape), dtype=q.dtype, device=q.device)
+        d_bias = empty_tensor(shape=tuple(args.aux_bias.shape), dtype=q.dtype, device=q.device)
     d_softmax_offset = None
     if args.aux_softmax_offset is not None:
-        d_softmax_offset = TensorSpec(
+        d_softmax_offset = empty_tensor(
             shape=(1, _fused_attn_q_shape(args)[-2], 1, 1), dtype=torch.float32, device=q.device
         )
     return dq, dk, dv, d_bias, d_softmax_offset, dqkv, dkv

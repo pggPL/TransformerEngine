@@ -268,7 +268,7 @@ class FusibleOperation(torch.nn.Module, metaclass=abc.ABCMeta):
 
     @classmethod
     def forward_compute_fake(cls, args: Any) -> tuple:
-        """Shape-only twin of forward_compute, using TensorSpec."""
+        """Shape-only twin of forward_compute, using fake tensors."""
         raise NotImplementedError
 
     @classmethod
@@ -282,7 +282,7 @@ class FusibleOperation(torch.nn.Module, metaclass=abc.ABCMeta):
 
     @classmethod
     def backward_compute_fake(cls, args: Any) -> tuple:
-        """Shape-only twin of backward_compute, using TensorSpec."""
+        """Shape-only twin of backward_compute, using fake tensors."""
         raise NotImplementedError
 
     def pack_forward_args(

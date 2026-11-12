@@ -4,7 +4,7 @@
 
 """Linear API"""
 
-from dataclasses import dataclass, replace as dataclass_replace
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple, Union, List
 import warnings
 import weakref
@@ -84,8 +84,9 @@ from ..quantized_tensor import (
     prepare_for_saving,
     restore_from_func_ctx,
 )
+from ..dynamo.tensor import inner_names, with_usage
 from ..dynamo import (
-    TensorSpec,
+    empty_tensor,
     TensorOrQuantized,
     register_custom_op_with_autograd,
     is_value_opaque_quantizer,
@@ -337,15 +338,13 @@ def _inp_leading_from_out(leading: int, args: Union[LinearFwdArgs, LinearBwdArgs
     return leading
 
 
-def _fake_workspace_valid(workspace: TensorSpec, quantizer: Optional[Quantizer]) -> bool:
+def _fake_workspace_valid(workspace: torch.Tensor, quantizer: Optional[Quantizer]) -> bool:
     """Spec-level mirror of ``_is_weight_workspace_valid``: the cached workspace
     must already hold every inner buffer the quantizer's current usage needs."""
     if quantizer is None:
         return True
-    required = TensorSpec(
-        shape=workspace.shape, dtype=workspace.dtype, quantizer=quantizer, device=workspace.device
-    ).inner_names()
-    return set(required) <= set(workspace.inner_names())
+    required = quantizer.inner_tensor_specs(tuple(workspace.shape))
+    return set(required) <= set(inner_names(workspace))
 
 
 def _linear_forward_impl(
@@ -760,10 +759,9 @@ def _linear_forward_impl(
 
 def _linear_forward_fake(
     args: LinearFwdArgs,
-) -> Tuple[TensorSpec, Optional[TensorSpec], Optional[Tuple[Any, ...]], Optional[Dict]]:
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[Any, ...]], Optional[Dict]]:
     """Shape/metadata-only twin of :func:`_linear_forward_impl` for torch.compile,
-    returning ``TensorSpec`` descriptors for the outputs and saved tensors instead
-    of allocating real data."""
+    returning tensors or quantized storages under fake/meta dispatch."""
     if args.fsdp_group is not None and args.is_grad_enabled:
         raise NotImplementedError(
             "Compile-time Linear forward does not support manual TE FSDP "
@@ -804,7 +802,7 @@ def _linear_forward_fake(
     inputmat_is_storage = False
     inputmat_aliases_inp = False
     if fp8_or_debug:
-        if inp.is_quantized:
+        if isinstance(inp, QuantizedTensorStorage):
             # Primary-quantized input reused as-is.
             inputmat_is_storage = True
             inputmat_aliases_inp = True
@@ -837,7 +835,9 @@ def _linear_forward_fake(
     weightmat_is_storage = False
     weightmat_aliases_weight = False
     if fp8_or_debug:
-        if weight_quantizer is not None and (not weight.is_quantized or debug):
+        if weight_quantizer is not None and (
+            not isinstance(weight, QuantizedTensorStorage) or debug
+        ):
             columnwise_usage = is_grad_enabled and args.input_requires_grad and not args.is_fsdp2
             if args.backward_override is not None:
                 columnwise_usage = False
@@ -847,10 +847,10 @@ def _linear_forward_fake(
                     and not in_fp8_activation_recompute_phase()
                 )
             weight_quantizer.set_usage(rowwise=True, columnwise=columnwise_usage)
-        elif weight.is_quantized:
-            weight_quantizer = weight.quantizer
+        elif isinstance(weight, QuantizedTensorStorage):
+            weight_quantizer = weight._quantizer
 
-        if weight.is_quantized:
+        if isinstance(weight, QuantizedTensorStorage):
             # Primary-quantized weight: the impl reuses it as ``weightmat``.
             weightmat = weight
             weightmat_is_storage = True
@@ -863,23 +863,23 @@ def _linear_forward_fake(
                 workspace = None
             if workspace is not None:
                 # Copy, so the ``update_usage`` below stays off the input spec.
-                weightmat = dataclass_replace(workspace)
+                weightmat = with_usage(workspace, rowwise_usage=True)
             else:
-                weightmat = TensorSpec(
+                fake_weight_quantizer = weight_quantizer.copy()
+                if args.cache_weight:
+                    fake_weight_quantizer.internal = False
+                weightmat = empty_tensor(
                     shape=tuple(weight.shape),
                     dtype=activation_dtype,
-                    quantizer=weight_quantizer,
+                    quantizer=fake_weight_quantizer,
                     device=weight.device,
                 )
                 if args.cache_weight:
-                    # Persistent cache entries are wrappers, not bare storages.
-                    if weightmat.quantizer is not None:
-                        weightmat.quantizer.internal = False
                     new_weight_workspace = weightmat
-            weightmat.update_usage(rowwise_usage=True)
+            weightmat = with_usage(weightmat, rowwise_usage=True)
     else:
         weightmat_aliases_weight = weight.dtype == activation_dtype
-        weightmat = TensorSpec(
+        weightmat = empty_tensor(
             shape=tuple(weight.shape), dtype=activation_dtype, device=weight.device
         )
 
@@ -891,7 +891,7 @@ def _linear_forward_fake(
     # ------------------------------------------------------
     inp_leading = inp.shape[0] if len(inp.shape) > 1 else 1
     out_leading = _out_leading_from_inp(inp_leading, args)
-    out = TensorSpec(
+    out = empty_tensor(
         shape=(
             (out_features,)
             if len(inp.shape) == 1
@@ -918,7 +918,7 @@ def _linear_forward_fake(
             if inputmat_aliases_inp:
                 inputmat_alias = "inp"
             elif inputmat_is_storage:
-                saved_inputmat = TensorSpec(
+                saved_inputmat = empty_tensor(
                     shape=tuple(inp.shape),
                     dtype=activation_dtype,
                     quantizer=input_quantizer,
@@ -927,17 +927,23 @@ def _linear_forward_fake(
                 # Mirror the impl's post-quantization ``update_usage``.
                 if own_quantized_input and not save_original_input:
                     if args.backward_override is not None:
-                        saved_inputmat.update_usage(rowwise_usage=True, columnwise_usage=False)
+                        saved_inputmat = with_usage(
+                            saved_inputmat, rowwise_usage=True, columnwise_usage=False
+                        )
                     elif (
                         args.backward_input_needs_gather
                         and weight_quantizer is not None
                         and weight_quantizer.supports_only_rowwise_all_gather()
                     ):
-                        saved_inputmat.update_usage(rowwise_usage=True, columnwise_usage=False)
+                        saved_inputmat = with_usage(
+                            saved_inputmat, rowwise_usage=True, columnwise_usage=False
+                        )
                     else:
-                        saved_inputmat.update_usage(rowwise_usage=False, columnwise_usage=True)
+                        saved_inputmat = with_usage(
+                            saved_inputmat, rowwise_usage=False, columnwise_usage=True
+                        )
             else:
-                saved_inputmat = TensorSpec(
+                saved_inputmat = empty_tensor(
                     shape=tuple(inp.shape), dtype=activation_dtype, device=inp.device
                 )
 
@@ -956,7 +962,7 @@ def _linear_forward_fake(
         elif weightmat_is_storage:
             wt_save = weightmat
         else:
-            wt_save = TensorSpec(
+            wt_save = empty_tensor(
                 shape=tuple(weight.shape), dtype=activation_dtype, device=weight.device
             )
 
@@ -1743,8 +1749,8 @@ def _linear_backward_impl(args: LinearBwdArgs) -> Tuple[Union[torch.Tensor, None
 
 def _linear_backward_fake(
     args: LinearBwdArgs,
-) -> Tuple[Optional[TensorSpec], Optional[TensorSpec], Optional[TensorSpec]]:
-    """Allocation-free fake of :func:`_linear_backward_impl` on ``TensorSpec``.
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+    """Fake implementation of :func:`_linear_backward_impl`.
 
     Returns ``(wgrad, dgrad, grad_bias)`` specs. TP/SP gather/scatter happens
     inside the eager op, so the specs carry rank-local shapes.
@@ -1773,7 +1779,7 @@ def _linear_backward_fake(
         dgrad_quantizer = (
             None if (args.ub_overlap_rs_dgrad or args.ub_bulk_wgrad) else args.grad_input_quantizer
         )
-        dgrad = TensorSpec(
+        dgrad = empty_tensor(
             shape=(
                 (in_features,)
                 if len(args.grad_output.shape) == 1
@@ -1787,7 +1793,7 @@ def _linear_backward_fake(
     wgrad = None
     # Under fuse_wgrad_accumulation the grad goes into main_grad in place.
     if args.requires_wgrad and not args.fuse_wgrad_accumulation:
-        wgrad = TensorSpec(
+        wgrad = empty_tensor(
             shape=(out_features, in_features),
             dtype=out_dtype,
             quantizer=args.grad_weight_quantizer,
@@ -1800,7 +1806,7 @@ def _linear_backward_fake(
     # exists when wgrad runs.
     fp8_bwd = args.fp8 and args.backward_override is None
     if args.use_bias and (args.requires_wgrad or fp8_bwd):
-        grad_bias = TensorSpec(
+        grad_bias = empty_tensor(
             shape=(out_features,), dtype=out_dtype, device=args.grad_output.device
         )
 

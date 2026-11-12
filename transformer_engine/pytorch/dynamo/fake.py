@@ -7,22 +7,24 @@
 from __future__ import annotations
 from typing import Optional
 
-from .tensor_spec import TensorSpec
+import torch
+
+from .tensor import empty_tensor
 from ..quantized_tensor import Quantizer
 
 
 def fake_bgrad(
-    grad_output: TensorSpec,
+    grad_output: torch.Tensor,
     quantizer: Optional[Quantizer] = None,
-) -> tuple[TensorSpec, TensorSpec]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Describe bias reduction and optional gradient quantization, in native order."""
-    db = TensorSpec(
+    db = empty_tensor(
         shape=(grad_output.shape[-1],), dtype=grad_output.dtype, device=grad_output.device
     )
     dx = (
         grad_output
         if quantizer is None
-        else TensorSpec(
+        else empty_tensor(
             shape=grad_output.shape,
             dtype=grad_output.dtype,
             device=grad_output.device,
