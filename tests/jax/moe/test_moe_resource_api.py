@@ -251,7 +251,13 @@ def test_public_api_uses_selected_resource(monkeypatch, quantize):
     def fake_vjp(*args):
         captured.update(signature.bind(*args).arguments)
         assert global_mesh_resource().ep_resource == "ep"
-        return args[0], None, jnp.zeros((1,), jnp.int32), jnp.zeros((2,), jnp.int32)
+        return (
+            args[0],
+            None,
+            jnp.zeros((1,), jnp.int32),
+            jnp.zeros((2,), jnp.int32),
+            jnp.zeros((0, 0, 0), jnp.int32),
+        )
 
     monkeypatch.setattr(module, "_moe", fake_vjp)
     mesh = Mesh(np.asarray(jax.devices()[:1]).reshape(1, 1, 1), ("dp", "fsdp", "ep"))
