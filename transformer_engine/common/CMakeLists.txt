@@ -355,6 +355,7 @@ list(APPEND transformer_engine_cuda_arch_specific_sources
      activation/scaled_swiglu.cu
      activation/scaled_swiglu_grouped.cu
      activation/swiglu.cu
+     activation/situglu_grouped.cu
      activation/swiglu_dbias.cu
      activation/swiglu_grouped.cu
      activation/swiglu_grouped_bwd.cu

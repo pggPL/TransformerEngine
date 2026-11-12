@@ -89,8 +89,8 @@ class SiTUActivation:
     The defaults match Kimi-K3. Both soft-cap parameters must be finite and
     positive. Pass an instance as ``moe(..., activation_type=...)``.
 
-    This activation uses the unfused grouped-GEMM path for BF16 and MXFP8;
-    requesting cuDNN fusion retains its normal warning and fallback behavior.
+    BF16 and MXFP8 use native grouped SiTU forward/backward with separate GEMMs.
+    Requesting cuDNN fusion retains its normal warning and fallback behavior.
     """
 
     gate_beta: float = 4.0
@@ -104,16 +104,14 @@ class SiTUActivation:
             object.__setattr__(self, name, value)
 
 
-def _apply_ffn_activation(activation_type, gate, up):
+def _apply_ffn_activation(activation_type, gate, up, group_sizes):
     if isinstance(activation_type, SiTUActivation):
-        gate_fp32, up_fp32 = gate.astype(jnp.float32), up.astype(jnp.float32)
-        gated = (
-            activation_type.gate_beta
-            * jnp.tanh(gate_fp32 / activation_type.gate_beta)
-            * jax.nn.sigmoid(gate_fp32)
+        return tex.grouped_situglu_fwd(
+            jnp.concatenate([gate, up], axis=-1),
+            group_sizes,
+            activation_type.gate_beta,
+            activation_type.up_beta,
         )
-        linear = activation_type.up_beta * jnp.tanh(up_fp32 / activation_type.up_beta)
-        return (gated * linear).astype(gate.dtype)
     return _convert_to_activation_function(activation_type)(gate) * up
 
 
@@ -1089,7 +1087,9 @@ def _ffn_fwd_per_shard(
     # Keep projection residuals and activation output in the GEMM dtype;
     # SiTU evaluates its internal arithmetic in FP32 before casting back.
     if not use_cudnn_jax_fusion:
-        intermediate = _apply_ffn_activation(activation_type, gate_proj_out, up_proj_out)
+        intermediate = _apply_ffn_activation(
+            activation_type, gate_proj_out, up_proj_out, group_sizes
+        )
     if apply_topk_weights_early and not use_cudnn_jax_fusion:
         # Fold the per-token combine weights into the FFN intermediate;
         # the downstream wo GEMM is linear so this is equivalent to the
@@ -1257,7 +1257,7 @@ def _ffn_bwd_per_shard(
             # Masking is not required as grouped GEMMs consume only group-size rows.
             w_b = recv_w_flat[:, None].astype(d_intermediate.dtype)
             intermediate_unweighted = _apply_ffn_activation(
-                activation_type, gate_proj_out, up_proj_out
+                activation_type, gate_proj_out, up_proj_out, group_sizes
             )
             d_recv_w_from_intermediate = jnp.sum(
                 d_intermediate * intermediate_unweighted,
@@ -1268,16 +1268,19 @@ def _ffn_bwd_per_shard(
             d_recv_w_from_intermediate = jnp.zeros_like(recv_w_flat)
 
         if isinstance(activation_type, SiTUActivation):
-            _, dact_pullback = jax.vjp(
-                partial(_apply_ffn_activation, activation_type), gate_proj_out, up_proj_out
+            d_combined_for_bias = tex.grouped_situglu_bwd(
+                d_intermediate,
+                jnp.concatenate([gate_proj_out, up_proj_out], axis=-1),
+                group_sizes,
+                activation_type.gate_beta,
+                activation_type.up_beta,
             )
-            d_gate_proj_out, d_up_proj_out = dact_pullback(d_intermediate)
         else:
             act_fn = _convert_to_activation_function(activation_type)
             act_gp, dact_pullback = jax.vjp(act_fn, gate_proj_out)
             d_up_proj_out = d_intermediate * act_gp
             (d_gate_proj_out,) = dact_pullback(d_intermediate * up_proj_out)
-        d_combined_for_bias = jnp.concatenate([d_gate_proj_out, d_up_proj_out], axis=-1)
+            d_combined_for_bias = jnp.concatenate([d_gate_proj_out, d_up_proj_out], axis=-1)
         casted_d_combined = tex.grouped_quantize(
             d_combined_for_bias,
             fc1_quantizer_set.dgrad,
@@ -2199,9 +2202,9 @@ def moe(
     ----------
     activation_type : Union[str, SiTUActivation]
         Gate activation name (default ``"silu"``), or :class:`SiTUActivation`
-        for FP32 soft-capping of both gate and up branches. SiTU uses unfused
-        grouped GEMMs with BF16 or MXFP8 quantizer sets; cuDNN GLU/dGLU does
-        not implement it and follows the existing fallback path.
+        for FP32 soft-capping of both gate and up branches. SiTU uses native
+        grouped activation kernels and separate grouped GEMMs with BF16 or
+        MXFP8 quantizer sets. cuDNN GLU/dGLU uses the existing fallback path.
     router_info : Union[RouterComputationInfo, RoutingMapInfo]
         :class:`RouterComputationInfo` makes TE compute the gate and top-k
         from the given router parameters. :class:`RoutingMapInfo` supplies

@@ -381,6 +381,23 @@ void nvte_swiglu(const NVTETensor input, NVTETensor output, cudaStream_t stream)
 void nvte_situglu(const NVTETensor input, NVTETensor output, float beta1, float beta2,
                   cudaStream_t stream);
 
+/*! \brief Grouped SiTU-GLU for FP32/FP16/BF16 tensors with uniform feature width.
+ *  Input [capacity, 2H] stores contiguous gate/up halves. Output is [capacity, H].
+ *  Optional int64 first_dims contains nonnegative device row counts whose sum
+ *  must not exceed capacity. Rows beyond that sum are zero-filled without reading
+ *  their input. No row alignment is required. Quantized output is not supported.
+ *  beta1 and beta2 are positive finite soft-cap parameters.
+ */
+void nvte_group_situglu(const NVTEGroupedTensor input, NVTEGroupedTensor output, float beta1,
+                        float beta2, cudaStream_t stream);
+
+/*! \brief Grouped SiTU-GLU backward with the same metadata contract as forward.
+ *  grad is [capacity, H], input and output are [capacity, 2H]. Inactive rows
+ *  are zero-filled without reading their input or upstream gradient.
+ */
+void nvte_group_dsituglu(const NVTEGroupedTensor grad, const NVTEGroupedTensor input,
+                         NVTEGroupedTensor output, float beta1, float beta2, cudaStream_t stream);
+
 /*! \brief Computes the gated Swish activation of the input used in GPT OSS.
  *
  *  \deprecated This function has been deprecated in favor of nvte_clamped_swiglu_v2,

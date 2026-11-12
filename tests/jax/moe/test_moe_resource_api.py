@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from jax.sharding import Mesh
 
+from transformer_engine.jax import grouped_situglu
 from transformer_engine.jax.flax import _MoEBlock
 from transformer_engine.jax.moe import (
     RouterComputationInfo,
@@ -30,8 +31,17 @@ def test_situ_value_and_both_branch_derivatives(betas):
     gate = jnp.asarray([-10000.0, -12.0, -0.5, 0.0, 0.5, 12.0, 10000.0])
     up = jnp.asarray([10000.0, 40.0, -3.0, 2.0, 3.0, -40.0, -10000.0])
     activation = SiTUActivation(gate_beta, up_beta)
-    output, pullback = jax.vjp(lambda g, u: _apply_ffn_activation(activation, g, u), gate, up)
+    counts = jnp.asarray([1], jnp.int32)
+
+    def activate(g, u):
+        pair = jnp.concatenate([g, u])[None, :]
+        return grouped_situglu(pair, counts, gate_beta, up_beta)[0]
+
+    output, pullback = jax.vjp(activate, gate, up)
     dg, du = pullback(jnp.ones_like(output))
+    np.testing.assert_array_equal(
+        output, _apply_ffn_activation(activation, gate[None, :], up[None, :], counts)[0]
+    )
 
     g, u = np.asarray(gate, np.float64), np.asarray(up, np.float64)
     sigmoid = 0.5 + 0.5 * np.tanh(g / 2)
@@ -49,7 +59,9 @@ def test_situ_value_and_both_branch_derivatives(betas):
 def test_situ_bf16_uses_fp32_before_final_cast():
     gate = jnp.asarray([0.25, 1.5, -3.0, 12.0, 64.0], dtype=jnp.bfloat16)
     up = jnp.asarray([0.75, -2.0, 32.0, 64.0, -128.0], dtype=jnp.bfloat16)
-    actual = _apply_ffn_activation(SiTUActivation(), gate, up)
+    actual = _apply_ffn_activation(
+        SiTUActivation(), gate[None, :], up[None, :], jnp.asarray([1], jnp.int32)
+    )[0]
     g, u = np.asarray(gate, np.float64), np.asarray(up, np.float64)
     expected = jnp.asarray(100 * np.tanh(g / 4) / (1 + np.exp(-g)) * np.tanh(u / 25), jnp.bfloat16)
     assert actual.dtype == jnp.bfloat16

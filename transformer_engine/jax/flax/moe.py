@@ -77,7 +77,7 @@ class _MoEBlock(TransformerEngineBase):
         Activation between ``layer_w0 @ wi_0`` and the elementwise
         product with ``layer_w0 @ wi_1``. Default ``"silu"``. Pass
         :class:`~transformer_engine.jax.moe.SiTUActivation` to soft-cap both
-        branches in FP32 using the unfused grouped-GEMM path.
+        branches in FP32 using native grouped SiTU and separate grouped GEMMs.
 
     score_function : Union[str, ScoreFunction]
         ``"softmax"`` (default), ``"sigmoid"``, or ``"sqrtsoftplus"`` for the routing scores.
