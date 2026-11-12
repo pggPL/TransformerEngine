@@ -69,6 +69,8 @@ Router, routing kernels, and grouped dense for MoE layers. See
 
 .. autoapifunction:: transformer_engine.jax.router.fused_topk_with_score_function
 
+.. autoapifunction:: transformer_engine.jax.router.fused_topk_with_score_function_qb
+
 .. autoapifunction:: transformer_engine.jax.router.fused_moe_aux_loss
 
 .. autoapifunction:: transformer_engine.jax.permutation.sort_chunks_by_index
@@ -100,6 +102,46 @@ width; expert parameters and EP bootstrap buffers use the latent width.
 The custom VJP returns gradients to both inputs, including when the latent
 is a differentiable projection of the router input. The default
 ``router_input=None`` preserves routing on the expert input.
+
+Quantile Balancing statistics
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Set ``RouterComputationInfo.qb_bin_bounds`` to an FP32 ``[lower, upper]`` array
+to collect QB statistics during MoE routing. Sigmoid routing, an FP32 expert
+bias, no routing groups and zero auxiliary loss are required. The existing CUDA
+QB kernels provide ``fused_atomic`` and ``two_kernel`` modes, selected by
+``qb_histogram_mode``. The number of bins defaults to 1000.
+
+The bounds must be finite and ordered; their values are read on device without
+host validation. Kimi uses ``[min(bias)-1, max(bias)+1]``. Keep both bias and
+bounds unchanged throughout every microbatch in a training step. With no mask, all token rows must be valid. Optional ``qb_token_mask``
+(``[batch, sequence]``) excludes padding: CUDA computes scores and cutoff,
+while a JAX histogram counts only valid rows. This masked path does not use
+CUDA histogram accumulation. The standalone router accepts ``token_mask``
+with shape ``[tokens]`` for the same behavior.
+
+With QB enabled, ``moe`` returns a fifth result, an int32 histogram array of
+shape ``[token_shards, experts, bins]``. Its leading axis is sharded across the
+compound DP/FSDP/EP token axes. The forward does not reduce these histograms
+or update biases. Accumulate per-shard counts across microbatches and only then
+sum the leading axis to obtain each expert's global-batch distribution. The
+training framework derives and mean-centers the new bias from that distribution,
+applying it on the next step. Default calls keep the four-result API.
+
+The standalone QB router returns ``(probs, routing_map, histogram)`` and accepts
+an optional initial histogram for functional accumulation. Its FFI declares
+input/output aliasing for the CUDA kernel's in-place histogram writes. For SPMD,
+place the standalone operation inside ``shard_map`` with the expert axis
+replicated and expose local histograms as a sharded leading axis, as MoE does.
+Neither histogram collection nor bias/bounds inputs have a gradient. The router
+reuses the ordinary sigmoid routing backward for gradients through its weights.
+Use fresh forward statistics or explicit scan carry state; an external mutable
+histogram would be counted twice when activation checkpointing recomputes it.
+
+The Flax wrapper accepts ``qb_bin_bounds`` on each call and exposes
+``qb_num_bins`` and ``qb_histogram_mode`` as module configuration. It returns
+the same optional fifth result. Step-level bias updates, checkpointing that
+bias state, and TPU implementations belong to the training framework.
 
 .. autoapifunction:: transformer_engine.jax.ep.ep_bootstrap
 

@@ -863,6 +863,85 @@ def test_separate_router_input_latent_projection(
         )
 
 
+@pytest.mark.parametrize("histogram_mode", ["two_kernel", "fused_atomic"])
+@pytest.mark.parametrize("masked", [False, True])
+def test_qb_moe_histograms_and_remat_gradients(mesh, make_block, histogram_mode, masked):
+    from test_fused_router import reference_qb_histogram
+
+    def bias_init(key, shape, dtype):
+        del key
+        return jnp.linspace(-0.1, 0.1, shape[0], dtype=dtype)
+
+    block = make_block(
+        score_function="sigmoid",
+        use_expert_routing_bias=True,
+        expert_bias_init=bias_init,
+    ).clone(qb_num_bins=64, qb_histogram_mode=histogram_mode)
+    bounds = jnp.asarray([-1.1, 1.1], jnp.float32)
+    x = jax.random.normal(jax.random.PRNGKey(841), (BATCH, SEQ, HIDDEN), DTYPE)
+
+    token_mask = (jnp.arange(BATCH * SEQ).reshape(BATCH, SEQ) % 2 == 0) if masked else None
+
+    with _ctx(mesh):
+        x_sharded = _shard_inputs(x, mesh)
+        variables = jax.jit(block.init)(jax.random.PRNGKey(842), x_sharded)
+
+        def loss(v, activations, limits):
+            result = block.apply(
+                v,
+                activations,
+                qb_bin_bounds=limits,
+                qb_token_mask=token_mask if limits is not None else None,
+            )
+            return jnp.mean(result[0].astype(jnp.float32) ** 2), result
+
+        (_, baseline), (baseline_dv, baseline_dx) = jax.jit(
+            jax.value_and_grad(
+                partial(loss, limits=None),
+                argnums=(0, 1),
+                has_aux=True,
+            )
+        )(variables, x_sharded)
+        (_, candidate), (dv, dx) = jax.jit(
+            jax.value_and_grad(
+                jax.checkpoint(loss),
+                argnums=(0, 1),
+                has_aux=True,
+            )
+        )(variables, x_sharded, bounds)
+
+    assert len(baseline) == 4 and len(candidate) == 5
+    histogram_parts = _to_global_numpy(candidate[4], mesh)
+    assert histogram_parts.shape == (mesh.size, NUM_EXPERTS, 64)
+    params = _params_global_numpy(variables, mesh)
+    logits = (x @ jnp.asarray(params["gate_kernel"], DTYPE)).astype(jnp.float32)
+    histogram_logits = logits.reshape(-1, NUM_EXPERTS)
+    if token_mask is not None:
+        histogram_logits = histogram_logits[np.asarray(token_mask).reshape(-1)]
+    expected_histogram = reference_qb_histogram(
+        histogram_logits,
+        params["expert_bias"],
+        bounds,
+        TOPK,
+        64,
+    )
+    np.testing.assert_array_equal(histogram_parts.sum(axis=0), expected_histogram)
+    for actual, expected in ((candidate[0], baseline[0]), (dx, baseline_dx)):
+        np.testing.assert_allclose(
+            _to_global_numpy(actual, mesh).astype(np.float32),
+            _to_global_numpy(expected, mesh).astype(np.float32),
+            rtol=2e-2,
+            atol=2e-2,
+        )
+    for actual, expected in zip(jax.tree.leaves(dv), jax.tree.leaves(baseline_dv)):
+        np.testing.assert_allclose(
+            _to_global_numpy(_unwrap(actual), mesh).astype(np.float32),
+            _to_global_numpy(_unwrap(expected), mesh).astype(np.float32),
+            rtol=2e-2,
+            atol=2e-2,
+        )
+
+
 def _reference_kwargs_from_config(config, params_np):
     """Pick out the reference-relevant pieces of a parametrize config."""
     return dict(
