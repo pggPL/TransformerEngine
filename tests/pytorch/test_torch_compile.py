@@ -1887,6 +1887,20 @@ def test_to_meta_plain():
     assert assemble_tensor(meta, [tensor]) is tensor
 
 
+@pytest.mark.parametrize("internal", [False, True])
+def test_to_meta_preserves_transpose_invalid(internal):
+    quantizer = _current_scaling()
+    quantizer.internal = internal
+    tensor = empty_tensor((4, 8), dtype=torch.bfloat16, quantizer=quantizer, device="cpu")
+    tensor._transpose_invalid = True
+    names, metadata = tensor.__tensor_flatten__()
+    assert metadata["nontensor_kwargs"]["transpose_invalid"] is True
+    meta = to_meta(tensor)
+    assert meta._transpose_invalid is True
+    restored = assemble_tensor(meta, [getattr(tensor, name) for name in names])
+    assert restored._transpose_invalid is True
+
+
 @pytest.mark.parametrize("factory, shape", _SPEC_QUANTIZERS)
 @pytest.mark.parametrize("internal", [False, True])
 def test_to_meta_quantized(factory, shape, internal):

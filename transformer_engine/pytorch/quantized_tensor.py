@@ -275,7 +275,7 @@ class QuantizedTensorStorage:
             "requires_grad": (
                 bool(self.requires_grad) if isinstance(self, QuantizedTensor) else False
             ),
-            "nontensor_kwargs": QuantizedTensorStorage._flatten_nontensor_kwargs(self),
+            "nontensor_kwargs": type(self)._flatten_nontensor_kwargs(self),
         }
         return present, ctx
 
