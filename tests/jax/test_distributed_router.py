@@ -53,6 +53,7 @@ def _inject_router():
 jax.config.update("jax_use_shardy_partitioner", True)
 
 from test_fused_router import (
+    reference_qb_histogram,
     reference_topk_with_score_function,
     reference_compute_scores_for_aux_loss,
     reference_aux_loss,
@@ -77,6 +78,53 @@ AUX_LOSS_CASES = {
     "L0": ALL_AUX_LOSS_CASES[0:1],
     "L2": ALL_AUX_LOSS_CASES,
 }
+
+
+@pytest.mark.parametrize("device_count,mesh_shape,mesh_axes,mesh_resource", generate_configs())
+@pytest.mark.parametrize("histogram_mode", ["two_kernel", "fused_atomic"])
+def test_qb_shard_histograms(device_count, mesh_shape, mesh_axes, mesh_resource, histogram_mode):
+    from jax.experimental.shard_map import shard_map
+    from transformer_engine.jax.router import fused_topk_with_score_function_qb
+
+    del mesh_resource
+    mesh = Mesh(np.asarray(jax.devices()[:device_count]).reshape(mesh_shape), mesh_axes)
+    token_axes = tuple(mesh_axes)
+    logits = jax.random.normal(jax.random.PRNGKey(831), (128 * device_count, 32))
+    bias = jnp.linspace(-0.1, 0.1, 32, dtype=jnp.float32)
+    bounds = jnp.asarray([-1.1, 1.1], jnp.float32)
+
+    def route(local_logits, expert_bias, limits):
+        probs, routing, histogram = fused_topk_with_score_function_qb(
+            local_logits,
+            4,
+            expert_bias,
+            limits,
+            num_bins=64,
+            histogram_mode=histogram_mode,
+        )
+        return probs, routing, histogram[None]
+
+    with mesh:
+        sharded_logits = jax.device_put(
+            logits, NamedSharding(mesh, PartitionSpec(token_axes, None))
+        )
+        _, _, partial_histograms = jax.jit(
+            shard_map(
+                route,
+                mesh=mesh,
+                in_specs=(PartitionSpec(token_axes, None), PartitionSpec(), PartitionSpec()),
+                out_specs=(
+                    PartitionSpec(token_axes, None),
+                    PartitionSpec(token_axes, None),
+                    PartitionSpec(token_axes, None, None),
+                ),
+                check_rep=False,
+            )
+        )(sharded_logits, bias, bounds)
+        histogram = jax.jit(lambda h: h.sum(axis=0))(partial_histograms)
+    assert partial_histograms.shape == (device_count, 32, 64)
+    np.testing.assert_array_equal(histogram, reference_qb_histogram(logits, bias, bounds, 4, 64))
+    np.testing.assert_array_equal(np.asarray(histogram).sum(axis=-1), np.full(32, logits.shape[0]))
 
 
 class TestDistributedFusedTopk:

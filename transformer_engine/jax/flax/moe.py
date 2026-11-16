@@ -76,8 +76,8 @@ class _MoEBlock(TransformerEngineBase):
         Activation between ``layer_w0 @ wi_0`` and the elementwise
         product with ``layer_w0 @ wi_1``. Default ``"silu"``. Pass
         ``"situglu"`` for fused MXFP8
-        SiTU-GLU on SM100/SM103. SiTU requires cuDNN Frontend >= 1.33.0 with compatible JAX
-        APIs and ``use_cudnn_fusion=True``; there is no unfused SiTU path.
+        SiTU-GLU on SM100/SM103. Fusion requires cuDNN Frontend >= 1.33.0 with compatible
+        JAX APIs; otherwise native grouped SiTU is used.
     activation_params : Optional[dict]
         Static SiTU soft caps: ``gate_beta`` (default 4.0) and ``up_beta``
         (default 25.0). Values must be finite and positive.
@@ -99,7 +99,7 @@ class _MoEBlock(TransformerEngineBase):
         If ``> 0``, return the MoE auxiliary load-balancing loss scalar
         in addition to the main output.
 
-    gate_kernel_axes, wi_kernel_axes, wo_kernel_axes, input_axes :
+    gate_kernel_axes, wi_kernel_axes, wo_kernel_axes, input_axes, router_input_axes :
         Logical sharding axis tuples (consumed by Flax's
         :func:`with_logical_partitioning` and our internal
         :func:`with_sharding_constraint_by_logical_axes`).
@@ -167,6 +167,7 @@ class _MoEBlock(TransformerEngineBase):
     wi_kernel_axes: Tuple[Optional[str], ...] = ("exp", "embed", "mlp")
     wo_kernel_axes: Tuple[Optional[str], ...] = ("exp", "mlp", "embed")
     input_axes: Tuple[Optional[str], ...] = ()
+    router_input_axes: Tuple[Optional[str], ...] = ()
 
     # Parallelism
     mesh_resource: Optional[MeshResource] = None
@@ -178,6 +179,8 @@ class _MoEBlock(TransformerEngineBase):
     recv_capacity_per_rank: Optional[int] = None
     dispatch_checkpoint_name: Optional[str] = None
     collect_expert_counts: bool = True
+    qb_num_bins: int = 1000
+    qb_histogram_mode: str = "fused_atomic"
 
     # Dtypes / init / misc
     dtype: DType = jnp.float32
@@ -200,13 +203,29 @@ class _MoEBlock(TransformerEngineBase):
         super().__post_init__()
 
     @nn.compact
-    def __call__(self, inputs: Array) -> Tuple[Array, Optional[Array], Array, Array]:
+    def __call__(
+        self,
+        inputs: Array,
+        *,
+        router_input: Optional[Array] = None,
+        qb_bin_bounds: Optional[Array] = None,
+        qb_token_mask: Optional[Array] = None,
+    ) -> tuple:
         """Run the MoE forward pass.
 
         Parameters
         ----------
         inputs : jnp.ndarray
             ``[batch, sequence, hidden]``.
+        router_input : Optional[jnp.ndarray]
+            Separate gate input ``[batch, sequence, router_hidden]``. ``None``
+            uses ``inputs``. Only the gate kernel uses ``router_hidden``;
+            expert kernels and EP buffers retain ``hidden``.
+        qb_bin_bounds : Optional[jnp.ndarray]
+            FP32 ``[lower, upper]`` enables QB histogram collection. Requires
+            sigmoid routing, expert bias, no groups and zero auxiliary loss.
+        qb_token_mask : Optional[jnp.ndarray]
+            Boolean ``[batch, sequence]`` mask excluding padding from QB statistics.
 
         Returns
         -------
@@ -220,6 +239,10 @@ class _MoEBlock(TransformerEngineBase):
             overflow when ``drop_on_overflow`` is set at ep_bootstrap.
         expert_counts : jnp.ndarray
             Global assignment counts for each expert.
+        qb_histograms : jnp.ndarray, optional
+            Fifth result only when ``qb_bin_bounds`` is supplied; int32
+            ``[token_shards, experts, qb_num_bins]``. Reduce over token shards
+            and microbatches before updating the bias in the training loop.
         """
         mesh_resource, quant_before_fsdp_ag = _resolve_moe_mesh_resource(
             self.mesh_resource,
@@ -230,6 +253,11 @@ class _MoEBlock(TransformerEngineBase):
             inputs.ndim == 3
         ), f"_MoEBlock expects [batch, sequence, hidden] input, got shape {inputs.shape}"
         _, _, hidden_size = inputs.shape
+        if router_input is not None and (
+            router_input.ndim != 3 or router_input.shape[:2] != inputs.shape[:2]
+        ):
+            raise ValueError("router_input must match the batch and sequence dimensions of inputs.")
+        router_hidden_size = hidden_size if router_input is None else router_input.shape[-1]
 
         # Param registrations -- must run OUTSIDE any JAX transform that
         # alters the variable scope (e.g. shard_map). The functional
@@ -238,10 +266,10 @@ class _MoEBlock(TransformerEngineBase):
         gate_kernel = self.param(
             "gate_kernel",
             nn.with_logical_partitioning(self.kernel_init, self.gate_kernel_axes),
-            (hidden_size, self.num_experts),
+            (router_hidden_size, self.num_experts),
             self.dtype,
         )
-        # FC1 is stored as one gated-SwiGLU kernel.  Keeping its two
+        # FC1 is stored as one gated FFN kernel. Keeping its two
         # projections contiguous lets the functional MoE path quantize and
         # all-gather one FP8 data buffer (and one scale buffer), rather than
         # materializing a concatenate inside the custom-VJP.
@@ -330,6 +358,12 @@ class _MoEBlock(TransformerEngineBase):
                 scaling_factor=self.scaling_factor,
                 aux_loss_coeff=self.aux_loss_coeff,
                 gate_kernel_axes=self.gate_kernel_axes,
+                router_input=router_input,
+                router_input_axes=self.router_input_axes,
+                qb_bin_bounds=qb_bin_bounds,
+                qb_token_mask=qb_token_mask,
+                qb_num_bins=self.qb_num_bins,
+                qb_histogram_mode=self.qb_histogram_mode,
             )
             return moe(
                 inputs,

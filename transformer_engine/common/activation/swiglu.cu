@@ -58,6 +58,28 @@ void nvte_dsituglu(const NVTETensor grad, const NVTETensor input, NVTETensor out
       grad, input, output, param, stream);
 }
 
+void nvte_group_situglu(const NVTEGroupedTensor input, NVTEGroupedTensor output, float beta1,
+                        float beta2, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_group_situglu);
+  using namespace transformer_engine;
+  NVTE_CHECK(beta1 > 0.0f && std::isfinite(beta1), "beta1 must be finite and positive.");
+  NVTE_CHECK(beta2 > 0.0f && std::isfinite(beta2), "beta2 must be finite and positive.");
+  const SiTUGLUParam params{beta1, beta2};
+  dispatch::group_gated_act_helper<false, SiTUGLUParam, situ_gate<fp32, fp32>>(
+      input, nullptr, output, params, stream);
+}
+
+void nvte_group_dsituglu(const NVTEGroupedTensor grad, const NVTEGroupedTensor input,
+                         NVTEGroupedTensor output, float beta1, float beta2, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_group_dsituglu);
+  using namespace transformer_engine;
+  NVTE_CHECK(beta1 > 0.0f && std::isfinite(beta1), "beta1 must be finite and positive.");
+  NVTE_CHECK(beta2 > 0.0f && std::isfinite(beta2), "beta2 must be finite and positive.");
+  const SiTUGLUParam params{beta1, beta2};
+  dispatch::group_gated_act_helper<true, SiTUGLUParam, situ_gate<fp32, fp32>,
+                                   dsitu_gate<fp32, fp32>>(input, grad, output, params, stream);
+}
+
 void nvte_clamped_swiglu(const NVTETensor input, NVTETensor output, float limit, float alpha,
                          cudaStream_t stream) {
   NVTE_API_CALL(nvte_clamped_swiglu);

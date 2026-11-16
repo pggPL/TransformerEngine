@@ -6,6 +6,7 @@ from typing import Sequence, Union, Callable, Optional, Tuple
 import operator
 from functools import reduce, partial
 from dataclasses import dataclass
+import math
 
 import jax
 import jax.numpy as jnp
@@ -38,7 +39,54 @@ from ..quantize import (
 )
 
 
-__all__ = ["act_lu", "dact_lu", "quantize_dact_dbias"]
+__all__ = ["act_lu", "dact_lu", "quantize_dact_dbias", "grouped_situglu_fwd", "grouped_situglu_bwd"]
+
+
+def _grouped_situglu_call(x, grad, group_sizes, beta1, beta2, *, backward):
+    if x.ndim != 2 or x.shape[1] == 0 or x.shape[1] % 2:
+        raise ValueError(f"Expected x[capacity, 2H] with positive H, got {x.shape}")
+    if x.dtype not in (jnp.float32, jnp.float16, jnp.bfloat16):
+        raise TypeError(f"Grouped SiTU requires float32, float16 or bfloat16, got {x.dtype}")
+    if group_sizes.ndim != 1 or group_sizes.dtype != jnp.int32:
+        raise TypeError("group_sizes must be a rank-1 int32 array")
+    if group_sizes.size == 0:
+        raise ValueError("group_sizes must contain at least one group")
+    for name, value in (("beta1", beta1), ("beta2", beta2)):
+        if not math.isfinite(value) or value <= 0 or value > float(np.finfo(np.float32).max):
+            raise ValueError(f"{name} must be finite, positive and representable in float32")
+        if np.float32(value) == 0:
+            raise ValueError(f"{name} is too small for float32")
+    output_shape = x.shape if backward else (x.shape[0], x.shape[1] // 2)
+    if backward and (grad.shape != (x.shape[0], x.shape[1] // 2) or grad.dtype != x.dtype):
+        raise ValueError("Grouped SiTU upstream gradient shape or dtype does not match x")
+    result, _ = ffi.ffi_call(
+        "te_grouped_situglu_ffi",
+        (
+            jax.ShapeDtypeStruct(output_shape, x.dtype),
+            jax.ShapeDtypeStruct((group_sizes.size * 8,), jnp.uint8),
+        ),
+        vmap_method="sequential",
+    )(
+        x,
+        grad,
+        group_sizes,
+        beta1=np.float32(beta1),
+        beta2=np.float32(beta2),
+        backward=backward,
+    )
+    return result
+
+
+def grouped_situglu_fwd(x, group_sizes, beta1=4.0, beta2=25.0):
+    """Native grouped SiTU; inactive capacity rows are zero without reading x."""
+    return _grouped_situglu_call(
+        x, jnp.empty((0,), dtype=x.dtype), group_sizes, beta1, beta2, backward=False
+    )
+
+
+def grouped_situglu_bwd(grad, x, group_sizes, beta1=4.0, beta2=25.0):
+    """Native grouped SiTU gradient; inactive rows do not read x or grad."""
+    return _grouped_situglu_call(x, grad, group_sizes, beta1, beta2, backward=True)
 
 
 ActivationEnum = {

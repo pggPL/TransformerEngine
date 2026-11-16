@@ -17,9 +17,14 @@ Functions:
 
     fused_moe_aux_loss:
         Compute the MoE auxiliary load-balancing loss scalar.
+
+    fused_topk_with_score_function_qb:
+        Sigmoid Top-(k+1) routing with functional QB histogram accumulation.
 """
 
 from functools import partial
+import math
+import operator
 from typing import Optional, Tuple, Union
 
 import jax
@@ -30,6 +35,7 @@ from transformer_engine.jax.cpp_extensions.router import (
     RoutingMapFormat,
     fused_topk_with_score_function_fwd,
     fused_topk_with_score_function_bwd,
+    fused_topk_with_score_function_qb_fwd,
     fused_moe_aux_loss_fwd,
     fused_moe_aux_loss_bwd,
 )
@@ -38,6 +44,7 @@ __all__ = [
     "ScoreFunction",
     "RoutingMapFormat",
     "fused_topk_with_score_function",
+    "fused_topk_with_score_function_qb",
     "fused_moe_aux_loss",
 ]
 
@@ -290,6 +297,174 @@ _fused_topk_with_score_function.defvjp(
     _fused_topk_with_score_function_fwd,
     _fused_topk_with_score_function_bwd,
 )
+
+
+# =============================================================================
+# Quantile Balancing router
+# =============================================================================
+
+
+def _validate_qb_router(
+    logits, expert_bias, bin_bounds, histogram, topk, num_bins, scaling_factor, histogram_mode
+):
+    if logits.ndim != 2 or min(logits.shape) <= 0:
+        raise ValueError("QB logits must have shape [tokens, experts] with positive dimensions.")
+    if logits.dtype != jnp.float32:
+        raise TypeError("QB logits must be float32.")
+    if expert_bias is None or expert_bias.shape != (logits.shape[-1],):
+        raise ValueError("QB expert_bias must have shape [experts].")
+    if expert_bias.dtype != jnp.float32:
+        raise TypeError("QB expert_bias must be float32.")
+    if bin_bounds is None or bin_bounds.shape != (2,) or bin_bounds.dtype != jnp.float32:
+        raise ValueError("QB bin_bounds must be float32 with shape [2].")
+    topk, num_bins = operator.index(topk), operator.index(num_bins)
+    if not 0 < topk < logits.shape[-1]:
+        raise ValueError("QB requires 0 < topk < num_experts.")
+    if num_bins <= 0:
+        raise ValueError("QB num_bins must be positive.")
+    if histogram is not None:
+        if histogram.shape != (logits.shape[-1], num_bins) or histogram.dtype != jnp.int32:
+            raise ValueError("QB histogram must be int32 with shape [experts, num_bins].")
+    if not isinstance(scaling_factor, (int, float)) or not math.isfinite(scaling_factor):
+        raise ValueError("QB scaling_factor must be a finite Python number.")
+    modes = {"two_kernel": 0, "fused_atomic": 1}
+    if histogram_mode not in modes:
+        raise ValueError("QB histogram_mode must be 'two_kernel' or 'fused_atomic'.")
+    return modes[histogram_mode]
+
+
+def fused_topk_with_score_function_qb(
+    logits: jnp.ndarray,
+    topk: int,
+    expert_bias: jnp.ndarray,
+    bin_bounds: jnp.ndarray,
+    *,
+    num_bins: int = 1000,
+    histogram: Optional[jnp.ndarray] = None,
+    token_mask: Optional[jnp.ndarray] = None,
+    scaling_factor: float = 1.0,
+    histogram_mode: str = "fused_atomic",
+    routing_map_format: Union[str, RoutingMapFormat, int] = RoutingMapFormat.BYTEMAP,
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Route with sigmoid Top-(k+1) and collect Quantile Balancing statistics.
+
+    ``logits`` is FP32 ``[tokens, experts]``; ``expert_bias`` is FP32 ``[experts]``.
+    Selection uses biased scores, while the returned sparse weights use unbiased
+    sigmoid scores. The extra selected score is the cutoff for QB, not another route.
+
+    ``bin_bounds`` is FP32 ``[lower, upper]``. The caller must supply finite values
+    with ``lower < upper``; bounds values are not synchronized to the host for
+    validation. Kimi uses ``[min(bias)-1, max(bias)+1]`` throughout a training step.
+    Each row contributes to every expert's histogram of ``cutoff - sigmoid(logits)``.
+    ``token_mask`` optionally selects valid rows. With a mask, CUDA computes the
+    routing and cutoff and JAX builds the masked histogram from the saved scores.
+    Without a mask, the existing CUDA histogram modes run unchanged.
+
+    Returns ``(probs, routing_map, updated_histogram)``. The histogram is int32
+    ``[experts, num_bins]`` and starts at zero when ``histogram=None``. Otherwise
+    it functionally adds to the supplied histogram, with FFI input/output aliasing
+    allowing buffer reuse. Only ``probs`` has a gradient, through ``logits``.
+
+    This is a shard-local operation. Use ``shard_map`` with the full expert axis
+    replicated to retain local histograms in SPMD; sum contributions across token
+    shards and microbatches before deriving the next bias. ``two_kernel`` uses a
+    separate histogram kernel, while ``fused_atomic`` accumulates in the router.
+    Neither mode updates biases or performs collectives. Grouped Top-k and auxiliary
+    scores are not supported. Automatic SPMD without ``shard_map`` may replicate
+    the call rather than distribute token rows.
+    """
+    mode = _validate_qb_router(
+        logits, expert_bias, bin_bounds, histogram, topk, num_bins, scaling_factor, histogram_mode
+    )
+    routing_map_format = _validate_routing_map_format(routing_map_format)
+    if token_mask is not None and (
+        token_mask.shape != (logits.shape[0],) or token_mask.dtype != jnp.bool_
+    ):
+        raise ValueError("QB token_mask must be bool with shape [tokens].")
+    if histogram is None:
+        histogram = jnp.zeros((logits.shape[-1], num_bins), dtype=jnp.int32)
+    return _fused_topk_with_score_function_qb(
+        logits,
+        expert_bias,
+        bin_bounds,
+        histogram,
+        token_mask,
+        int(topk),
+        float(scaling_factor),
+        mode,
+        int(routing_map_format),
+    )
+
+
+@partial(jax.custom_vjp, nondiff_argnums=(5, 6, 7, 8))
+def _fused_topk_with_score_function_qb(
+    logits,
+    expert_bias,
+    bin_bounds,
+    histogram,
+    token_mask,
+    topk,
+    scaling_factor,
+    histogram_mode,
+    routing_map_format,
+):
+    result, _ = _qb_router_fwd(
+        logits,
+        expert_bias,
+        bin_bounds,
+        histogram,
+        token_mask,
+        topk,
+        scaling_factor,
+        histogram_mode,
+        routing_map_format,
+    )
+    return result
+
+
+def _qb_router_fwd(
+    logits,
+    expert_bias,
+    bin_bounds,
+    histogram,
+    token_mask,
+    topk,
+    scaling_factor,
+    histogram_mode,
+    routing_map_format,
+):
+    probs, routing_map, saved_scores, _, updated_histogram = fused_topk_with_score_function_qb_fwd(
+        logits,
+        expert_bias,
+        bin_bounds,
+        histogram,
+        topk=topk,
+        scaling_factor=scaling_factor,
+        histogram_mode=histogram_mode,
+        routing_map_format=routing_map_format,
+        token_mask=token_mask,
+    )
+    return (probs, routing_map, updated_histogram), (routing_map, saved_scores)
+
+
+def _qb_router_bwd(topk, scaling_factor, histogram_mode, routing_map_format, residuals, cotangents):
+    del histogram_mode
+    routing_map, saved_scores = residuals
+    d_logits = fused_topk_with_score_function_bwd(
+        routing_map,
+        saved_scores,
+        cotangents[0],
+        topk,
+        False,
+        scaling_factor,
+        ScoreFunction.SIGMOID,
+        False,
+        routing_map_format,
+    )
+    return d_logits, None, None, None, None
+
+
+_fused_topk_with_score_function_qb.defvjp(_qb_router_fwd, _qb_router_bwd)
 
 
 # =============================================================================

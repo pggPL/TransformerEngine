@@ -24,6 +24,7 @@ pybind11::dict Registrations() {
   pybind11::dict dict;
 
   // Activation
+  dict["te_grouped_situglu_ffi"] = EncapsulateFFI(GroupedSiTUGLUHandler);
   dict["te_act_lu_ffi"] =
       pybind11::dict(pybind11::arg("initialize") = EncapsulateFFI(ActLuInitializeHandler),
                      pybind11::arg("execute") = EncapsulateFFI(ActLuHandler));
@@ -114,6 +115,8 @@ pybind11::dict Registrations() {
   // Router
   dict["te_fused_topk_with_score_function_forward_ffi"] =
       EncapsulateFFI(FusedTopkWithScoreFunctionForwardHandler);
+  dict["te_fused_topk_with_score_function_qb_forward_ffi"] =
+      EncapsulateFFI(FusedTopkWithScoreFunctionQBForwardHandler);
   dict["te_fused_topk_with_score_function_backward_ffi"] =
       EncapsulateFFI(FusedTopkWithScoreFunctionBackwardHandler);
   dict["te_fused_moe_aux_loss_forward_ffi"] = EncapsulateFFI(FusedMoEAuxLossForwardHandler);

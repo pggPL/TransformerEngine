@@ -293,6 +293,7 @@ def _pure_jax_moe_reference(
     expert_bias=None,
     hash_input_ids=None,
     hash_tid2eid=None,
+    router_input=None,
     *,
     num_experts,
     num_experts_per_tok,
@@ -306,8 +307,9 @@ def _pure_jax_moe_reference(
     K = num_experts_per_tok
     x_2d = x.reshape(T, H)
 
-    gate_kernel_cast = gate_kernel.astype(x.dtype)
-    logits = (x_2d @ gate_kernel_cast).astype(jnp.float32)  # [T, E]
+    gate_input = x if router_input is None else router_input
+    gate_kernel_cast = gate_kernel.astype(gate_input.dtype)
+    logits = (gate_input.reshape(T, -1) @ gate_kernel_cast).astype(jnp.float32)  # [T, E]
 
     if hash_input_ids is not None:
         if score_function != "sqrtsoftplus" or hash_tid2eid is None:
@@ -392,6 +394,7 @@ def _pure_jax_moe_reference(
 
 def _make_block(
     *,
+    activation_type="silu",
     apply_topk_weights_early=False,
     aux_loss_coeff=0.0,
     use_expert_routing_bias=False,
@@ -413,6 +416,7 @@ def _make_block(
         num_experts=NUM_EXPERTS,
         num_experts_per_tok=TOPK,
         intermediate_size=INTER,
+        activation_type=activation_type,
         mesh_resource=mesh_resource,
         apply_topk_weights_early=apply_topk_weights_early,
         aux_loss_coeff=aux_loss_coeff,
@@ -570,6 +574,33 @@ def _quantization_recipe(quantization):
     return MXFP8BlockScaling()
 
 
+def test_situ_uses_native_grouped_kernels(mesh, monkeypatch, make_block):
+    from transformer_engine.jax import cpp_extensions as tex
+
+    calls = []
+    forward, backward = tex.grouped_situglu_fwd, tex.grouped_situglu_bwd
+
+    def checked_forward(x, counts, beta1, beta2):
+        assert counts.ndim == 1 and counts.dtype == jnp.int32
+        calls.append("forward")
+        return forward(x, counts, beta1, beta2)
+
+    def checked_backward(grad, x, counts, beta1, beta2):
+        assert counts.ndim == 1 and counts.dtype == jnp.int32
+        calls.append("backward")
+        return backward(grad, x, counts, beta1, beta2)
+
+    monkeypatch.setattr(tex, "grouped_situglu_fwd", checked_forward)
+    monkeypatch.setattr(tex, "grouped_situglu_bwd", checked_backward)
+    block = make_block(
+        activation_type="situglu", activation_params={"gate_beta": 3.0, "up_beta": 11.0}
+    )
+    x = _make_inputs(jax.random.PRNGKey(88))
+    variables, _, _, _ = _init_apply(block, mesh, x, jax.random.PRNGKey(89))
+    _grad_step(block, variables, mesh, x)
+    assert "forward" in calls and "backward" in calls
+
+
 # -----------------------------------------------------------------------------
 # Tests
 # -----------------------------------------------------------------------------
@@ -584,6 +615,19 @@ def _quantization_recipe(quantization):
 # -----------------------------------------------------------------------------
 
 _CONFIGS = [
+    *[
+        pytest.param(
+            dict(
+                activation_type="situglu",
+                score_function="sigmoid",
+                use_expert_routing_bias=True,
+                expert_bias_init=_strong_expert_bias_init,
+                apply_topk_weights_early=early,
+            ),
+            id=f"situ-{'early' if early else 'late'}-weighting",
+        )
+        for early in (False, True)
+    ],
     pytest.param(
         dict(score_function="softmax"),
         id="softmax",
@@ -736,9 +780,175 @@ def test_mesh_resource_api_forward_and_backward(mesh, quant_before_fsdp_ag, make
     )
 
 
+@pytest.mark.parametrize("quantization", _QUANTIZATION_CASES)
+@pytest.mark.parametrize("early_weighting", [False, True])
+@pytest.mark.parametrize("router_dtype", [DTYPE, jnp.float32])
+def test_separate_router_input_latent_projection(
+    mesh, quantization, early_weighting, router_dtype, make_block
+):
+    block = make_block(
+        score_function="sigmoid",
+        use_expert_routing_bias=True,
+        expert_bias_init=_strong_expert_bias_init,
+        aux_loss_coeff=1e-2,
+        apply_topk_weights_early=early_weighting,
+        quantization_recipe=_quantization_recipe(quantization),
+    )
+    hidden = jax.random.normal(jax.random.PRNGKey(71), (BATCH, SEQ, 2 * HIDDEN), router_dtype)
+    projection = jax.random.normal(jax.random.PRNGKey(72), (2 * HIDDEN, HIDDEN), DTYPE)
+    projection = projection / jnp.sqrt(jnp.asarray(2 * HIDDEN, DTYPE))
+    with _ctx(mesh):
+        hidden_sh = _shard_inputs(hidden, mesh)
+        variables = jax.jit(block.init)(
+            jax.random.PRNGKey(73), (hidden_sh @ projection).astype(DTYPE), router_input=hidden_sh
+        )
+
+        def loss_fn(v, h, p):
+            output, aux, _, _ = block.apply(v, (h @ p).astype(DTYPE), router_input=h)
+            return jnp.mean(output.astype(jnp.float32) ** 2) + aux
+
+        grads, dh, dp = jax.jit(jax.grad(jax.checkpoint(loss_fn), argnums=(0, 1, 2)))(
+            variables, hidden_sh, projection
+        )
+        output, aux, _, _ = jax.jit(block.apply)(
+            variables, (hidden_sh @ projection).astype(DTYPE), router_input=hidden_sh
+        )
+    params_np = _params_global_numpy(variables, mesh)
+    assert params_np["gate_kernel"].shape == (2 * HIDDEN, NUM_EXPERTS)
+    assert params_np["wi"].shape == (NUM_EXPERTS, HIDDEN, 2 * INTER)
+
+    def reference(params, h, p):
+        return _pure_jax_moe_reference(
+            (h @ p).astype(DTYPE),
+            params["gate_kernel"],
+            params["wi"],
+            params["wo"],
+            params["expert_bias"],
+            router_input=h,
+            num_experts=NUM_EXPERTS,
+            num_experts_per_tok=TOPK,
+            score_function="sigmoid",
+            aux_loss_coeff=1e-2,
+        )
+
+    def ref_loss(params, h, p):
+        out, aux_loss = reference(params, h, p)
+        return jnp.mean(out.astype(jnp.float32) ** 2) + aux_loss
+
+    ref_params = {k: jnp.asarray(v) for k, v in params_np.items()}
+    out_ref, aux_ref = reference(ref_params, hidden, projection)
+    grads_ref, dh_ref, dp_ref = jax.jit(jax.grad(ref_loss, argnums=(0, 1, 2)))(
+        ref_params, hidden, projection
+    )
+    np.testing.assert_allclose(
+        _to_global_numpy(output, mesh).astype(np.float32),
+        np.asarray(out_ref).astype(np.float32),
+        **FWD_TOLERANCE[quantization],
+    )
+    np.testing.assert_allclose(
+        _to_global_numpy(aux, mesh).astype(np.float32),
+        np.asarray(aux_ref).astype(np.float32),
+        **AUX_TOLERANCE,
+    )
+    for name in ("gate_kernel", "wi", "wo"):
+        tolerance = GRAD_GATE_TOLERANCE if name == "gate_kernel" else GRAD_FFN_TOLERANCE
+        np.testing.assert_allclose(
+            _to_global_numpy(_unwrap(grads["params"][name]), mesh).astype(np.float32),
+            np.asarray(grads_ref[name]).astype(np.float32),
+            **tolerance[quantization],
+        )
+    for actual, expected, primal in ((dh, dh_ref, hidden), (dp, dp_ref, projection)):
+        assert actual.shape == primal.shape and actual.dtype == primal.dtype
+        np.testing.assert_allclose(
+            _to_global_numpy(actual, mesh).astype(np.float32),
+            np.asarray(expected).astype(np.float32),
+            **GRAD_FFN_TOLERANCE[quantization],
+        )
+
+
+@pytest.mark.parametrize("histogram_mode", ["two_kernel", "fused_atomic"])
+@pytest.mark.parametrize("masked", [False, True])
+def test_qb_moe_histograms_and_remat_gradients(mesh, make_block, histogram_mode, masked):
+    from test_fused_router import reference_qb_histogram
+
+    def bias_init(key, shape, dtype):
+        del key
+        return jnp.linspace(-0.1, 0.1, shape[0], dtype=dtype)
+
+    block = make_block(
+        score_function="sigmoid",
+        use_expert_routing_bias=True,
+        expert_bias_init=bias_init,
+    ).clone(qb_num_bins=64, qb_histogram_mode=histogram_mode)
+    bounds = jnp.asarray([-1.1, 1.1], jnp.float32)
+    x = jax.random.normal(jax.random.PRNGKey(841), (BATCH, SEQ, HIDDEN), DTYPE)
+
+    token_mask = (jnp.arange(BATCH * SEQ).reshape(BATCH, SEQ) % 2 == 0) if masked else None
+
+    with _ctx(mesh):
+        x_sharded = _shard_inputs(x, mesh)
+        variables = jax.jit(block.init)(jax.random.PRNGKey(842), x_sharded)
+
+        def loss(v, activations, limits):
+            result = block.apply(
+                v,
+                activations,
+                qb_bin_bounds=limits,
+                qb_token_mask=token_mask if limits is not None else None,
+            )
+            return jnp.mean(result[0].astype(jnp.float32) ** 2), result
+
+        (_, baseline), (baseline_dv, baseline_dx) = jax.jit(
+            jax.value_and_grad(
+                partial(loss, limits=None),
+                argnums=(0, 1),
+                has_aux=True,
+            )
+        )(variables, x_sharded)
+        (_, candidate), (dv, dx) = jax.jit(
+            jax.value_and_grad(
+                jax.checkpoint(loss),
+                argnums=(0, 1),
+                has_aux=True,
+            )
+        )(variables, x_sharded, bounds)
+
+    assert len(baseline) == 4 and len(candidate) == 5
+    histogram_parts = _to_global_numpy(candidate[4], mesh)
+    assert histogram_parts.shape == (mesh.size, NUM_EXPERTS, 64)
+    params = _params_global_numpy(variables, mesh)
+    logits = (x @ jnp.asarray(params["gate_kernel"], DTYPE)).astype(jnp.float32)
+    histogram_logits = logits.reshape(-1, NUM_EXPERTS)
+    if token_mask is not None:
+        histogram_logits = histogram_logits[np.asarray(token_mask).reshape(-1)]
+    expected_histogram = reference_qb_histogram(
+        histogram_logits,
+        params["expert_bias"],
+        bounds,
+        TOPK,
+        64,
+    )
+    np.testing.assert_array_equal(histogram_parts.sum(axis=0), expected_histogram)
+    for actual, expected in ((candidate[0], baseline[0]), (dx, baseline_dx)):
+        np.testing.assert_allclose(
+            _to_global_numpy(actual, mesh).astype(np.float32),
+            _to_global_numpy(expected, mesh).astype(np.float32),
+            rtol=2e-2,
+            atol=2e-2,
+        )
+    for actual, expected in zip(jax.tree.leaves(dv), jax.tree.leaves(baseline_dv)):
+        np.testing.assert_allclose(
+            _to_global_numpy(_unwrap(actual), mesh).astype(np.float32),
+            _to_global_numpy(_unwrap(expected), mesh).astype(np.float32),
+            rtol=2e-2,
+            atol=2e-2,
+        )
+
+
 def _reference_kwargs_from_config(config, params_np):
     """Pick out the reference-relevant pieces of a parametrize config."""
     return dict(
+        activation_type=config.get("activation_type", "silu"),
         score_function=config.get("score_function", "softmax"),
         expert_bias=(
             jnp.asarray(params_np["expert_bias"])

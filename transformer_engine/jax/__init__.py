@@ -42,6 +42,7 @@ from .quantize import autocast, fp8_autocast, update_collections
 from .quantize import NVTE_FP8_COLLECTION_NAME
 
 from .sharding import MeshResource
+from .activation import grouped_situglu
 
 from ..common.utils import deprecate_wrapper
 from ..common.utils import DeprecatedEnum
@@ -55,4 +56,5 @@ __all__ = [
     "MeshResource",
     "flax",
     "quantize",
+    "grouped_situglu",
 ]

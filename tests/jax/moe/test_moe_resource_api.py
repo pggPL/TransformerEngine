@@ -2,7 +2,7 @@
 #
 # See LICENSE for license information.
 
-"""MoE resource resolution and MeshResource-only API without EP kernels."""
+"""MoE resource and activation API contracts without EP kernels."""
 
 import importlib
 import inspect
@@ -13,13 +13,65 @@ import numpy as np
 import pytest
 from jax.sharding import Mesh
 
+from transformer_engine.jax import grouped_situglu
 from transformer_engine.jax.flax import _MoEBlock
 from transformer_engine.jax.moe import (
     RouterComputationInfo,
+    _resolve_moe_activation_params,
+    _apply_ffn_activation,
     _moe_mesh_axes,
     _resolve_moe_mesh_resource,
 )
 from transformer_engine.jax.sharding import MeshResource, global_mesh_resource, global_shard_guard
+
+
+@pytest.mark.parametrize("betas", [(4.0, 25.0), (2.0, 7.0)])
+def test_situ_value_and_both_branch_derivatives(betas):
+    gate_beta, up_beta = betas
+    gate = jnp.asarray([-10000.0, -12.0, -0.5, 0.0, 0.5, 12.0, 10000.0])
+    up = jnp.asarray([10000.0, 40.0, -3.0, 2.0, 3.0, -40.0, -10000.0])
+    counts = jnp.asarray([1], jnp.int32)
+
+    def activate(g, u):
+        pair = jnp.concatenate([g, u])[None, :]
+        return grouped_situglu(pair, counts, gate_beta, up_beta)[0]
+
+    output, pullback = jax.vjp(activate, gate, up)
+    dg, du = pullback(jnp.ones_like(output))
+    np.testing.assert_array_equal(
+        output, _apply_ffn_activation("situglu", gate[None, :], up[None, :], counts, betas)[0]
+    )
+
+    g, u = np.asarray(gate, np.float64), np.asarray(up, np.float64)
+    sigmoid = 0.5 + 0.5 * np.tanh(g / 2)
+    tg, tu = np.tanh(g / gate_beta), np.tanh(u / up_beta)
+    capped_gate, capped_up = gate_beta * tg * sigmoid, up_beta * tu
+    derivative_gate = (1 - tg**2) * sigmoid + gate_beta * tg * sigmoid * (1 - sigmoid)
+    for actual, expected in (
+        (output, capped_gate * capped_up),
+        (dg, derivative_gate * capped_up),
+        (du, capped_gate * (1 - tu**2)),
+    ):
+        np.testing.assert_allclose(actual, expected, atol=2e-5, rtol=2e-5)
+
+
+def test_situ_bf16_uses_fp32_before_final_cast():
+    gate = jnp.asarray([0.25, 1.5, -3.0, 12.0, 64.0], dtype=jnp.bfloat16)
+    up = jnp.asarray([0.75, -2.0, 32.0, 64.0, -128.0], dtype=jnp.bfloat16)
+    actual = _apply_ffn_activation(
+        "situglu", gate[None, :], up[None, :], jnp.asarray([1], jnp.int32)
+    )[0]
+    g, u = np.asarray(gate, np.float64), np.asarray(up, np.float64)
+    expected = jnp.asarray(100 * np.tanh(g / 4) / (1 + np.exp(-g)) * np.tanh(u / 25), jnp.bfloat16)
+    assert actual.dtype == jnp.bfloat16
+    np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
+@pytest.mark.parametrize("field", ["gate_beta", "up_beta"])
+def test_situ_rejects_invalid_soft_caps(field, value):
+    with pytest.raises(ValueError, match=field):
+        _resolve_moe_activation_params("situglu", {field: value})
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +86,73 @@ def test_resource_required_for_function_and_block():
         module.moe(None, None, None, None, num_experts=2)
     with pytest.raises(ValueError, match="active global_shard_guard"):
         _MoEBlock().init(jax.random.PRNGKey(0), jnp.ones((1, 1, 4)))
+
+
+@pytest.mark.parametrize("shape", [(1, 4), (2, 1, 8), (1, 2, 8)])
+def test_router_input_shape_is_validated(shape):
+    module = importlib.import_module("transformer_engine.jax.moe")
+    router = RouterComputationInfo(
+        gate_kernel=jnp.ones((8, 2)), num_experts_per_tok=1, router_input=jnp.ones(shape)
+    )
+    with pytest.raises(ValueError, match="router_input must have shape"):
+        module.moe(
+            jnp.ones((1, 1, 4)),
+            router,
+            None,
+            None,
+            num_experts=2,
+            mesh_resource=MeshResource(ep_resource="ep"),
+        )
+
+
+def test_gate_kernel_uses_router_width():
+    module = importlib.import_module("transformer_engine.jax.moe")
+    router = RouterComputationInfo(
+        gate_kernel=jnp.ones((4, 2)), num_experts_per_tok=1, router_input=jnp.ones((1, 1, 8))
+    )
+    with pytest.raises(ValueError, match="gate_kernel must have shape"):
+        module.moe(
+            jnp.ones((1, 1, 4)),
+            router,
+            None,
+            None,
+            num_experts=2,
+            mesh_resource=MeshResource(ep_resource="ep"),
+        )
+
+
+@pytest.mark.parametrize(
+    "overrides,match",
+    [
+        ({"score_function": "softmax"}, "requires sigmoid"),
+        ({"num_groups": 2, "group_topk": 1}, "ungrouped"),
+        ({"aux_loss_coeff": 0.1}, "aux_loss_coeff"),
+        ({"aux_loss_coeff": -0.1}, "aux_loss_coeff"),
+        ({"use_pre_softmax": True}, "use_pre_softmax"),
+        ({"qb_num_bins": 0}, "num_bins"),
+        ({"expert_bias": None}, "expert_bias"),
+        ({"qb_histogram_mode": "invalid"}, "histogram_mode"),
+    ],
+)
+def test_qb_configuration_rejected_before_ep(overrides, match):
+    module = importlib.import_module("transformer_engine.jax.moe")
+    kwargs = dict(
+        gate_kernel=jnp.ones((4, 2)),
+        num_experts_per_tok=1,
+        score_function="sigmoid",
+        expert_bias=jnp.zeros(2, jnp.float32),
+        qb_bin_bounds=jnp.asarray([-1.0, 1.0], jnp.float32),
+    )
+    kwargs.update(overrides)
+    with pytest.raises(ValueError, match=match):
+        module.moe(
+            jnp.ones((1, 1, 4)),
+            RouterComputationInfo(**kwargs),
+            None,
+            None,
+            num_experts=2,
+            mesh_resource=MeshResource(ep_resource="ep"),
+        )
 
 
 def test_explicit_resource_overrides_global_and_is_snapshotted():
@@ -131,7 +250,13 @@ def test_public_api_uses_selected_resource(monkeypatch, quantize):
     def fake_vjp(*args):
         captured.update(signature.bind(*args).arguments)
         assert global_mesh_resource().ep_resource == "ep"
-        return args[0], None, jnp.zeros((1,), jnp.int32), jnp.zeros((2,), jnp.int32)
+        return (
+            args[0],
+            None,
+            jnp.zeros((1,), jnp.int32),
+            jnp.zeros((2,), jnp.int32),
+            jnp.zeros((0, 0, 0), jnp.int32),
+        )
 
     monkeypatch.setattr(module, "_moe", fake_vjp)
     mesh = Mesh(np.asarray(jax.devices()[:1]).reshape(1, 1, 1), ("dp", "fsdp", "ep"))

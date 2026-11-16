@@ -89,6 +89,7 @@ inline bool use_fp8(DType type) { return type == DType::kFloat8E4M3 || type == D
 
 XLA_FFI_DECLARE_HANDLER_SYMBOL(ActLuHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(ActLuInitializeHandler);
+XLA_FFI_DECLARE_HANDLER_SYMBOL(GroupedSiTUGLUHandler);
 
 XLA_FFI_DECLARE_HANDLER_SYMBOL(DActLuDBiasQuantizeHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(DActLuDBiasQuantizeInitializeHandler);
@@ -203,6 +204,7 @@ XLA_FFI_DECLARE_HANDLER_SYMBOL(CublasHandleInitHandler);
 
 // Router
 XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedTopkWithScoreFunctionForwardHandler);
+XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedTopkWithScoreFunctionQBForwardHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedTopkWithScoreFunctionBackwardHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedMoEAuxLossForwardHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(FusedMoEAuxLossBackwardHandler);

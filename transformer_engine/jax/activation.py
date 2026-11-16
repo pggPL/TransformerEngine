@@ -107,3 +107,31 @@ def _activation_bwd_rule(activation_type, act_params, ctx, g):
 
 
 _activation.defvjp(_activation_fwd_rule, _activation_bwd_rule)
+
+
+@partial(jax.custom_vjp, nondiff_argnums=(2, 3))
+def grouped_situglu(x, group_sizes, beta1=4.0, beta2=25.0):
+    """Apply native SiTU to contiguous expert groups in ``x[capacity, 2H]``.
+
+    The halves of each row contain gate and up, respectively. ``group_sizes``
+    is a device int32 vector of nonnegative counts whose sum must not exceed
+    capacity. Empty groups and arbitrary row counts are supported. Inactive
+    rows return zeros and do not read input values, in forward or backward.
+
+    Inputs and output use FP32, FP16 or BF16; arithmetic uses FP32. Parameters
+    are static positive floats. For MXFP8, apply grouped quantization afterward.
+    In distributed expert code, call inside ``shard_map`` with local counts.
+    """
+    return tex.grouped_situglu_fwd(x, group_sizes, beta1, beta2)
+
+
+def _grouped_situglu_fwd(x, group_sizes, beta1, beta2):
+    return tex.grouped_situglu_fwd(x, group_sizes, beta1, beta2), (x, group_sizes)
+
+
+def _grouped_situglu_bwd(beta1, beta2, residual, grad):
+    x, group_sizes = residual
+    return tex.grouped_situglu_bwd(grad, x, group_sizes, beta1, beta2), None
+
+
+grouped_situglu.defvjp(_grouped_situglu_fwd, _grouped_situglu_bwd)
