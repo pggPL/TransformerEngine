@@ -78,14 +78,7 @@ Router, routing kernels, and grouped dense for MoE layers. See
 
 .. autoapiclass:: transformer_engine.jax.moe.RouterComputationInfo
 
-Latent MoE models can pass full-width hidden states through
-``RouterComputationInfo(router_input=hidden_states, ...)`` while calling
-``moe(latent_states, router_info, ...)`` with narrower expert activations.
-Batch and sequence dimensions must agree. Router parameters use the router
-width; expert parameters and EP bootstrap buffers use the latent width.
-The custom VJP returns gradients to both inputs, including when the latent
-is a differentiable projection of the router input. The default
-``router_input=None`` preserves routing on the expert input.
+.. autoapiclass:: transformer_engine.jax.moe.RoutingMapInfo
 
 .. autoapifunction:: transformer_engine.jax.ep.ep_bootstrap
 
