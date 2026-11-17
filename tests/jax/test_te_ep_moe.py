@@ -394,7 +394,6 @@ def _pure_jax_moe_reference(
 
 def _make_block(
     *,
-    activation_type="silu",
     apply_topk_weights_early=False,
     aux_loss_coeff=0.0,
     use_expert_routing_bias=False,
@@ -416,7 +415,6 @@ def _make_block(
         num_experts=NUM_EXPERTS,
         num_experts_per_tok=TOPK,
         intermediate_size=INTER,
-        activation_type=activation_type,
         mesh_resource=mesh_resource,
         apply_topk_weights_early=apply_topk_weights_early,
         aux_loss_coeff=aux_loss_coeff,
