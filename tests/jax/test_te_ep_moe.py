@@ -1527,14 +1527,20 @@ class TestTeEpMoeCudnnCutedslFusion:
         def checked_glu(*args, **kwargs):
             if activation_type == "situglu":
                 assert kwargs["act_func"] == "situglu"
-                assert (kwargs["situ_beta1"], kwargs["situ_beta2"]) == (4.0, 25.0)
+                assert (
+                    kwargs["act_params"].situglu.gate_beta,
+                    kwargs["act_params"].situglu.up_beta,
+                ) == (4.0, 25.0)
             shared_calls.append("glu")
             return original_glu(*args, **kwargs)
 
         def checked_dglu(*args, **kwargs):
             if activation_type == "situglu":
                 assert kwargs["act_func"] == "dsituglu"
-                assert (kwargs["situ_beta1"], kwargs["situ_beta2"]) == (4.0, 25.0)
+                assert (
+                    kwargs["act_params"].situglu.gate_beta,
+                    kwargs["act_params"].situglu.up_beta,
+                ) == (4.0, 25.0)
             shared_calls.append("dglu")
             return original_dglu(*args, **kwargs)
 
