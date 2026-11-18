@@ -2,118 +2,118 @@
 <defs><marker id='arrow' markerWidth='6' markerHeight='6' refX='3' refY='3' orient='auto'><path d='M0,0 L6,3 L0,6 z' fill='#374151'/></marker></defs>
 <rect width='2512' height='232' fill='white'/>
 <text x='82.0' y='48.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#374151'>forward</text>
-<rect x='90.00' y='16' width='20.20' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_fwd_general_kernel (72 us)</title></rect>
-<rect x='110.51' y='16' width='5.11' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (18 us)</title></rect>
-<rect x='115.91' y='16' width='3.09' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='119.17' y='16' width='8.51' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x128_128x8_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_TNT (30 us)</title></rect>
-<rect x='127.95' y='16' width='4.18' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_fwd_general_kernel (15 us)</title></rect>
-<rect x='132.35' y='16' width='1.66' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (6 us)</title></rect>
-<rect x='134.24' y='16' width='7.24' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (26 us)</title></rect>
-<rect x='141.52' y='16' width='25.37' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT (91 us)</title></rect>
-<rect x='167.15' y='16' width='5.78' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
-<rect x='173.24' y='16' width='0.80' height='56' fill='#0d9488'><title>transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *,  (2 us)</title></rect>
-<rect x='173.97' y='16' width='0.80' height='56' fill='#0d9488'><title>transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *,  (1 us)</title></rect>
-<rect x='174.74' y='16' width='1.96' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (7 us)</title></rect>
-<rect x='176.80' y='16' width='5.53' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x4_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_TNT (20 us)</title></rect>
-<rect x='182.54' y='16' width='1.58' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (6 us)</title></rect>
-<rect x='184.35' y='16' width='0.99' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_fwd_tuned_kernel (4 us)</title></rect>
-<rect x='185.57' y='16' width='1.31' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (5 us)</title></rect>
-<rect x='187.10' y='16' width='3.81' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (14 us)</title></rect>
-<rect x='191.03' y='16' width='16.28' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT (58 us)</title></rect>
-<rect x='207.62' y='16' width='20.47' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (73 us)</title></rect>
-<rect x='228.41' y='16' width='15.53' height='56' fill='#86efac'><title>void transformer_engine::fused_rope_forward_kernel (55 us)</title></rect>
-<rect x='244.20' y='16' width='1.38' height='56' fill='#86efac'><title>void transformer_engine::fused_rope_forward_kernel (5 us)</title></rect>
-<rect x='245.81' y='16' width='142.76' height='56' fill='#d1d5db'><title>void at::native:: (510 us)</title></rect>
-<rect x='388.81' y='16' width='143.74' height='56' fill='#d1d5db'><title>void at::native:: (513 us)</title></rect>
-<rect x='532.78' y='16' width='38.42' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (137 us)</title></rect>
-<rect x='571.47' y='16' width='0.80' height='56' fill='#e5e7eb'><title>transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon (1 us)</title></rect>
-<rect x='572.03' y='16' width='118.47' height='56' fill='#7c3aed'><title>cudnn_generated_fort_native_sdpa_sm100_flash_fprop_f16_knob_36_128x128x192_4x1x1_cga2x1x1_ (423 us)</title></rect>
-<rect x='690.82' y='16' width='11.28' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (40 us)</title></rect>
-<rect x='702.40' y='16' width='20.19' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (72 us)</title></rect>
-<rect x='722.69' y='16' width='73.88' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT (264 us)</title></rect>
-<rect x='796.80' y='16' width='6.59' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (24 us)</title></rect>
-<rect x='803.68' y='16' width='19.74' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_fwd_general_kernel (70 us)</title></rect>
-<rect x='823.47' y='16' width='3.32' height='56' fill='#60a5fa'><title>nvjet_sm103_tst_32x64_64x16_2x2_2cta_h_bz_TNN (12 us)</title></rect>
-<rect x='827.05' y='16' width='1.00' height='56' fill='#d1d5db'><title>void at::native::unrolled_elementwise_kernel (4 us)</title></rect>
-<rect x='828.43' y='16' width='5.32' height='56' fill='#a3e635'><title>void transformer_engine::fused_router::fused_topk_forward_simple_kernel (19 us)</title></rect>
-<rect x='834.07' y='16' width='2.03' height='56' fill='#d1d5db'><title>void at::native::reduce_kernel (7 us)</title></rect>
-<rect x='836.78' y='16' width='1.16' height='56' fill='#d1d5db'><title>memcpy (4 us)</title></rect>
-<rect x='850.76' y='16' width='1.60' height='56' fill='#d1d5db'><title>void at::native::reduce_kernel (6 us)</title></rect>
-<rect x='855.43' y='16' width='0.80' height='56' fill='#d1d5db'><title>memcpy (3 us)</title></rect>
-<rect x='863.26' y='16' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
-<rect x='866.51' y='16' width='1.33' height='56' fill='#a3e635'><title>void at::cuda::kernelHistogram1D (5 us)</title></rect>
-<rect x='878.83' y='16' width='1.77' height='56' fill='#a3e635'><title>void at::native::_scatter_gather_elementwise_kernel (6 us)</title></rect>
-<rect x='886.10' y='16' width='131.26' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (469 us)</title></rect>
-<rect x='1017.62' y='16' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (3 us)</title></rect>
-<rect x='1018.75' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset (2 us)</title></rect>
-<rect x='1019.59' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
-<rect x='1020.21' y='16' width='1.50' height='56' fill='#fdba74'><title>void nccl_ep::ht::convert_topk_to_routing_map_kernel (5 us)</title></rect>
-<rect x='1021.97' y='16' width='93.61' height='56' fill='#facc15'><title>ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage (334 us)</title></rect>
-<rect x='1115.80' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
-<rect x='1116.39' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
-<rect x='1116.93' y='16' width='26.96' height='56' fill='#fdba74'><title>nccl_ep_jit_ht_scan_flat_kernel (96 us)</title></rect>
-<rect x='1144.07' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
-<rect x='1144.65' y='16' width='0.80' height='56' fill='#fdba74'><title>void nccl_ep::ht::sparse_to_dense_prob_kernel (2 us)</title></rect>
-<rect x='1145.54' y='16' width='71.06' height='56' fill='#ea580c'><title>nccl_ep_jit_ht_dispatch_kernel (254 us)</title></rect>
-<rect x='1216.92' y='16' width='3.50' height='56' fill='#fdba74'><title>nccl_ep::ht::dense_to_sparse_prob_kernel(const float *, const bool *, float *, long *, int (13 us)</title></rect>
-<rect x='1220.69' y='16' width='44.25' height='56' fill='#fdba74'><title>nccl_ep_jit_local_permute_dup_kernel (158 us)</title></rect>
-<rect x='1265.24' y='16' width='0.91' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (3 us)</title></rect>
-<rect x='1266.39' y='16' width='1.09' height='56' fill='#a3e635'><title>transformer_engine::splits_to_offsets:: (4 us)</title></rect>
-<rect x='1267.72' y='16' width='6.43' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (23 us)</title></rect>
-<rect x='1274.42' y='16' width='5.61' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1280.33' y='16' width='5.90' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
-<rect x='1286.62' y='16' width='5.65' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1292.58' y='16' width='5.74' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
-<rect x='1298.58' y='16' width='5.73' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1304.54' y='16' width='5.51' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1310.27' y='16' width='5.47' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1316.01' y='16' width='5.85' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
-<rect x='1322.13' y='16' width='5.69' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1328.13' y='16' width='5.58' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1334.02' y='16' width='5.82' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
-<rect x='1340.14' y='16' width='5.68' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1346.08' y='16' width='5.85' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
-<rect x='1352.17' y='16' width='5.64' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1358.09' y='16' width='5.68' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
-<rect x='1364.07' y='16' width='3.32' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
-<rect x='1367.65' y='16' width='3.23' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
-<rect x='1371.17' y='16' width='3.17' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='1374.71' y='16' width='3.32' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
-<rect x='1378.33' y='16' width='3.11' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='1381.70' y='16' width='3.14' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='1385.12' y='16' width='3.21' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='1388.55' y='16' width='3.23' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
-<rect x='1392.00' y='16' width='3.34' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
-<rect x='1395.62' y='16' width='3.25' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
-<rect x='1399.17' y='16' width='3.14' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='1402.61' y='16' width='3.14' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='1406.05' y='16' width='3.30' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
-<rect x='1409.62' y='16' width='3.13' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='1413.03' y='16' width='3.14' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='1416.38' y='16' width='3.06' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
-<rect x='1419.67' y='16' width='43.67' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::group_quantize_kernel::group_quantize_mxfp8_kern (156 us)</title></rect>
-<rect x='1463.60' y='16' width='4.09' height='56' fill='#0d9488'><title>void transformer_engine:: (15 us)</title></rect>
-<rect x='1468.01' y='16' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
-<rect x='1468.71' y='16' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedglumoe_blockscaled_grouped_gemm_glu_bi (1 us)</title></rect>
-<rect x='1469.35' y='16' width='165.90' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedglumoe_blockscaled_grouped_gemm_glu_biasBlock (593 us)</title></rect>
-<rect x='1635.53' y='16' width='4.18' height='56' fill='#0d9488'><title>void transformer_engine:: (15 us)</title></rect>
-<rect x='1639.93' y='16' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
-<rect x='1640.53' y='16' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
-<rect x='1641.08' y='16' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEG (2 us)</title></rect>
-<rect x='1641.85' y='16' width='87.08' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGroupedG (311 us)</title></rect>
-<rect x='1729.37' y='16' width='131.86' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (471 us)</title></rect>
-<rect x='1861.54' y='16' width='37.69' height='56' fill='#fdba74'><title>nccl_ep_jit_local_permute_reduce_kernel (135 us)</title></rect>
-<rect x='1899.60' y='16' width='422.70' height='56' fill='#ea580c'><title>nccl_ep_jit_ht_combine_kernel (1510 us)</title></rect>
-<rect x='2322.56' y='16' width='5.24' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (19 us)</title></rect>
-<rect x='2328.07' y='16' width='5.78' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
-<rect x='2334.08' y='16' width='1.13' height='56' fill='#0d9488'><title>void transformer_engine:: (4 us)</title></rect>
-<rect x='2335.30' y='16' width='20.30' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_TNT (73 us)</title></rect>
-<rect x='2355.87' y='16' width='6.37' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::gated_kernel::quantize_gated_mxfp8_kernel (23 us)</title></rect>
-<rect x='2362.53' y='16' width='2.83' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (10 us)</title></rect>
-<rect x='2365.66' y='16' width='0.83' height='56' fill='#0d9488'><title>void transformer_engine:: (3 us)</title></rect>
-<rect x='2366.66' y='16' width='9.64' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT (34 us)</title></rect>
-<rect x='2376.62' y='16' width='7.74' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (28 us)</title></rect>
-<rect x='2384.58' y='16' width='7.86' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (28 us)</title></rect>
+<rect x='90.00' y='16' width='20.20' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_fwd_general_kernel&#10;72 us at 0.000 ms</title></rect>
+<rect x='110.51' y='16' width='5.11' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;18 us at 0.073 ms</title></rect>
+<rect x='115.91' y='16' width='3.09' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 0.093 ms</title></rect>
+<rect x='119.17' y='16' width='8.51' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x128_128x8_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_TNT&#10;30 us at 0.104 ms</title></rect>
+<rect x='127.95' y='16' width='4.18' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_fwd_general_kernel&#10;15 us at 0.136 ms</title></rect>
+<rect x='132.35' y='16' width='1.66' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;6 us at 0.151 ms</title></rect>
+<rect x='134.24' y='16' width='7.24' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;26 us at 0.158 ms</title></rect>
+<rect x='141.52' y='16' width='25.37' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT&#10;91 us at 0.184 ms</title></rect>
+<rect x='167.15' y='16' width='5.78' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;21 us at 0.276 ms</title></rect>
+<rect x='173.24' y='16' width='0.80' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *, &#10;2 us at 0.297 ms</title></rect>
+<rect x='173.97' y='16' width='0.80' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *, &#10;1 us at 0.300 ms</title></rect>
+<rect x='174.74' y='16' width='1.96' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;7 us at 0.303 ms</title></rect>
+<rect x='176.80' y='16' width='5.53' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x4_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_TNT&#10;20 us at 0.310 ms</title></rect>
+<rect x='182.54' y='16' width='1.58' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;6 us at 0.330 ms</title></rect>
+<rect x='184.35' y='16' width='0.99' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_fwd_tuned_kernel&#10;4 us at 0.337 ms</title></rect>
+<rect x='185.57' y='16' width='1.31' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;5 us at 0.341 ms</title></rect>
+<rect x='187.10' y='16' width='3.81' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;14 us at 0.347 ms</title></rect>
+<rect x='191.03' y='16' width='16.28' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT&#10;58 us at 0.361 ms</title></rect>
+<rect x='207.62' y='16' width='20.47' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;73 us at 0.420 ms</title></rect>
+<rect x='228.41' y='16' width='15.53' height='56' fill='#86efac'><title>RoPE&#10;void transformer_engine::fused_rope_forward_kernel&#10;55 us at 0.494 ms</title></rect>
+<rect x='244.20' y='16' width='1.38' height='56' fill='#86efac'><title>RoPE&#10;void transformer_engine::fused_rope_forward_kernel&#10;5 us at 0.551 ms</title></rect>
+<rect x='245.81' y='16' width='142.76' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;510 us at 0.556 ms</title></rect>
+<rect x='388.81' y='16' width='143.74' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;513 us at 1.067 ms</title></rect>
+<rect x='532.78' y='16' width='38.42' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;137 us at 1.581 ms</title></rect>
+<rect x='571.47' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 1.720 ms</title></rect>
+<rect x='572.03' y='16' width='118.47' height='56' fill='#7c3aed'><title>attention (cuDNN)&#10;cudnn_generated_fort_native_sdpa_sm100_flash_fprop_f16_knob_36_128x128x192_4x1x1_cga2x1x1_&#10;423 us at 1.722 ms</title></rect>
+<rect x='690.82' y='16' width='11.28' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;40 us at 2.146 ms</title></rect>
+<rect x='702.40' y='16' width='20.19' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;72 us at 2.187 ms</title></rect>
+<rect x='722.69' y='16' width='73.88' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT&#10;264 us at 2.260 ms</title></rect>
+<rect x='796.80' y='16' width='6.59' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;24 us at 2.524 ms</title></rect>
+<rect x='803.68' y='16' width='19.74' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_fwd_general_kernel&#10;70 us at 2.549 ms</title></rect>
+<rect x='823.47' y='16' width='3.32' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_tst_32x64_64x16_2x2_2cta_h_bz_TNN&#10;12 us at 2.620 ms</title></rect>
+<rect x='827.05' y='16' width='1.00' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::unrolled_elementwise_kernel&#10;4 us at 2.632 ms</title></rect>
+<rect x='828.43' y='16' width='5.32' height='56' fill='#a3e635'><title>router / permute&#10;void transformer_engine::fused_router::fused_topk_forward_simple_kernel&#10;19 us at 2.637 ms</title></rect>
+<rect x='834.07' y='16' width='2.03' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;7 us at 2.657 ms</title></rect>
+<rect x='836.78' y='16' width='1.16' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;4 us at 2.667 ms</title></rect>
+<rect x='850.76' y='16' width='1.60' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;6 us at 2.717 ms</title></rect>
+<rect x='855.43' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;3 us at 2.734 ms</title></rect>
+<rect x='863.26' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 2.762 ms</title></rect>
+<rect x='866.51' y='16' width='1.33' height='56' fill='#a3e635'><title>router / permute&#10;void at::cuda::kernelHistogram1D&#10;5 us at 2.773 ms</title></rect>
+<rect x='878.83' y='16' width='1.77' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::_scatter_gather_elementwise_kernel&#10;6 us at 2.817 ms</title></rect>
+<rect x='886.10' y='16' width='131.26' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;469 us at 2.843 ms</title></rect>
+<rect x='1017.62' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 3.313 ms</title></rect>
+<rect x='1018.75' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.317 ms</title></rect>
+<rect x='1019.59' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 3.320 ms</title></rect>
+<rect x='1020.21' y='16' width='1.50' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;void nccl_ep::ht::convert_topk_to_routing_map_kernel&#10;5 us at 3.322 ms</title></rect>
+<rect x='1021.97' y='16' width='93.61' height='56' fill='#facc15'><title>NCCL collective&#10;ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage&#10;334 us at 3.328 ms</title></rect>
+<rect x='1115.80' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 3.664 ms</title></rect>
+<rect x='1116.39' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 3.666 ms</title></rect>
+<rect x='1116.93' y='16' width='26.96' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_ht_scan_flat_kernel&#10;96 us at 3.668 ms</title></rect>
+<rect x='1144.07' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 3.765 ms</title></rect>
+<rect x='1144.65' y='16' width='0.80' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;void nccl_ep::ht::sparse_to_dense_prob_kernel&#10;2 us at 3.767 ms</title></rect>
+<rect x='1145.54' y='16' width='71.06' height='56' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_dispatch_kernel&#10;254 us at 3.770 ms</title></rect>
+<rect x='1216.92' y='16' width='3.50' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep::ht::dense_to_sparse_prob_kernel(const float *, const bool *, float *, long *, int&#10;13 us at 4.025 ms</title></rect>
+<rect x='1220.69' y='16' width='44.25' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_dup_kernel&#10;158 us at 4.038 ms</title></rect>
+<rect x='1265.24' y='16' width='0.91' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 4.197 ms</title></rect>
+<rect x='1266.39' y='16' width='1.09' height='56' fill='#a3e635'><title>router / permute&#10;transformer_engine::splits_to_offsets::&#10;4 us at 4.201 ms</title></rect>
+<rect x='1267.72' y='16' width='6.43' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;23 us at 4.206 ms</title></rect>
+<rect x='1274.42' y='16' width='5.61' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.230 ms</title></rect>
+<rect x='1280.33' y='16' width='5.90' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;21 us at 4.251 ms</title></rect>
+<rect x='1286.62' y='16' width='5.65' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.274 ms</title></rect>
+<rect x='1292.58' y='16' width='5.74' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;21 us at 4.295 ms</title></rect>
+<rect x='1298.58' y='16' width='5.73' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.316 ms</title></rect>
+<rect x='1304.54' y='16' width='5.51' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.338 ms</title></rect>
+<rect x='1310.27' y='16' width='5.47' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.358 ms</title></rect>
+<rect x='1316.01' y='16' width='5.85' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;21 us at 4.379 ms</title></rect>
+<rect x='1322.13' y='16' width='5.69' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.400 ms</title></rect>
+<rect x='1328.13' y='16' width='5.58' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.422 ms</title></rect>
+<rect x='1334.02' y='16' width='5.82' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;21 us at 4.443 ms</title></rect>
+<rect x='1340.14' y='16' width='5.68' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.465 ms</title></rect>
+<rect x='1346.08' y='16' width='5.85' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;21 us at 4.486 ms</title></rect>
+<rect x='1352.17' y='16' width='5.64' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.508 ms</title></rect>
+<rect x='1358.09' y='16' width='5.68' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;20 us at 4.529 ms</title></rect>
+<rect x='1364.07' y='16' width='3.32' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;12 us at 4.550 ms</title></rect>
+<rect x='1367.65' y='16' width='3.23' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;12 us at 4.563 ms</title></rect>
+<rect x='1371.17' y='16' width='3.17' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 4.576 ms</title></rect>
+<rect x='1374.71' y='16' width='3.32' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;12 us at 4.588 ms</title></rect>
+<rect x='1378.33' y='16' width='3.11' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 4.601 ms</title></rect>
+<rect x='1381.70' y='16' width='3.14' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 4.613 ms</title></rect>
+<rect x='1385.12' y='16' width='3.21' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 4.625 ms</title></rect>
+<rect x='1388.55' y='16' width='3.23' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;12 us at 4.638 ms</title></rect>
+<rect x='1392.00' y='16' width='3.34' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;12 us at 4.650 ms</title></rect>
+<rect x='1395.62' y='16' width='3.25' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;12 us at 4.663 ms</title></rect>
+<rect x='1399.17' y='16' width='3.14' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 4.676 ms</title></rect>
+<rect x='1402.61' y='16' width='3.14' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 4.688 ms</title></rect>
+<rect x='1406.05' y='16' width='3.30' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;12 us at 4.700 ms</title></rect>
+<rect x='1409.62' y='16' width='3.13' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 4.713 ms</title></rect>
+<rect x='1413.03' y='16' width='3.14' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 4.725 ms</title></rect>
+<rect x='1416.38' y='16' width='3.06' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;11 us at 4.737 ms</title></rect>
+<rect x='1419.67' y='16' width='43.67' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::group_quantize_kernel::group_quantize_mxfp8_kern&#10;156 us at 4.749 ms</title></rect>
+<rect x='1463.60' y='16' width='4.09' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;15 us at 4.906 ms</title></rect>
+<rect x='1468.01' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 4.921 ms</title></rect>
+<rect x='1468.71' y='16' width='0.80' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedglumoe_blockscaled_grouped_gemm_glu_bi&#10;1 us at 4.924 ms</title></rect>
+<rect x='1469.35' y='16' width='165.90' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_kernel_cudnngemmcutedslgroupedglumoe_blockscaled_grouped_gemm_glu_biasBlock&#10;593 us at 4.926 ms</title></rect>
+<rect x='1635.53' y='16' width='4.18' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;15 us at 5.520 ms</title></rect>
+<rect x='1639.93' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 5.535 ms</title></rect>
+<rect x='1640.53' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 5.538 ms</title></rect>
+<rect x='1641.08' y='16' width='0.80' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEG&#10;2 us at 5.540 ms</title></rect>
+<rect x='1641.85' y='16' width='87.08' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGroupedG&#10;311 us at 5.542 ms</title></rect>
+<rect x='1729.37' y='16' width='131.86' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;471 us at 5.855 ms</title></rect>
+<rect x='1861.54' y='16' width='37.69' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_reduce_kernel&#10;135 us at 6.327 ms</title></rect>
+<rect x='1899.60' y='16' width='422.70' height='56' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_combine_kernel&#10;1510 us at 6.463 ms</title></rect>
+<rect x='2322.56' y='16' width='5.24' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;19 us at 7.973 ms</title></rect>
+<rect x='2328.07' y='16' width='5.78' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;21 us at 7.993 ms</title></rect>
+<rect x='2334.08' y='16' width='1.13' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;4 us at 8.015 ms</title></rect>
+<rect x='2335.30' y='16' width='20.30' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_TNT&#10;73 us at 8.019 ms</title></rect>
+<rect x='2355.87' y='16' width='6.37' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::gated_kernel::quantize_gated_mxfp8_kernel&#10;23 us at 8.092 ms</title></rect>
+<rect x='2362.53' y='16' width='2.83' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;10 us at 8.116 ms</title></rect>
+<rect x='2365.66' y='16' width='0.83' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;3 us at 8.127 ms</title></rect>
+<rect x='2366.66' y='16' width='9.64' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT&#10;34 us at 8.131 ms</title></rect>
+<rect x='2376.62' y='16' width='7.74' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;28 us at 8.166 ms</title></rect>
+<rect x='2384.58' y='16' width='7.86' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;28 us at 8.195 ms</title></rect>
 <line x1='90.0' y1='72' x2='90.0' y2='77' stroke='#6b7280'/>
 <text x='90.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0 ms</text>
 <line x1='230.0' y1='72' x2='230.0' y2='77' stroke='#6b7280'/>
@@ -149,99 +149,99 @@
 <line x1='2330.0' y1='72' x2='2330.0' y2='77' stroke='#6b7280'/>
 <text x='2330.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>8 ms</text>
 <text x='82.0' y='138.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#374151'>backward</text>
-<rect x='90.00' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
-<rect x='90.89' y='106' width='4.24' height='56' fill='#d1d5db'><title>void at::native::reduce_kernel (15 us)</title></rect>
-<rect x='95.31' y='106' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
-<rect x='95.75' y='106' width='8.71' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (31 us)</title></rect>
-<rect x='104.77' y='106' width='4.89' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (17 us)</title></rect>
-<rect x='109.96' y='106' width='1.79' height='56' fill='#0d9488'><title>void transformer_engine:: (6 us)</title></rect>
-<rect x='111.93' y='106' width='9.74' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT (35 us)</title></rect>
-<rect x='121.13' y='106' width='9.12' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT (33 us)</title></rect>
-<rect x='130.46' y='106' width='11.07' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::gated_kernel::quantize_gated_mxfp8_kernel (40 us)</title></rect>
-<rect x='141.78' y='106' width='1.91' height='56' fill='#0d9488'><title>void transformer_engine:: (7 us)</title></rect>
-<rect x='143.76' y='106' width='17.62' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT (63 us)</title></rect>
-<rect x='160.69' y='106' width='18.95' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT (68 us)</title></rect>
-<rect x='179.94' y='106' width='8.91' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (32 us)</title></rect>
-<rect x='189.15' y='106' width='119.57' height='56' fill='#ea580c'><title>nccl_ep_jit_ht_dispatch_kernel (427 us)</title></rect>
-<rect x='309.06' y='106' width='42.41' height='56' fill='#fdba74'><title>nccl_ep_jit_local_permute_dup_kernel (151 us)</title></rect>
-<rect x='351.75' y='106' width='43.52' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::group_quantize_kernel::group_quantize_mxfp8_kern (155 us)</title></rect>
-<rect x='395.58' y='106' width='1.26' height='56' fill='#d1d5db'><title>void at::native::unrolled_elementwise_kernel (5 us)</title></rect>
-<rect x='397.14' y='106' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
-<rect x='397.75' y='106' width='2.23' height='56' fill='#0d9488'><title>void transformer_engine:: (8 us)</title></rect>
-<rect x='400.25' y='106' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
-<rect x='400.87' y='106' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_ (2 us)</title></rect>
-<rect x='401.66' y='106' width='94.86' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_dbiasBl (339 us)</title></rect>
-<rect x='496.82' y='106' width='0.80' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (2 us)</title></rect>
-<rect x='497.64' y='106' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
-<rect x='498.15' y='106' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgra (2 us)</title></rect>
-<rect x='498.87' y='106' width='79.70' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockS (285 us)</title></rect>
-<rect x='578.79' y='106' width='3.97' height='56' fill='#0d9488'><title>void transformer_engine:: (14 us)</title></rect>
-<rect x='583.02' y='106' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
-<rect x='583.59' y='106' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
-<rect x='584.21' y='106' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEG (2 us)</title></rect>
-<rect x='584.99' y='106' width='163.88' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGroupedG (585 us)</title></rect>
-<rect x='749.15' y='106' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
-<rect x='749.72' y='106' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgra (2 us)</title></rect>
-<rect x='750.58' y='106' width='160.92' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockS (575 us)</title></rect>
-<rect x='911.79' y='106' width='1.49' height='56' fill='#d1d5db'><title>void at::native::unrolled_elementwise_kernel (5 us)</title></rect>
-<rect x='913.57' y='106' width='38.28' height='56' fill='#fdba74'><title>nccl_ep_jit_local_permute_reduce_kernel (137 us)</title></rect>
-<rect x='952.19' y='106' width='1.67' height='56' fill='#9ca3af'><title>memset (6 us)</title></rect>
-<rect x='954.17' y='106' width='2.04' height='56' fill='#fdba74'><title>nccl_ep::ht::sparse_to_dense_prob_combine_kernel(const float *, const bool *, float *, int (7 us)</title></rect>
-<rect x='956.53' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
-<rect x='957.16' y='106' width='133.24' height='56' fill='#ea580c'><title>nccl_ep_jit_ht_combine_kernel (476 us)</title></rect>
-<rect x='1090.63' y='106' width='0.95' height='56' fill='#fdba74'><title>void nccl_ep::ht::dense_to_sparse_prob_combine_kernel (3 us)</title></rect>
-<rect x='1091.82' y='106' width='6.59' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (24 us)</title></rect>
-<rect x='1098.63' y='106' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
-<rect x='1099.30' y='106' width='2.96' height='56' fill='#a3e635'><title>void at::native::_scatter_gather_elementwise_kernel (11 us)</title></rect>
-<rect x='1102.64' y='106' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
-<rect x='1103.29' y='106' width='0.92' height='56' fill='#a3e635'><title>void transformer_engine::fused_router::fused_topk_backward_selected_indices_kernel (3 us)</title></rect>
-<rect x='1104.51' y='106' width='0.80' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (2 us)</title></rect>
-<rect x='1105.14' y='106' width='3.99' height='56' fill='#60a5fa'><title>nvjet_sm103_tst_64x64_64x16_4x1_2cta_v_bz_NTT (14 us)</title></rect>
-<rect x='1108.77' y='106' width='3.31' height='56' fill='#60a5fa'><title>nvjet_sm103_tst_128x256_64x6_2x1_2cta_v_bz_NNT (12 us)</title></rect>
-<rect x='1112.33' y='106' width='6.46' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (23 us)</title></rect>
-<rect x='1119.61' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset (2 us)</title></rect>
-<rect x='1120.50' y='106' width='34.00' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_general_kernel (121 us)</title></rect>
-<rect x='1154.86' y='106' width='1.87' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel (7 us)</title></rect>
-<rect x='1157.05' y='106' width='16.74' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (60 us)</title></rect>
-<rect x='1174.09' y='106' width='5.02' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (18 us)</title></rect>
-<rect x='1179.22' y='106' width='63.60' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT (227 us)</title></rect>
-<rect x='1242.16' y='106' width='63.20' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT (226 us)</title></rect>
-<rect x='1305.59' y='106' width='28.17' height='56' fill='#7c3aed'><title>void cudnn::fusion::compute_dot_do_o_specialized (101 us)</title></rect>
-<rect x='1334.05' y='106' width='386.75' height='56' fill='#7c3aed'><title>cudnn_generated_fort_native_sdpa_sm100_flash_bprop_f16_knob_28_64x128x192_1x4x1_cga1x1x1_k (1381 us)</title></rect>
-<rect x='1721.03' y='106' width='24.43' height='56' fill='#7c3aed'><title>void cudnn::fusion::convert_dq_to_16bits (87 us)</title></rect>
-<rect x='1745.74' y='106' width='6.57' height='56' fill='#d1d5db'><title>void at::native::reduce_kernel (23 us)</title></rect>
-<rect x='1752.62' y='106' width='14.36' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (51 us)</title></rect>
-<rect x='1767.35' y='106' width='39.10' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (140 us)</title></rect>
-<rect x='1806.75' y='106' width='1.60' height='56' fill='#86efac'><title>void transformer_engine::fused_rope_backward_kernel (6 us)</title></rect>
-<rect x='1808.70' y='106' width='16.01' height='56' fill='#86efac'><title>void transformer_engine::fused_rope_backward_kernel (57 us)</title></rect>
-<rect x='1824.93' y='106' width='14.19' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (51 us)</title></rect>
-<rect x='1839.40' y='106' width='20.08' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (72 us)</title></rect>
-<rect x='1859.70' y='106' width='24.01' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (86 us)</title></rect>
-<rect x='1883.97' y='106' width='176.40' height='56' fill='#d1d5db'><title>void at::native:: (630 us)</title></rect>
-<rect x='2060.69' y='106' width='22.53' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (80 us)</title></rect>
-<rect x='2083.35' y='106' width='14.52' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x128_128x8_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT (52 us)</title></rect>
-<rect x='2097.47' y='106' width='13.33' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT (48 us)</title></rect>
-<rect x='2111.06' y='106' width='1.49' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_tuned_kernel (5 us)</title></rect>
-<rect x='2112.77' y='106' width='1.02' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_finalize_tuned_kernel (4 us)</title></rect>
-<rect x='2114.02' y='106' width='1.05' height='56' fill='#d1d5db'><title>void at::native:: (4 us)</title></rect>
-<rect x='2115.30' y='106' width='0.80' height='56' fill='#0d9488'><title>transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *,  (1 us)</title></rect>
-<rect x='2116.01' y='106' width='0.80' height='56' fill='#0d9488'><title>transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *,  (1 us)</title></rect>
-<rect x='2116.68' y='106' width='1.47' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (5 us)</title></rect>
-<rect x='2118.28' y='106' width='4.82' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT (17 us)</title></rect>
-<rect x='2122.38' y='106' width='5.15' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_256x128_128x5_4x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT (18 us)</title></rect>
-<rect x='2127.78' y='106' width='17.02' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (61 us)</title></rect>
-<rect x='2144.84' y='106' width='26.98' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x128_128x8_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT (96 us)</title></rect>
-<rect x='2171.37' y='106' width='25.20' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT (90 us)</title></rect>
-<rect x='2196.86' y='106' width='5.41' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_general_kernel (19 us)</title></rect>
-<rect x='2202.54' y='106' width='4.44' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel (16 us)</title></rect>
-<rect x='2207.30' y='106' width='1.64' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (6 us)</title></rect>
-<rect x='2209.20' y='106' width='7.59' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT (27 us)</title></rect>
-<rect x='2216.27' y='106' width='9.11' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x128_128x8_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT (33 us)</title></rect>
-<rect x='2225.64' y='106' width='7.45' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (27 us)</title></rect>
-<rect x='2233.80' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset (2 us)</title></rect>
-<rect x='2234.67' y='106' width='33.75' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_general_kernel (121 us)</title></rect>
-<rect x='2268.64' y='106' width='1.90' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel (7 us)</title></rect>
-<rect x='2270.77' y='106' width='6.79' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (24 us)</title></rect>
+<rect x='90.00' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 0.000 ms</title></rect>
+<rect x='90.89' y='106' width='4.24' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;15 us at 0.003 ms</title></rect>
+<rect x='95.31' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 0.019 ms</title></rect>
+<rect x='95.75' y='106' width='8.71' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;31 us at 0.021 ms</title></rect>
+<rect x='104.77' y='106' width='4.89' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;17 us at 0.053 ms</title></rect>
+<rect x='109.96' y='106' width='1.79' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;6 us at 0.071 ms</title></rect>
+<rect x='111.93' y='106' width='9.74' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;35 us at 0.078 ms</title></rect>
+<rect x='121.13' y='106' width='9.12' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;33 us at 0.111 ms</title></rect>
+<rect x='130.46' y='106' width='11.07' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::gated_kernel::quantize_gated_mxfp8_kernel&#10;40 us at 0.145 ms</title></rect>
+<rect x='141.78' y='106' width='1.91' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;7 us at 0.185 ms</title></rect>
+<rect x='143.76' y='106' width='17.62' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;63 us at 0.192 ms</title></rect>
+<rect x='160.69' y='106' width='18.95' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;68 us at 0.252 ms</title></rect>
+<rect x='179.94' y='106' width='8.91' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;32 us at 0.321 ms</title></rect>
+<rect x='189.15' y='106' width='119.57' height='56' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_dispatch_kernel&#10;427 us at 0.354 ms</title></rect>
+<rect x='309.06' y='106' width='42.41' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_dup_kernel&#10;151 us at 0.782 ms</title></rect>
+<rect x='351.75' y='106' width='43.52' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::group_quantize_kernel::group_quantize_mxfp8_kern&#10;155 us at 0.935 ms</title></rect>
+<rect x='395.58' y='106' width='1.26' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::unrolled_elementwise_kernel&#10;5 us at 1.091 ms</title></rect>
+<rect x='397.14' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 1.097 ms</title></rect>
+<rect x='397.75' y='106' width='2.23' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;8 us at 1.099 ms</title></rect>
+<rect x='400.25' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 1.108 ms</title></rect>
+<rect x='400.87' y='106' width='0.80' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_helper_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_&#10;2 us at 1.110 ms</title></rect>
+<rect x='401.66' y='106' width='94.86' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_dbiasBl&#10;339 us at 1.113 ms</title></rect>
+<rect x='496.82' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 1.453 ms</title></rect>
+<rect x='497.64' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 1.456 ms</title></rect>
+<rect x='498.15' y='106' width='0.80' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgra&#10;2 us at 1.458 ms</title></rect>
+<rect x='498.87' y='106' width='79.70' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockS&#10;285 us at 1.460 ms</title></rect>
+<rect x='578.79' y='106' width='3.97' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;14 us at 1.746 ms</title></rect>
+<rect x='583.02' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 1.761 ms</title></rect>
+<rect x='583.59' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 1.763 ms</title></rect>
+<rect x='584.21' y='106' width='0.80' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEG&#10;2 us at 1.765 ms</title></rect>
+<rect x='584.99' y='106' width='163.88' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGroupedG&#10;585 us at 1.768 ms</title></rect>
+<rect x='749.15' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 2.354 ms</title></rect>
+<rect x='749.72' y='106' width='0.80' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgra&#10;2 us at 2.356 ms</title></rect>
+<rect x='750.58' y='106' width='160.92' height='56' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;kernel_cutlass_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockS&#10;575 us at 2.359 ms</title></rect>
+<rect x='911.79' y='106' width='1.49' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::unrolled_elementwise_kernel&#10;5 us at 2.935 ms</title></rect>
+<rect x='913.57' y='106' width='38.28' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_reduce_kernel&#10;137 us at 2.941 ms</title></rect>
+<rect x='952.19' y='106' width='1.67' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;6 us at 3.079 ms</title></rect>
+<rect x='954.17' y='106' width='2.04' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep::ht::sparse_to_dense_prob_combine_kernel(const float *, const bool *, float *, int&#10;7 us at 3.086 ms</title></rect>
+<rect x='956.53' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 3.095 ms</title></rect>
+<rect x='957.16' y='106' width='133.24' height='56' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_combine_kernel&#10;476 us at 3.097 ms</title></rect>
+<rect x='1090.63' y='106' width='0.95' height='56' fill='#fdba74'><title>NCCL EP permute / scan&#10;void nccl_ep::ht::dense_to_sparse_prob_combine_kernel&#10;3 us at 3.574 ms</title></rect>
+<rect x='1091.82' y='106' width='6.59' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;24 us at 3.578 ms</title></rect>
+<rect x='1098.63' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 3.602 ms</title></rect>
+<rect x='1099.30' y='106' width='2.96' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::_scatter_gather_elementwise_kernel&#10;11 us at 3.605 ms</title></rect>
+<rect x='1102.64' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 3.617 ms</title></rect>
+<rect x='1103.29' y='106' width='0.92' height='56' fill='#a3e635'><title>router / permute&#10;void transformer_engine::fused_router::fused_topk_backward_selected_indices_kernel&#10;3 us at 3.619 ms</title></rect>
+<rect x='1104.51' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.623 ms</title></rect>
+<rect x='1105.14' y='106' width='3.99' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_tst_64x64_64x16_4x1_2cta_v_bz_NTT&#10;14 us at 3.626 ms</title></rect>
+<rect x='1108.77' y='106' width='3.31' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_tst_128x256_64x6_2x1_2cta_v_bz_NNT&#10;12 us at 3.638 ms</title></rect>
+<rect x='1112.33' y='106' width='6.46' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;23 us at 3.651 ms</title></rect>
+<rect x='1119.61' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.677 ms</title></rect>
+<rect x='1120.50' y='106' width='34.00' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;121 us at 3.680 ms</title></rect>
+<rect x='1154.86' y='106' width='1.87' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 3.803 ms</title></rect>
+<rect x='1157.05' y='106' width='16.74' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;60 us at 3.811 ms</title></rect>
+<rect x='1174.09' y='106' width='5.02' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;18 us at 3.872 ms</title></rect>
+<rect x='1179.22' y='106' width='63.60' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;227 us at 3.890 ms</title></rect>
+<rect x='1242.16' y='106' width='63.20' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;226 us at 4.115 ms</title></rect>
+<rect x='1305.59' y='106' width='28.17' height='56' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::compute_dot_do_o_specialized&#10;101 us at 4.341 ms</title></rect>
+<rect x='1334.05' y='106' width='386.75' height='56' fill='#7c3aed'><title>attention (cuDNN)&#10;cudnn_generated_fort_native_sdpa_sm100_flash_bprop_f16_knob_28_64x128x192_1x4x1_cga1x1x1_k&#10;1381 us at 4.443 ms</title></rect>
+<rect x='1721.03' y='106' width='24.43' height='56' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::convert_dq_to_16bits&#10;87 us at 5.825 ms</title></rect>
+<rect x='1745.74' y='106' width='6.57' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;23 us at 5.913 ms</title></rect>
+<rect x='1752.62' y='106' width='14.36' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;51 us at 5.938 ms</title></rect>
+<rect x='1767.35' y='106' width='39.10' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;140 us at 5.991 ms</title></rect>
+<rect x='1806.75' y='106' width='1.60' height='56' fill='#86efac'><title>RoPE&#10;void transformer_engine::fused_rope_backward_kernel&#10;6 us at 6.131 ms</title></rect>
+<rect x='1808.70' y='106' width='16.01' height='56' fill='#86efac'><title>RoPE&#10;void transformer_engine::fused_rope_backward_kernel&#10;57 us at 6.138 ms</title></rect>
+<rect x='1824.93' y='106' width='14.19' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;51 us at 6.196 ms</title></rect>
+<rect x='1839.40' y='106' width='20.08' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;72 us at 6.248 ms</title></rect>
+<rect x='1859.70' y='106' width='24.01' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;86 us at 6.320 ms</title></rect>
+<rect x='1883.97' y='106' width='176.40' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;630 us at 6.407 ms</title></rect>
+<rect x='2060.69' y='106' width='22.53' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;80 us at 7.038 ms</title></rect>
+<rect x='2083.35' y='106' width='14.52' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x128_128x8_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;52 us at 7.119 ms</title></rect>
+<rect x='2097.47' y='106' width='13.33' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;48 us at 7.170 ms</title></rect>
+<rect x='2111.06' y='106' width='1.49' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_tuned_kernel&#10;5 us at 7.218 ms</title></rect>
+<rect x='2112.77' y='106' width='1.02' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_tuned_kernel&#10;4 us at 7.224 ms</title></rect>
+<rect x='2114.02' y='106' width='1.05' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;4 us at 7.229 ms</title></rect>
+<rect x='2115.30' y='106' width='0.80' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *, &#10;1 us at 7.233 ms</title></rect>
+<rect x='2116.01' y='106' width='0.80' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *, &#10;1 us at 7.236 ms</title></rect>
+<rect x='2116.68' y='106' width='1.47' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;5 us at 7.238 ms</title></rect>
+<rect x='2118.28' y='106' width='4.82' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;17 us at 7.244 ms</title></rect>
+<rect x='2122.38' y='106' width='5.15' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_256x128_128x5_4x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;18 us at 7.258 ms</title></rect>
+<rect x='2127.78' y='106' width='17.02' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;61 us at 7.278 ms</title></rect>
+<rect x='2144.84' y='106' width='26.98' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x128_128x8_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;96 us at 7.339 ms</title></rect>
+<rect x='2171.37' y='106' width='25.20' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;90 us at 7.433 ms</title></rect>
+<rect x='2196.86' y='106' width='5.41' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;19 us at 7.525 ms</title></rect>
+<rect x='2202.54' y='106' width='4.44' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;16 us at 7.545 ms</title></rect>
+<rect x='2207.30' y='106' width='1.64' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;6 us at 7.562 ms</title></rect>
+<rect x='2209.20' y='106' width='7.59' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;27 us at 7.569 ms</title></rect>
+<rect x='2216.27' y='106' width='9.11' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm103_qqtst_128x128_128x8_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;33 us at 7.594 ms</title></rect>
+<rect x='2225.64' y='106' width='7.45' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;27 us at 7.627 ms</title></rect>
+<rect x='2233.80' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 7.656 ms</title></rect>
+<rect x='2234.67' y='106' width='33.75' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;121 us at 7.660 ms</title></rect>
+<rect x='2268.64' y='106' width='1.90' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 7.781 ms</title></rect>
+<rect x='2270.77' y='106' width='6.79' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;24 us at 7.788 ms</title></rect>
 <line x1='90.0' y1='162' x2='90.0' y2='167' stroke='#6b7280'/>
 <text x='90.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0 ms</text>
 <line x1='230.0' y1='162' x2='230.0' y2='167' stroke='#6b7280'/>

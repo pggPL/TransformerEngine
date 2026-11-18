@@ -92,3 +92,9 @@ article.bd-article .scroll-x img {
     max-width: none;
     width: auto;
 }
+
+/* inline SVG timelines inside a scroll container keep their native width */
+article.bd-article .scroll-x svg {
+    max-width: none;
+    height: auto;
+}

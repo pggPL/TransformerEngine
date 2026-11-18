@@ -82,15 +82,15 @@ sideways. Hovering a kernel shows its name and duration.
 
 .. container:: scroll-x
 
-   .. image:: profile_dsv3_te_bf16.svg
-      :alt: One iteration of DeepSeekV3Layer in BF16, forward and backward kernels
+   .. raw:: html
+      :file: profile_dsv3_te_bf16.svg
 
 **MXFP8, fused cuDNN grouped MLP**
 
 .. container:: scroll-x
 
-   .. image:: profile_dsv3_te_mxfp8.svg
-      :alt: One iteration of DeepSeekV3Layer in MXFP8 with the fused grouped MLP
+   .. raw:: html
+      :file: profile_dsv3_te_mxfp8.svg
 
 The traces are from an earlier revision of the layer than the tables below:
 the two grey groups, PyTorch copies (the concatenations that assembled the
@@ -143,28 +143,6 @@ Median of three runs, ms per iteration.
      - 10.11
      - 9.49
      - 10.45
-
-Global throughput of the ``te`` variants, in millions of tokens per second:
-
-.. list-table::
-   :header-rows: 1
-
-   * - Precision
-     - 4 GB200
-     - 4 GB300
-     - 8 GB300
-   * - BF16
-     - 1.20
-     - 1.33
-     - 2.32
-   * - MXFP8
-     - 1.49
-     - 1.59
-     - 2.71
-   * - MXFP8 fused
-     - 1.62
-     - 1.73
-     - 3.14
 
 Usage
 -----
