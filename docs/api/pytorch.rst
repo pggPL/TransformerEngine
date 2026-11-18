@@ -73,6 +73,8 @@ Kimi-K3
 .. autoapiclass:: transformer_engine.pytorch.models.KimiLinearAttention(hidden_size, num_attention_heads, **kwargs)
   :members: forward
 
+.. autoapifunction:: transformer_engine.pytorch.models.kimi_k3.attn_res_pool
+
 Other
 -----
 
