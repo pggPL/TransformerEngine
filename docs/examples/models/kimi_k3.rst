@@ -117,7 +117,33 @@ Hover a kernel for its group, name and duration; the images scroll sideways.
 
    .. tab:: KDA layer (MXFP8, fused grouped MLP)
 
-      107.1 ms per iteration, 0.61 Mtok/s. The fused grouped MLP takes 5.8 ms forward and 12.3 ms backward for experts plus activation. What remains is the PyTorch side of the KDA block: the float32 casts, the gated output norm and the reshapes (11 ms forward, 20 ms backward) and the depthwise short convolution (5 ms forward, 11 ms backward).
+      107.1 ms per iteration, 0.61 Mtok/s. The MoE is the same as in the MLA
+      layer (fused grouped MLP 5.8 ms forward, 12.3 ms backward); the extra
+      time is the PyTorch side of the KDA block, which the trace splits into:
+
+      * **conv1d (PyTorch, fp32)**, 4.9 ms forward / 10.8 ms backward:
+        ``conv_depthwise2d_*`` kernels of the causal short convolution over
+        the concatenated Q, K, V channels, computed in float32.
+      * **layout copies**, 7.3 / 13.6 ms: the float32 input of the convolution
+        has 16384 x 36864 elements, above the 32-bit indexing limit, so every
+        ``movedim``/``pad``/``contiguous`` around it runs as two or four
+        ``direct_copy`` kernels of about 1 ms each; plus the sbhd-to-thd
+        transposes around the KDA kernel and the backward of
+        ``chunk(3)`` (one ``cat``, 2.9 ms).
+      * **SiLU**, 0.7 / 3.5 ms, and **dtype casts**, 1.5 / 1.5 ms: the
+        activation after the convolution and the bf16 -> float32 -> bf16
+        round trips of the convolution and the gated norm.
+      * **elementwise math**, 2.1 / 4.3 ms: the gated per-head RMSNorm written
+        in PyTorch (``pow``, ``mean``, ``rsqrt``, two ``mul``) and the
+        ``sigmoid`` of the output gate, all in float32.
+      * **KDA (cuDNN)**, 0.7 / 5.5 ms: the recurrence itself
+        (``frost_kda_prefill`` forward; ``recompute`` + ``bprop`` + channel gate
+        backward).
+      * The 4.2 ms NCCL all-gather in the forward is the routing-map exchange
+        absorbing the skew between ranks before the EP dispatch.
+
+      Everything but the KDA kernel is glue that a fused causal-conv kernel in
+      bf16 and a fused gated RMSNorm would remove.
 
       **Forward:** 40.0 ms
 
