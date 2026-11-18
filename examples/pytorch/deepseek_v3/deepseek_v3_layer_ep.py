@@ -245,9 +245,10 @@ def main():
     def step():
         layer.zero_grad(set_to_none=True)
         x.grad = None
-        with _autocast(args.recipe):
+        with torch.cuda.nvtx.range("forward"), _autocast(args.recipe):
             out = layer(x, ep_buffer=ep_buffer)
-        out.backward(torch.ones_like(out))
+        with torch.cuda.nvtx.range("backward"):
+            out.backward(torch.ones_like(out))
 
     for _ in range(args.warmup):
         step()
