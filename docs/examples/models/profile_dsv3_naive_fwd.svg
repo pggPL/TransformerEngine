@@ -55,8 +55,8 @@
 <text x='3376.1' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>SwiGLU</text>
 <line x1='3399.7' y1='92' x2='3399.7' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='3399.7' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
-<line x1='3424.8' y1='191' x2='3424.8' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='3424.8' y='202.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies x2</text>
+<line x1='3424.8' y1='176' x2='3424.8' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='3424.8' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
 <line x1='3478.4' y1='92' x2='3478.4' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='3478.4' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>GEMM</text>
 <line x1='3597.4' y1='176' x2='3597.4' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
@@ -71,8 +71,8 @@
 <text x='3977.8' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>SwiGLU</text>
 <line x1='4000.4' y1='92' x2='4000.4' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='4000.4' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
-<line x1='4024.7' y1='191' x2='4024.7' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='4024.7' y='202.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies x2</text>
+<line x1='4024.7' y1='176' x2='4024.7' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='4024.7' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
 <line x1='4076.0' y1='92' x2='4076.0' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='4076.0' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>GEMM</text>
 <line x1='4193.2' y1='176' x2='4193.2' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
@@ -87,8 +87,8 @@
 <text x='4572.7' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>SwiGLU</text>
 <line x1='4596.0' y1='92' x2='4596.0' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='4596.0' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
-<line x1='4621.1' y1='191' x2='4621.1' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='4621.1' y='202.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies x2</text>
+<line x1='4621.1' y1='176' x2='4621.1' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='4621.1' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
 <line x1='4673.1' y1='92' x2='4673.1' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='4673.1' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>GEMM</text>
 <line x1='4790.6' y1='176' x2='4790.6' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
@@ -103,8 +103,8 @@
 <text x='5173.8' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>SwiGLU</text>
 <line x1='5196.5' y1='92' x2='5196.5' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='5196.5' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
-<line x1='5221.1' y1='191' x2='5221.1' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='5221.1' y='202.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies x2</text>
+<line x1='5221.1' y1='176' x2='5221.1' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='5221.1' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
 <line x1='5272.6' y1='92' x2='5272.6' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='5272.6' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>GEMM</text>
 <line x1='5390.0' y1='176' x2='5390.0' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
@@ -119,8 +119,8 @@
 <text x='5773.5' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>SwiGLU</text>
 <line x1='5796.7' y1='92' x2='5796.7' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='5796.7' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
-<line x1='5821.5' y1='191' x2='5821.5' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='5821.5' y='202.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies x2</text>
+<line x1='5821.5' y1='176' x2='5821.5' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='5821.5' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
 <line x1='5871.3' y1='92' x2='5871.3' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='5871.3' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>GEMM</text>
 <line x1='5987.0' y1='176' x2='5987.0' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
@@ -135,8 +135,8 @@
 <text x='6364.5' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>SwiGLU</text>
 <line x1='6387.3' y1='92' x2='6387.3' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='6387.3' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
-<line x1='6411.6' y1='191' x2='6411.6' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='6411.6' y='202.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies x2</text>
+<line x1='6411.6' y1='176' x2='6411.6' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='6411.6' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
 <line x1='6462.7' y1='92' x2='6462.7' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='6462.7' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>GEMM</text>
 <line x1='6580.8' y1='176' x2='6580.8' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
@@ -151,8 +151,8 @@
 <text x='6975.6' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>SwiGLU</text>
 <line x1='7000.3' y1='92' x2='7000.3' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='7000.3' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
-<line x1='7026.6' y1='191' x2='7026.6' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='7026.6' y='202.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies x2</text>
+<line x1='7026.6' y1='176' x2='7026.6' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='7026.6' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
 <line x1='7079.7' y1='92' x2='7079.7' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='7079.7' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>GEMM</text>
 <line x1='7199.1' y1='176' x2='7199.1' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
@@ -167,8 +167,8 @@
 <text x='7592.5' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>SwiGLU</text>
 <line x1='7616.8' y1='92' x2='7616.8' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='7616.8' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
-<line x1='7642.8' y1='191' x2='7642.8' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='7642.8' y='202.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies x2</text>
+<line x1='7642.8' y1='176' x2='7642.8' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='7642.8' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>copies</text>
 <line x1='7696.0' y1='92' x2='7696.0' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='7696.0' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>GEMM</text>
 <line x1='7815.5' y1='176' x2='7815.5' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>

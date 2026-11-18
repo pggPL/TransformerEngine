@@ -18,13 +18,13 @@
 <line x1='1031.2' y1='176' x2='1031.2' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='1031.2' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize</text>
 <line x1='1340.3' y1='92' x2='1340.3' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='1340.3' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8) x2</text>
+<text x='1340.3' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8)</text>
 <line x1='1709.4' y1='176' x2='1709.4' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='1709.4' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8) x2</text>
+<text x='1709.4' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8)</text>
 <line x1='2233.4' y1='92' x2='2233.4' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='2233.4' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8) x2</text>
+<text x='2233.4' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8)</text>
 <line x1='2928.7' y1='176' x2='2928.7' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='2928.7' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8) x2</text>
+<text x='2928.7' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8)</text>
 <line x1='3352.4' y1='92' x2='3352.4' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='3352.4' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP permute</text>
 <line x1='3604.3' y1='176' x2='3604.3' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
@@ -64,7 +64,7 @@
 <line x1='7166.7' y1='92' x2='7166.7' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='7166.7' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>RMSNorm</text>
 <line x1='7174.4' y1='176' x2='7174.4' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='7174.4' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x2</text>
+<text x='7174.4' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize</text>
 <line x1='7195.1' y1='77' x2='7195.1' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='7195.1' y='74.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>GEMM x2</text>
 <line x1='7248.9' y1='176' x2='7248.9' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
