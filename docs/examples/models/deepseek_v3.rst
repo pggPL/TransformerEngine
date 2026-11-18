@@ -104,32 +104,6 @@ sideways. The ms/iter numbers are from runs without the profiler.
          .. raw:: html
             :file: profile_dsv3_naive_bwd.svg
 
-      Dense GEMMs are a third of the time (33.7 ms: 16 small GEMM pairs per
-      pass from the expert loop plus the MLA projections), the two
-      all-to-alls 10.0 ms, the cuDNN attention 9.0 ms, the sort / gather /
-      index kernels of the dispatch 8.5 ms and zero-fills 3.4 ms. The grey
-      "PyTorch copies / elementwise" group, 21.3 ms per iteration, is the
-      glue around the expert loop in ``NaiveMoE.forward``:
-
-      * 9.0 ms, 47 device-to-device ``memcpy``: ``y_recv = y_recv.index_copy(0, sel, ...)``
-        is out of place, so every expert iteration first clones the whole
-        receive buffer (8 clones per forward, and their backward
-        counterparts), plus the copies around the autograd
-        ``all_to_all_single``.
-      * 8.2 ms, 29 bf16 ``add`` kernels, 8.6 ms of them in the backward:
-        autograd summing the gradients that the eight ``index_copy`` steps
-        and the eight ``x_recv[sel]`` gathers contribute to the same
-        full-size ``y_recv`` / ``x_recv`` tensors, plus the residual adds and
-        ``out + shared_w2(...)``.
-      * 3.2 ms, 51 bf16 ``mul`` kernels and 1.6 ms of ``silu`` / ``silu_backward``:
-        ``F.silu(a) * g`` and ``* p_recv[sel, None]`` run as separate
-        elementwise kernels per expert and for the shared expert, forward and
-        backward, where TE uses one fused ``ScaledSwiGLU`` kernel.
-      * 4.4 ms of strided ``elementwise_kernel`` copies: ``p_recv[...].to(x.dtype)``
-        casts, ``.contiguous()`` before the all-to-alls, and the strided
-        gradient copies of ``chunk`` and indexing in the backward.
-      * 0.3 ms ``cat``: the backward of ``h.chunk(2)`` in ``_swiglu``.
-
    .. tab:: Optimized with TE (MXFP8, fused grouped MLP)
 
       ``DeepSeekV3MoE`` with NCCL expert parallelism under
