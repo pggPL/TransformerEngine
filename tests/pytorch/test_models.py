@@ -14,7 +14,15 @@ from transformer_engine.pytorch.ops.fused.grouped_mlp import (
 )
 from transformer_engine.pytorch.ops.fuser import OperationFuser
 from transformer_engine.pytorch.utils import deinterleave_glu_tensor
-from transformer_engine.pytorch.models import DeepSeekV3MoE, MultiLatentAttention
+from transformer_engine.pytorch.models import (
+    DeepSeekV3MoE,
+    KimiK3Layer,
+    KimiK3MoE,
+    KimiLinearAttention,
+    MultiLatentAttention,
+)
+from transformer_engine.pytorch.models.deepseek_v3.moe import expert_bias_from_qb_histogram
+from transformer_engine.pytorch.models.kimi_k3 import attn_res_pool
 from utils import make_recipe, quantization_tols
 
 SEQ_LEN = 128
@@ -192,3 +200,258 @@ def test_moe_fused_quantized_uneven_expert_rows(monkeypatch, quantization):
     ref_params = dict(reference.named_parameters())
     for name, param in moe.named_parameters():
         torch.testing.assert_close(param.grad, ref_params[name].grad, **tols)
+
+
+def _rmsnorm(x, weight, eps):
+    x = x.float()
+    return (x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps) * weight.float()).to(
+        weight.dtype
+    )
+
+
+def _situ_glu(gate, up):
+    gate, up = gate.float(), up.float()
+    return 4.0 * torch.tanh(gate / 4.0) * torch.sigmoid(gate) * 25.0 * torch.tanh(up / 25.0)
+
+
+def _kda_reference_core(core):
+    """Pure PyTorch replacement for the cuDNN KDA kernel (sbhd/bshd, in-kernel l2norm,
+    beta sigmoid and safe gate), for GPUs without the kernel."""
+
+    def forward(q, k, v, g, beta, *, a_log, dt_bias, gate_lower_bound, **_):
+        if core.qkv_format == "sbhd":
+            q, k, v, g, beta = (t.transpose(0, 1) for t in (q, k, v, g, beta))
+        q = torch.nn.functional.normalize(q.float(), dim=-1) * core.scale
+        k = torch.nn.functional.normalize(k.float(), dim=-1)
+        v = v.float()
+        alpha = torch.exp(
+            gate_lower_bound * torch.sigmoid(a_log.exp()[:, None] * (g.float() + dt_bias))
+        )
+        beta = torch.sigmoid(beta.float())
+        batch, seq, heads, dim = q.shape
+        state = q.new_zeros(batch, heads, dim, v.shape[-1])
+        outs = []
+        for t in range(seq):
+            state = alpha[:, t, :, :, None] * state
+            pred = torch.einsum("bhk,bhkv->bhv", k[:, t], state)
+            v_new = beta[:, t, :, None] * (v[:, t] - pred)
+            state = state + torch.einsum("bhk,bhv->bhkv", k[:, t], v_new)
+            outs.append(torch.einsum("bhk,bhkv->bhv", q[:, t], state))
+        out = torch.stack(outs, dim=1).reshape(batch, seq, -1)
+        if core.qkv_format == "sbhd":
+            out = out.transpose(0, 1)
+        return out.to(v.dtype if v.dtype != torch.float32 else torch.bfloat16)
+
+    return forward
+
+
+def _kda_kernel_available():
+    try:
+        from cudnn.linear_attention.ops import kimi_delta_attention  # noqa: F401
+    except (AttributeError, ImportError):
+        return False
+    return torch.cuda.get_device_capability() in {(10, 0), (10, 3), (10, 7)}
+
+
+def _use_reference_kda(module):
+    if _kda_kernel_available():
+        return
+    for core in [m for m in module.modules() if isinstance(m, te.KimiDeltaAttention)]:
+        core.forward = _kda_reference_core(core)
+
+
+def _finite_grads(module):
+    for name, parameter in module.named_parameters():
+        if parameter.requires_grad:
+            assert parameter.grad is not None, name
+            assert torch.isfinite(parameter.grad).all(), name
+
+
+def test_attn_res_pool_matches_reference():
+    torch.manual_seed(0)
+    eps = 1e-5
+    prefix = torch.randn(SEQ_LEN, BATCH, HIDDEN, dtype=DTYPE, device="cuda")
+    blocks = torch.randn(SEQ_LEN, BATCH, 3, HIDDEN, dtype=DTYPE, device="cuda")
+    proj = torch.randn(HIDDEN, dtype=DTYPE, device="cuda") * 0.1
+    norm = torch.rand(HIDDEN, dtype=DTYPE, device="cuda") + 0.5
+
+    assert attn_res_pool(prefix, None, proj, norm, eps) is prefix
+
+    values = torch.cat([blocks, prefix.unsqueeze(-2)], dim=-2).float()
+    scores = torch.stack(
+        [_rmsnorm(values[..., i, :], norm.float(), eps) @ proj.float() for i in range(4)],
+        dim=-1,
+    )
+    ref = torch.einsum("...k,...kd->...d", torch.softmax(scores, -1), values).to(DTYPE)
+    torch.testing.assert_close(attn_res_pool(prefix, blocks, proj, norm, eps), ref)
+
+    uniform = attn_res_pool(prefix, blocks, torch.zeros_like(proj), norm, eps)
+    torch.testing.assert_close(uniform, values.mean(-2).to(DTYPE))
+
+
+@pytest.mark.parametrize("qkv_format", ["sbhd", "bshd"])
+def test_kimi_linear_attention_forward_backward(qkv_format):
+    torch.manual_seed(0)
+    attention = KimiLinearAttention(
+        HIDDEN, HEADS, head_dim=64, qkv_format=qkv_format, params_dtype=DTYPE
+    )
+    _use_reference_kda(attention)
+    x = _input()
+    if qkv_format == "bshd":
+        x = x.detach().transpose(0, 1).contiguous().requires_grad_()
+    out = attention(x)
+    assert out.shape == x.shape
+    assert torch.isfinite(out).all()
+    out.float().pow(2).mean().backward()
+    assert torch.isfinite(x.grad).all()
+    _finite_grads(attention)
+    for name in ("A_log", "dt_bias", "conv_weight", "o_norm_weight"):
+        assert getattr(attention, name).dtype == torch.float32
+
+
+def test_mla_nope_output_gate_matches_reference():
+    torch.manual_seed(0)
+    mla = MultiLatentAttention(
+        HIDDEN, HEADS, params_dtype=DTYPE, rope=False, output_gate=True, **MLA_KWARGS
+    )
+    x = _input()
+    out = mla(x)
+    out.sum().backward()
+    assert torch.isfinite(x.grad).all()
+    _finite_grads(mla)
+
+    nope, rope, v_dim = (
+        MLA_KWARGS[k] for k in ("qk_nope_head_dim", "qk_rope_head_dim", "v_head_dim")
+    )
+    eps = mla.q_up_proj.eps
+    xf = x.detach()
+    q = _rmsnorm(xf @ mla.q_down_proj.weight.T, mla.q_up_proj.layer_norm_weight, eps)
+    q = (q @ mla.q_up_proj.weight.T).view(SEQ_LEN, BATCH, HEADS, nope + rope)
+    kv_down = xf @ mla.kv_down_proj.weight.T
+    latent, k_pos = torch.split(kv_down, [MLA_KWARGS["kv_lora_rank"], rope], dim=-1)
+    kv = _rmsnorm(latent, mla.kv_up_proj.layer_norm_weight, eps) @ mla.kv_up_proj.weight.T
+    k_nope, v = torch.split(kv.view(SEQ_LEN, BATCH, HEADS, nope + v_dim), [nope, v_dim], dim=-1)
+    k = torch.cat([k_nope, k_pos.unsqueeze(-2).expand(-1, -1, HEADS, -1)], dim=-1)
+    q, k, v = (t.permute(1, 2, 0, 3).float() for t in (q, k, v))
+    ctx = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True)
+    ctx = ctx.permute(2, 0, 1, 3).reshape(SEQ_LEN, BATCH, HEADS * v_dim).to(DTYPE)
+    ctx = ctx * torch.sigmoid(xf @ mla.gate_proj.weight.T)
+    ref = ctx @ mla.out_proj.weight.T
+    torch.testing.assert_close(out, ref, rtol=0.05, atol=0.05)
+
+
+@pytest.mark.parametrize("shared", [False, True], ids=["no_shared", "shared"])
+def test_kimi_moe_matches_dense_reference(shared):
+    torch.manual_seed(0)
+    num_experts, topk, latent, ffn = 4, 2, 128, 96
+    moe = KimiK3MoE(
+        HIDDEN,
+        ffn,
+        num_experts,
+        topk=topk,
+        latent_size=latent,
+        shared_expert_ffn_hidden_size=128 if shared else None,
+        params_dtype=DTYPE,
+    )
+    x = _input()
+    out = moe(x)
+    assert out.shape == x.shape
+    out.sum().backward()
+    assert torch.isfinite(x.grad).all()
+    _finite_grads(moe)
+
+    tokens = x.detach().reshape(-1, HIDDEN)
+    routed = moe.routed_experts
+    assert routed.qb_histogram.sum().item() == tokens.shape[0] * num_experts
+    with torch.no_grad():
+        probs, _ = routed._route(routed.gate(tokens).float())
+    assert (probs > 0).sum(dim=1).eq(topk).all()
+    assert routed.qb_histogram.sum().item() == tokens.shape[0] * num_experts
+
+    z = tokens @ moe.down_proj.weight.T
+    fc1, _, fc2 = routed.experts
+    ref = torch.zeros_like(z)
+    for e in range(num_experts):
+        w1 = deinterleave_glu_tensor(getattr(fc1, f"weight{e}"), 32)
+        gate_part, lin_part = (z @ w1.t()).chunk(2, dim=-1)
+        act = _situ_glu(gate_part, lin_part).to(DTYPE) * probs[:, e : e + 1].to(DTYPE)
+        ref += act @ getattr(fc2, f"weight{e}").t()
+    ref = (
+        _rmsnorm(ref, moe.post_expert_norm.weight, moe.post_expert_norm.eps) @ moe.up_proj.weight.T
+    )
+    if shared:
+        ref = ref + moe.shared_expert(tokens)
+    torch.testing.assert_close(out.reshape(-1, HIDDEN), ref, rtol=0.05, atol=0.05)
+
+    moe.update_expert_bias()
+    assert torch.isfinite(moe.expert_bias).all()
+    assert moe.expert_bias.mean().abs().item() < 1e-5
+    assert routed.qb_histogram.sum().item() == 0
+    assert routed.qb_bin_bounds[0] <= moe.expert_bias.min() - 1
+    assert routed.qb_bin_bounds[1] >= moe.expert_bias.max() + 1
+
+
+def test_expert_bias_from_qb_histogram_matches_quantile():
+    torch.manual_seed(0)
+    num_experts, topk, num_bins, tokens = 8, 2, 1000, 20000
+    required = torch.randn(num_experts, tokens, device="cuda") * 0.2 + torch.linspace(
+        -0.5, 0.5, num_experts, device="cuda"
+    ).unsqueeze(1)
+    bounds = torch.tensor([-1.0, 1.0], device="cuda")
+    histogram = torch.stack(
+        [torch.histc(required[e], bins=num_bins, min=-1.0, max=1.0) for e in range(num_experts)]
+    ).to(torch.int32)
+    old_bias = torch.zeros(num_experts, device="cuda")
+    bias = expert_bias_from_qb_histogram(histogram, bounds, old_bias, topk)
+    expected = torch.quantile(required, topk / num_experts, dim=1)
+    expected = expected - expected.mean()
+    torch.testing.assert_close(bias, expected, rtol=0, atol=3.0 / num_bins)
+
+    histogram[0].zero_()
+    old_bias = old_bias + 0.3
+    bias = expert_bias_from_qb_histogram(histogram, bounds, old_bias, topk)
+    raw = torch.quantile(required, topk / num_experts, dim=1)
+    raw[0] = old_bias[0]
+    torch.testing.assert_close(bias, raw - raw.mean(), rtol=0, atol=3.0 / num_bins)
+
+
+def test_kimi_layer_stack_attn_res():
+    torch.manual_seed(0)
+    layers = torch.nn.ModuleList(
+        [
+            KimiK3Layer(
+                HIDDEN,
+                HEADS,
+                layer_number=i + 1,
+                attention_type="mla" if i == 1 else "kda",
+                ffn_hidden_size=128 if i == 0 else None,
+                num_experts=None if i == 0 else 4,
+                moe_ffn_hidden_size=None if i == 0 else 64,
+                attn_res_block_size=2,
+                params_dtype=DTYPE,
+                **(MLA_KWARGS if i == 1 else dict(head_dim=64)),
+                **(
+                    {}
+                    if i == 0
+                    else dict(topk=2, latent_size=128, shared_expert_ffn_hidden_size=64)
+                ),
+            )
+            for i in range(3)
+        ]
+    )
+    _use_reference_kda(layers)
+    assert [layer.commits_block_residual for layer in layers] == [True, False, True]
+
+    x = _input()
+    hidden, blocks = x, None
+    for layer in layers:
+        hidden, blocks = layer(hidden, block_residuals=blocks)
+        assert hidden.shape == x.shape
+    assert blocks.shape == (SEQ_LEN, BATCH, 2, HIDDEN)
+    hidden.float().pow(2).mean().backward()
+    assert torch.isfinite(x.grad).all()
+    _finite_grads(layers)
+    assert layers[0].attention_res_proj is None
+    for layer in layers[1:]:
+        layer.mlp.update_expert_bias()
+        assert torch.isfinite(layer.mlp.expert_bias).all()

@@ -57,6 +57,9 @@ class MultiLatentAttention(torch.nn.Module):
     :mod:`transformer_engine.pytorch.attention.mla_rope` (single-pass key/value
     assembly); the rope slice follows
     the DeepSeekV3 checkpoint convention (interleaved weights, NeoX output).
+    With ``rope=False`` (NoPE, as in Kimi-K3) the rope slice is still projected
+    but never rotated. ``output_gate=True`` multiplies the attention output by
+    a sigmoid gate projected from the input before the output projection.
 
     Parameters
     ----------
@@ -98,6 +101,10 @@ class MultiLatentAttention(torch.nn.Module):
     softmax_scale : float, optional
                    softmax scale; defaults to ``1/sqrt(qk head dim)`` (times the YaRN
                    ``m**2`` when YaRN is enabled).
+    rope : bool, default = True
+          apply RoPE to the rope slice of queries and keys; ``False`` is NoPE.
+    output_gate : bool, default = False
+                 gate the attention output with ``sigmoid(Linear(hidden_states))``.
     qkv_format : str, default = "sbhd"
                 layout of the input/output tensors.
     params_dtype : torch.dtype, optional
@@ -128,6 +135,8 @@ class MultiLatentAttention(torch.nn.Module):
         mscale: float = 1.0,
         mscale_all_dim: float = 0.0,
         softmax_scale: Optional[float] = None,
+        rope: bool = True,
+        output_gate: bool = False,
         qkv_format: str = "sbhd",
         params_dtype: Optional[torch.dtype] = None,
         tp_group: Optional[torch.distributed.ProcessGroup] = None,
@@ -173,6 +182,15 @@ class MultiLatentAttention(torch.nn.Module):
             **tp,
             **common,
         )
+        self.gate_proj = None
+        if output_gate:
+            self.gate_proj = Linear(
+                hidden_size,
+                num_attention_heads * v_head_dim,
+                parallel_mode="column" if tp_size > 1 else None,
+                **tp,
+                **common,
+            )
         self.out_proj = Linear(
             num_attention_heads * v_head_dim,
             hidden_size,
@@ -181,6 +199,7 @@ class MultiLatentAttention(torch.nn.Module):
             **common,
         )
 
+        self.rope = rope
         self.rotary_base = rotary_base
         self._yarn_kwargs = {
             "scaling_factor": rope_scaling_factor,
@@ -255,20 +274,26 @@ class MultiLatentAttention(torch.nn.Module):
         kv = self.kv_up_proj(kv_latent)
         kv = kv.view(*kv.shape[:-1], heads, self.qk_nope_head_dim + self.v_head_dim)
 
-        cos, sin = self._rope_tables_for(seq_len, hidden_states.device)
-        q = apply_mla_rope_q(
-            q, cos, sin, self.qk_nope_head_dim, self.qk_rope_head_dim, self.qkv_format
-        )
-        k, v = apply_mla_rope_kv(
-            kv,
-            k_pos.unsqueeze(-2),
-            cos,
-            sin,
-            self.qk_nope_head_dim,
-            self.qk_rope_head_dim,
-            self.v_head_dim,
-            self.qkv_format,
-        )
+        if self.rope:
+            cos, sin = self._rope_tables_for(seq_len, hidden_states.device)
+            q = apply_mla_rope_q(
+                q, cos, sin, self.qk_nope_head_dim, self.qk_rope_head_dim, self.qkv_format
+            )
+            k, v = apply_mla_rope_kv(
+                kv,
+                k_pos.unsqueeze(-2),
+                cos,
+                sin,
+                self.qk_nope_head_dim,
+                self.qk_rope_head_dim,
+                self.v_head_dim,
+                self.qkv_format,
+            )
+        else:
+            k_nope, v = torch.split(kv, [self.qk_nope_head_dim, self.v_head_dim], dim=-1)
+            k_pos = k_pos.unsqueeze(-2).expand(*k_nope.shape[:-1], self.qk_rope_head_dim)
+            k = torch.cat([k_nope, k_pos], dim=-1)
+            v = v.contiguous()
 
         context = self.core_attention(
             q,
@@ -278,4 +303,6 @@ class MultiLatentAttention(torch.nn.Module):
             qkv_format=self.qkv_format,
             attn_mask_type=attn_mask_type,
         )
+        if self.gate_proj is not None:
+            context = context * torch.sigmoid(self.gate_proj(hidden_states))
         return self.out_proj(context)

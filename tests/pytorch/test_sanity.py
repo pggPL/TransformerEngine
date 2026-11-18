@@ -35,7 +35,7 @@ from transformer_engine.pytorch import (
     is_bf16_available,
 )
 from transformer_engine.common import recipe
-from transformer_engine.pytorch.models import DeepSeekV3Layer
+from transformer_engine.pytorch.models import DeepSeekV3Layer, KimiK3Layer
 from transformer_engine.pytorch.cpp_extensions import general_gemm
 from transformer_engine.pytorch.tensor.utils import replace_raw_data
 from transformer_engine.pytorch.module import (
@@ -899,6 +899,60 @@ def test_sanity_deepseek_v3_layer(dtype, fp8_recipe, moe):
         **mlp_kwargs,
     )
 
+    _test_sanity_e2e(block, dtype, config, fp8_recipe, skip_wgrad=False, check_finite=True)
+
+
+class _KimiK3Block(torch.nn.Module):
+    """Two Kimi-K3 MLA layers (dense, then MoE) with the AttnRes highway threaded through."""
+
+    def __init__(self, config, dtype, moe):
+        super().__init__()
+        mlp_kwargs = [dict(ffn_hidden_size=4 * config.hidden_size)]
+        mlp_kwargs.append(
+            dict(num_experts=4, topk=2, moe_ffn_hidden_size=64, shared_expert_ffn_hidden_size=64)
+            if moe
+            else mlp_kwargs[0]
+        )
+        self.layers = torch.nn.ModuleList(
+            KimiK3Layer(
+                config.hidden_size,
+                config.num_heads,
+                layer_number=i + 1,
+                attention_type="mla",
+                q_lora_rank=64,
+                kv_lora_rank=64,
+                qk_nope_head_dim=32,
+                qk_rope_head_dim=32,
+                v_head_dim=32,
+                params_dtype=dtype,
+                device="cuda",
+                **kwargs,
+            )
+            for i, kwargs in enumerate(mlp_kwargs)
+        )
+
+    def forward(self, hidden_states):
+        blocks = None
+        for layer in self.layers:
+            hidden_states, blocks = layer(hidden_states, block_residuals=blocks)
+        return hidden_states
+
+
+@pytest.mark.parametrize("dtype", param_types)
+@pytest.mark.parametrize("fp8_recipe", fp8_recipes, ids=recipe_id)
+@pytest.mark.parametrize("moe", all_boolean, ids=["moe", "dense"])
+def test_sanity_kimi_k3_layer(dtype, fp8_recipe, moe):
+    config = model_configs["small"]
+
+    if fp8_recipe is not None:
+        if not is_fp8_supported(config):
+            pytest.skip("Model config does not support FP8")
+        if fp8_recipe.nvfp4() and dtype == torch.float16:
+            pytest.skip("FP16 output for NVFP4 not supported")
+        if fp8_recipe.nvfp4() and moe and dtype != torch.bfloat16:
+            pytest.skip("NVFP4 GroupedLinear requires BF16")
+
+    block = _KimiK3Block(config, dtype, moe)
     _test_sanity_e2e(block, dtype, config, fp8_recipe, skip_wgrad=False, check_finite=True)
 
 
