@@ -350,9 +350,13 @@ Operation fuser
 
 .. autoapiclass:: transformer_engine.pytorch.ops.ScaledSwiGLU
 
+.. autoapiclass:: transformer_engine.pytorch.ops.ScaledSiTUGLU
+
 .. autoapiclass:: transformer_engine.pytorch.ops.SiLU
 
 .. autoapiclass:: transformer_engine.pytorch.ops.SwiGLU
+
+.. autoapiclass:: transformer_engine.pytorch.ops.SiTUGLU
 
 .. autoapifunction:: transformer_engine.pytorch.triton.mhc.mhc_fused_sinkhorn
 

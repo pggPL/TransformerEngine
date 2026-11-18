@@ -3,32 +3,68 @@
 
     See LICENSE for license information.
 
-Model layers
-============
-
-``transformer_engine.pytorch.models`` contains complete transformer layers of
-specific model families, composed from Transformer Engine modules and
-operations. They are the quickest way to run a model's layer on the TE
-kernels (fused attention, grouped GEMMs, fused activations, NCCL expert
-parallelism, low-precision recipes) without assembling it by hand, and
-they serve as reference compositions for frameworks that build their own.
-
-Two families are available:
-
-* :class:`~transformer_engine.pytorch.models.DeepSeekV3Layer`: multi-latent
-  attention with decoupled RoPE and a sigmoid-routed MoE with an
-  aux-loss-free expert bias and a shared expert.
-* :class:`~transformer_engine.pytorch.models.KimiK3Layer`: hybrid Kimi Delta
-  Attention / NoPE multi-latent attention, a latent MoE with SiTU-GLU experts
-  and quantile-balanced routing, and the Attention Residuals highway.
-
 DeepSeek-V3
------------
+===========
 
-A ``DeepSeekV3Layer`` is a drop-in analogue of
-:class:`~transformer_engine.pytorch.TransformerLayer`: pre-RMSNorm, attention,
-residual, pre-RMSNorm, MLP or MoE, residual. The first layers of DeepSeek-V3
-are dense (``num_experts=None``), the rest use the MoE.
+:class:`~transformer_engine.pytorch.models.DeepSeekV3Layer` is a drop-in
+analogue of :class:`~transformer_engine.pytorch.TransformerLayer` for the
+DeepSeek-V3 architecture: pre-RMSNorm, multi-latent attention (MLA),
+residual, pre-RMSNorm, dense MLP or DeepSeek MoE, residual. The first layers
+of DeepSeek-V3 are dense (``num_experts=None``), the rest use the MoE.
+
+Features used
+-------------
+
+Attention (:class:`~transformer_engine.pytorch.models.MultiLatentAttention`)
+
+* :class:`~transformer_engine.pytorch.DotProductAttention` with asymmetric
+  head sizes (``kv_channels=(192, 128)``), which selects the cuDNN fused
+  attention backend for the MLA shapes.
+* Fused MLA RoPE kernels (:func:`~transformer_engine.pytorch.attention.mla_rope.apply_mla_rope_q`,
+  :func:`~transformer_engine.pytorch.attention.mla_rope.apply_mla_rope_kv`)
+  that rotate the rope slice and assemble the key and value tensors in one
+  pass, with optional YaRN context extension
+  (:func:`~transformer_engine.pytorch.attention.mla_rope.build_rope_tables`).
+* :class:`~transformer_engine.pytorch.LayerNormLinear` with RMSNorm, so the
+  latent normalizations are fused into the up-projections;
+  :class:`~transformer_engine.pytorch.Linear` with column and row tensor
+  parallelism for the projections.
+
+MoE (:class:`~transformer_engine.pytorch.models.DeepSeekV3MoE`)
+
+* :ref:`Fused router <moe-router>`
+  (:func:`~transformer_engine.pytorch.router.fused_topk_with_score_function`):
+  sigmoid scores, aux-loss-free expert bias and node-limited grouped top-k in
+  one kernel; :ref:`load balancing <moe-load-balancing>` through
+  ``update_expert_bias()``.
+* :ref:`Token permutation <moe-token-permutation>`
+  (:func:`~transformer_engine.pytorch.moe_permute_with_probs`,
+  :func:`~transformer_engine.pytorch.moe_permute_and_pad_with_probs`,
+  :func:`~transformer_engine.pytorch.moe_unpermute`), padding each expert's
+  rows to the alignment the active quantization recipe needs.
+* Experts as an :doc:`operation fuser </examples/op_fuser/op_fuser>` sequence
+  :class:`~transformer_engine.pytorch.ops.GroupedLinear` ->
+  :class:`~transformer_engine.pytorch.ops.ScaledSwiGLU` ->
+  :class:`~transformer_engine.pytorch.ops.GroupedLinear`, with the routing
+  probabilities applied inside the activation. On Blackwell GPUs with MXFP8 or
+  NVFP4 the fuser replaces the three operations by the
+  :ref:`fused grouped MLP <moe-grouped-mlp>` kernel
+  (``NVTE_CUTEDSL_FUSED_GROUPED_MLP=1``).
+* :ref:`Expert parallelism <moe-expert-parallelism>` over NCCL
+  (:class:`~transformer_engine.pytorch.ops.MoeDispatch`,
+  :class:`~transformer_engine.pytorch.ops.MoeCombine`,
+  :func:`~transformer_engine.pytorch.ep.ep_bootstrap`), fused with the expert
+  sequence so dispatch and combine feed the grouped GEMM directly.
+* Shared expert as a dense ``Linear -> SwiGLU -> Linear`` operation sequence.
+
+Precision
+
+* Every GEMM runs under :class:`~transformer_engine.pytorch.autocast` with any
+  :doc:`low-precision recipe </features/low_precision_training/index>`
+  (FP8 delayed and current scaling, FP8 block scaling, MXFP8, NVFP4).
+
+Usage
+-----
 
 .. code-block:: python
 
@@ -55,78 +91,20 @@ are dense (``num_experts=None``), the rest use the MoE.
     layer.mlp.update_expert_bias()  # aux-loss-free load balancing, once per step
 
 With ``ep_group`` the routed experts are sharded across the group and tokens
-are exchanged over NCCL expert parallelism (``ep_bootstrap`` first, see
-``examples/pytorch/deepseek_v3``). The routed experts are a
-``GroupedLinear -> ScaledSwiGLU -> GroupedLinear`` operation sequence, which
-the operation fuser turns into a single cuDNN grouped MLP kernel on Blackwell
-GPUs with MXFP8 or NVFP4 (``NVTE_CUTEDSL_FUSED_GROUPED_MLP=1``).
-
-Kimi-K3
--------
-
-Kimi-K3 alternates three Kimi Delta Attention (KDA) layers with one
-multi-latent attention layer, uses a dense SiTU-GLU MLP in the first layer and
-a latent MoE afterwards, and replaces the plain residual stream with the
-Attention Residuals (AttnRes) highway. Because the highway carries state
-between layers, ``KimiK3Layer.forward`` takes and returns the committed block
-residuals alongside the hidden states.
-
-.. code-block:: python
-
-    import torch
-    from transformer_engine.pytorch.models import KimiK3Layer
-
-    def make_layer(layer_number):
-        attention_type = "mla" if layer_number % 4 == 0 else "kda"
-        attention_kwargs = {} if attention_type == "kda" else dict(
-            q_lora_rank=1536, kv_lora_rank=512,
-            qk_nope_head_dim=128, qk_rope_head_dim=64, v_head_dim=128,
-        )
-        mlp_kwargs = (
-            dict(ffn_hidden_size=33792)
-            if layer_number == 1
-            else dict(
-                num_experts=896, moe_ffn_hidden_size=3072, topk=16,
-                latent_size=3584, shared_expert_ffn_hidden_size=6144,
-            )
-        )
-        return KimiK3Layer(
-            hidden_size=7168,
-            num_attention_heads=96,
-            layer_number=layer_number,
-            attention_type=attention_type,
-            attn_res_block_size=12,
-            params_dtype=torch.bfloat16,
-            **attention_kwargs,
-            **mlp_kwargs,
-        )
-
-    layers = torch.nn.ModuleList(make_layer(i + 1) for i in range(8))
-
-    hidden = torch.randn(4096, 1, 7168, dtype=torch.bfloat16, device="cuda")
-    block_residuals = None
-    for layer in layers:
-        hidden, block_residuals = layer(hidden, block_residuals=block_residuals)
-    hidden.sum().backward()
-    for layer in layers[1:]:
-        layer.mlp.update_expert_bias()  # quantile balancing, once per step
-
-The KDA recurrence runs through the cuDNN frontend KDA kernel and requires a
-Blackwell GPU. The MoE reuses ``DeepSeekV3MoE`` with SiTU-GLU experts, so the
-fused grouped MLP and expert parallelism apply unchanged; the router reads the
-full hidden state while the experts run on the latent.
+are exchanged over NCCL expert parallelism; call
+:func:`~transformer_engine.pytorch.ep.ep_bootstrap` once per process first.
+``examples/pytorch/deepseek_v3`` is a complete expert-parallel benchmark
+of the layer.
 
 Where the time goes
 -------------------
 
-All numbers below are for one ``DeepSeekV3Layer`` with DeepSeek-V3 dimensions
+All numbers are for one ``DeepSeekV3Layer`` with DeepSeek-V3 dimensions
 (hidden 7168, 128 heads, MLA 1536 / 512 / 128 / 64 / 128, expert ffn 2048,
 shared expert ffn 2048), top-k 8, 4096 tokens per GPU, forward + backward,
 bf16 unless noted. Timings are wall-clock with CUDA synchronization, no CUDA
 graphs. Reproduce them with ``examples/pytorch/deepseek_v3``; the full setup
 (software versions, environment variables) is in that example's README.
-Kimi-K3 measurements will follow once the layer has been run on Blackwell
-hardware.
 
 TE MoE vs. plain PyTorch MoE
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
