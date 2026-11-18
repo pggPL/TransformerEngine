@@ -70,8 +70,8 @@ Profile on 1 GB200 node
 -----------------------
 
 ``nsys`` traces of rank 0 on one GB200 node: 4 GPUs, expert parallelism over
-all four, 8 local experts per GPU (32 routed experts), top-k 8, 4096 tokens
-per GPU, DeepSeek-V3 dimensions, bf16 unless noted, this revision of
+all four, 8 local experts per GPU (32 routed experts), top-k 8, 16384 tokens
+per GPU, DeepSeek-V3 dimensions, this revision of
 ``examples/pytorch/deepseek_v3`` with 5 warmup and 10 timed iterations. Each
 tab shows one iteration with the forward and the backward pass on separate
 rows and a common time scale; every rectangle is one kernel on the compute
@@ -84,78 +84,46 @@ sideways. The ms/iter numbers are from runs without the profiler.
 
    .. tab:: Baseline: plain PyTorch
 
-      ``--impl naive``: **27.6 ms/iter**, 26.5 ms of kernels (forward 8.5 ms,
-      backward 18.0 ms). Sigmoid router in plain PyTorch, ``all_to_all_single``
-      dispatch and combine, a Python loop over the eight local experts with
-      dense SwiGLU MLPs, ``index_copy`` / ``index_add`` to place the rows.
+      ``--impl naive``: **96.2 ms/iter** (0.68 Mtok/s), 95.3 ms
+      of kernels (forward 32.6 ms, backward 62.7 ms), 1.4 ms of
+      the iteration with an idle GPU. Sigmoid router in plain PyTorch,
+      ``all_to_all_single`` dispatch and combine, a Python loop over the eight
+      local experts with dense SwiGLU MLPs, ``index_copy`` / ``index_add`` to
+      place the rows.
 
       .. container:: scroll-x
 
          .. raw:: html
             :file: profile_dsv3_naive.svg
 
-      The expert loop turns into 16 small GEMM pairs per pass and, in the
-      backward, into as much copy, index and zero-fill work (7.2 ms of
-      PyTorch elementwise kernels plus 1.5 ms of memsets) as GEMM time; the
-      all-to-all itself is 2.9 ms.
-
-   .. tab:: Plain PyTorch + TE grouped GEMM
-
-      ``--impl naive_grouped``: **17.9 ms/iter**, 17.4 ms of kernels (forward
-      6.9 ms, backward 10.5 ms). Same router and all-to-all, but the received
-      rows are sorted by expert and run through one
-      ``GroupedLinear -> ScaledSwiGLU -> GroupedLinear`` stack.
-
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_dsv3_naive_grouped.svg
-
-      Replacing the loop by grouped GEMMs removes 10 ms: the expert GEMMs
-      shrink to 5.0 ms and the elementwise overhead to 0.7 ms. What remains
-      above the TE layer is the all-to-all (2.9 ms), the sort / gather /
-      scatter around it (1.7 ms) and the host syncs for the split sizes,
-      visible as gaps before each all-to-all.
-
-   .. tab:: Optimized with TE (BF16)
-
-      ``DeepSeekV3MoE`` with NCCL expert parallelism: **14.0 ms/iter**,
-      14.4 ms of kernels (forward 5.2 ms, backward
-      9.2 ms).
-
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_dsv3_te_bf16.svg
-
-      NCCL EP dispatch and combine replace the all-to-all plus the sort /
-      gather / scatter and their host syncs (1.7 ms of EP kernels in
-      total), the fused router is a single kernel, and the stream stays busy:
-      over 99 % of the iteration is kernel time. The expert GEMMs and the
-      dense MLA projections are now the bulk of the layer.
+      Dense GEMMs are a third of the time (33.7 ms, 16 small GEMM pairs per
+      pass from the expert loop plus the MLA projections), but almost as much
+      goes into moving data around them: 21.3 ms of PyTorch copy and
+      elementwise kernels, 8.5 ms of sort / index / scatter for the dispatch
+      and 3.4 ms of zero-fills, most of it in the backward. The two
+      all-to-alls cost 10.0 ms, the cuDNN attention 9.0 ms.
 
    .. tab:: Optimized with TE (MXFP8, fused grouped MLP)
 
-      Same layer under ``te.autocast(recipe=MXFP8BlockScaling())`` with the
-      cuDNN fused grouped MLP (``split_alignment=256`` on the expert
-      ``GroupedLinear`` ops): **10.3 ms/iter**, 10.1 ms of
-      kernels (forward 4.1 ms, backward 6.0 ms).
+      ``DeepSeekV3MoE`` with NCCL expert parallelism under
+      ``te.autocast(recipe=MXFP8BlockScaling())`` and the cuDNN fused grouped
+      MLP (``split_alignment=256`` on the expert ``GroupedLinear`` ops):
+      **43.3 ms/iter** (1.51 Mtok/s), 43.4 ms of kernels (forward
+      15.7 ms, backward 27.7 ms), 0.1 ms of the iteration with an idle
+      GPU.
 
       .. container:: scroll-x
 
          .. raw:: html
             :file: profile_dsv3_te_mxfp8.svg
 
-      The fused grouped MLP (fc1 + SwiGLU, fc2, dGLU and wgrad as cuDNN kernels)
-      takes 3.1 ms where the BF16 variant spent 5.7 ms of grouped GEMMs plus
-      0.9 ms of SwiGLU, and the dense MLA and shared-expert GEMMs drop from
-      3.8 ms to 2.0 ms; the price is 1.2 ms of MXFP8 quantization kernels.
-      The EP exchange (1.7 ms) and the cuDNN attention (1.0 ms) are unchanged,
-      so they now make up a quarter of the iteration. The gaps in the forward
-      row, before the attention and before the EP dispatch, are the only idle
-      time in the four traces: 1.3 ms in which the GPU waits for the host,
-      because the MXFP8 forward launches many short quantization and routing
-      kernels and the stream runs dry at this small per-GPU token count.
+      The experts are twelve cuDNN kernels per iteration (fc1 + SwiGLU, fc2,
+      dGLU, wgrad) totalling 11.5 ms, there is no separate activation kernel,
+      and the quantization that feeds them costs 3.6 ms. NCCL EP dispatch and
+      combine (4.6 ms) plus their local permutes (2.2 ms) replace the
+      all-to-all, the sort / scatter work and the host syncs of the baseline.
+      At this shape the attention (9.5 ms) and the dense MLA projections
+      (7.8 ms) are as large as the expert MLP, and the stream is never idle.
 
 TE MoE vs. plain PyTorch MoE
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
