@@ -35,11 +35,19 @@ _ACTIVATIONS = {
 
 
 def make_glu_mlp(
-    hidden_size, ffn_hidden_size, dtype, device, num_experts=None, activation="swiglu"
+    hidden_size,
+    ffn_hidden_size,
+    dtype,
+    device,
+    num_experts=None,
+    activation="swiglu",
+    single_grouped_weight=False,
 ):
     """Dense GLU MLP, or a grouped one (probs applied inside the activation) per expert.
 
     The grouped variant fuses into a single CuTe grouped MLP on supported hardware.
+    ``single_grouped_weight`` stores the expert weights of each GEMM as one grouped
+    parameter, so they are quantized by one kernel instead of one per expert.
     """
     if activation not in _ACTIVATIONS:
         raise ValueError(f"activation must be one of {sorted(_ACTIVATIONS)}, got {activation!r}")
@@ -51,10 +59,11 @@ def make_glu_mlp(
             dense_act(),
             te_ops.Linear(ffn_hidden_size, hidden_size, **common),
         )
+    grouped = {"single_grouped_weight": single_grouped_weight, **common}
     return te_ops.Sequential(
-        te_ops.GroupedLinear(num_experts, hidden_size, 2 * ffn_hidden_size, **common),
+        te_ops.GroupedLinear(num_experts, hidden_size, 2 * ffn_hidden_size, **grouped),
         grouped_act(glu_interleave_size=32),
-        te_ops.GroupedLinear(num_experts, ffn_hidden_size, hidden_size, **common),
+        te_ops.GroupedLinear(num_experts, ffn_hidden_size, hidden_size, **grouped),
     )
 
 
@@ -151,6 +160,11 @@ class DeepSeekV3MoE(torch.nn.Module):
                        size of the router input when it differs from
                        ``hidden_size``; requires passing ``router_input`` to
                        :meth:`forward`.
+    single_grouped_weight : bool, default = False
+                           store the routed experts' weights as one grouped
+                           parameter per GEMM (see :class:`~transformer_engine.pytorch.ops.GroupedLinear`),
+                           which quantizes them with one kernel per step instead
+                           of one per expert. Experimental.
     params_dtype : torch.dtype, optional
                   dtype of module parameters.
     ep_group : ProcessGroup, optional
@@ -174,6 +188,7 @@ class DeepSeekV3MoE(torch.nn.Module):
         qb_num_bins: int = 1000,
         activation: str = "swiglu",
         router_input_size: Optional[int] = None,
+        single_grouped_weight: bool = False,
         params_dtype: Optional[torch.dtype] = None,
         device: Union[torch.device, str] = "cuda",
         ep_group: Optional[torch.distributed.ProcessGroup] = None,
@@ -246,6 +261,7 @@ class DeepSeekV3MoE(torch.nn.Module):
             device,
             num_experts=num_local_experts,
             activation=activation,
+            single_grouped_weight=single_grouped_weight,
         )
 
         self._ep_buffer_kwargs = None

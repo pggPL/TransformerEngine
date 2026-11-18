@@ -59,6 +59,11 @@ def _parse_args(argv=None):
         action="store_true",
         help="Let the layer create a new EpBuffer per forward instead of reusing one.",
     )
+    p.add_argument(
+        "--single-grouped-weight",
+        action="store_true",
+        help="One grouped weight parameter per expert GEMM (one quantize kernel per step).",
+    )
     p.add_argument("--warmup", type=int, default=5)
     p.add_argument("--iters", type=int, default=10)
     args = p.parse_args(argv)
@@ -139,6 +144,7 @@ def main():
         topk=args.topk,
         latent_size=args.latent,
         shared_expert_ffn_hidden_size=args.shared_ffn,
+        single_grouped_weight=args.single_grouped_weight,
         params_dtype=torch.bfloat16,
         ep_group=ep_group,
         ep_max_tokens_per_rank=args.tokens_per_rank,

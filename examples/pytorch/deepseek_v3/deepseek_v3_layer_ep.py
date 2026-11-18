@@ -58,6 +58,11 @@ def _parse_args(argv=None):
         action="store_true",
         help="Let the layer create a new EpBuffer per forward instead of reusing one.",
     )
+    p.add_argument(
+        "--single-grouped-weight",
+        action="store_true",
+        help="One grouped weight parameter per expert GEMM (one quantize kernel per step).",
+    )
     p.add_argument("--warmup", type=int, default=5)
     p.add_argument("--iters", type=int, default=10)
     args = p.parse_args(argv)
@@ -207,6 +212,7 @@ def main():
         moe_ffn_hidden_size=args.moe_ffn,
         shared_expert_ffn_hidden_size=args.moe_ffn,
         topk=args.topk,
+        single_grouped_weight=args.single_grouped_weight,
         ep_group=ep_group,
         ep_max_tokens_per_rank=args.tokens_per_rank,
     )
@@ -269,7 +275,7 @@ def main():
         tok_s = args.tokens_per_rank * world_size / (ms / 1e3)
         print(
             f"DeepSeekV3Layer impl={args.impl}:"
-            f" ranks={world_size} experts={num_experts} topk={args.topk} tokens/rank={args.tokens_per_rank} hidden={args.hidden} recipe={args.recipe} fused_mlp={os.environ.get('NVTE_CUTEDSL_FUSED_GROUPED_MLP', '0')} ep_buffer={'per_call' if ep_buffer is None else 'reused'} fwd+bwd"
+            f" ranks={world_size} experts={num_experts} topk={args.topk} tokens/rank={args.tokens_per_rank} hidden={args.hidden} recipe={args.recipe} fused_mlp={os.environ.get('NVTE_CUTEDSL_FUSED_GROUPED_MLP', '0')} single_grouped_weight={int(args.single_grouped_weight)} ep_buffer={'per_call' if ep_buffer is None else 'reused'} fwd+bwd"
             f" {ms:.3f} ms/iter ({tok_s / 1e6:.2f} Mtok/s)",
             flush=True,
         )

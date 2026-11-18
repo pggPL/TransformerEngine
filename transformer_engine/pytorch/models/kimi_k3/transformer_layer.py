@@ -111,6 +111,7 @@ class KimiK3Layer(torch.nn.Module):
             "routed_scaling_factor",
             "expert_bias_update",
             "qb_num_bins",
+            "single_grouped_weight",
             "ep_group",
             "ep_max_tokens_per_rank",
         }

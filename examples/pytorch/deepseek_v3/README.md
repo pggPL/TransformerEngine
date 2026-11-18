@@ -65,7 +65,9 @@ torchrun --nnodes=2 --nproc-per-node=4 --rdzv-backend=c10d --rdzv-endpoint=<head
 Every rank owns `--num-local-experts` experts (default 8), so the expert count is
 `8 * world_size`. Other knobs: `--tokens-per-rank`, `--topk`, `--hidden`, `--num-heads`,
 `--moe-ffn`, the MLA dims (`--q-lora-rank`, `--kv-lora-rank`, `--qk-nope-head-dim`,
-`--qk-rope-head-dim`, `--v-head-dim`), `--warmup`, `--iters`.
+`--qk-rope-head-dim`, `--v-head-dim`), `--warmup`, `--iters`. `--single-grouped-weight` stores each expert GEMM's weights as one
+grouped parameter, so the MXFP8 weight quantization is one kernel per GEMM instead of one per
+expert (same speed at 8 local experts, fewer launches with many experts).
 `--warmup 0` is supported; `--iters` must be positive and `--tokens-per-rank` must be a
 positive multiple of four. MXFP8 requires `--impl te`.
 
@@ -114,7 +116,7 @@ Both nodes share one NVLink domain (MNNVL).
 | MoE | 8 local experts per rank (32 on 4 GPUs, 64 on 8), top-k 8, 4096 tokens per rank |
 | precision | bf16 params and activations; `--recipe mxfp8` = MXFP8 block scaling for the expert GEMMs and dense projections |
 | timing | fwd + bwd, 5 warmup, 10 timed iterations per run, median of 3 runs; wall-clock timing with CUDA synchronization, no CUDA graphs or profiler |
-| environment | `OMP_NUM_THREADS=8`, `NVTE_GROUPED_LINEAR_SINGLE_PARAM=0`, `NVTE_ALLOW_NONDETERMINISTIC_ALGO=1`, `NVTE_FLASH_ATTN_V2=1`, `NVTE_FLASH_ATTN_V3=0`, `NVTE_FLASH_ATTN_V4=0`; EP buffer reused |
+| environment | `OMP_NUM_THREADS=8`, `NVTE_ALLOW_NONDETERMINISTIC_ALGO=1`, `NVTE_FLASH_ATTN_V2=1`, `NVTE_FLASH_ATTN_V3=0`, `NVTE_FLASH_ATTN_V4=0`; EP buffer reused |
 
 Each run reuses a normally distributed random input and backpropagates an all-ones
 output gradient. Parameter and input gradients are cleared before each iteration.

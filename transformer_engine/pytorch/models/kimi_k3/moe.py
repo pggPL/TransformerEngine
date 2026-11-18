@@ -48,6 +48,9 @@ class KimiK3MoE(torch.nn.Module):
                  histogram bins of quantile balancing.
     layernorm_epsilon : float, default = 1e-5
                        epsilon of the post-expert RMSNorm.
+    single_grouped_weight : bool, default = False
+                           one grouped weight parameter per expert GEMM
+                           (see :class:`DeepSeekV3MoE`).
     params_dtype : torch.dtype, optional
                   dtype of module parameters.
     ep_group : ProcessGroup, optional
@@ -68,6 +71,7 @@ class KimiK3MoE(torch.nn.Module):
         expert_bias_update: str = "quantile",
         qb_num_bins: int = 1000,
         layernorm_epsilon: float = 1e-5,
+        single_grouped_weight: bool = False,
         params_dtype: Optional[torch.dtype] = None,
         device: Union[torch.device, str] = "cuda",
         ep_group: Optional[torch.distributed.ProcessGroup] = None,
@@ -91,6 +95,7 @@ class KimiK3MoE(torch.nn.Module):
             qb_num_bins=qb_num_bins,
             activation="situglu",
             router_input_size=hidden_size,
+            single_grouped_weight=single_grouped_weight,
             params_dtype=params_dtype,
             device=device,
             ep_group=ep_group,

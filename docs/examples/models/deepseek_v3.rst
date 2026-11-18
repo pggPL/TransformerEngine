@@ -90,14 +90,14 @@ sideways. The ms/iter numbers are from runs without the profiler.
       the eight local experts with dense SwiGLU MLPs, ``index_copy`` /
       ``index_add`` to place the rows.
 
-      **Forward: 33.6 ms**
+      **Forward: 34.2 ms**
 
       .. container:: scroll-x
 
          .. raw:: html
             :file: profile_dsv3_naive_fwd.svg
 
-      **Backward: 63.1 ms**
+      **Backward: 62.7 ms**
 
       .. container:: scroll-x
 
@@ -107,19 +107,19 @@ sideways. The ms/iter numbers are from runs without the profiler.
    .. tab:: Optimized with TE (MXFP8, fused grouped MLP)
 
       ``DeepSeekV3MoE`` with NCCL expert parallelism under
-      ``te.autocast(recipe=MXFP8BlockScaling())`` and the cuDNN fused grouped
-      MLP (``split_alignment=256`` on the expert ``GroupedLinear`` ops):
-      **43.3 ms/iter** (1.51 Mtok/s), 43.4 ms of kernels, 0.1 ms of the
-      iteration with an idle GPU.
+      ``te.autocast(recipe=MXFP8BlockScaling())``, the cuDNN fused grouped MLP
+      and ``single_grouped_weight=True`` (one grouped weight parameter per
+      expert GEMM, so the expert weights are quantized by one kernel per step):
+      **43.4 ms/iter** (1.51 Mtok/s), 0.1 ms of the iteration with an idle GPU.
 
-      **Forward: 15.8 ms**
+      **Forward: 15.7 ms**
 
       .. container:: scroll-x
 
          .. raw:: html
             :file: profile_dsv3_te_mxfp8_fwd.svg
 
-      **Backward: 27.8 ms**
+      **Backward: 27.7 ms**
 
       .. container:: scroll-x
 
