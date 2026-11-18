@@ -49,6 +49,7 @@ import flax.struct
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax.ad_checkpoint import checkpoint_name
 from jax.sharding import NamedSharding, PartitionSpec as P
 
@@ -86,10 +87,11 @@ class SiTUActivation:
 
     Computes ``gate_beta * tanh(gate / gate_beta) * sigmoid(gate)`` times
     ``up_beta * tanh(up / up_beta)`` in FP32, then casts to the gate dtype.
-    The defaults match Kimi-K3. Both soft-cap parameters must be finite and
-    positive. Pass an instance as ``moe(..., activation_type=...)``.
+    The defaults match Kimi-K3. Both soft-cap parameters must be finite,
+    positive and representable in FP32. Pass an instance as
+    ``moe(..., activation_type=...)``.
 
-    BF16 and MXFP8 use native grouped SiTU forward/backward with separate GEMMs.
+    BF16 and MXFP8 use JAX SiTU with automatic differentiation and separate GEMMs.
     Requesting cuDNN fusion retains its normal warning and fallback behavior.
     """
 
@@ -99,19 +101,30 @@ class SiTUActivation:
     def __post_init__(self):
         for name in ("gate_beta", "up_beta"):
             value = float(getattr(self, name))
-            if not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{name} must be finite and positive, got {value}")
+            if (
+                not math.isfinite(value)
+                or value <= 0
+                or value > float(np.finfo(np.float32).max)
+                or np.float32(value) == 0
+            ):
+                raise ValueError(
+                    f"{name} must be finite, positive and representable in float32, got {value}"
+                )
             object.__setattr__(self, name, value)
 
 
 def _apply_ffn_activation(activation_type, gate, up, group_sizes):
     if isinstance(activation_type, SiTUActivation):
-        return tex.grouped_situglu_fwd(
-            jnp.concatenate([gate, up], axis=-1),
-            group_sizes,
-            activation_type.gate_beta,
-            activation_type.up_beta,
+        active = (jnp.arange(gate.shape[0]) < group_sizes.sum())[:, None]
+        gate_fp32 = jnp.where(active, gate, 0).astype(jnp.float32)
+        up_fp32 = jnp.where(active, up, 0).astype(jnp.float32)
+        gated = (
+            activation_type.gate_beta
+            * jnp.tanh(gate_fp32 / activation_type.gate_beta)
+            * jax.nn.sigmoid(gate_fp32)
         )
+        linear = activation_type.up_beta * jnp.tanh(up_fp32 / activation_type.up_beta)
+        return jnp.where(active, (gated * linear).astype(gate.dtype), 0)
     return _convert_to_activation_function(activation_type)(gate) * up
 
 
@@ -1268,19 +1281,18 @@ def _ffn_bwd_per_shard(
             d_recv_w_from_intermediate = jnp.zeros_like(recv_w_flat)
 
         if isinstance(activation_type, SiTUActivation):
-            d_combined_for_bias = tex.grouped_situglu_bwd(
-                d_intermediate,
-                jnp.concatenate([gate_proj_out, up_proj_out], axis=-1),
-                group_sizes,
-                activation_type.gate_beta,
-                activation_type.up_beta,
+            _, dact_pullback = jax.vjp(
+                partial(_apply_ffn_activation, activation_type, group_sizes=group_sizes),
+                gate_proj_out,
+                up_proj_out,
             )
+            d_gate_proj_out, d_up_proj_out = dact_pullback(d_intermediate)
         else:
             act_fn = _convert_to_activation_function(activation_type)
             act_gp, dact_pullback = jax.vjp(act_fn, gate_proj_out)
             d_up_proj_out = d_intermediate * act_gp
             (d_gate_proj_out,) = dact_pullback(d_intermediate * up_proj_out)
-            d_combined_for_bias = jnp.concatenate([d_gate_proj_out, d_up_proj_out], axis=-1)
+        d_combined_for_bias = jnp.concatenate([d_gate_proj_out, d_up_proj_out], axis=-1)
         casted_d_combined = tex.grouped_quantize(
             d_combined_for_bias,
             fc1_quantizer_set.dgrad,
@@ -2202,8 +2214,8 @@ def moe(
     ----------
     activation_type : Union[str, SiTUActivation]
         Gate activation name (default ``"silu"``), or :class:`SiTUActivation`
-        for FP32 soft-capping of both gate and up branches. SiTU uses native
-        grouped activation kernels and separate grouped GEMMs with BF16 or
+        for FP32 soft-capping of both gate and up branches. SiTU uses JAX
+        activation operations and a VJP between separate grouped GEMMs with BF16 or
         MXFP8 quantizer sets. cuDNN GLU/dGLU uses the existing fallback path.
     router_info : Union[RouterComputationInfo, RoutingMapInfo]
         :class:`RouterComputationInfo` makes TE compute the gate and top-k

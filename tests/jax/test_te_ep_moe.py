@@ -573,24 +573,23 @@ def _quantization_recipe(quantization):
     return MXFP8BlockScaling()
 
 
-def test_situ_uses_native_grouped_kernels(mesh, monkeypatch, make_block):
-    from transformer_engine.jax import cpp_extensions as tex
-
+def test_situ_uses_jax_fallback(mesh, monkeypatch, make_block):
+    module = importlib.import_module("transformer_engine.jax.moe")
     calls = []
-    forward, backward = tex.grouped_situglu_fwd, tex.grouped_situglu_bwd
+    forward, vjp = module._apply_ffn_activation, jax.vjp
 
-    def checked_forward(x, counts, beta1, beta2):
-        assert counts.ndim == 1 and counts.dtype == jnp.int32
+    def checked_forward(activation, gate, up, group_sizes):
+        assert group_sizes.ndim == 1 and group_sizes.dtype == jnp.int32
         calls.append("forward")
-        return forward(x, counts, beta1, beta2)
+        return forward(activation, gate, up, group_sizes)
 
-    def checked_backward(grad, x, counts, beta1, beta2):
-        assert counts.ndim == 1 and counts.dtype == jnp.int32
-        calls.append("backward")
-        return backward(grad, x, counts, beta1, beta2)
+    def checked_vjp(fun, *args, **kwargs):
+        if isinstance(fun, partial) and fun.func is checked_forward:
+            calls.append("backward")
+        return vjp(fun, *args, **kwargs)
 
-    monkeypatch.setattr(tex, "grouped_situglu_fwd", checked_forward)
-    monkeypatch.setattr(tex, "grouped_situglu_bwd", checked_backward)
+    monkeypatch.setattr(module, "_apply_ffn_activation", checked_forward)
+    monkeypatch.setattr(jax, "vjp", checked_vjp)
     block = make_block(activation_type=SiTUActivation(3.0, 11.0))
     x = _make_inputs(jax.random.PRNGKey(88))
     variables, _, _, _ = _init_apply(block, mesh, x, jax.random.PRNGKey(89))

@@ -6,6 +6,7 @@
 
 import importlib
 import inspect
+from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -13,7 +14,6 @@ import numpy as np
 import pytest
 from jax.sharding import Mesh
 
-from transformer_engine.jax import grouped_situglu
 from transformer_engine.jax.flax import _MoEBlock
 from transformer_engine.jax.moe import (
     RouterComputationInfo,
@@ -34,15 +34,10 @@ def test_situ_value_and_both_branch_derivatives(betas):
     counts = jnp.asarray([1], jnp.int32)
 
     def activate(g, u):
-        pair = jnp.concatenate([g, u])[None, :]
-        return grouped_situglu(pair, counts, gate_beta, up_beta)[0]
+        return _apply_ffn_activation(activation, g[None, :], u[None, :], counts)[0]
 
     output, pullback = jax.vjp(activate, gate, up)
     dg, du = pullback(jnp.ones_like(output))
-    np.testing.assert_array_equal(
-        output, _apply_ffn_activation(activation, gate[None, :], up[None, :], counts)[0]
-    )
-
     g, u = np.asarray(gate, np.float64), np.asarray(up, np.float64)
     sigmoid = 0.5 + 0.5 * np.tanh(g / 2)
     tg, tu = np.tanh(g / gate_beta), np.tanh(u / up_beta)
@@ -68,11 +63,67 @@ def test_situ_bf16_uses_fp32_before_final_cast():
     np.testing.assert_array_equal(actual, expected)
 
 
-@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), 1e100, 1e-100])
 @pytest.mark.parametrize("field", ["gate_beta", "up_beta"])
 def test_situ_rejects_invalid_soft_caps(field, value):
     with pytest.raises(ValueError, match=field):
         SiTUActivation(**{field: value})
+
+
+@pytest.mark.parametrize("dtype", [jnp.float32, jnp.float16, jnp.bfloat16])
+@pytest.mark.parametrize("betas", [(4.0, 25.0), (2.0, 8.0)])
+@pytest.mark.parametrize("counts", [[3, 0, 5], [0, 0, 0], [0] * 257 + [13], [0]])
+def test_situ_masks_inactive_values_and_gradients(dtype, betas, counts):
+    capacity = 0 if counts == [0] else 13
+    active = sum(counts)
+    rng = np.random.default_rng(72)
+    gate, up, dy = [rng.uniform(-5, 5, (capacity, 6)).astype(np.float32) for _ in range(3)]
+    for value in (gate, up, dy):
+        value[active:] = np.nan
+    gate, up, dy = [jnp.asarray(value, dtype) for value in (gate, up, dy)]
+    sizes = jnp.asarray(counts, jnp.int32)
+    activate = lambda g, u: _apply_ffn_activation(SiTUActivation(*betas), g, u, sizes)
+    output = jax.jit(activate)(gate, up)
+    _, pullback = jax.vjp(activate, gate, up)
+    dg, du = jax.jit(pullback)(dy)
+
+    g, u, d = [np.asarray(value, np.float64)[:active] for value in (gate, up, dy)]
+    gate_beta, up_beta = betas
+    tg, tu, sigmoid = np.tanh(g / gate_beta), np.tanh(u / up_beta), 1 / (1 + np.exp(-g))
+    ref = (
+        gate_beta * tg * sigmoid * up_beta * tu,
+        d * ((1 - tg**2) * sigmoid + gate_beta * tg * sigmoid * (1 - sigmoid)) * up_beta * tu,
+        d * gate_beta * tg * sigmoid * (1 - tu**2),
+    )
+    tolerance = {jnp.float32: 2e-5, jnp.float16: 3e-3, jnp.bfloat16: 2e-2}[dtype]
+    for actual, expected in zip((output, dg, du), ref):
+        actual = np.asarray(actual, np.float32)
+        assert np.isfinite(actual).all()
+        np.testing.assert_array_equal(actual[active:], 0)
+        np.testing.assert_allclose(actual[:active], expected, atol=tolerance, rtol=tolerance)
+
+
+def test_situ_dynamic_counts_remat_and_vmap():
+    gate = jnp.arange(13 * 6, dtype=jnp.float32).reshape(13, 6) / 20 - 2
+    up = -gate
+    activation = SiTUActivation()
+    activate = partial(_apply_ffn_activation, activation)
+    compiled = jax.jit(activate)
+    for counts in (jnp.array([3, 0, 5]), jnp.array([1, 2, 2])):
+        expected = activate(gate, up, counts)
+        np.testing.assert_allclose(compiled(gate, up, counts), expected, atol=2e-5, rtol=2e-5)
+        loss = lambda g, u: activate(g, u, counts).sum()
+        gradients = jax.jit(jax.grad(loss, (0, 1)))(gate, up)
+        remat = jax.jit(jax.grad(jax.checkpoint(loss), (0, 1)))(gate, up)
+        for actual, reference in zip(remat, gradients):
+            np.testing.assert_allclose(actual, reference, atol=2e-5, rtol=2e-5)
+    counts = jnp.array([[3, 0, 5], [1, 2, 2]], dtype=jnp.int32)
+    gates, ups = jnp.stack([gate, gate]), jnp.stack([up, up])
+    mapped = jax.jit(jax.vmap(activate))(gates, ups, counts)
+    for actual, sizes in zip(mapped, counts):
+        np.testing.assert_allclose(actual, activate(gate, up, sizes), atol=2e-5, rtol=2e-5)
+    hlo = compiled.lower(gate, up, counts[0]).compile().as_text()
+    assert "te_grouped_situglu_ffi" not in hlo
 
 
 @pytest.fixture(autouse=True)

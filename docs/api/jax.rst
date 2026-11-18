@@ -32,7 +32,6 @@ Modules
 .. autoapifunction:: transformer_engine.jax.fp8_autocast
 .. autoapifunction:: transformer_engine.jax.autocast
 .. autoapifunction:: transformer_engine.jax.update_collections
-.. autoapifunction:: transformer_engine.jax.grouped_situglu
 
 
 .. autoapiclass:: transformer_engine.jax.flax.LayerNorm(epsilon=1e-6, layernorm_type='layernorm', **kwargs)
@@ -77,16 +76,12 @@ Router, routing kernels, and grouped dense for MoE layers. See
 
 .. autoapiclass:: transformer_engine.jax.moe.SiTUActivation
 
-``SiTUActivation`` uses native grouped activation kernels between the expert
-GEMMs, including their backward pass. Device group counts bound active rows;
-unused receive capacity is zero-filled without evaluating the activation there.
-FP32, FP16 and BF16 activation outputs are supported. MXFP8 expert execution
-uses grouped quantization after the activation. The standalone
-``grouped_situglu(x, group_sizes, beta1=4.0, beta2=25.0)`` function has the same
-math and automatic differentiation support. It expects contiguous gate/up
-halves in each row of ``x[capacity, 2H]``. Counts must be nonnegative device
-int32 values with a sum no greater than capacity. Distributed expert callers
-should pass local arrays and counts inside ``shard_map``.
+``SiTUActivation`` evaluates both soft caps in FP32 using JAX operations
+between the expert GEMMs and computes their backward pass with ``jax.vjp``.
+Device group counts mask unused receive capacity in forward and backward,
+including non-finite inactive inputs and upstream gradients. Activation outputs
+keep the projection dtype. MXFP8 expert execution uses grouped quantization
+after the activation; activation and quantization are separate operations.
 
 .. autoapifunction:: transformer_engine.jax.moe.moe
 

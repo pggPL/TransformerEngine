@@ -89,7 +89,6 @@ inline bool use_fp8(DType type) { return type == DType::kFloat8E4M3 || type == D
 
 XLA_FFI_DECLARE_HANDLER_SYMBOL(ActLuHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(ActLuInitializeHandler);
-XLA_FFI_DECLARE_HANDLER_SYMBOL(GroupedSiTUGLUHandler);
 
 XLA_FFI_DECLARE_HANDLER_SYMBOL(DActLuDBiasQuantizeHandler);
 XLA_FFI_DECLARE_HANDLER_SYMBOL(DActLuDBiasQuantizeInitializeHandler);
