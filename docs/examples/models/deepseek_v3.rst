@@ -15,6 +15,14 @@ of DeepSeek-V3 are dense (``num_experts=None``), the rest use the MoE.
 Features used
 -------------
 
+The diagram traces one layer as a plain PyTorch implementation would run
+it, operation by operation, and marks which Transformer Engine module or
+kernel takes each group of operations over.
+
+.. image:: deepseek_v3_layer.svg
+   :width: 100%
+   :alt: deepseek_v3 layer: baseline operations and the TE features covering them
+
 Attention (:class:`~transformer_engine.pytorch.models.MultiLatentAttention`)
 
 * :class:`~transformer_engine.pytorch.DotProductAttention` with asymmetric

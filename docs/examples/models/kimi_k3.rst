@@ -15,6 +15,14 @@ stream with the Attention Residuals (AttnRes) highway.
 Features used
 -------------
 
+The diagram traces one layer as a plain PyTorch implementation would run
+it, operation by operation, and marks which Transformer Engine module or
+kernel takes each group of operations over.
+
+.. image:: kimi_k3_layer.svg
+   :width: 100%
+   :alt: kimi_k3 layer: baseline operations and the TE features covering them
+
 Attention
 
 * :class:`~transformer_engine.pytorch.KimiDeltaAttention`: the KDA
