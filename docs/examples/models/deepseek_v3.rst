@@ -15,14 +15,6 @@ of DeepSeek-V3 are dense (``num_experts=None``), the rest use the MoE.
 Features used
 -------------
 
-The diagram traces one layer as a plain PyTorch implementation would run
-it, operation by operation, and marks which Transformer Engine module or
-kernel takes each group of operations over.
-
-.. image:: deepseek_v3_layer.svg
-   :width: 100%
-   :alt: deepseek_v3 layer: baseline operations and the TE features covering them
-
 Attention (:class:`~transformer_engine.pytorch.models.MultiLatentAttention`)
 
 * :class:`~transformer_engine.pytorch.DotProductAttention` with asymmetric
@@ -74,104 +66,9 @@ Precision
   :doc:`low-precision recipe </features/low_precision_training/index>`
   (FP8 delayed and current scaling, FP8 block scaling, MXFP8, NVFP4).
 
-Usage
------
+Profile on 1 GB200 node
+-----------------------
 
-The natural way to run the layer is with the routed experts sharded over all
-GPUs (expert parallelism) and the dense parts replicated or sharded by the
-surrounding framework. One process per GPU, launched with ``torchrun``:
-
-.. code-block:: python
-
-    import os
-    import torch
-    import torch.distributed as dist
-    import transformer_engine.pytorch as te
-    from transformer_engine.pytorch.ep import ep_bootstrap, ep_finalize
-    from transformer_engine.pytorch.models import DeepSeekV3Layer, DeepSeekV3MoE
-
-    local_rank = int(os.environ["LOCAL_RANK"])
-    torch.cuda.set_device(local_rank)
-    dist.init_process_group("nccl", device_id=torch.device("cuda", local_rank))
-    ep_group = dist.new_group(backend="nccl")  # every rank; one expert group
-    ep_size = dist.get_world_size(ep_group)
-
-    hidden, topk = 7168, 8
-    num_local_experts = 32            # 256 experts on 8 GPUs
-    num_experts = num_local_experts * ep_size
-    tokens_per_rank = 4096            # upper bound on local tokens per forward
-
-    # NCCL EP: once per process, before building any EP module.
-    ep_bootstrap(
-        ep_group,
-        num_experts=num_experts,
-        max_tokens_per_rank=tokens_per_rank,
-        hidden_dim=hidden,
-        num_topk=topk,
-        recv_capacity_per_rank=DeepSeekV3MoE.ep_recv_capacity(
-            ep_size, tokens_per_rank, topk, num_local_experts
-        ),
-    )
-
-    layer = DeepSeekV3Layer(
-        hidden_size=hidden,
-        num_attention_heads=128,
-        num_experts=num_experts,
-        moe_ffn_hidden_size=2048,
-        topk=topk,
-        num_groups=8,
-        group_topk=4,
-        shared_expert_ffn_hidden_size=2048,
-        params_dtype=torch.bfloat16,
-        ep_group=ep_group,
-        ep_max_tokens_per_rank=tokens_per_rank,
-    )
-    ep_buffer = layer.mlp.make_ep_buffer()  # reuse across steps
-
-    x = torch.randn(tokens_per_rank // 4, 4, hidden, dtype=torch.bfloat16, device="cuda")
-    for step in range(num_steps):
-        with te.autocast(recipe=te.MXFP8BlockScaling()):
-            y = layer(x, ep_buffer=ep_buffer)
-        y.sum().backward()
-        optimizer.step()
-        optimizer.zero_grad()
-        # Aux-loss-free load balancing: token counts must be summed over the
-        # ranks that saw different tokens (here: the whole EP group).
-        dist.all_reduce(layer.mlp._last_tokens_per_expert, group=ep_group)
-        layer.mlp.update_expert_bias()
-
-    ep_finalize()
-    dist.destroy_process_group()
-
-.. code-block:: bash
-
-    torchrun --nproc-per-node=8 train.py
-
-Notes:
-
-* Every rank owns ``num_experts // ep_size`` experts; ``ep_max_tokens_per_rank``
-  bounds the local tokens of one forward and sizes the receive buffers.
-  Tokens are exchanged in bf16, so the input of an EP layer must be bf16.
-* An ``EpBuffer`` holds one forward's routing state until its backward has
-  run; reuse one buffer per layer, or let the layer create one per call.
-* Tensor parallelism of the attention is independent: pass ``tp_group`` /
-  ``tp_size`` and the MLA up- and output projections are column- / row-sharded.
-* Without ``ep_group`` the same layer runs all experts locally; this is the
-  single-GPU and test configuration. ``examples/pytorch/deepseek_v3`` is a
-  complete expert-parallel benchmark with a plain-PyTorch baseline.
-
-Where the time goes
--------------------
-
-All numbers are for one ``DeepSeekV3Layer`` with DeepSeek-V3 dimensions
-(hidden 7168, 128 heads, MLA 1536 / 512 / 128 / 64 / 128, expert ffn 2048,
-shared expert ffn 2048), top-k 8, 4096 tokens per GPU, forward + backward,
-bf16 unless noted. Timings are wall-clock with CUDA synchronization, no CUDA
-graphs. Reproduce them with ``examples/pytorch/deepseek_v3``; the full setup
-(software versions, environment variables) is in that example's README.
-
-One iteration on one node
-^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ``nsys`` traces of rank 0 on one GB300 node (4 GPUs, expert parallelism over
 all four, 64 routed experts, top-k 8, 4096 tokens per GPU), redrawn as one
@@ -268,3 +165,89 @@ Global throughput of the ``te`` variants, in millions of tokens per second:
      - 1.62
      - 1.73
      - 3.14
+
+Usage
+-----
+
+The natural way to run the layer is with the routed experts sharded over all
+GPUs (expert parallelism) and the dense parts replicated or sharded by the
+surrounding framework. One process per GPU, launched with ``torchrun``:
+
+.. code-block:: python
+
+    import os
+    import torch
+    import torch.distributed as dist
+    import transformer_engine.pytorch as te
+    from transformer_engine.pytorch.ep import ep_bootstrap, ep_finalize
+    from transformer_engine.pytorch.models import DeepSeekV3Layer, DeepSeekV3MoE
+
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    dist.init_process_group("nccl", device_id=torch.device("cuda", local_rank))
+    ep_group = dist.new_group(backend="nccl")  # every rank; one expert group
+    ep_size = dist.get_world_size(ep_group)
+
+    hidden, topk = 7168, 8
+    num_local_experts = 32            # 256 experts on 8 GPUs
+    num_experts = num_local_experts * ep_size
+    tokens_per_rank = 4096            # upper bound on local tokens per forward
+
+    # NCCL EP: once per process, before building any EP module.
+    ep_bootstrap(
+        ep_group,
+        num_experts=num_experts,
+        max_tokens_per_rank=tokens_per_rank,
+        hidden_dim=hidden,
+        num_topk=topk,
+        recv_capacity_per_rank=DeepSeekV3MoE.ep_recv_capacity(
+            ep_size, tokens_per_rank, topk, num_local_experts
+        ),
+    )
+
+    layer = DeepSeekV3Layer(
+        hidden_size=hidden,
+        num_attention_heads=128,
+        num_experts=num_experts,
+        moe_ffn_hidden_size=2048,
+        topk=topk,
+        num_groups=8,
+        group_topk=4,
+        shared_expert_ffn_hidden_size=2048,
+        params_dtype=torch.bfloat16,
+        ep_group=ep_group,
+        ep_max_tokens_per_rank=tokens_per_rank,
+    )
+    ep_buffer = layer.mlp.make_ep_buffer()  # reuse across steps
+
+    x = torch.randn(tokens_per_rank // 4, 4, hidden, dtype=torch.bfloat16, device="cuda")
+    for step in range(num_steps):
+        with te.autocast(recipe=te.MXFP8BlockScaling()):
+            y = layer(x, ep_buffer=ep_buffer)
+        y.sum().backward()
+        optimizer.step()
+        optimizer.zero_grad()
+        # Aux-loss-free load balancing: token counts must be summed over the
+        # ranks that saw different tokens (here: the whole EP group).
+        dist.all_reduce(layer.mlp._last_tokens_per_expert, group=ep_group)
+        layer.mlp.update_expert_bias()
+
+    ep_finalize()
+    dist.destroy_process_group()
+
+.. code-block:: bash
+
+    torchrun --nproc-per-node=8 train.py
+
+Notes:
+
+* Every rank owns ``num_experts // ep_size`` experts; ``ep_max_tokens_per_rank``
+  bounds the local tokens of one forward and sizes the receive buffers.
+  Tokens are exchanged in bf16, so the input of an EP layer must be bf16.
+* An ``EpBuffer`` holds one forward's routing state until its backward has
+  run; reuse one buffer per layer, or let the layer create one per call.
+* Tensor parallelism of the attention is independent: pass ``tp_group`` /
+  ``tp_size`` and the MLA up- and output projections are column- / row-sharded.
+* Without ``ep_group`` the same layer runs all experts locally; this is the
+  single-GPU and test configuration. ``examples/pytorch/deepseek_v3`` is a
+  complete expert-parallel benchmark with a plain-PyTorch baseline.

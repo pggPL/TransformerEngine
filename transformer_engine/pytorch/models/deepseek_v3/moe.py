@@ -274,14 +274,14 @@ class DeepSeekV3MoE(torch.nn.Module):
             )
             dispatch = te_ops.MoeDispatch(config)
             combine = te_ops.MoeCombine(config)
-            fc1, activation, fc2 = expert_mlp
+            fc1, activation_op, fc2 = expert_mlp
             dispatch.set_extra_output_channel(0, "tokens_per_expert", output_to_caller=False)
             dispatch.set_extra_output_channel(1, "routing_weights", output_to_caller=False)
             fc1.set_extra_input_channel(0, "tokens_per_expert")
-            activation.set_extra_input_channel(0, "routing_weights")
+            activation_op.set_extra_input_channel(0, "routing_weights")
             fc2.set_extra_input_channel(0, "tokens_per_expert")
             self.experts = te_ops.Sequential(
-                {"dispatch": dispatch, "0": fc1, "1": activation, "2": fc2, "combine": combine}
+                {"dispatch": dispatch, "0": fc1, "1": activation_op, "2": fc2, "combine": combine}
             )
         else:
             self.experts = expert_mlp
