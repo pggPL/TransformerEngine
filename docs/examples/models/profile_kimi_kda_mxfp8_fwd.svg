@@ -78,7 +78,7 @@
 <line x1='8248.3' y1='176' x2='8248.3' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='8248.3' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP permute</text>
 <line x1='8372.1' y1='92' x2='8372.1' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='8372.1' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x32</text>
+<text x='8372.1' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize expert weights</text>
 <line x1='8525.2' y1='176' x2='8525.2' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='8525.2' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize recv tokens</text>
 <line x1='9172.9' y1='92' x2='9172.9' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
