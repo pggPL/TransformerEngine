@@ -1,0 +1,381 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='2432' height='654' viewBox='0 0 2432 654'>
+<rect width='2432' height='654' fill='white'/>
+<text x='90.0' y='28.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='18' font-weight='bold' fill='#111827'>DeepSeekV3Layer, MXFP8, fused cuDNN grouped MLP: one iteration on one GPU</text>
+<text x='90.0' y='48.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>16.0 ms per iteration, 15.7 ms of kernel time, 205 kernels. Rank 0 of 4 GB300 (one node), EP 4, 4096 tokens per GPU, 64 experts, top-k 8.</text>
+<text x='90.0' y='86.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='14' font-weight='bold' fill='#111827'>forward: 8.22 ms (7.97 ms of kernels)</text>
+<line x1='631.3' y1='110' x2='631.3' y2='138' stroke='#374151' stroke-width='1'/>
+<text x='631.3' y='106.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>attention</text>
+<line x1='1068.8' y1='124' x2='1068.8' y2='138' stroke='#374151' stroke-width='1'/>
+<text x='1068.8' y='120.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>routing all-gather</text>
+<line x1='1181.1' y1='110' x2='1181.1' y2='138' stroke='#374151' stroke-width='1'/>
+<text x='1181.1' y='106.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP dispatch</text>
+<line x1='2110.9' y1='124' x2='2110.9' y2='138' stroke='#374151' stroke-width='1'/>
+<text x='2110.9' y='120.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP combine</text>
+<text x='82.0' y='170.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#374151'>forward</text>
+<rect x='90' y='138' width='2302.4' height='56' fill='#f9fafb' stroke='#e5e7eb'/>
+<rect x='90.00' y='138' width='20.20' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_fwd_general_kernel (72 us)</title></rect>
+<rect x='110.51' y='138' width='5.11' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (18 us)</title></rect>
+<rect x='115.91' y='138' width='3.09' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='119.17' y='138' width='8.51' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x128_128x8_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_TNT (30 us)</title></rect>
+<rect x='127.95' y='138' width='4.18' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_fwd_general_kernel (15 us)</title></rect>
+<rect x='132.35' y='138' width='1.66' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (6 us)</title></rect>
+<rect x='134.24' y='138' width='7.24' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (26 us)</title></rect>
+<rect x='141.52' y='138' width='25.37' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT (91 us)</title></rect>
+<rect x='167.15' y='138' width='5.78' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
+<rect x='173.24' y='138' width='0.80' height='56' fill='#0d9488'><title>transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *,  (2 us)</title></rect>
+<rect x='173.97' y='138' width='0.80' height='56' fill='#0d9488'><title>transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *,  (1 us)</title></rect>
+<rect x='174.74' y='138' width='1.96' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (7 us)</title></rect>
+<rect x='176.80' y='138' width='5.53' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x4_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_TNT (20 us)</title></rect>
+<rect x='182.54' y='138' width='1.58' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (6 us)</title></rect>
+<rect x='184.35' y='138' width='0.99' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_fwd_tuned_kernel (4 us)</title></rect>
+<rect x='185.57' y='138' width='1.31' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (5 us)</title></rect>
+<rect x='187.10' y='138' width='3.81' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (14 us)</title></rect>
+<rect x='191.03' y='138' width='16.28' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT (58 us)</title></rect>
+<rect x='207.62' y='138' width='20.47' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (73 us)</title></rect>
+<rect x='228.41' y='138' width='15.53' height='56' fill='#86efac'><title>void transformer_engine::fused_rope_forward_kernel (55 us)</title></rect>
+<rect x='244.20' y='138' width='1.38' height='56' fill='#86efac'><title>void transformer_engine::fused_rope_forward_kernel (5 us)</title></rect>
+<rect x='245.81' y='138' width='142.76' height='56' fill='#d1d5db'><title>void at::native:: (510 us)</title></rect>
+<rect x='388.81' y='138' width='143.74' height='56' fill='#d1d5db'><title>void at::native:: (513 us)</title></rect>
+<rect x='532.78' y='138' width='38.42' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (137 us)</title></rect>
+<rect x='571.47' y='138' width='0.80' height='56' fill='#e5e7eb'><title>transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon (1 us)</title></rect>
+<rect x='572.03' y='138' width='118.47' height='56' fill='#7c3aed'><title>cudnn_generated_fort_native_sdpa_sm100_flash_fprop_f16_knob_36_128x128x192_4x1x1_cga2x1x1_ (423 us)</title></rect>
+<rect x='690.82' y='138' width='11.28' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (40 us)</title></rect>
+<rect x='702.40' y='138' width='20.19' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (72 us)</title></rect>
+<rect x='722.69' y='138' width='73.88' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT (264 us)</title></rect>
+<rect x='796.80' y='138' width='6.59' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (24 us)</title></rect>
+<rect x='803.68' y='138' width='19.74' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_fwd_general_kernel (70 us)</title></rect>
+<rect x='823.47' y='138' width='3.32' height='56' fill='#60a5fa'><title>nvjet_sm103_tst_32x64_64x16_2x2_2cta_h_bz_TNN (12 us)</title></rect>
+<rect x='827.05' y='138' width='1.00' height='56' fill='#d1d5db'><title>void at::native::unrolled_elementwise_kernel (4 us)</title></rect>
+<rect x='828.43' y='138' width='5.32' height='56' fill='#a3e635'><title>void transformer_engine::fused_router::fused_topk_forward_simple_kernel (19 us)</title></rect>
+<rect x='834.07' y='138' width='2.03' height='56' fill='#d1d5db'><title>void at::native::reduce_kernel (7 us)</title></rect>
+<rect x='836.78' y='138' width='1.16' height='56' fill='#d1d5db'><title>memcpy (4 us)</title></rect>
+<rect x='850.76' y='138' width='1.60' height='56' fill='#d1d5db'><title>void at::native::reduce_kernel (6 us)</title></rect>
+<rect x='855.43' y='138' width='0.80' height='56' fill='#d1d5db'><title>memcpy (3 us)</title></rect>
+<rect x='863.26' y='138' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
+<rect x='866.51' y='138' width='1.33' height='56' fill='#a3e635'><title>void at::cuda::kernelHistogram1D (5 us)</title></rect>
+<rect x='878.83' y='138' width='1.77' height='56' fill='#a3e635'><title>void at::native::_scatter_gather_elementwise_kernel (6 us)</title></rect>
+<rect x='886.10' y='138' width='131.26' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (469 us)</title></rect>
+<rect x='1017.62' y='138' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (3 us)</title></rect>
+<rect x='1018.75' y='138' width='0.80' height='56' fill='#9ca3af'><title>memset (2 us)</title></rect>
+<rect x='1019.59' y='138' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
+<rect x='1020.21' y='138' width='1.50' height='56' fill='#fdba74'><title>void nccl_ep::ht::convert_topk_to_routing_map_kernel (5 us)</title></rect>
+<rect x='1021.97' y='138' width='93.61' height='56' fill='#facc15'><title>ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage (334 us)</title></rect>
+<rect x='1115.80' y='138' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
+<rect x='1116.39' y='138' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
+<rect x='1116.93' y='138' width='26.96' height='56' fill='#fdba74'><title>nccl_ep_jit_ht_scan_flat_kernel (96 us)</title></rect>
+<rect x='1144.07' y='138' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
+<rect x='1144.65' y='138' width='0.80' height='56' fill='#fdba74'><title>void nccl_ep::ht::sparse_to_dense_prob_kernel (2 us)</title></rect>
+<rect x='1145.54' y='138' width='71.06' height='56' fill='#ea580c'><title>nccl_ep_jit_ht_dispatch_kernel (254 us)</title></rect>
+<rect x='1216.92' y='138' width='3.50' height='56' fill='#fdba74'><title>nccl_ep::ht::dense_to_sparse_prob_kernel(const float *, const bool *, float *, long *, int (13 us)</title></rect>
+<rect x='1220.69' y='138' width='44.25' height='56' fill='#fdba74'><title>nccl_ep_jit_local_permute_dup_kernel (158 us)</title></rect>
+<rect x='1265.24' y='138' width='0.91' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (3 us)</title></rect>
+<rect x='1266.39' y='138' width='1.09' height='56' fill='#a3e635'><title>transformer_engine::splits_to_offsets:: (4 us)</title></rect>
+<rect x='1267.72' y='138' width='6.43' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (23 us)</title></rect>
+<rect x='1274.42' y='138' width='5.61' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1280.33' y='138' width='5.90' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
+<rect x='1286.62' y='138' width='5.65' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1292.58' y='138' width='5.74' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
+<rect x='1298.58' y='138' width='5.73' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1304.54' y='138' width='5.51' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1310.27' y='138' width='5.47' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1316.01' y='138' width='5.85' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
+<rect x='1322.13' y='138' width='5.69' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1328.13' y='138' width='5.58' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1334.02' y='138' width='5.82' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
+<rect x='1340.14' y='138' width='5.68' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1346.08' y='138' width='5.85' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
+<rect x='1352.17' y='138' width='5.64' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1358.09' y='138' width='5.68' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (20 us)</title></rect>
+<rect x='1364.07' y='138' width='3.32' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
+<rect x='1367.65' y='138' width='3.23' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
+<rect x='1371.17' y='138' width='3.17' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='1374.71' y='138' width='3.32' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
+<rect x='1378.33' y='138' width='3.11' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='1381.70' y='138' width='3.14' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='1385.12' y='138' width='3.21' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='1388.55' y='138' width='3.23' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
+<rect x='1392.00' y='138' width='3.34' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
+<rect x='1395.62' y='138' width='3.25' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
+<rect x='1399.17' y='138' width='3.14' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='1402.61' y='138' width='3.14' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='1406.05' y='138' width='3.30' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (12 us)</title></rect>
+<rect x='1409.62' y='138' width='3.13' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='1413.03' y='138' width='3.14' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='1416.38' y='138' width='3.06' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (11 us)</title></rect>
+<rect x='1419.67' y='138' width='43.67' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::group_quantize_kernel::group_quantize_mxfp8_kern (156 us)</title></rect>
+<rect x='1463.60' y='138' width='4.09' height='56' fill='#0d9488'><title>void transformer_engine:: (15 us)</title></rect>
+<rect x='1468.01' y='138' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
+<rect x='1468.71' y='138' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedglumoe_blockscaled_grouped_gemm_glu_bi (1 us)</title></rect>
+<rect x='1469.35' y='138' width='165.90' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedglumoe_blockscaled_grouped_gemm_glu_biasBlock (593 us)</title></rect>
+<rect x='1635.53' y='138' width='4.18' height='56' fill='#0d9488'><title>void transformer_engine:: (15 us)</title></rect>
+<rect x='1639.93' y='138' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
+<rect x='1640.53' y='138' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
+<rect x='1641.08' y='138' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEG (2 us)</title></rect>
+<rect x='1641.85' y='138' width='87.08' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGroupedG (311 us)</title></rect>
+<rect x='1729.37' y='138' width='131.86' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (471 us)</title></rect>
+<rect x='1861.54' y='138' width='37.69' height='56' fill='#fdba74'><title>nccl_ep_jit_local_permute_reduce_kernel (135 us)</title></rect>
+<rect x='1899.60' y='138' width='422.70' height='56' fill='#ea580c'><title>nccl_ep_jit_ht_combine_kernel (1510 us)</title></rect>
+<rect x='2322.56' y='138' width='5.24' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (19 us)</title></rect>
+<rect x='2328.07' y='138' width='5.78' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (21 us)</title></rect>
+<rect x='2334.08' y='138' width='1.13' height='56' fill='#0d9488'><title>void transformer_engine:: (4 us)</title></rect>
+<rect x='2335.30' y='138' width='20.30' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_TNT (73 us)</title></rect>
+<rect x='2355.87' y='138' width='6.37' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::gated_kernel::quantize_gated_mxfp8_kernel (23 us)</title></rect>
+<rect x='2362.53' y='138' width='2.83' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (10 us)</title></rect>
+<rect x='2365.66' y='138' width='0.83' height='56' fill='#0d9488'><title>void transformer_engine:: (3 us)</title></rect>
+<rect x='2366.66' y='138' width='9.64' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_TNT (34 us)</title></rect>
+<rect x='2376.62' y='138' width='7.74' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (28 us)</title></rect>
+<rect x='2384.58' y='138' width='7.86' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (28 us)</title></rect>
+<line x1='90.0' y1='194' x2='90.0' y2='199' stroke='#6b7280'/>
+<text x='90.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0 ms</text>
+<line x1='230.0' y1='194' x2='230.0' y2='199' stroke='#6b7280'/>
+<text x='230.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0.5 ms</text>
+<line x1='370.0' y1='194' x2='370.0' y2='199' stroke='#6b7280'/>
+<text x='370.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1 ms</text>
+<line x1='510.0' y1='194' x2='510.0' y2='199' stroke='#6b7280'/>
+<text x='510.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1.5 ms</text>
+<line x1='650.0' y1='194' x2='650.0' y2='199' stroke='#6b7280'/>
+<text x='650.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2 ms</text>
+<line x1='790.0' y1='194' x2='790.0' y2='199' stroke='#6b7280'/>
+<text x='790.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2.5 ms</text>
+<line x1='930.0' y1='194' x2='930.0' y2='199' stroke='#6b7280'/>
+<text x='930.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3 ms</text>
+<line x1='1070.0' y1='194' x2='1070.0' y2='199' stroke='#6b7280'/>
+<text x='1070.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3.5 ms</text>
+<line x1='1210.0' y1='194' x2='1210.0' y2='199' stroke='#6b7280'/>
+<text x='1210.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4 ms</text>
+<line x1='1350.0' y1='194' x2='1350.0' y2='199' stroke='#6b7280'/>
+<text x='1350.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4.5 ms</text>
+<line x1='1490.0' y1='194' x2='1490.0' y2='199' stroke='#6b7280'/>
+<text x='1490.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5 ms</text>
+<line x1='1630.0' y1='194' x2='1630.0' y2='199' stroke='#6b7280'/>
+<text x='1630.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5.5 ms</text>
+<line x1='1770.0' y1='194' x2='1770.0' y2='199' stroke='#6b7280'/>
+<text x='1770.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6 ms</text>
+<line x1='1910.0' y1='194' x2='1910.0' y2='199' stroke='#6b7280'/>
+<text x='1910.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6.5 ms</text>
+<line x1='2050.0' y1='194' x2='2050.0' y2='199' stroke='#6b7280'/>
+<text x='2050.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7 ms</text>
+<line x1='2190.0' y1='194' x2='2190.0' y2='199' stroke='#6b7280'/>
+<text x='2190.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7.5 ms</text>
+<line x1='2330.0' y1='194' x2='2330.0' y2='199' stroke='#6b7280'/>
+<text x='2330.0' y='211.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>8 ms</text>
+<text x='90.0' y='242.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='14' font-weight='bold' fill='#111827'>backward: 7.81 ms (7.74 ms of kernels)</text>
+<line x1='248.9' y1='266' x2='248.9' y2='294' stroke='#374151' stroke-width='1'/>
+<text x='248.9' y='262.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP combine bwd (dispatch kernel)</text>
+<line x1='1023.8' y1='280' x2='1023.8' y2='294' stroke='#374151' stroke-width='1'/>
+<text x='1023.8' y='276.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP dispatch bwd (combine kernel)</text>
+<line x1='1527.4' y1='266' x2='1527.4' y2='294' stroke='#374151' stroke-width='1'/>
+<text x='1527.4' y='262.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>attention bwd</text>
+<text x='82.0' y='326.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#374151'>backward</text>
+<rect x='90' y='294' width='2302.4' height='56' fill='#f9fafb' stroke='#e5e7eb'/>
+<rect x='90.00' y='294' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
+<rect x='90.89' y='294' width='4.24' height='56' fill='#d1d5db'><title>void at::native::reduce_kernel (15 us)</title></rect>
+<rect x='95.31' y='294' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
+<rect x='95.75' y='294' width='8.71' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (31 us)</title></rect>
+<rect x='104.77' y='294' width='4.89' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (17 us)</title></rect>
+<rect x='109.96' y='294' width='1.79' height='56' fill='#0d9488'><title>void transformer_engine:: (6 us)</title></rect>
+<rect x='111.93' y='294' width='9.74' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT (35 us)</title></rect>
+<rect x='121.13' y='294' width='9.12' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT (33 us)</title></rect>
+<rect x='130.46' y='294' width='11.07' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::gated_kernel::quantize_gated_mxfp8_kernel (40 us)</title></rect>
+<rect x='141.78' y='294' width='1.91' height='56' fill='#0d9488'><title>void transformer_engine:: (7 us)</title></rect>
+<rect x='143.76' y='294' width='17.62' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT (63 us)</title></rect>
+<rect x='160.69' y='294' width='18.95' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT (68 us)</title></rect>
+<rect x='179.94' y='294' width='8.91' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (32 us)</title></rect>
+<rect x='189.15' y='294' width='119.57' height='56' fill='#ea580c'><title>nccl_ep_jit_ht_dispatch_kernel (427 us)</title></rect>
+<rect x='309.06' y='294' width='42.41' height='56' fill='#fdba74'><title>nccl_ep_jit_local_permute_dup_kernel (151 us)</title></rect>
+<rect x='351.75' y='294' width='43.52' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::group_quantize_kernel::group_quantize_mxfp8_kern (155 us)</title></rect>
+<rect x='395.58' y='294' width='1.26' height='56' fill='#d1d5db'><title>void at::native::unrolled_elementwise_kernel (5 us)</title></rect>
+<rect x='397.14' y='294' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
+<rect x='397.75' y='294' width='2.23' height='56' fill='#0d9488'><title>void transformer_engine:: (8 us)</title></rect>
+<rect x='400.25' y='294' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
+<rect x='400.87' y='294' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_ (2 us)</title></rect>
+<rect x='401.66' y='294' width='94.86' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_dbiasBl (339 us)</title></rect>
+<rect x='496.82' y='294' width='0.80' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (2 us)</title></rect>
+<rect x='497.64' y='294' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
+<rect x='498.15' y='294' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgra (2 us)</title></rect>
+<rect x='498.87' y='294' width='79.70' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockS (285 us)</title></rect>
+<rect x='578.79' y='294' width='3.97' height='56' fill='#0d9488'><title>void transformer_engine:: (14 us)</title></rect>
+<rect x='583.02' y='294' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
+<rect x='583.59' y='294' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
+<rect x='584.21' y='294' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEG (2 us)</title></rect>
+<rect x='584.99' y='294' width='163.88' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGroupedG (585 us)</title></rect>
+<rect x='749.15' y='294' width='0.80' height='56' fill='#d1d5db'><title>transformer_engine::copy_host_to_device_via_kernel:: (1 us)</title></rect>
+<rect x='749.72' y='294' width='0.80' height='56' fill='#1d4ed8'><title>kernel_cutlass_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgra (2 us)</title></rect>
+<rect x='750.58' y='294' width='160.92' height='56' fill='#1d4ed8'><title>kernel_cutlass_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockS (575 us)</title></rect>
+<rect x='911.79' y='294' width='1.49' height='56' fill='#d1d5db'><title>void at::native::unrolled_elementwise_kernel (5 us)</title></rect>
+<rect x='913.57' y='294' width='38.28' height='56' fill='#fdba74'><title>nccl_ep_jit_local_permute_reduce_kernel (137 us)</title></rect>
+<rect x='952.19' y='294' width='1.67' height='56' fill='#9ca3af'><title>memset (6 us)</title></rect>
+<rect x='954.17' y='294' width='2.04' height='56' fill='#fdba74'><title>nccl_ep::ht::sparse_to_dense_prob_combine_kernel(const float *, const bool *, float *, int (7 us)</title></rect>
+<rect x='956.53' y='294' width='0.80' height='56' fill='#9ca3af'><title>memset (1 us)</title></rect>
+<rect x='957.16' y='294' width='133.24' height='56' fill='#ea580c'><title>nccl_ep_jit_ht_combine_kernel (476 us)</title></rect>
+<rect x='1090.63' y='294' width='0.95' height='56' fill='#fdba74'><title>void nccl_ep::ht::dense_to_sparse_prob_combine_kernel (3 us)</title></rect>
+<rect x='1091.82' y='294' width='6.59' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (24 us)</title></rect>
+<rect x='1098.63' y='294' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
+<rect x='1099.30' y='294' width='2.96' height='56' fill='#a3e635'><title>void at::native::_scatter_gather_elementwise_kernel (11 us)</title></rect>
+<rect x='1102.64' y='294' width='0.80' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (1 us)</title></rect>
+<rect x='1103.29' y='294' width='0.92' height='56' fill='#a3e635'><title>void transformer_engine::fused_router::fused_topk_backward_selected_indices_kernel (3 us)</title></rect>
+<rect x='1104.51' y='294' width='0.80' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (2 us)</title></rect>
+<rect x='1105.14' y='294' width='3.99' height='56' fill='#60a5fa'><title>nvjet_sm103_tst_64x64_64x16_4x1_2cta_v_bz_NTT (14 us)</title></rect>
+<rect x='1108.77' y='294' width='3.31' height='56' fill='#60a5fa'><title>nvjet_sm103_tst_128x256_64x6_2x1_2cta_v_bz_NNT (12 us)</title></rect>
+<rect x='1112.33' y='294' width='6.46' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (23 us)</title></rect>
+<rect x='1119.61' y='294' width='0.80' height='56' fill='#9ca3af'><title>memset (2 us)</title></rect>
+<rect x='1120.50' y='294' width='34.00' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_general_kernel (121 us)</title></rect>
+<rect x='1154.86' y='294' width='1.87' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel (7 us)</title></rect>
+<rect x='1157.05' y='294' width='16.74' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (60 us)</title></rect>
+<rect x='1174.09' y='294' width='5.02' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (18 us)</title></rect>
+<rect x='1179.22' y='294' width='63.60' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT (227 us)</title></rect>
+<rect x='1242.16' y='294' width='63.20' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT (226 us)</title></rect>
+<rect x='1305.59' y='294' width='28.17' height='56' fill='#7c3aed'><title>void cudnn::fusion::compute_dot_do_o_specialized (101 us)</title></rect>
+<rect x='1334.05' y='294' width='386.75' height='56' fill='#7c3aed'><title>cudnn_generated_fort_native_sdpa_sm100_flash_bprop_f16_knob_28_64x128x192_1x4x1_cga1x1x1_k (1381 us)</title></rect>
+<rect x='1721.03' y='294' width='24.43' height='56' fill='#7c3aed'><title>void cudnn::fusion::convert_dq_to_16bits (87 us)</title></rect>
+<rect x='1745.74' y='294' width='6.57' height='56' fill='#d1d5db'><title>void at::native::reduce_kernel (23 us)</title></rect>
+<rect x='1752.62' y='294' width='14.36' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (51 us)</title></rect>
+<rect x='1767.35' y='294' width='39.10' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (140 us)</title></rect>
+<rect x='1806.75' y='294' width='1.60' height='56' fill='#86efac'><title>void transformer_engine::fused_rope_backward_kernel (6 us)</title></rect>
+<rect x='1808.70' y='294' width='16.01' height='56' fill='#86efac'><title>void transformer_engine::fused_rope_backward_kernel (57 us)</title></rect>
+<rect x='1824.93' y='294' width='14.19' height='56' fill='#9ca3af'><title>void at::native::vectorized_elementwise_kernel (51 us)</title></rect>
+<rect x='1839.40' y='294' width='20.08' height='56' fill='#d1d5db'><title>void at::native::elementwise_kernel (72 us)</title></rect>
+<rect x='1859.70' y='294' width='24.01' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (86 us)</title></rect>
+<rect x='1883.97' y='294' width='176.40' height='56' fill='#d1d5db'><title>void at::native:: (630 us)</title></rect>
+<rect x='2060.69' y='294' width='22.53' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (80 us)</title></rect>
+<rect x='2083.35' y='294' width='14.52' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x128_128x8_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT (52 us)</title></rect>
+<rect x='2097.47' y='294' width='13.33' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT (48 us)</title></rect>
+<rect x='2111.06' y='294' width='1.49' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_tuned_kernel (5 us)</title></rect>
+<rect x='2112.77' y='294' width='1.02' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_finalize_tuned_kernel (4 us)</title></rect>
+<rect x='2114.02' y='294' width='1.05' height='56' fill='#d1d5db'><title>void at::native:: (4 us)</title></rect>
+<rect x='2115.30' y='294' width='0.80' height='56' fill='#0d9488'><title>transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *,  (1 us)</title></rect>
+<rect x='2116.01' y='294' width='0.80' height='56' fill='#0d9488'><title>transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *,  (1 us)</title></rect>
+<rect x='2116.68' y='294' width='1.47' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (5 us)</title></rect>
+<rect x='2118.28' y='294' width='4.82' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT (17 us)</title></rect>
+<rect x='2122.38' y='294' width='5.15' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_256x128_128x5_4x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT (18 us)</title></rect>
+<rect x='2127.78' y='294' width='17.02' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (61 us)</title></rect>
+<rect x='2144.84' y='294' width='26.98' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x128_128x8_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT (96 us)</title></rect>
+<rect x='2171.37' y='294' width='25.20' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT (90 us)</title></rect>
+<rect x='2196.86' y='294' width='5.41' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_general_kernel (19 us)</title></rect>
+<rect x='2202.54' y='294' width='4.44' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel (16 us)</title></rect>
+<rect x='2207.30' y='294' width='1.64' height='56' fill='#0d9488'><title>void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker (6 us)</title></rect>
+<rect x='2209.20' y='294' width='7.59' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT (27 us)</title></rect>
+<rect x='2216.27' y='294' width='9.11' height='56' fill='#60a5fa'><title>nvjet_sm103_qqtst_128x128_128x8_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT (33 us)</title></rect>
+<rect x='2225.64' y='294' width='7.45' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (27 us)</title></rect>
+<rect x='2233.80' y='294' width='0.80' height='56' fill='#9ca3af'><title>memset (2 us)</title></rect>
+<rect x='2234.67' y='294' width='33.75' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_general_kernel (121 us)</title></rect>
+<rect x='2268.64' y='294' width='1.90' height='56' fill='#16a34a'><title>void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel (7 us)</title></rect>
+<rect x='2270.77' y='294' width='6.79' height='56' fill='#d1d5db'><title>void at::native::vectorized_elementwise_kernel (24 us)</title></rect>
+<line x1='90.0' y1='350' x2='90.0' y2='355' stroke='#6b7280'/>
+<text x='90.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0 ms</text>
+<line x1='230.0' y1='350' x2='230.0' y2='355' stroke='#6b7280'/>
+<text x='230.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0.5 ms</text>
+<line x1='370.0' y1='350' x2='370.0' y2='355' stroke='#6b7280'/>
+<text x='370.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1 ms</text>
+<line x1='510.0' y1='350' x2='510.0' y2='355' stroke='#6b7280'/>
+<text x='510.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1.5 ms</text>
+<line x1='650.0' y1='350' x2='650.0' y2='355' stroke='#6b7280'/>
+<text x='650.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2 ms</text>
+<line x1='790.0' y1='350' x2='790.0' y2='355' stroke='#6b7280'/>
+<text x='790.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2.5 ms</text>
+<line x1='930.0' y1='350' x2='930.0' y2='355' stroke='#6b7280'/>
+<text x='930.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3 ms</text>
+<line x1='1070.0' y1='350' x2='1070.0' y2='355' stroke='#6b7280'/>
+<text x='1070.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3.5 ms</text>
+<line x1='1210.0' y1='350' x2='1210.0' y2='355' stroke='#6b7280'/>
+<text x='1210.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4 ms</text>
+<line x1='1350.0' y1='350' x2='1350.0' y2='355' stroke='#6b7280'/>
+<text x='1350.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4.5 ms</text>
+<line x1='1490.0' y1='350' x2='1490.0' y2='355' stroke='#6b7280'/>
+<text x='1490.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5 ms</text>
+<line x1='1630.0' y1='350' x2='1630.0' y2='355' stroke='#6b7280'/>
+<text x='1630.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5.5 ms</text>
+<line x1='1770.0' y1='350' x2='1770.0' y2='355' stroke='#6b7280'/>
+<text x='1770.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6 ms</text>
+<line x1='1910.0' y1='350' x2='1910.0' y2='355' stroke='#6b7280'/>
+<text x='1910.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6.5 ms</text>
+<line x1='2050.0' y1='350' x2='2050.0' y2='355' stroke='#6b7280'/>
+<text x='2050.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7 ms</text>
+<line x1='2190.0' y1='350' x2='2190.0' y2='355' stroke='#6b7280'/>
+<text x='2190.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7.5 ms</text>
+<line x1='2330.0' y1='350' x2='2330.0' y2='355' stroke='#6b7280'/>
+<text x='2330.0' y='367.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>8 ms</text>
+<text x='112.0' y='395.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='bold' fill='#111827'>kernel group</text>
+<text x='420.0' y='395.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='bold' fill='#111827'>forward</text>
+<text x='510.0' y='395.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='bold' fill='#111827'>backward</text>
+<text x='600.0' y='395.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='bold' fill='#111827'>total</text>
+<text x='680.0' y='395.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='bold' fill='#111827'>share</text>
+<rect x='90' y='404' width='14' height='12' fill='#1d4ed8' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='415.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>fused grouped MLP (cuDNN, MXFP8)</text>
+<text x='420.0' y='415.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.91 ms</text>
+<text x='510.0' y='415.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.79 ms</text>
+<text x='600.0' y='415.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>2.70 ms</text>
+<text x='680.0' y='415.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>17.2 %</text>
+<rect x='90' y='422' width='14' height='12' fill='#ea580c' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='433.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>NCCL EP dispatch / combine</text>
+<text x='420.0' y='433.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.76 ms</text>
+<text x='510.0' y='433.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.90 ms</text>
+<text x='600.0' y='433.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>2.67 ms</text>
+<text x='680.0' y='433.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>17.0 %</text>
+<rect x='90' y='440' width='14' height='12' fill='#d1d5db' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='451.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>PyTorch copies / elementwise</text>
+<text x='420.0' y='451.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.35 ms</text>
+<text x='510.0' y='451.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.21 ms</text>
+<text x='600.0' y='451.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>2.55 ms</text>
+<text x='680.0' y='451.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>16.3 %</text>
+<rect x='90' y='458' width='14' height='12' fill='#7c3aed' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='469.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>attention (cuDNN)</text>
+<text x='420.0' y='469.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.42 ms</text>
+<text x='510.0' y='469.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.57 ms</text>
+<text x='600.0' y='469.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.99 ms</text>
+<text x='680.0' y='469.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>12.7 %</text>
+<rect x='90' y='476' width='14' height='12' fill='#60a5fa' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='487.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>dense GEMM</text>
+<text x='420.0' y='487.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.58 ms</text>
+<text x='510.0' y='487.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.06 ms</text>
+<text x='600.0' y='487.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.64 ms</text>
+<text x='680.0' y='487.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>10.4 %</text>
+<rect x='90' y='494' width='14' height='12' fill='#0d9488' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='505.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>quantize (MXFP8)</text>
+<text x='420.0' y='505.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.00 ms</text>
+<text x='510.0' y='505.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.42 ms</text>
+<text x='600.0' y='505.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.42 ms</text>
+<text x='680.0' y='505.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>9.0 %</text>
+<rect x='90' y='512' width='14' height='12' fill='#9ca3af' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='523.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>memset</text>
+<text x='420.0' y='523.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.95 ms</text>
+<text x='510.0' y='523.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.12 ms</text>
+<text x='600.0' y='523.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>1.07 ms</text>
+<text x='680.0' y='523.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>6.8 %</text>
+<rect x='90' y='530' width='14' height='12' fill='#fdba74' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='541.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>NCCL EP permute / scan</text>
+<text x='420.0' y='541.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.41 ms</text>
+<text x='510.0' y='541.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.30 ms</text>
+<text x='600.0' y='541.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.71 ms</text>
+<text x='680.0' y='541.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>4.5 %</text>
+<rect x='90' y='548' width='14' height='12' fill='#16a34a' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='559.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>RMSNorm</text>
+<text x='420.0' y='559.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.16 ms</text>
+<text x='510.0' y='559.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.30 ms</text>
+<text x='600.0' y='559.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.46 ms</text>
+<text x='680.0' y='559.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>2.9 %</text>
+<rect x='90' y='566' width='14' height='12' fill='#facc15' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='577.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>NCCL collective</text>
+<text x='420.0' y='577.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.33 ms</text>
+<text x='510.0' y='577.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.00 ms</text>
+<text x='600.0' y='577.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.33 ms</text>
+<text x='680.0' y='577.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>2.1 %</text>
+<rect x='90' y='584' width='14' height='12' fill='#86efac' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='595.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>RoPE</text>
+<text x='420.0' y='595.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.06 ms</text>
+<text x='510.0' y='595.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.06 ms</text>
+<text x='600.0' y='595.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.12 ms</text>
+<text x='680.0' y='595.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>0.8 %</text>
+<rect x='90' y='602' width='14' height='12' fill='#a3e635' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='613.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>router / permute</text>
+<text x='420.0' y='613.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.03 ms</text>
+<text x='510.0' y='613.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.01 ms</text>
+<text x='600.0' y='613.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.05 ms</text>
+<text x='680.0' y='613.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>0.3 %</text>
+<rect x='90' y='620' width='14' height='12' fill='#e5e7eb' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='112.0' y='631.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>other</text>
+<text x='420.0' y='631.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.00 ms</text>
+<text x='510.0' y='631.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.00 ms</text>
+<text x='600.0' y='631.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#111827'>0.00 ms</text>
+<text x='680.0' y='631.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#4b5563'>0.0 %</text>
+</svg>

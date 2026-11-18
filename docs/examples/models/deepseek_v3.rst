@@ -173,27 +173,41 @@ graphs. Reproduce them with ``examples/pytorch/deepseek_v3``; the full setup
 One iteration on one node
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-An ``nsys`` trace of rank 0 on one GB300 node (4 GPUs, expert parallelism
-over all four, 64 routed experts, top-k 8, 4096 tokens per GPU), redrawn as
-one forward + backward iteration of the layer. Every rectangle is one kernel
-on the compute stream; the tables sum the kernel time per group.
+``nsys`` traces of rank 0 on one GB300 node (4 GPUs, expert parallelism over
+all four, 64 routed experts, top-k 8, 4096 tokens per GPU), redrawn as one
+iteration of the layer with the forward and the backward pass on separate
+rows. Every rectangle is one kernel on the compute stream, placed at its
+measured time; kernels are attributed to forward or backward by the host
+call that launched them. The images are wider than the page, scroll them
+sideways. Hovering a kernel shows its name and duration.
 
-.. image:: deepseek_v3_profile_1node.svg
-   :width: 100%
-   :alt: One iteration of DeepSeekV3Layer on one GPU, kernels colored by group
+**BF16, unfused grouped GEMM**
 
-The trace is from an earlier revision of the layer than the tables below:
+.. container:: scroll-x
+
+   .. image:: profile_dsv3_te_bf16.svg
+      :alt: One iteration of DeepSeekV3Layer in BF16, forward and backward kernels
+
+**MXFP8, fused cuDNN grouped MLP**
+
+.. container:: scroll-x
+
+   .. image:: profile_dsv3_te_mxfp8.svg
+      :alt: One iteration of DeepSeekV3Layer in MXFP8 with the fused grouped MLP
+
+The traces are from an earlier revision of the layer than the tables below:
 the two grey groups, PyTorch copies (the concatenations that assembled the
 MLA key and value tensors) and memsets (zeroing the EP receive buffers), have
 since been removed by the fused MLA RoPE kernels and the EP buffer changes,
 which is where most of the gap between these 16-17 ms and the 9.5-12.4 ms
 below comes from. What remains is the shape of the layer: the expert GEMMs
-(or the fused grouped MLP), the two NCCL EP exchanges in each direction, the
-cuDNN attention and the dense MLA projections. In the MXFP8 variant the fused
-grouped MLP takes 2.7 ms instead of 4.9 ms of grouped GEMMs plus 0.8 ms of
-SwiGLU, at the price of 1.4 ms of quantization kernels; the forward EP
-combine is long because the first collective after the experts absorbs the
-load imbalance between ranks.
+(or the fused grouped MLP), one NCCL EP exchange in each direction per pass,
+the cuDNN attention and the dense MLA projections. The backward is longer
+than the forward because every GEMM runs twice (data and weight gradients).
+In the MXFP8 variant the fused grouped MLP takes 2.7 ms instead of 4.9 ms of
+grouped GEMMs plus 0.8 ms of SwiGLU, at the price of 1.4 ms of quantization
+kernels; the forward EP combine is long because the first collective after
+the experts absorbs the load imbalance between ranks.
 
 TE MoE vs. plain PyTorch MoE
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
