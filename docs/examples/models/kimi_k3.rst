@@ -15,14 +15,6 @@ stream with the Attention Residuals (AttnRes) highway.
 Features used
 -------------
 
-The diagram traces one layer as a plain PyTorch implementation would run
-it, operation by operation, and marks which Transformer Engine module or
-kernel takes each group of operations over.
-
-.. image:: kimi_k3_layer.svg
-   :width: 100%
-   :alt: kimi_k3 layer: baseline operations and the TE features covering them
-
 Attention
 
 * :class:`~transformer_engine.pytorch.KimiDeltaAttention`: the KDA
@@ -72,6 +64,120 @@ Precision
   :doc:`low-precision recipe </features/low_precision_training/index>`; the
   KDA recurrence, the AttnRes pooling, the convolution and the gates stay in
   bf16 / float32.
+
+Profile on 1 GB200 node
+-----------------------
+
+One ``KimiK3Layer`` (layer 2 of the model: attention plus latent MoE) with
+Kimi-K3 dimensions (hidden 7168, 96 heads x 128, MLA 1536 / 512 / 128 / 64 /
+128 NoPE, latent 3584, expert ffn 3072, top-k 16, shared expert ffn 6144) on
+one GB200 node, 4 GPUs, expert parallelism over all four with 16 local experts
+each (64 in total; the model has 896), 16384 tokens per GPU, forward + backward,
+bf16 parameters, wall-clock with CUDA synchronization. With no committed block
+residuals the AttnRes pooling is the identity, so the traces hold the
+attention block and the MoE. Reproduce with ``examples/pytorch/kimi_k3``.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Layer (ms per iteration, fwd + bwd)
+     - BF16
+     - MXFP8, fused grouped MLP
+   * - KDA layer
+     - 160.2 ms (0.41 Mtok/s)
+     - 107.1 ms (0.61 Mtok/s)
+   * - MLA layer
+     - 111.2 ms (0.59 Mtok/s)
+     - 60.5 ms (1.08 Mtok/s)
+
+The ``nsys`` traces of rank 0 below are redrawn as one iteration, forward and
+backward pass as separate images on the same time scale. Every rectangle is
+one kernel on the compute stream at its measured time; gaps are GPU idle time.
+Hover a kernel for its group, name and duration; the images scroll sideways.
+
+.. tabs::
+
+   .. tab:: KDA layer (BF16)
+
+      160.2 ms per iteration, 0.41 Mtok/s. Without the fused grouped MLP the SiTU-GLU of the experts (14 ms forward, 20 ms backward) is the single largest group, ahead of the dense projections and the grouped GEMMs; the KDA kernel itself is 5 ms of the backward and under 1 ms of the forward.
+
+      **Forward:** 58.5 ms
+
+      .. container:: scroll-x
+
+         .. raw:: html
+            :file: profile_kimi_kda_bf16_fwd.svg
+
+      **Backward:** 102.6 ms
+
+      .. container:: scroll-x
+
+         .. raw:: html
+            :file: profile_kimi_kda_bf16_bwd.svg
+
+   .. tab:: KDA layer (MXFP8, fused grouped MLP)
+
+      107.1 ms per iteration, 0.61 Mtok/s. The fused grouped MLP takes 5.8 ms forward and 12.3 ms backward for experts plus activation. What remains is the PyTorch side of the KDA block: the float32 casts, the gated output norm and the reshapes (11 ms forward, 20 ms backward) and the depthwise short convolution (5 ms forward, 11 ms backward).
+
+      **Forward:** 40.0 ms
+
+      .. container:: scroll-x
+
+         .. raw:: html
+            :file: profile_kimi_kda_mxfp8_fwd.svg
+
+      **Backward:** 71.5 ms
+
+      .. container:: scroll-x
+
+         .. raw:: html
+            :file: profile_kimi_kda_mxfp8_bwd.svg
+
+   .. tab:: MLA layer (BF16)
+
+      111.2 ms per iteration, 0.59 Mtok/s. Same MoE as the KDA layer; the attention block costs 1.4 ms forward and 4.9 ms backward in cuDNN fused attention plus the MLA projections, so the layer is about 90 % MoE.
+
+      **Forward:** 44.9 ms
+
+      .. container:: scroll-x
+
+         .. raw:: html
+            :file: profile_kimi_mla_bf16_fwd.svg
+
+      **Backward:** 64.3 ms
+
+      .. container:: scroll-x
+
+         .. raw:: html
+            :file: profile_kimi_mla_bf16_bwd.svg
+
+   .. tab:: MLA layer (MXFP8, fused grouped MLP)
+
+      60.5 ms per iteration, 1.08 Mtok/s. The fused grouped MLP replaces 30 ms of grouped GEMMs and 32 ms of SiTU-GLU with 18 ms, at the cost of 3.8 ms of MXFP8 quantization; the two NCCL EP exchanges per pass take 3.2 ms in total.
+
+      **Forward:** 23.4 ms
+
+      .. container:: scroll-x
+
+         .. raw:: html
+            :file: profile_kimi_mla_mxfp8_fwd.svg
+
+      **Backward:** 36.9 ms
+
+      .. container:: scroll-x
+
+         .. raw:: html
+            :file: profile_kimi_mla_mxfp8_bwd.svg
+
+Across the four traces the GPU is idle for at most 0.2 ms per iteration, so
+the timelines are kernel time. The MoE dominates both layer types: the
+expert SiTU-GLU is not fused in BF16 and costs as much as the grouped GEMMs
+themselves, which is what the fused cuDNN grouped MLP removes in MXFP8. The
+KDA layer is 1.5-1.8x slower than the MLA layer, and the difference is not
+the recurrence: the cuDNN KDA kernel accounts for 6 ms of the 111 ms MXFP8
+iteration, while the PyTorch-side pieces of the block (the float32 short
+convolution, the casts around it, the gated per-head RMSNorm) account for
+about 47 ms. Those are the next fusion targets for this layer.
 
 Usage
 -----
@@ -181,11 +287,3 @@ Notes:
 * The histogram all-reduce covers every rank whose tokens were routed by the
   same bias, i.e. the EP group plus any data-parallel replicas. Without
   ``ep_group`` the layer runs all experts locally, as in the tests.
-
-Where the time goes
--------------------
-
-The KDA kernel requires a Blackwell GPU, so timings of the Kimi-K3 layer will
-be added once the layer has been measured there. The MoE and the MLA layers
-share their kernels with the :doc:`DeepSeek-V3 layer <deepseek_v3>`, whose
-measurements apply to those parts.
