@@ -90,14 +90,14 @@ sideways. The ms/iter numbers are from runs without the profiler.
       the eight local experts with dense SwiGLU MLPs, ``index_copy`` /
       ``index_add`` to place the rows.
 
-      **Forward: 32.6 ms of kernels, 1.0 ms idle**
+      **Forward: 33.6 ms**
 
       .. container:: scroll-x
 
          .. raw:: html
             :file: profile_dsv3_naive_fwd.svg
 
-      **Backward: 62.7 ms of kernels, 0.35 ms idle**
+      **Backward: 63.1 ms**
 
       .. container:: scroll-x
 
@@ -112,14 +112,14 @@ sideways. The ms/iter numbers are from runs without the profiler.
       **43.3 ms/iter** (1.51 Mtok/s), 43.4 ms of kernels, 0.1 ms of the
       iteration with an idle GPU.
 
-      **Forward: 15.7 ms of kernels, 0.09 ms idle**
+      **Forward: 15.8 ms**
 
       .. container:: scroll-x
 
          .. raw:: html
             :file: profile_dsv3_te_mxfp8_fwd.svg
 
-      **Backward: 27.7 ms of kernels, 0.04 ms idle**
+      **Backward: 27.8 ms**
 
       .. container:: scroll-x
 
