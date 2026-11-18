@@ -77,32 +77,34 @@
 <text x='8178.6' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP permute</text>
 <line x1='8248.3' y1='176' x2='8248.3' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
 <text x='8248.3' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP permute</text>
-<line x1='8468.9' y1='92' x2='8468.9' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='8468.9' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x34</text>
-<line x1='9172.9' y1='176' x2='9172.9' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='9172.9' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>experts fc1 + GLU</text>
-<line x1='9987.7' y1='92' x2='9987.7' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='9987.7' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>experts fc2</text>
-<line x1='10310.6' y1='176' x2='10310.6' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='10310.6' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP permute</text>
-<line x1='10454.5' y1='92' x2='10454.5' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='10454.5' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP combine</text>
-<line x1='10560.9' y1='176' x2='10560.9' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='10560.9' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>post-expert RMSNorm</text>
-<line x1='10591.6' y1='92' x2='10591.6' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='10591.6' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x2</text>
-<line x1='10637.3' y1='191' x2='10637.3' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='10637.3' y='202.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>up_proj</text>
-<line x1='10693.4' y1='92' x2='10693.4' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='10693.4' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x2</text>
-<line x1='10834.9' y1='176' x2='10834.9' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='10834.9' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>shared fc1</text>
-<line x1='11036.9' y1='92' x2='11036.9' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='11036.9' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x2</text>
-<line x1='11181.1' y1='176' x2='11181.1' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='11181.1' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>shared fc2</text>
-<line x1='11274.3' y1='92' x2='11274.3' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
-<text x='11274.3' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>add x2</text>
+<line x1='8372.1' y1='92' x2='8372.1' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='8372.1' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x32</text>
+<line x1='8525.2' y1='176' x2='8525.2' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='8525.2' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize recv tokens</text>
+<line x1='9172.9' y1='92' x2='9172.9' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='9172.9' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>experts fc1 + GLU</text>
+<line x1='9987.7' y1='176' x2='9987.7' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='9987.7' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>experts fc2</text>
+<line x1='10310.6' y1='92' x2='10310.6' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='10310.6' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP permute</text>
+<line x1='10454.5' y1='176' x2='10454.5' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='10454.5' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>EP combine</text>
+<line x1='10560.9' y1='92' x2='10560.9' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='10560.9' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>post-expert RMSNorm</text>
+<line x1='10591.6' y1='176' x2='10591.6' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='10591.6' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x2</text>
+<line x1='10637.3' y1='77' x2='10637.3' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='10637.3' y='74.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>up_proj</text>
+<line x1='10693.4' y1='176' x2='10693.4' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='10693.4' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x2</text>
+<line x1='10834.9' y1='92' x2='10834.9' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='10834.9' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>shared fc1</text>
+<line x1='11036.9' y1='176' x2='11036.9' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='11036.9' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize x2</text>
+<line x1='11181.1' y1='92' x2='11181.1' y2='95' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='11181.1' y='89.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>shared fc2</text>
+<line x1='11274.3' y1='176' x2='11274.3' y2='159' stroke='#374151' stroke-width='1' marker-end='url(#arrow)'/>
+<text x='11274.3' y='187.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>add x2</text>
 <text x='82.0' y='131.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#374151'>forward</text>
 <rect x='90.00' y='99' width='77.75' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_fwd_general_kernel&#10;278 us at 0.000 ms</title></rect>
 <rect x='168.03' y='99' width='20.64' height='56' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;74 us at 0.279 ms</title></rect>
@@ -262,7 +264,8 @@
 <text x='7428.8' y='131.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#1f2937'>4.21 ms</text>
 <text x='8098.5' y='131.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#ffffff'>0.55 ms</text>
 <text x='8248.3' y='131.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#1f2937'>0.46 ms</text>
-<text x='8468.9' y='131.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#ffffff'>1.10 ms</text>
+<text x='8372.1' y='131.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#ffffff'>0.41 ms</text>
+<text x='8525.2' y='131.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#ffffff'>0.68 ms</text>
 <text x='9172.9' y='131.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#ffffff'>3.92 ms</text>
 <text x='9987.7' y='131.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#ffffff'>1.88 ms</text>
 <text x='10310.6' y='131.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#1f2937'>0.43 ms</text>
