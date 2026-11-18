@@ -1,0 +1,871 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='5345' height='232' viewBox='0 0 5345 232'>
+<defs><marker id='arrow' markerWidth='6' markerHeight='6' refX='3' refY='3' orient='auto'><path d='M0,0 L6,3 L0,6 z' fill='#374151'/></marker></defs>
+<rect width='5345' height='232' fill='white'/>
+<text x='82.0' y='48.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#374151'>forward</text>
+<rect x='90.00' y='16' width='20.95' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_fwd_general_kernel&#10;75 us at 0.000 ms</title></rect>
+<rect x='110.83' y='16' width='18.08' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_176x128_64x8_1x4f_2cta_h_bz_TNN&#10;65 us at 0.074 ms</title></rect>
+<rect x='129.24' y='16' width='6.52' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_fwd_general_kernel&#10;23 us at 0.140 ms</title></rect>
+<rect x='135.84' y='16' width='51.03' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_TNT&#10;182 us at 0.164 ms</title></rect>
+<rect x='185.72' y='16' width='10.34' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_144x128_64x8_2x2_2cta_h_bz_TNN&#10;37 us at 0.342 ms</title></rect>
+<rect x='196.13' y='16' width='1.67' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;6 us at 0.379 ms</title></rect>
+<rect x='197.87' y='16' width='1.00' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_fwd_tuned_kernel&#10;4 us at 0.385 ms</title></rect>
+<rect x='198.77' y='16' width='26.11' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_TNT&#10;93 us at 0.388 ms</title></rect>
+<rect x='224.96' y='16' width='17.50' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;62 us at 0.482 ms</title></rect>
+<rect x='242.77' y='16' width='8.85' height='56' fill='#e5e7eb'><title>other&#10;rotary_fwd_q_kernel&#10;32 us at 0.546 ms</title></rect>
+<rect x='252.03' y='16' width='25.65' height='56' fill='#e5e7eb'><title>other&#10;rotary_fwd_kv_kernel&#10;92 us at 0.579 ms</title></rect>
+<rect x='277.95' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 0.671 ms</title></rect>
+<rect x='278.34' y='16' width='57.29' height='56' fill='#7c3aed'><title>attention (cuDNN)&#10;cudnn_generated_fort_native_sdpa_sm100_flash_fprop_f16_knob_1_128x128x192_4x1x1_cga1x1x1_k&#10;205 us at 0.673 ms</title></rect>
+<rect x='335.51' y='16' width='154.82' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x256_64x4_2x1_2cta_v_bz_TNT&#10;553 us at 0.877 ms</title></rect>
+<rect x='490.41' y='16' width='7.02' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;25 us at 1.430 ms</title></rect>
+<rect x='497.49' y='16' width='20.31' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_fwd_general_kernel&#10;73 us at 1.455 ms</title></rect>
+<rect x='518.05' y='16' width='2.51' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_32x64_64x16_1x2_2cta_h_bz_splitK_TNN&#10;9 us at 1.529 ms</title></rect>
+<rect x='520.31' y='16' width='0.80' height='56' fill='#60a5fa'><title>dense GEMM&#10;void cublasLt::splitKreduce_kernel&#10;3 us at 1.537 ms</title></rect>
+<rect x='521.41' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 1.541 ms</title></rect>
+<rect x='521.95' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 1.543 ms</title></rect>
+<rect x='522.57' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;2 us at 1.545 ms</title></rect>
+<rect x='523.31' y='16' width='3.72' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::sbtopk::gatherTopK&#10;13 us at 1.548 ms</title></rect>
+<rect x='527.11' y='16' width='1.70' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::bitonicSortKVInPlace&#10;6 us at 1.561 ms</title></rect>
+<rect x='529.04' y='16' width='1.81' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::_scatter_gather_elementwise_kernel&#10;6 us at 1.568 ms</title></rect>
+<rect x='531.13' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;3 us at 1.575 ms</title></rect>
+<rect x='532.17' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;2 us at 1.579 ms</title></rect>
+<rect x='532.93' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 1.582 ms</title></rect>
+<rect x='533.47' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 1.584 ms</title></rect>
+<rect x='533.85' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;2 us at 1.585 ms</title></rect>
+<rect x='534.54' y='16' width='0.81' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 1.588 ms</title></rect>
+<rect x='535.55' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 1.591 ms</title></rect>
+<rect x='536.16' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;at::native::&#10;2 us at 1.593 ms</title></rect>
+<rect x='537.37' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.598 ms</title></rect>
+<rect x='538.34' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.601 ms</title></rect>
+<rect x='538.78' y='16' width='0.98' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 1.603 ms</title></rect>
+<rect x='539.84' y='16' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 1.607 ms</title></rect>
+<rect x='540.36' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.608 ms</title></rect>
+<rect x='540.72' y='16' width='2.11' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;8 us at 1.610 ms</title></rect>
+<rect x='542.90' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.618 ms</title></rect>
+<rect x='543.39' y='16' width='1.55' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 1.619 ms</title></rect>
+<rect x='545.12' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.625 ms</title></rect>
+<rect x='545.69' y='16' width='1.61' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 1.627 ms</title></rect>
+<rect x='547.37' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.633 ms</title></rect>
+<rect x='547.72' y='16' width='1.57' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 1.635 ms</title></rect>
+<rect x='549.36' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.641 ms</title></rect>
+<rect x='549.72' y='16' width='1.61' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 1.642 ms</title></rect>
+<rect x='551.49' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.648 ms</title></rect>
+<rect x='551.96' y='16' width='1.55' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 1.650 ms</title></rect>
+<rect x='553.71' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.656 ms</title></rect>
+<rect x='554.10' y='16' width='1.61' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 1.658 ms</title></rect>
+<rect x='555.79' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.664 ms</title></rect>
+<rect x='556.15' y='16' width='1.56' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 1.665 ms</title></rect>
+<rect x='557.78' y='16' width='1.94' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;7 us at 1.671 ms</title></rect>
+<rect x='559.86' y='16' width='1.88' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;7 us at 1.678 ms</title></rect>
+<rect x='561.90' y='16' width='1.26' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;5 us at 1.685 ms</title></rect>
+<rect x='563.23' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 1.690 ms</title></rect>
+<rect x='564.20' y='16' width='2.46' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;9 us at 1.694 ms</title></rect>
+<rect x='567.26' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 1.705 ms</title></rect>
+<rect x='576.66' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 1.738 ms</title></rect>
+<rect x='584.49' y='16' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.766 ms</title></rect>
+<rect x='588.09' y='16' width='5.11' height='56' fill='#a3e635'><title>router / permute&#10;void at::cuda::kernelHistogram1D&#10;18 us at 1.779 ms</title></rect>
+<rect x='624.99' y='16' width='1.77' height='56' fill='#ea580c'><title>NCCL all-to-all&#10;ncclDevKernel_SendRecv(ncclDevKernelArgsStorage&#10;6 us at 1.911 ms</title></rect>
+<rect x='644.13' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 1.979 ms</title></rect>
+<rect x='651.61' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 2.006 ms</title></rect>
+<rect x='667.73' y='16' width='38.28' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;137 us at 2.063 ms</title></rect>
+<rect x='708.67' y='16' width='191.98' height='56' fill='#ea580c'><title>NCCL all-to-all&#10;ncclDevKernel_SendRecv(ncclDevKernelArgsStorage&#10;686 us at 2.210 ms</title></rect>
+<rect x='900.73' y='16' width='8.46' height='56' fill='#ea580c'><title>NCCL all-to-all&#10;ncclDevKernel_SendRecv(ncclDevKernelArgsStorage&#10;30 us at 2.895 ms</title></rect>
+<rect x='909.94' y='16' width='5.90' height='56' fill='#ea580c'><title>NCCL all-to-all&#10;ncclDevKernel_SendRecv(ncclDevKernelArgsStorage&#10;21 us at 2.928 ms</title></rect>
+<rect x='915.92' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 2.950 ms</title></rect>
+<rect x='916.55' y='16' width='17.45' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;62 us at 2.952 ms</title></rect>
+<rect x='934.08' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.015 ms</title></rect>
+<rect x='934.66' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceKernel&#10;2 us at 3.017 ms</title></rect>
+<rect x='935.52' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceSingleTileKernel&#10;2 us at 3.020 ms</title></rect>
+<rect x='936.66' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 3.024 ms</title></rect>
+<rect x='946.26' y='16' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::scan::DeviceCompactInitKernel&#10;1 us at 3.058 ms</title></rect>
+<rect x='948.14' y='16' width='0.91' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::select::DeviceSelectSweepKernel&#10;3 us at 3.065 ms</title></rect>
+<rect x='960.37' y='16' width='6.37' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;23 us at 3.108 ms</title></rect>
+<rect x='975.26' y='16' width='48.07' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x240_64x4_2x2f_2cta_h_bz_TNT&#10;172 us at 3.162 ms</title></rect>
+<rect x='1023.40' y='16' width='6.42' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;23 us at 3.334 ms</title></rect>
+<rect x='1029.90' y='16' width='4.94' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;18 us at 3.357 ms</title></rect>
+<rect x='1034.91' y='16' width='2.33' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;8 us at 3.375 ms</title></rect>
+<rect x='1037.31' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.383 ms</title></rect>
+<rect x='1038.12' y='16' width='4.49' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 3.386 ms</title></rect>
+<rect x='1042.51' y='16' width='23.58' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_TNT&#10;84 us at 3.402 ms</title></rect>
+<rect x='1066.17' y='16' width='39.13' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;140 us at 3.486 ms</title></rect>
+<rect x='1105.36' y='16' width='22.25' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;79 us at 3.626 ms</title></rect>
+<rect x='1127.68' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.706 ms</title></rect>
+<rect x='1128.26' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceKernel&#10;2 us at 3.708 ms</title></rect>
+<rect x='1129.27' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceSingleTileKernel&#10;2 us at 3.712 ms</title></rect>
+<rect x='1131.06' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 3.718 ms</title></rect>
+<rect x='1139.57' y='16' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::scan::DeviceCompactInitKernel&#10;1 us at 3.748 ms</title></rect>
+<rect x='1141.52' y='16' width='1.36' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::select::DeviceSelectSweepKernel&#10;5 us at 3.755 ms</title></rect>
+<rect x='1154.32' y='16' width='5.57' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;20 us at 3.801 ms</title></rect>
+<rect x='1169.38' y='16' width='40.32' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x224_64x4_2x2f_2cta_h_bz_TNT&#10;144 us at 3.855 ms</title></rect>
+<rect x='1209.77' y='16' width='6.55' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;23 us at 3.999 ms</title></rect>
+<rect x='1216.39' y='16' width='4.69' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;17 us at 4.023 ms</title></rect>
+<rect x='1221.14' y='16' width='2.31' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;8 us at 4.040 ms</title></rect>
+<rect x='1223.53' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 4.048 ms</title></rect>
+<rect x='1224.35' y='16' width='4.17' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;15 us at 4.051 ms</title></rect>
+<rect x='1228.41' y='16' width='20.60' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x128_64x5_2x2f_2cta_h_bz_TNT&#10;74 us at 4.066 ms</title></rect>
+<rect x='1249.09' y='16' width='38.79' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;139 us at 4.140 ms</title></rect>
+<rect x='1287.95' y='16' width='20.61' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;74 us at 4.278 ms</title></rect>
+<rect x='1308.64' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 4.352 ms</title></rect>
+<rect x='1309.21' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceKernel&#10;2 us at 4.354 ms</title></rect>
+<rect x='1309.82' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceSingleTileKernel&#10;2 us at 4.356 ms</title></rect>
+<rect x='1310.83' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 4.360 ms</title></rect>
+<rect x='1317.80' y='16' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::scan::DeviceCompactInitKernel&#10;1 us at 4.385 ms</title></rect>
+<rect x='1319.45' y='16' width='1.15' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::select::DeviceSelectSweepKernel&#10;4 us at 4.391 ms</title></rect>
+<rect x='1330.20' y='16' width='6.24' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;22 us at 4.429 ms</title></rect>
+<rect x='1343.92' y='16' width='48.85' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x128_64x5_2x2f_2cta_h_bz_TNT&#10;174 us at 4.478 ms</title></rect>
+<rect x='1392.85' y='16' width='6.58' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;23 us at 4.653 ms</title></rect>
+<rect x='1399.50' y='16' width='5.48' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;20 us at 4.677 ms</title></rect>
+<rect x='1405.05' y='16' width='2.33' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;8 us at 4.697 ms</title></rect>
+<rect x='1407.46' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 4.705 ms</title></rect>
+<rect x='1408.28' y='16' width='4.62' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;17 us at 4.708 ms</title></rect>
+<rect x='1412.80' y='16' width='24.79' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x128_64x5_2x2f_2cta_h_bz_TNT&#10;89 us at 4.724 ms</title></rect>
+<rect x='1437.67' y='16' width='38.90' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;139 us at 4.813 ms</title></rect>
+<rect x='1476.65' y='16' width='22.99' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;82 us at 4.952 ms</title></rect>
+<rect x='1499.72' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 5.035 ms</title></rect>
+<rect x='1500.27' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceKernel&#10;2 us at 5.037 ms</title></rect>
+<rect x='1501.11' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceSingleTileKernel&#10;2 us at 5.040 ms</title></rect>
+<rect x='1502.35' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 5.044 ms</title></rect>
+<rect x='1509.52' y='16' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::scan::DeviceCompactInitKernel&#10;1 us at 5.070 ms</title></rect>
+<rect x='1511.03' y='16' width='1.09' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::select::DeviceSelectSweepKernel&#10;4 us at 5.075 ms</title></rect>
+<rect x='1521.79' y='16' width='5.97' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;21 us at 5.114 ms</title></rect>
+<rect x='1534.97' y='16' width='47.74' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_TNT&#10;170 us at 5.161 ms</title></rect>
+<rect x='1582.78' y='16' width='6.33' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;23 us at 5.331 ms</title></rect>
+<rect x='1589.17' y='16' width='5.28' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;19 us at 5.354 ms</title></rect>
+<rect x='1594.52' y='16' width='2.28' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;8 us at 5.373 ms</title></rect>
+<rect x='1596.87' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 5.382 ms</title></rect>
+<rect x='1597.61' y='16' width='4.52' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 5.384 ms</title></rect>
+<rect x='1602.01' y='16' width='21.31' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_TNT&#10;76 us at 5.400 ms</title></rect>
+<rect x='1623.39' y='16' width='38.84' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;139 us at 5.476 ms</title></rect>
+<rect x='1662.30' y='16' width='21.92' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;78 us at 5.615 ms</title></rect>
+<rect x='1684.28' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 5.694 ms</title></rect>
+<rect x='1684.87' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceKernel&#10;2 us at 5.696 ms</title></rect>
+<rect x='1685.65' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceSingleTileKernel&#10;2 us at 5.699 ms</title></rect>
+<rect x='1686.92' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 5.703 ms</title></rect>
+<rect x='1695.06' y='16' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::scan::DeviceCompactInitKernel&#10;1 us at 5.732 ms</title></rect>
+<rect x='1696.90' y='16' width='1.02' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::select::DeviceSelectSweepKernel&#10;4 us at 5.739 ms</title></rect>
+<rect x='1708.24' y='16' width='6.08' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;22 us at 5.779 ms</title></rect>
+<rect x='1721.93' y='16' width='47.79' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x224_64x4_2x1_2cta_v_bz_TNT&#10;171 us at 5.828 ms</title></rect>
+<rect x='1769.80' y='16' width='6.42' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;23 us at 5.999 ms</title></rect>
+<rect x='1776.29' y='16' width='5.32' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;19 us at 6.022 ms</title></rect>
+<rect x='1781.69' y='16' width='2.33' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;8 us at 6.042 ms</title></rect>
+<rect x='1784.09' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 6.050 ms</title></rect>
+<rect x='1784.83' y='16' width='4.56' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 6.053 ms</title></rect>
+<rect x='1789.29' y='16' width='23.55' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_TNT&#10;84 us at 6.069 ms</title></rect>
+<rect x='1812.91' y='16' width='39.24' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;140 us at 6.153 ms</title></rect>
+<rect x='1852.21' y='16' width='22.41' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;80 us at 6.294 ms</title></rect>
+<rect x='1874.69' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 6.374 ms</title></rect>
+<rect x='1875.35' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceKernel&#10;2 us at 6.376 ms</title></rect>
+<rect x='1876.14' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceSingleTileKernel&#10;2 us at 6.379 ms</title></rect>
+<rect x='1877.10' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 6.383 ms</title></rect>
+<rect x='1884.11' y='16' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::scan::DeviceCompactInitKernel&#10;1 us at 6.408 ms</title></rect>
+<rect x='1885.72' y='16' width='0.96' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::select::DeviceSelectSweepKernel&#10;3 us at 6.413 ms</title></rect>
+<rect x='1896.74' y='16' width='6.04' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;22 us at 6.453 ms</title></rect>
+<rect x='1910.62' y='16' width='47.04' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x128_64x5_2x2f_2cta_h_bz_TNT&#10;168 us at 6.502 ms</title></rect>
+<rect x='1957.74' y='16' width='6.51' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;23 us at 6.670 ms</title></rect>
+<rect x='1964.32' y='16' width='5.40' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;19 us at 6.694 ms</title></rect>
+<rect x='1969.80' y='16' width='2.37' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;8 us at 6.714 ms</title></rect>
+<rect x='1972.23' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 6.722 ms</title></rect>
+<rect x='1972.93' y='16' width='4.51' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 6.725 ms</title></rect>
+<rect x='1977.34' y='16' width='22.21' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_TNT&#10;79 us at 6.741 ms</title></rect>
+<rect x='1999.62' y='16' width='39.12' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;140 us at 6.820 ms</title></rect>
+<rect x='2038.81' y='16' width='22.27' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;80 us at 6.960 ms</title></rect>
+<rect x='2061.15' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 7.040 ms</title></rect>
+<rect x='2061.77' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceKernel&#10;2 us at 7.042 ms</title></rect>
+<rect x='2062.57' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceSingleTileKernel&#10;2 us at 7.045 ms</title></rect>
+<rect x='2064.05' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 7.050 ms</title></rect>
+<rect x='2070.98' y='16' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::scan::DeviceCompactInitKernel&#10;1 us at 7.075 ms</title></rect>
+<rect x='2072.45' y='16' width='1.08' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::select::DeviceSelectSweepKernel&#10;4 us at 7.080 ms</title></rect>
+<rect x='2087.15' y='16' width='6.16' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;22 us at 7.133 ms</title></rect>
+<rect x='2104.26' y='16' width='45.31' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x240_64x4_2x2f_2cta_h_bz_TNT&#10;162 us at 7.194 ms</title></rect>
+<rect x='2149.64' y='16' width='6.15' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;22 us at 7.356 ms</title></rect>
+<rect x='2155.86' y='16' width='4.94' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;18 us at 7.378 ms</title></rect>
+<rect x='2160.87' y='16' width='2.37' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;8 us at 7.396 ms</title></rect>
+<rect x='2163.31' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 7.405 ms</title></rect>
+<rect x='2164.04' y='16' width='4.56' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 7.407 ms</title></rect>
+<rect x='2168.49' y='16' width='22.73' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_TNT&#10;81 us at 7.423 ms</title></rect>
+<rect x='2191.30' y='16' width='39.16' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;140 us at 7.505 ms</title></rect>
+<rect x='2230.52' y='16' width='22.40' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;80 us at 7.645 ms</title></rect>
+<rect x='2253.00' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 7.725 ms</title></rect>
+<rect x='2253.66' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceKernel&#10;2 us at 7.727 ms</title></rect>
+<rect x='2254.48' y='16' width='0.80' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::reduce::DeviceReduceSingleTileKernel&#10;2 us at 7.730 ms</title></rect>
+<rect x='2257.57' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;2 us at 7.741 ms</title></rect>
+<rect x='2265.45' y='16' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::scan::DeviceCompactInitKernel&#10;1 us at 7.769 ms</title></rect>
+<rect x='2267.16' y='16' width='1.39' height='56' fill='#e5e7eb'><title>other&#10;void at_cuda_detail::cub::detail::select::DeviceSelectSweepKernel&#10;5 us at 7.776 ms</title></rect>
+<rect x='2277.98' y='16' width='5.80' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;21 us at 7.814 ms</title></rect>
+<rect x='2292.46' y='16' width='42.27' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x224_64x4_2x2f_2cta_h_bz_TNT&#10;151 us at 7.866 ms</title></rect>
+<rect x='2334.81' y='16' width='6.38' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;23 us at 8.017 ms</title></rect>
+<rect x='2341.26' y='16' width='5.08' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;18 us at 8.040 ms</title></rect>
+<rect x='2346.41' y='16' width='2.28' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;8 us at 8.059 ms</title></rect>
+<rect x='2348.76' y='16' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 8.067 ms</title></rect>
+<rect x='2349.49' y='16' width='4.40' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 8.070 ms</title></rect>
+<rect x='2353.78' y='16' width='21.46' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_TNT&#10;77 us at 8.085 ms</title></rect>
+<rect x='2375.31' y='16' width='39.86' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;142 us at 8.162 ms</title></rect>
+<rect x='2415.24' y='16' width='21.47' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;77 us at 8.304 ms</title></rect>
+<rect x='2436.79' y='16' width='38.79' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;139 us at 8.381 ms</title></rect>
+<rect x='2475.65' y='16' width='190.71' height='56' fill='#ea580c'><title>NCCL all-to-all&#10;ncclDevKernel_SendRecv(ncclDevKernelArgsStorage&#10;681 us at 8.520 ms</title></rect>
+<rect x='2666.44' y='16' width='2.63' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;9 us at 9.202 ms</title></rect>
+<rect x='2669.13' y='16' width='3.84' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;14 us at 9.211 ms</title></rect>
+<rect x='2673.04' y='16' width='44.36' height='56' fill='#60a5fa'><title>dense GEMM&#10;kernel_cutlass__kernel_CopyAtom_ThrID10_TVLayoutSrc125601_TVLayoutDst125601_Valuetypebf16_&#10;158 us at 9.225 ms</title></rect>
+<rect x='2717.29' y='16' width='45.33' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_TNT&#10;162 us at 9.383 ms</title></rect>
+<rect x='2762.89' y='16' width='6.41' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;23 us at 9.546 ms</title></rect>
+<rect x='2769.58' y='16' width='5.38' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;19 us at 9.570 ms</title></rect>
+<rect x='2775.09' y='16' width='18.89' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_TNT&#10;67 us at 9.590 ms</title></rect>
+<rect x='2794.05' y='16' width='8.04' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;29 us at 9.657 ms</title></rect>
+<rect x='2802.16' y='16' width='7.39' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;26 us at 9.686 ms</title></rect>
+<line x1='90.0' y1='72' x2='90.0' y2='77' stroke='#6b7280'/>
+<text x='90.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0 ms</text>
+<line x1='230.0' y1='72' x2='230.0' y2='77' stroke='#6b7280'/>
+<text x='230.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0.5 ms</text>
+<line x1='370.0' y1='72' x2='370.0' y2='77' stroke='#6b7280'/>
+<text x='370.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1 ms</text>
+<line x1='510.0' y1='72' x2='510.0' y2='77' stroke='#6b7280'/>
+<text x='510.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1.5 ms</text>
+<line x1='650.0' y1='72' x2='650.0' y2='77' stroke='#6b7280'/>
+<text x='650.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2 ms</text>
+<line x1='790.0' y1='72' x2='790.0' y2='77' stroke='#6b7280'/>
+<text x='790.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2.5 ms</text>
+<line x1='930.0' y1='72' x2='930.0' y2='77' stroke='#6b7280'/>
+<text x='930.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3 ms</text>
+<line x1='1070.0' y1='72' x2='1070.0' y2='77' stroke='#6b7280'/>
+<text x='1070.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3.5 ms</text>
+<line x1='1210.0' y1='72' x2='1210.0' y2='77' stroke='#6b7280'/>
+<text x='1210.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4 ms</text>
+<line x1='1350.0' y1='72' x2='1350.0' y2='77' stroke='#6b7280'/>
+<text x='1350.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4.5 ms</text>
+<line x1='1490.0' y1='72' x2='1490.0' y2='77' stroke='#6b7280'/>
+<text x='1490.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5 ms</text>
+<line x1='1630.0' y1='72' x2='1630.0' y2='77' stroke='#6b7280'/>
+<text x='1630.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5.5 ms</text>
+<line x1='1770.0' y1='72' x2='1770.0' y2='77' stroke='#6b7280'/>
+<text x='1770.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6 ms</text>
+<line x1='1910.0' y1='72' x2='1910.0' y2='77' stroke='#6b7280'/>
+<text x='1910.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6.5 ms</text>
+<line x1='2050.0' y1='72' x2='2050.0' y2='77' stroke='#6b7280'/>
+<text x='2050.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7 ms</text>
+<line x1='2190.0' y1='72' x2='2190.0' y2='77' stroke='#6b7280'/>
+<text x='2190.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7.5 ms</text>
+<line x1='2330.0' y1='72' x2='2330.0' y2='77' stroke='#6b7280'/>
+<text x='2330.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>8 ms</text>
+<line x1='2470.0' y1='72' x2='2470.0' y2='77' stroke='#6b7280'/>
+<text x='2470.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>8.5 ms</text>
+<line x1='2610.0' y1='72' x2='2610.0' y2='77' stroke='#6b7280'/>
+<text x='2610.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>9 ms</text>
+<line x1='2750.0' y1='72' x2='2750.0' y2='77' stroke='#6b7280'/>
+<text x='2750.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>9.5 ms</text>
+<line x1='2890.0' y1='72' x2='2890.0' y2='77' stroke='#6b7280'/>
+<text x='2890.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>10 ms</text>
+<line x1='3030.0' y1='72' x2='3030.0' y2='77' stroke='#6b7280'/>
+<text x='3030.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>10.5 ms</text>
+<line x1='3170.0' y1='72' x2='3170.0' y2='77' stroke='#6b7280'/>
+<text x='3170.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>11 ms</text>
+<line x1='3310.0' y1='72' x2='3310.0' y2='77' stroke='#6b7280'/>
+<text x='3310.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>11.5 ms</text>
+<line x1='3450.0' y1='72' x2='3450.0' y2='77' stroke='#6b7280'/>
+<text x='3450.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>12 ms</text>
+<line x1='3590.0' y1='72' x2='3590.0' y2='77' stroke='#6b7280'/>
+<text x='3590.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>12.5 ms</text>
+<line x1='3730.0' y1='72' x2='3730.0' y2='77' stroke='#6b7280'/>
+<text x='3730.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>13 ms</text>
+<line x1='3870.0' y1='72' x2='3870.0' y2='77' stroke='#6b7280'/>
+<text x='3870.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>13.5 ms</text>
+<line x1='4010.0' y1='72' x2='4010.0' y2='77' stroke='#6b7280'/>
+<text x='4010.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>14 ms</text>
+<line x1='4150.0' y1='72' x2='4150.0' y2='77' stroke='#6b7280'/>
+<text x='4150.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>14.5 ms</text>
+<line x1='4290.0' y1='72' x2='4290.0' y2='77' stroke='#6b7280'/>
+<text x='4290.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>15 ms</text>
+<line x1='4430.0' y1='72' x2='4430.0' y2='77' stroke='#6b7280'/>
+<text x='4430.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>15.5 ms</text>
+<line x1='4570.0' y1='72' x2='4570.0' y2='77' stroke='#6b7280'/>
+<text x='4570.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>16 ms</text>
+<line x1='4710.0' y1='72' x2='4710.0' y2='77' stroke='#6b7280'/>
+<text x='4710.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>16.5 ms</text>
+<line x1='4850.0' y1='72' x2='4850.0' y2='77' stroke='#6b7280'/>
+<text x='4850.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>17 ms</text>
+<line x1='4990.0' y1='72' x2='4990.0' y2='77' stroke='#6b7280'/>
+<text x='4990.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>17.5 ms</text>
+<line x1='5130.0' y1='72' x2='5130.0' y2='77' stroke='#6b7280'/>
+<text x='5130.0' y='88.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>18 ms</text>
+<text x='82.0' y='138.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='12' font-weight='normal' fill='#374151'>backward</text>
+<rect x='90.00' y='106' width='4.60' height='56' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;16 us at 0.000 ms</title></rect>
+<rect x='94.48' y='106' width='16.07' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;57 us at 0.016 ms</title></rect>
+<rect x='109.82' y='106' width='21.75' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_160x192_64x5_1x2_2cta_h_bz_NNN&#10;78 us at 0.071 ms</title></rect>
+<rect x='131.80' y='106' width='1.97' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;7 us at 0.149 ms</title></rect>
+<rect x='134.04' y='106' width='5.84' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;21 us at 0.157 ms</title></rect>
+<rect x='139.95' y='106' width='6.69' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;24 us at 0.178 ms</title></rect>
+<rect x='146.71' y='106' width='2.22' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;8 us at 0.203 ms</title></rect>
+<rect x='148.81' y='106' width='39.61' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;141 us at 0.210 ms</title></rect>
+<rect x='187.37' y='106' width='41.39' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NNT&#10;148 us at 0.348 ms</title></rect>
+<rect x='229.03' y='106' width='38.84' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;139 us at 0.497 ms</title></rect>
+<rect x='268.11' y='106' width='212.25' height='56' fill='#ea580c'><title>NCCL all-to-all&#10;ncclDevKernel_SendRecv(ncclDevKernelArgsStorage&#10;758 us at 0.636 ms</title></rect>
+<rect x='480.59' y='106' width='38.99' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;139 us at 1.395 ms</title></rect>
+<rect x='519.65' y='106' width='16.63' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;59 us at 1.534 ms</title></rect>
+<rect x='536.35' y='106' width='6.10' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;22 us at 1.594 ms</title></rect>
+<rect x='542.34' y='106' width='16.00' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;57 us at 1.615 ms</title></rect>
+<rect x='557.39' y='106' width='17.15' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x224_64x7_2x2f_2cta_h_bz_NNT&#10;61 us at 1.669 ms</title></rect>
+<rect x='574.81' y='106' width='9.01' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;32 us at 1.731 ms</title></rect>
+<rect x='584.06' y='106' width='2.96' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;11 us at 1.764 ms</title></rect>
+<rect x='587.28' y='106' width='2.65' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;9 us at 1.776 ms</title></rect>
+<rect x='590.01' y='106' width='4.40' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 1.786 ms</title></rect>
+<rect x='594.48' y='106' width='1.59' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;6 us at 1.802 ms</title></rect>
+<rect x='596.14' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 1.808 ms</title></rect>
+<rect x='596.79' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.810 ms</title></rect>
+<rect x='597.45' y='106' width='0.93' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 1.812 ms</title></rect>
+<rect x='598.66' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 1.817 ms</title></rect>
+<rect x='599.34' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 1.819 ms</title></rect>
+<rect x='600.15' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 1.822 ms</title></rect>
+<rect x='601.45' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 1.827 ms</title></rect>
+<rect x='602.27' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 1.830 ms</title></rect>
+<rect x='603.22' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;2 us at 1.833 ms</title></rect>
+<rect x='603.99' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 1.836 ms</title></rect>
+<rect x='604.98' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 1.839 ms</title></rect>
+<rect x='606.02' y='106' width='1.94' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 1.843 ms</title></rect>
+<rect x='608.90' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 1.853 ms</title></rect>
+<rect x='609.81' y='106' width='1.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 1.856 ms</title></rect>
+<rect x='611.68' y='106' width='0.82' height='56' fill='#e5e7eb'><title>other&#10;void &#10;3 us at 1.863 ms</title></rect>
+<rect x='612.57' y='106' width='1.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;6 us at 1.866 ms</title></rect>
+<rect x='614.44' y='106' width='5.77' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;21 us at 1.873 ms</title></rect>
+<rect x='620.27' y='106' width='6.62' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;24 us at 1.894 ms</title></rect>
+<rect x='627.14' y='106' width='2.27' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;8 us at 1.918 ms</title></rect>
+<rect x='629.49' y='106' width='43.05' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;154 us at 1.927 ms</title></rect>
+<rect x='671.45' y='106' width='43.05' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NNT&#10;154 us at 2.077 ms</title></rect>
+<rect x='714.59' y='106' width='18.52' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;66 us at 2.231 ms</title></rect>
+<rect x='733.17' y='106' width='5.63' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;20 us at 2.297 ms</title></rect>
+<rect x='738.87' y='106' width='17.36' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;62 us at 2.317 ms</title></rect>
+<rect x='756.30' y='106' width='0.99' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;4 us at 2.380 ms</title></rect>
+<rect x='757.53' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 2.384 ms</title></rect>
+<rect x='758.27' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 2.387 ms</title></rect>
+<rect x='759.30' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 2.390 ms</title></rect>
+<rect x='760.57' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 2.395 ms</title></rect>
+<rect x='761.43' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 2.398 ms</title></rect>
+<rect x='762.61' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 2.402 ms</title></rect>
+<rect x='763.41' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 2.405 ms</title></rect>
+<rect x='764.56' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 2.409 ms</title></rect>
+<rect x='765.42' y='106' width='1.98' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 2.412 ms</title></rect>
+<rect x='768.00' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 2.421 ms</title></rect>
+<rect x='768.87' y='106' width='1.85' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 2.425 ms</title></rect>
+<rect x='770.80' y='106' width='19.75' height='56' fill='#e5e7eb'><title>other&#10;void &#10;71 us at 2.431 ms</title></rect>
+<rect x='790.62' y='106' width='38.51' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;138 us at 2.502 ms</title></rect>
+<rect x='829.20' y='106' width='17.39' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;62 us at 2.640 ms</title></rect>
+<rect x='846.67' y='106' width='6.25' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;22 us at 2.702 ms</title></rect>
+<rect x='853.06' y='106' width='16.67' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;60 us at 2.725 ms</title></rect>
+<rect x='869.06' y='106' width='17.71' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x240_64x4_2x2_2cta_h_bz_NNT&#10;63 us at 2.782 ms</title></rect>
+<rect x='887.08' y='106' width='8.78' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;31 us at 2.847 ms</title></rect>
+<rect x='895.94' y='106' width='3.10' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;11 us at 2.878 ms</title></rect>
+<rect x='899.11' y='106' width='27.79' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;99 us at 2.890 ms</title></rect>
+<rect x='926.97' y='106' width='2.70' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;10 us at 2.989 ms</title></rect>
+<rect x='929.73' y='106' width='4.53' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 2.999 ms</title></rect>
+<rect x='934.55' y='106' width='1.59' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;6 us at 3.016 ms</title></rect>
+<rect x='936.46' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.023 ms</title></rect>
+<rect x='937.26' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 3.026 ms</title></rect>
+<rect x='937.67' y='106' width='0.88' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 3.027 ms</title></rect>
+<rect x='938.62' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.031 ms</title></rect>
+<rect x='939.13' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.033 ms</title></rect>
+<rect x='939.85' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 3.035 ms</title></rect>
+<rect x='940.92' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 3.039 ms</title></rect>
+<rect x='941.74' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.042 ms</title></rect>
+<rect x='942.88' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 3.046 ms</title></rect>
+<rect x='943.68' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 3.049 ms</title></rect>
+<rect x='944.74' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.053 ms</title></rect>
+<rect x='945.83' y='106' width='1.91' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 3.057 ms</title></rect>
+<rect x='948.34' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.066 ms</title></rect>
+<rect x='949.25' y='106' width='1.78' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 3.069 ms</title></rect>
+<rect x='951.10' y='106' width='0.91' height='56' fill='#e5e7eb'><title>other&#10;void &#10;3 us at 3.075 ms</title></rect>
+<rect x='952.09' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.079 ms</title></rect>
+<rect x='952.67' y='106' width='1.87' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;7 us at 3.081 ms</title></rect>
+<rect x='954.62' y='106' width='6.00' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;21 us at 3.088 ms</title></rect>
+<rect x='960.81' y='106' width='6.91' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;25 us at 3.110 ms</title></rect>
+<rect x='967.99' y='106' width='2.60' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;9 us at 3.136 ms</title></rect>
+<rect x='970.72' y='106' width='42.75' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;153 us at 3.145 ms</title></rect>
+<rect x='1012.33' y='106' width='45.75' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_NNT&#10;163 us at 3.294 ms</title></rect>
+<rect x='1058.16' y='106' width='17.67' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;63 us at 3.458 ms</title></rect>
+<rect x='1075.90' y='106' width='5.64' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;20 us at 3.521 ms</title></rect>
+<rect x='1081.60' y='106' width='54.53' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;195 us at 3.541 ms</title></rect>
+<rect x='1136.42' y='106' width='17.45' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;62 us at 3.737 ms</title></rect>
+<rect x='1154.10' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 3.800 ms</title></rect>
+<rect x='1155.18' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.804 ms</title></rect>
+<rect x='1155.71' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 3.806 ms</title></rect>
+<rect x='1156.43' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 3.809 ms</title></rect>
+<rect x='1157.41' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 3.812 ms</title></rect>
+<rect x='1158.25' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.815 ms</title></rect>
+<rect x='1159.27' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 3.819 ms</title></rect>
+<rect x='1160.12' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 3.822 ms</title></rect>
+<rect x='1161.41' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.826 ms</title></rect>
+<rect x='1162.24' y='106' width='1.94' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 3.829 ms</title></rect>
+<rect x='1164.83' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.839 ms</title></rect>
+<rect x='1165.65' y='106' width='1.85' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 3.842 ms</title></rect>
+<rect x='1167.58' y='106' width='20.60' height='56' fill='#e5e7eb'><title>other&#10;void &#10;74 us at 3.848 ms</title></rect>
+<rect x='1188.25' y='106' width='53.98' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;193 us at 3.922 ms</title></rect>
+<rect x='1242.30' y='106' width='38.54' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;138 us at 4.115 ms</title></rect>
+<rect x='1280.91' y='106' width='17.24' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;62 us at 4.253 ms</title></rect>
+<rect x='1298.47' y='106' width='6.25' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;22 us at 4.316 ms</title></rect>
+<rect x='1304.82' y='106' width='16.52' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;59 us at 4.339 ms</title></rect>
+<rect x='1320.61' y='106' width='18.79' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_NNT&#10;67 us at 4.395 ms</title></rect>
+<rect x='1339.47' y='106' width='8.85' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;32 us at 4.462 ms</title></rect>
+<rect x='1348.38' y='106' width='2.90' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;10 us at 4.494 ms</title></rect>
+<rect x='1351.36' y='106' width='27.55' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;98 us at 4.505 ms</title></rect>
+<rect x='1378.98' y='106' width='2.71' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;10 us at 4.604 ms</title></rect>
+<rect x='1382.00' y='106' width='4.54' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 4.614 ms</title></rect>
+<rect x='1386.86' y='106' width='1.59' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;6 us at 4.632 ms</title></rect>
+<rect x='1388.76' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 4.638 ms</title></rect>
+<rect x='1389.36' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 4.641 ms</title></rect>
+<rect x='1389.78' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 4.642 ms</title></rect>
+<rect x='1390.64' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 4.645 ms</title></rect>
+<rect x='1391.15' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 4.647 ms</title></rect>
+<rect x='1392.06' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 4.650 ms</title></rect>
+<rect x='1393.37' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 4.655 ms</title></rect>
+<rect x='1394.21' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 4.658 ms</title></rect>
+<rect x='1395.44' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 4.662 ms</title></rect>
+<rect x='1396.22' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 4.665 ms</title></rect>
+<rect x='1397.35' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 4.669 ms</title></rect>
+<rect x='1398.45' y='106' width='1.92' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 4.673 ms</title></rect>
+<rect x='1401.38' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 4.684 ms</title></rect>
+<rect x='1402.21' y='106' width='1.82' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 4.686 ms</title></rect>
+<rect x='1404.10' y='106' width='0.82' height='56' fill='#e5e7eb'><title>other&#10;void &#10;3 us at 4.693 ms</title></rect>
+<rect x='1405.00' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 4.696 ms</title></rect>
+<rect x='1405.56' y='106' width='1.91' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;7 us at 4.698 ms</title></rect>
+<rect x='1407.54' y='106' width='5.90' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;21 us at 4.705 ms</title></rect>
+<rect x='1413.71' y='106' width='6.84' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;24 us at 4.728 ms</title></rect>
+<rect x='1420.82' y='106' width='2.36' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;8 us at 4.753 ms</title></rect>
+<rect x='1423.26' y='106' width='41.42' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;148 us at 4.762 ms</title></rect>
+<rect x='1463.61' y='106' width='45.30' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_NNT&#10;162 us at 4.906 ms</title></rect>
+<rect x='1508.98' y='106' width='17.71' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;63 us at 5.068 ms</title></rect>
+<rect x='1526.76' y='106' width='5.63' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;20 us at 5.131 ms</title></rect>
+<rect x='1532.46' y='106' width='54.34' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;194 us at 5.152 ms</title></rect>
+<rect x='1587.12' y='106' width='17.36' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;62 us at 5.347 ms</title></rect>
+<rect x='1604.80' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 5.410 ms</title></rect>
+<rect x='1605.90' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 5.414 ms</title></rect>
+<rect x='1606.40' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 5.416 ms</title></rect>
+<rect x='1607.11' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 5.418 ms</title></rect>
+<rect x='1608.41' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 5.423 ms</title></rect>
+<rect x='1609.26' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 5.426 ms</title></rect>
+<rect x='1610.20' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 5.429 ms</title></rect>
+<rect x='1611.02' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 5.432 ms</title></rect>
+<rect x='1612.15' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 5.436 ms</title></rect>
+<rect x='1612.97' y='106' width='1.97' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 5.439 ms</title></rect>
+<rect x='1615.54' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 5.448 ms</title></rect>
+<rect x='1616.41' y='106' width='1.84' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 5.451 ms</title></rect>
+<rect x='1618.32' y='106' width='20.40' height='56' fill='#e5e7eb'><title>other&#10;void &#10;73 us at 5.458 ms</title></rect>
+<rect x='1638.79' y='106' width='54.13' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;193 us at 5.531 ms</title></rect>
+<rect x='1692.98' y='106' width='38.44' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;137 us at 5.725 ms</title></rect>
+<rect x='1731.49' y='106' width='17.41' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;62 us at 5.862 ms</title></rect>
+<rect x='1749.14' y='106' width='6.38' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;23 us at 5.925 ms</title></rect>
+<rect x='1755.57' y='106' width='16.46' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;59 us at 5.948 ms</title></rect>
+<rect x='1771.35' y='106' width='16.51' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x224_64x7_2x1_2cta_v_bz_NNT&#10;59 us at 6.005 ms</title></rect>
+<rect x='1787.93' y='106' width='9.01' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;32 us at 6.064 ms</title></rect>
+<rect x='1797.02' y='106' width='3.31' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;12 us at 6.096 ms</title></rect>
+<rect x='1800.40' y='106' width='27.52' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;98 us at 6.109 ms</title></rect>
+<rect x='1827.99' y='106' width='2.79' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;10 us at 6.207 ms</title></rect>
+<rect x='1831.00' y='106' width='4.61' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 6.218 ms</title></rect>
+<rect x='1835.83' y='106' width='1.62' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;6 us at 6.235 ms</title></rect>
+<rect x='1837.69' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 6.242 ms</title></rect>
+<rect x='1838.23' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 6.244 ms</title></rect>
+<rect x='1838.67' y='106' width='0.81' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 6.245 ms</title></rect>
+<rect x='1839.56' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 6.248 ms</title></rect>
+<rect x='1840.06' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 6.250 ms</title></rect>
+<rect x='1840.94' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 6.253 ms</title></rect>
+<rect x='1841.81' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 6.256 ms</title></rect>
+<rect x='1842.63' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 6.259 ms</title></rect>
+<rect x='1843.56' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;2 us at 6.263 ms</title></rect>
+<rect x='1844.33' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 6.265 ms</title></rect>
+<rect x='1845.53' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 6.270 ms</title></rect>
+<rect x='1846.36' y='106' width='1.94' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 6.273 ms</title></rect>
+<rect x='1849.00' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 6.282 ms</title></rect>
+<rect x='1849.82' y='106' width='1.82' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 6.285 ms</title></rect>
+<rect x='1851.72' y='106' width='0.91' height='56' fill='#e5e7eb'><title>other&#10;void &#10;3 us at 6.292 ms</title></rect>
+<rect x='1852.71' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 6.295 ms</title></rect>
+<rect x='1853.32' y='106' width='1.87' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;7 us at 6.298 ms</title></rect>
+<rect x='1855.25' y='106' width='5.82' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;21 us at 6.304 ms</title></rect>
+<rect x='1861.30' y='106' width='6.85' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;24 us at 6.326 ms</title></rect>
+<rect x='1868.39' y='106' width='2.42' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;9 us at 6.351 ms</title></rect>
+<rect x='1870.85' y='106' width='43.86' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;157 us at 6.360 ms</title></rect>
+<rect x='1913.68' y='106' width='45.06' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_NNT&#10;161 us at 6.513 ms</title></rect>
+<rect x='1958.81' y='106' width='17.55' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;63 us at 6.674 ms</title></rect>
+<rect x='1976.44' y='106' width='5.68' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;20 us at 6.737 ms</title></rect>
+<rect x='1982.19' y='106' width='54.36' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;194 us at 6.758 ms</title></rect>
+<rect x='2036.83' y='106' width='17.54' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;63 us at 6.953 ms</title></rect>
+<rect x='2054.59' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 7.016 ms</title></rect>
+<rect x='2055.62' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 7.020 ms</title></rect>
+<rect x='2056.13' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 7.022 ms</title></rect>
+<rect x='2056.84' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 7.024 ms</title></rect>
+<rect x='2058.10' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 7.029 ms</title></rect>
+<rect x='2058.91' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 7.032 ms</title></rect>
+<rect x='2059.89' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 7.035 ms</title></rect>
+<rect x='2060.69' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 7.038 ms</title></rect>
+<rect x='2061.81' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 7.042 ms</title></rect>
+<rect x='2062.68' y='106' width='1.95' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 7.045 ms</title></rect>
+<rect x='2065.15' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 7.054 ms</title></rect>
+<rect x='2066.10' y='106' width='1.85' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 7.057 ms</title></rect>
+<rect x='2068.02' y='106' width='20.67' height='56' fill='#e5e7eb'><title>other&#10;void &#10;74 us at 7.064 ms</title></rect>
+<rect x='2088.76' y='106' width='54.06' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;193 us at 7.138 ms</title></rect>
+<rect x='2142.89' y='106' width='38.40' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;137 us at 7.332 ms</title></rect>
+<rect x='2181.36' y='106' width='17.10' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;61 us at 7.469 ms</title></rect>
+<rect x='2198.77' y='106' width='6.15' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;22 us at 7.531 ms</title></rect>
+<rect x='2205.04' y='106' width='16.20' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;58 us at 7.554 ms</title></rect>
+<rect x='2220.59' y='106' width='22.00' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_160x192_64x5_1x2_2cta_h_bz_NNN&#10;79 us at 7.609 ms</title></rect>
+<rect x='2242.66' y='106' width='9.66' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;34 us at 7.688 ms</title></rect>
+<rect x='2252.38' y='106' width='2.92' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;10 us at 7.723 ms</title></rect>
+<rect x='2255.37' y='106' width='27.64' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;99 us at 7.733 ms</title></rect>
+<rect x='2283.08' y='106' width='2.65' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;9 us at 7.832 ms</title></rect>
+<rect x='2286.08' y='106' width='4.55' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;16 us at 7.843 ms</title></rect>
+<rect x='2290.94' y='106' width='1.70' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;6 us at 7.861 ms</title></rect>
+<rect x='2292.97' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 7.868 ms</title></rect>
+<rect x='2293.46' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 7.869 ms</title></rect>
+<rect x='2293.87' y='106' width='0.82' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 7.871 ms</title></rect>
+<rect x='2294.76' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 7.874 ms</title></rect>
+<rect x='2295.26' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 7.876 ms</title></rect>
+<rect x='2296.09' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 7.879 ms</title></rect>
+<rect x='2297.49' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 7.884 ms</title></rect>
+<rect x='2298.31' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 7.887 ms</title></rect>
+<rect x='2299.55' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;2 us at 7.891 ms</title></rect>
+<rect x='2300.32' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;1 us at 7.894 ms</title></rect>
+<rect x='2301.50' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 7.898 ms</title></rect>
+<rect x='2302.61' y='106' width='1.88' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 7.902 ms</title></rect>
+<rect x='2304.95' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 7.911 ms</title></rect>
+<rect x='2305.84' y='106' width='1.77' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 7.914 ms</title></rect>
+<rect x='2307.69' y='106' width='0.85' height='56' fill='#e5e7eb'><title>other&#10;void &#10;3 us at 7.920 ms</title></rect>
+<rect x='2308.61' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 7.924 ms</title></rect>
+<rect x='2309.26' y='106' width='1.84' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;7 us at 7.926 ms</title></rect>
+<rect x='2311.16' y='106' width='5.86' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;21 us at 7.933 ms</title></rect>
+<rect x='2317.26' y='106' width='6.90' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;25 us at 7.954 ms</title></rect>
+<rect x='2324.42' y='106' width='2.53' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;9 us at 7.980 ms</title></rect>
+<rect x='2327.08' y='106' width='41.94' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;150 us at 7.990 ms</title></rect>
+<rect x='2367.97' y='106' width='40.88' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NNT&#10;146 us at 8.136 ms</title></rect>
+<rect x='2408.93' y='106' width='17.97' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;64 us at 8.282 ms</title></rect>
+<rect x='2426.97' y='106' width='5.60' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;20 us at 8.346 ms</title></rect>
+<rect x='2432.64' y='106' width='54.34' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;194 us at 8.367 ms</title></rect>
+<rect x='2487.22' y='106' width='17.29' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;62 us at 8.561 ms</title></rect>
+<rect x='2504.79' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 8.624 ms</title></rect>
+<rect x='2505.95' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 8.628 ms</title></rect>
+<rect x='2506.42' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 8.630 ms</title></rect>
+<rect x='2507.12' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 8.633 ms</title></rect>
+<rect x='2508.21' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 8.636 ms</title></rect>
+<rect x='2509.04' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 8.639 ms</title></rect>
+<rect x='2510.09' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 8.643 ms</title></rect>
+<rect x='2510.89' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;1 us at 8.646 ms</title></rect>
+<rect x='2512.16' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 8.651 ms</title></rect>
+<rect x='2512.99' y='106' width='1.91' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 8.654 ms</title></rect>
+<rect x='2515.40' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 8.662 ms</title></rect>
+<rect x='2516.22' y='106' width='1.84' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 8.665 ms</title></rect>
+<rect x='2518.13' y='106' width='20.16' height='56' fill='#e5e7eb'><title>other&#10;void &#10;72 us at 8.672 ms</title></rect>
+<rect x='2538.37' y='106' width='53.99' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;193 us at 8.744 ms</title></rect>
+<rect x='2592.43' y='106' width='38.55' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;138 us at 8.937 ms</title></rect>
+<rect x='2631.05' y='106' width='17.80' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;64 us at 9.075 ms</title></rect>
+<rect x='2649.12' y='106' width='6.39' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;23 us at 9.140 ms</title></rect>
+<rect x='2655.56' y='106' width='16.81' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;60 us at 9.163 ms</title></rect>
+<rect x='2671.62' y='106' width='19.41' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x128_64x5_2x2_2cta_h_bz_NNT&#10;69 us at 9.220 ms</title></rect>
+<rect x='2691.10' y='106' width='8.82' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;31 us at 9.290 ms</title></rect>
+<rect x='2699.98' y='106' width='3.08' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;11 us at 9.321 ms</title></rect>
+<rect x='2703.15' y='106' width='27.75' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;99 us at 9.333 ms</title></rect>
+<rect x='2730.97' y='106' width='2.83' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;10 us at 9.432 ms</title></rect>
+<rect x='2734.22' y='106' width='4.95' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;18 us at 9.444 ms</title></rect>
+<rect x='2739.44' y='106' width='1.68' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;6 us at 9.462 ms</title></rect>
+<rect x='2741.34' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 9.469 ms</title></rect>
+<rect x='2741.92' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 9.471 ms</title></rect>
+<rect x='2742.34' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 9.473 ms</title></rect>
+<rect x='2743.21' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 9.476 ms</title></rect>
+<rect x='2743.75' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 9.478 ms</title></rect>
+<rect x='2744.69' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 9.481 ms</title></rect>
+<rect x='2745.55' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 9.484 ms</title></rect>
+<rect x='2746.36' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 9.487 ms</title></rect>
+<rect x='2747.46' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 9.491 ms</title></rect>
+<rect x='2748.27' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 9.494 ms</title></rect>
+<rect x='2749.56' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 9.498 ms</title></rect>
+<rect x='2750.47' y='106' width='1.96' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 9.502 ms</title></rect>
+<rect x='2753.00' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 9.511 ms</title></rect>
+<rect x='2753.83' y='106' width='1.83' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 9.514 ms</title></rect>
+<rect x='2755.73' y='106' width='0.82' height='56' fill='#e5e7eb'><title>other&#10;void &#10;3 us at 9.520 ms</title></rect>
+<rect x='2756.62' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 9.524 ms</title></rect>
+<rect x='2757.24' y='106' width='1.93' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;7 us at 9.526 ms</title></rect>
+<rect x='2759.24' y='106' width='5.97' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;21 us at 9.533 ms</title></rect>
+<rect x='2765.55' y='106' width='7.11' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;25 us at 9.556 ms</title></rect>
+<rect x='2772.93' y='106' width='2.68' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;10 us at 9.582 ms</title></rect>
+<rect x='2775.65' y='106' width='44.41' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;159 us at 9.592 ms</title></rect>
+<rect x='2819.04' y='106' width='46.65' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x128_64x5_2x2f_2cta_h_bz_NNT&#10;167 us at 9.747 ms</title></rect>
+<rect x='2865.74' y='106' width='17.54' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;63 us at 9.913 ms</title></rect>
+<rect x='2883.35' y='106' width='5.59' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;20 us at 9.976 ms</title></rect>
+<rect x='2889.01' y='106' width='54.41' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;194 us at 9.996 ms</title></rect>
+<rect x='2943.73' y='106' width='17.19' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;61 us at 10.192 ms</title></rect>
+<rect x='2961.24' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 10.254 ms</title></rect>
+<rect x='2962.30' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 10.258 ms</title></rect>
+<rect x='2962.83' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 10.260 ms</title></rect>
+<rect x='2963.56' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 10.263 ms</title></rect>
+<rect x='2964.60' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 10.266 ms</title></rect>
+<rect x='2965.44' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 10.269 ms</title></rect>
+<rect x='2966.38' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;2 us at 10.273 ms</title></rect>
+<rect x='2967.15' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;1 us at 10.276 ms</title></rect>
+<rect x='2968.13' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 10.279 ms</title></rect>
+<rect x='2968.99' y='106' width='1.98' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 10.282 ms</title></rect>
+<rect x='2971.49' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 10.291 ms</title></rect>
+<rect x='2972.43' y='106' width='1.91' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 10.294 ms</title></rect>
+<rect x='2974.41' y='106' width='21.11' height='56' fill='#e5e7eb'><title>other&#10;void &#10;75 us at 10.301 ms</title></rect>
+<rect x='2995.59' y='106' width='54.06' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;193 us at 10.377 ms</title></rect>
+<rect x='3049.72' y='106' width='38.38' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;137 us at 10.570 ms</title></rect>
+<rect x='3088.18' y='106' width='15.95' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::index_elementwise_kernel&#10;57 us at 10.708 ms</title></rect>
+<rect x='3104.35' y='106' width='5.75' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;21 us at 10.766 ms</title></rect>
+<rect x='3110.20' y='106' width='15.30' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;55 us at 10.786 ms</title></rect>
+<rect x='3124.82' y='106' width='16.65' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x224_64x4_2x2_2cta_h_bz_NNT&#10;59 us at 10.839 ms</title></rect>
+<rect x='3141.54' y='106' width='8.78' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;31 us at 10.898 ms</title></rect>
+<rect x='3150.40' y='106' width='3.07' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;11 us at 10.930 ms</title></rect>
+<rect x='3153.53' y='106' width='27.17' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;97 us at 10.941 ms</title></rect>
+<rect x='3180.77' y='106' width='2.63' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;9 us at 11.038 ms</title></rect>
+<rect x='3183.63' y='106' width='4.28' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;15 us at 11.049 ms</title></rect>
+<rect x='3188.14' y='106' width='1.67' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;6 us at 11.065 ms</title></rect>
+<rect x='3190.07' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 11.072 ms</title></rect>
+<rect x='3190.72' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 11.074 ms</title></rect>
+<rect x='3191.13' y='106' width='0.88' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 11.075 ms</title></rect>
+<rect x='3192.08' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 11.079 ms</title></rect>
+<rect x='3192.62' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 11.081 ms</title></rect>
+<rect x='3193.48' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 11.084 ms</title></rect>
+<rect x='3194.85' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 11.089 ms</title></rect>
+<rect x='3195.66' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 11.092 ms</title></rect>
+<rect x='3196.87' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 11.096 ms</title></rect>
+<rect x='3197.66' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 11.099 ms</title></rect>
+<rect x='3198.65' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 11.102 ms</title></rect>
+<rect x='3199.68' y='106' width='1.91' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 11.106 ms</title></rect>
+<rect x='3202.10' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 11.115 ms</title></rect>
+<rect x='3202.99' y='106' width='1.73' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 11.118 ms</title></rect>
+<rect x='3204.79' y='106' width='0.95' height='56' fill='#e5e7eb'><title>other&#10;void &#10;3 us at 11.124 ms</title></rect>
+<rect x='3205.81' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 11.128 ms</title></rect>
+<rect x='3206.42' y='106' width='1.78' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;6 us at 11.130 ms</title></rect>
+<rect x='3208.27' y='106' width='5.59' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;20 us at 11.137 ms</title></rect>
+<rect x='3214.05' y='106' width='6.41' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;23 us at 11.157 ms</title></rect>
+<rect x='3220.65' y='106' width='2.36' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;8 us at 11.181 ms</title></rect>
+<rect x='3223.11' y='106' width='38.81' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;139 us at 11.190 ms</title></rect>
+<rect x='3260.86' y='106' width='41.14' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x128_64x5_2x2f_2cta_h_bz_NNT&#10;147 us at 11.324 ms</title></rect>
+<rect x='3302.07' y='106' width='17.58' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;63 us at 11.472 ms</title></rect>
+<rect x='3319.72' y='106' width='5.70' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;20 us at 11.535 ms</title></rect>
+<rect x='3325.49' y='106' width='54.36' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;194 us at 11.555 ms</title></rect>
+<rect x='3380.14' y='106' width='17.38' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;62 us at 11.751 ms</title></rect>
+<rect x='3397.76' y='106' width='0.90' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 11.813 ms</title></rect>
+<rect x='3398.88' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 11.817 ms</title></rect>
+<rect x='3399.43' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 11.819 ms</title></rect>
+<rect x='3400.20' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 11.822 ms</title></rect>
+<rect x='3401.28' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 11.826 ms</title></rect>
+<rect x='3402.21' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 11.829 ms</title></rect>
+<rect x='3403.39' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 11.834 ms</title></rect>
+<rect x='3404.20' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;1 us at 11.836 ms</title></rect>
+<rect x='3405.09' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 11.840 ms</title></rect>
+<rect x='3406.03' y='106' width='1.90' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 11.843 ms</title></rect>
+<rect x='3408.45' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 11.852 ms</title></rect>
+<rect x='3409.28' y='106' width='1.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;6 us at 11.855 ms</title></rect>
+<rect x='3411.15' y='106' width='18.96' height='56' fill='#e5e7eb'><title>other&#10;void &#10;68 us at 11.861 ms</title></rect>
+<rect x='3430.18' y='106' width='54.04' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;193 us at 11.929 ms</title></rect>
+<rect x='3484.28' y='106' width='6.24' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::vectorized_gather_kernel&#10;22 us at 12.122 ms</title></rect>
+<rect x='3490.40' y='106' width='16.21' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;58 us at 12.144 ms</title></rect>
+<rect x='3505.89' y='106' width='17.68' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x240_64x4_2x2_2cta_h_bz_NNT&#10;63 us at 12.200 ms</title></rect>
+<rect x='3523.95' y='106' width='8.79' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;31 us at 12.264 ms</title></rect>
+<rect x='3533.01' y='106' width='3.07' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;11 us at 12.296 ms</title></rect>
+<rect x='3536.14' y='106' width='27.10' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;97 us at 12.308 ms</title></rect>
+<rect x='3563.31' y='106' width='2.73' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;10 us at 12.405 ms</title></rect>
+<rect x='3566.11' y='106' width='4.67' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;17 us at 12.415 ms</title></rect>
+<rect x='3570.85' y='106' width='1.77' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;6 us at 12.432 ms</title></rect>
+<rect x='3573.01' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 12.439 ms</title></rect>
+<rect x='3573.82' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 12.442 ms</title></rect>
+<rect x='3574.55' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 12.445 ms</title></rect>
+<rect x='3575.42' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 12.448 ms</title></rect>
+<rect x='3575.93' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 12.450 ms</title></rect>
+<rect x='3576.63' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 12.452 ms</title></rect>
+<rect x='3577.98' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 12.457 ms</title></rect>
+<rect x='3578.76' y='106' width='0.84' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;3 us at 12.460 ms</title></rect>
+<rect x='3579.99' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;2 us at 12.464 ms</title></rect>
+<rect x='3580.76' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;1 us at 12.467 ms</title></rect>
+<rect x='3582.00' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 12.471 ms</title></rect>
+<rect x='3582.98' y='106' width='1.98' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 12.475 ms</title></rect>
+<rect x='3585.93' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 12.485 ms</title></rect>
+<rect x='3586.91' y='106' width='1.84' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 12.489 ms</title></rect>
+<rect x='3588.82' y='106' width='0.86' height='56' fill='#e5e7eb'><title>other&#10;void &#10;3 us at 12.496 ms</title></rect>
+<rect x='3589.75' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 12.499 ms</title></rect>
+<rect x='3590.32' y='106' width='1.83' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;7 us at 12.501 ms</title></rect>
+<rect x='3592.22' y='106' width='5.77' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;21 us at 12.508 ms</title></rect>
+<rect x='3598.24' y='106' width='6.75' height='56' fill='#4ade80'><title>activation (SwiGLU)&#10;void at::native::elementwise_kernel&#10;24 us at 12.529 ms</title></rect>
+<rect x='3605.26' y='106' width='2.41' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;9 us at 12.555 ms</title></rect>
+<rect x='3607.89' y='106' width='41.97' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NTT&#10;150 us at 12.564 ms</title></rect>
+<rect x='3648.82' y='106' width='44.61' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_NNT&#10;159 us at 12.710 ms</title></rect>
+<rect x='3693.50' y='106' width='17.79' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;64 us at 12.870 ms</title></rect>
+<rect x='3711.37' y='106' width='5.58' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;20 us at 12.933 ms</title></rect>
+<rect x='3717.03' y='106' width='53.89' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;192 us at 12.954 ms</title></rect>
+<rect x='3771.14' y='106' width='17.21' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;61 us at 13.147 ms</title></rect>
+<rect x='3788.58' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 13.209 ms</title></rect>
+<rect x='3789.64' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 13.213 ms</title></rect>
+<rect x='3790.16' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 13.215 ms</title></rect>
+<rect x='3790.89' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 13.217 ms</title></rect>
+<rect x='3792.17' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 13.222 ms</title></rect>
+<rect x='3792.94' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 13.225 ms</title></rect>
+<rect x='3794.00' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 13.229 ms</title></rect>
+<rect x='3794.81' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;1 us at 13.231 ms</title></rect>
+<rect x='3796.09' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 13.236 ms</title></rect>
+<rect x='3797.01' y='106' width='1.99' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 13.239 ms</title></rect>
+<rect x='3799.62' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 13.249 ms</title></rect>
+<rect x='3800.54' y='106' width='1.88' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;7 us at 13.252 ms</title></rect>
+<rect x='3802.50' y='106' width='20.33' height='56' fill='#e5e7eb'><title>other&#10;void &#10;73 us at 13.259 ms</title></rect>
+<rect x='3822.90' y='106' width='54.09' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;193 us at 13.332 ms</title></rect>
+<rect x='3877.06' y='106' width='4.26' height='56' fill='#ea580c'><title>NCCL all-to-all&#10;ncclDevKernel_SendRecv(ncclDevKernelArgsStorage&#10;15 us at 13.525 ms</title></rect>
+<rect x='3881.39' y='106' width='199.43' height='56' fill='#ea580c'><title>NCCL all-to-all&#10;ncclDevKernel_SendRecv(ncclDevKernelArgsStorage&#10;712 us at 13.541 ms</title></rect>
+<rect x='4081.14' y='106' width='2.58' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;9 us at 14.254 ms</title></rect>
+<rect x='4084.00' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 14.264 ms</title></rect>
+<rect x='4085.02' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 14.268 ms</title></rect>
+<rect x='4085.48' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 14.270 ms</title></rect>
+<rect x='4086.20' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 14.272 ms</title></rect>
+<rect x='4087.44' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 14.277 ms</title></rect>
+<rect x='4088.25' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 14.279 ms</title></rect>
+<rect x='4089.22' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;3 us at 14.283 ms</title></rect>
+<rect x='4090.01' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 14.286 ms</title></rect>
+<rect x='4090.52' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 14.288 ms</title></rect>
+<rect x='4090.86' y='106' width='2.35' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;8 us at 14.289 ms</title></rect>
+<rect x='4093.28' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 14.297 ms</title></rect>
+<rect x='4093.65' y='106' width='2.37' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;8 us at 14.299 ms</title></rect>
+<rect x='4096.23' y='106' width='193.00' height='56' fill='#e5e7eb'><title>other&#10;void &#10;689 us at 14.308 ms</title></rect>
+<rect x='4289.30' y='106' width='6.08' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;22 us at 14.997 ms</title></rect>
+<rect x='4295.64' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 15.020 ms</title></rect>
+<rect x='4296.06' y='106' width='0.82' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;3 us at 15.022 ms</title></rect>
+<rect x='4296.96' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 15.025 ms</title></rect>
+<rect x='4297.42' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 15.027 ms</title></rect>
+<rect x='4298.36' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void &#10;1 us at 15.030 ms</title></rect>
+<rect x='4299.56' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 15.034 ms</title></rect>
+<rect x='4300.39' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 15.037 ms</title></rect>
+<rect x='4301.53' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortHistogramKernel&#10;2 us at 15.041 ms</title></rect>
+<rect x='4302.30' y='106' width='0.80' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortExclusiveSumKernel&#10;2 us at 15.044 ms</title></rect>
+<rect x='4302.82' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 15.046 ms</title></rect>
+<rect x='4303.18' y='106' width='2.23' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;8 us at 15.047 ms</title></rect>
+<rect x='4305.48' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 15.055 ms</title></rect>
+<rect x='4305.98' y='106' width='2.31' height='56' fill='#a3e635'><title>router / permute&#10;void at_cuda_detail::cub::detail::radix_sort::DeviceRadixSortOnesweepKernel&#10;8 us at 15.057 ms</title></rect>
+<rect x='4308.57' y='106' width='2.54' height='56' fill='#e5e7eb'><title>other&#10;void &#10;9 us at 15.066 ms</title></rect>
+<rect x='4311.19' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 15.076 ms</title></rect>
+<rect x='4311.79' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 15.078 ms</title></rect>
+<rect x='4312.25' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;3 us at 15.079 ms</title></rect>
+<rect x='4313.12' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;2 us at 15.083 ms</title></rect>
+<rect x='4313.69' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 15.085 ms</title></rect>
+<rect x='4314.36' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;2 us at 15.087 ms</title></rect>
+<rect x='4315.15' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::reduce_kernel&#10;2 us at 15.090 ms</title></rect>
+<rect x='4315.91' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::elementwise_kernel&#10;2 us at 15.093 ms</title></rect>
+<rect x='4316.61' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 15.095 ms</title></rect>
+<rect x='4317.12' y='106' width='2.49' height='56' fill='#a3e635'><title>router / permute&#10;void at::native::_scatter_gather_elementwise_kernel&#10;9 us at 15.097 ms</title></rect>
+<rect x='4319.68' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 15.106 ms</title></rect>
+<rect x='4320.33' y='106' width='0.80' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 15.108 ms</title></rect>
+<rect x='4320.87' y='106' width='3.99' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_64x32_64x16_4x1_2cta_v_bz_NTT&#10;14 us at 15.110 ms</title></rect>
+<rect x='4324.48' y='106' width='3.75' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x256_64x4_2x1_2cta_v_bz_NNT&#10;13 us at 15.123 ms</title></rect>
+<rect x='4328.30' y='106' width='6.33' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;23 us at 15.137 ms</title></rect>
+<rect x='4335.21' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 15.161 ms</title></rect>
+<rect x='4336.33' y='106' width='34.61' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;124 us at 15.165 ms</title></rect>
+<rect x='4371.01' y='106' width='1.90' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 15.289 ms</title></rect>
+<rect x='4372.98' y='106' width='7.16' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;26 us at 15.296 ms</title></rect>
+<rect x='4380.03' y='106' width='161.71' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NNT&#10;578 us at 15.322 ms</title></rect>
+<rect x='4540.86' y='106' width='152.47' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_NTT&#10;545 us at 15.896 ms</title></rect>
+<rect x='4693.69' y='106' width='29.24' height='56' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::compute_dot_do_o_specialized&#10;104 us at 16.442 ms</title></rect>
+<rect x='4723.32' y='106' width='150.29' height='56' fill='#7c3aed'><title>attention (cuDNN)&#10;cudnn_generated_fort_native_sdpa_sm100_flash_bprop_f16_knob_2_64x128x192_1x4x1_cga1x1x1_ke&#10;537 us at 16.548 ms</title></rect>
+<rect x='4873.92' y='106' width='24.94' height='56' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::convert_dq_to_16bits&#10;89 us at 17.085 ms</title></rect>
+<rect x='4898.93' y='106' width='24.60' height='56' fill='#e5e7eb'><title>other&#10;rotary_bwd_kv_kernel&#10;88 us at 17.175 ms</title></rect>
+<rect x='4923.59' y='106' width='17.31' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;memcpy&#10;62 us at 17.263 ms</title></rect>
+<rect x='4940.98' y='106' width='8.91' height='56' fill='#e5e7eb'><title>other&#10;rotary_bwd_q_kernel&#10;32 us at 17.325 ms</title></rect>
+<rect x='4949.78' y='106' width='26.90' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x192_64x4_2x2_2cta_h_bz_splitK_NNT&#10;96 us at 17.356 ms</title></rect>
+<rect x='4974.85' y='106' width='4.63' height='56' fill='#60a5fa'><title>dense GEMM&#10;void cublasLt::splitKreduce_kernel&#10;17 us at 17.446 ms</title></rect>
+<rect x='4977.25' y='106' width='29.54' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x128_64x5_2x2f_2cta_h_bz_NTT&#10;106 us at 17.454 ms</title></rect>
+<rect x='5007.11' y='106' width='1.47' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_tuned_kernel&#10;5 us at 17.561 ms</title></rect>
+<rect x='5008.65' y='106' width='1.04' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_tuned_kernel&#10;4 us at 17.567 ms</title></rect>
+<rect x='5009.76' y='106' width='1.08' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::&#10;4 us at 17.571 ms</title></rect>
+<rect x='5010.74' y='106' width='6.40' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NNT&#10;23 us at 17.574 ms</title></rect>
+<rect x='5016.31' y='106' width='9.76' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_160x192_64x4_4x1_v_bz_NTN&#10;35 us at 17.594 ms</title></rect>
+<rect x='5025.43' y='106' width='53.42' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x192_64x4_2x2_2cta_h_bz_NNT&#10;191 us at 17.627 ms</title></rect>
+<rect x='5077.84' y='106' width='53.45' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x2f_2cta_h_bz_NTT&#10;191 us at 17.814 ms</title></rect>
+<rect x='5131.57' y='106' width='6.16' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;22 us at 18.006 ms</title></rect>
+<rect x='5137.80' y='106' width='4.61' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;16 us at 18.028 ms</title></rect>
+<rect x='5142.31' y='106' width='15.25' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NNT&#10;54 us at 18.044 ms</title></rect>
+<rect x='5156.43' y='106' width='18.00' height='56' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x192_64x6_2x1_2cta_v_bz_NTT&#10;64 us at 18.094 ms</title></rect>
+<rect x='5174.50' y='106' width='6.90' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;25 us at 18.159 ms</title></rect>
+<rect x='5181.89' y='106' width='0.80' height='56' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 18.185 ms</title></rect>
+<rect x='5182.77' y='106' width='34.32' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;123 us at 18.188 ms</title></rect>
+<rect x='5217.16' y='106' width='1.90' height='56' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 18.311 ms</title></rect>
+<rect x='5219.13' y='106' width='6.74' height='56' fill='#d1d5db'><title>PyTorch copies / elementwise&#10;void at::native::vectorized_elementwise_kernel&#10;24 us at 18.318 ms</title></rect>
+<line x1='90.0' y1='162' x2='90.0' y2='167' stroke='#6b7280'/>
+<text x='90.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0 ms</text>
+<line x1='230.0' y1='162' x2='230.0' y2='167' stroke='#6b7280'/>
+<text x='230.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0.5 ms</text>
+<line x1='370.0' y1='162' x2='370.0' y2='167' stroke='#6b7280'/>
+<text x='370.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1 ms</text>
+<line x1='510.0' y1='162' x2='510.0' y2='167' stroke='#6b7280'/>
+<text x='510.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1.5 ms</text>
+<line x1='650.0' y1='162' x2='650.0' y2='167' stroke='#6b7280'/>
+<text x='650.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2 ms</text>
+<line x1='790.0' y1='162' x2='790.0' y2='167' stroke='#6b7280'/>
+<text x='790.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2.5 ms</text>
+<line x1='930.0' y1='162' x2='930.0' y2='167' stroke='#6b7280'/>
+<text x='930.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3 ms</text>
+<line x1='1070.0' y1='162' x2='1070.0' y2='167' stroke='#6b7280'/>
+<text x='1070.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3.5 ms</text>
+<line x1='1210.0' y1='162' x2='1210.0' y2='167' stroke='#6b7280'/>
+<text x='1210.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4 ms</text>
+<line x1='1350.0' y1='162' x2='1350.0' y2='167' stroke='#6b7280'/>
+<text x='1350.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4.5 ms</text>
+<line x1='1490.0' y1='162' x2='1490.0' y2='167' stroke='#6b7280'/>
+<text x='1490.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5 ms</text>
+<line x1='1630.0' y1='162' x2='1630.0' y2='167' stroke='#6b7280'/>
+<text x='1630.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5.5 ms</text>
+<line x1='1770.0' y1='162' x2='1770.0' y2='167' stroke='#6b7280'/>
+<text x='1770.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6 ms</text>
+<line x1='1910.0' y1='162' x2='1910.0' y2='167' stroke='#6b7280'/>
+<text x='1910.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6.5 ms</text>
+<line x1='2050.0' y1='162' x2='2050.0' y2='167' stroke='#6b7280'/>
+<text x='2050.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7 ms</text>
+<line x1='2190.0' y1='162' x2='2190.0' y2='167' stroke='#6b7280'/>
+<text x='2190.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7.5 ms</text>
+<line x1='2330.0' y1='162' x2='2330.0' y2='167' stroke='#6b7280'/>
+<text x='2330.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>8 ms</text>
+<line x1='2470.0' y1='162' x2='2470.0' y2='167' stroke='#6b7280'/>
+<text x='2470.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>8.5 ms</text>
+<line x1='2610.0' y1='162' x2='2610.0' y2='167' stroke='#6b7280'/>
+<text x='2610.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>9 ms</text>
+<line x1='2750.0' y1='162' x2='2750.0' y2='167' stroke='#6b7280'/>
+<text x='2750.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>9.5 ms</text>
+<line x1='2890.0' y1='162' x2='2890.0' y2='167' stroke='#6b7280'/>
+<text x='2890.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>10 ms</text>
+<line x1='3030.0' y1='162' x2='3030.0' y2='167' stroke='#6b7280'/>
+<text x='3030.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>10.5 ms</text>
+<line x1='3170.0' y1='162' x2='3170.0' y2='167' stroke='#6b7280'/>
+<text x='3170.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>11 ms</text>
+<line x1='3310.0' y1='162' x2='3310.0' y2='167' stroke='#6b7280'/>
+<text x='3310.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>11.5 ms</text>
+<line x1='3450.0' y1='162' x2='3450.0' y2='167' stroke='#6b7280'/>
+<text x='3450.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>12 ms</text>
+<line x1='3590.0' y1='162' x2='3590.0' y2='167' stroke='#6b7280'/>
+<text x='3590.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>12.5 ms</text>
+<line x1='3730.0' y1='162' x2='3730.0' y2='167' stroke='#6b7280'/>
+<text x='3730.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>13 ms</text>
+<line x1='3870.0' y1='162' x2='3870.0' y2='167' stroke='#6b7280'/>
+<text x='3870.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>13.5 ms</text>
+<line x1='4010.0' y1='162' x2='4010.0' y2='167' stroke='#6b7280'/>
+<text x='4010.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>14 ms</text>
+<line x1='4150.0' y1='162' x2='4150.0' y2='167' stroke='#6b7280'/>
+<text x='4150.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>14.5 ms</text>
+<line x1='4290.0' y1='162' x2='4290.0' y2='167' stroke='#6b7280'/>
+<text x='4290.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>15 ms</text>
+<line x1='4430.0' y1='162' x2='4430.0' y2='167' stroke='#6b7280'/>
+<text x='4430.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>15.5 ms</text>
+<line x1='4570.0' y1='162' x2='4570.0' y2='167' stroke='#6b7280'/>
+<text x='4570.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>16 ms</text>
+<line x1='4710.0' y1='162' x2='4710.0' y2='167' stroke='#6b7280'/>
+<text x='4710.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>16.5 ms</text>
+<line x1='4850.0' y1='162' x2='4850.0' y2='167' stroke='#6b7280'/>
+<text x='4850.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>17 ms</text>
+<line x1='4990.0' y1='162' x2='4990.0' y2='167' stroke='#6b7280'/>
+<text x='4990.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>17.5 ms</text>
+<line x1='5130.0' y1='162' x2='5130.0' y2='167' stroke='#6b7280'/>
+<text x='5130.0' y='178.0' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>18 ms</text>
+<rect x='90' y='192' width='12' height='12' fill='#60a5fa' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='107.0' y='202.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>dense GEMM</text>
+<rect x='192.0' y='192' width='12' height='12' fill='#d1d5db' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='209.0' y='202.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>PyTorch copies / elementwise</text>
+<rect x='407.4' y='192' width='12' height='12' fill='#ea580c' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='424.4' y='202.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL all-to-all</text>
+<rect x='540.9' y='192' width='12' height='12' fill='#a3e635' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='557.9' y='202.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>router / permute</text>
+<rect x='680.7' y='192' width='12' height='12' fill='#e5e7eb' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='697.7' y='202.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>other</text>
+<rect x='751.2' y='192' width='12' height='12' fill='#9ca3af' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='768.2' y='202.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>memset</text>
+<rect x='828.0' y='192' width='12' height='12' fill='#7c3aed' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='845.0' y='202.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>attention (cuDNN)</text>
+<rect x='974.1' y='192' width='12' height='12' fill='#16a34a' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='991.1' y='202.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>RMSNorm</text>
+<rect x='1057.2' y='192' width='12' height='12' fill='#4ade80' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='1074.2' y='202.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>activation (SwiGLU)</text>
+</svg>
