@@ -69,7 +69,8 @@ Every rank owns `--num-local-experts` experts (default 8), so the expert count i
 grouped parameter, so the MXFP8 weight quantization is one kernel per GEMM instead of one per
 expert (same speed at 8 local experts, fewer launches with many experts).
 `--warmup 0` is supported; `--iters` must be positive and `--tokens-per-rank` must be a
-positive multiple of four. MXFP8 requires `--impl te`.
+positive multiple of four. `--recipe` (`mxfp8`, `nvfp4`, `fp8_block`, `fp8_cs`) requires `--impl te`;
+the fused grouped MLP (`NVTE_CUTEDSL_FUSED_GROUPED_MLP=1`) applies to `mxfp8` and `nvfp4`.
 
 ## Results
 

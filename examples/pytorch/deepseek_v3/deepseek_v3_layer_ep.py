@@ -52,7 +52,7 @@ def _parse_args(argv=None):
         ),
     )
     p.add_argument("--impl", choices=["te", "naive", "naive_grouped"], default="te")
-    p.add_argument("--recipe", choices=["none", "mxfp8"], default="none")
+    p.add_argument("--recipe", choices=["none", *_RECIPES], default="none")
     p.add_argument(
         "--ep-buffer-per-call",
         action="store_true",
@@ -73,7 +73,7 @@ def _parse_args(argv=None):
     if args.tokens_per_rank <= 0 or args.tokens_per_rank % 4:
         p.error("--tokens-per-rank must be a positive multiple of 4")
     if args.impl != "te" and args.recipe != "none":
-        p.error("--recipe mxfp8 is only supported with --impl te")
+        p.error("--recipe is only supported with --impl te")
     if args.dsv3:
         args.hidden, args.num_heads, args.moe_ffn = 7168, 128, 2048
         args.q_lora_rank, args.kv_lora_rank = 1536, 512
@@ -81,10 +81,18 @@ def _parse_args(argv=None):
     return args
 
 
+_RECIPES = {
+    "fp8_cs": te_recipe.Float8CurrentScaling,
+    "fp8_block": te_recipe.Float8BlockScaling,
+    "mxfp8": te_recipe.MXFP8BlockScaling,
+    "nvfp4": te_recipe.NVFP4BlockScaling,
+}
+
+
 def _autocast(name):
     if name == "none":
         return nullcontext()
-    return te.autocast(enabled=True, recipe=te_recipe.MXFP8BlockScaling())
+    return te.autocast(enabled=True, recipe=_RECIPES[name]())
 
 
 class NaiveMoE(torch.nn.Module):
