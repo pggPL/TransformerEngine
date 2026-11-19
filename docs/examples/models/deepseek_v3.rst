@@ -64,7 +64,7 @@ Precision
 
 * Every GEMM runs under :class:`~transformer_engine.pytorch.autocast` with any
   :doc:`low-precision recipe </features/low_precision_training/index>`
-  (FP8 delayed and current scaling, FP8 block scaling, MXFP8, NVFP4).
+  (FP8 current scaling, MXFP8, NVFP4).
 
 Profile on 1 GB200 node
 -----------------------
@@ -92,10 +92,6 @@ time running downwards:
      - 59.2
      - 1.11
      - grouped
-   * - FP8 delayed scaling
-     - 44.1
-     - 1.49
-     - per expert (grouped parameters unsupported with delayed scaling)
    * - FP8 current scaling
      - 45.3
      - 1.45
@@ -125,22 +121,6 @@ time running downwards:
 
       .. raw:: html
          :file: profile_dsv3_bf16_bwd.svg
-
-   .. tab:: FP8 delayed scaling
-
-      ``te.autocast(recipe=DelayedScaling())``: per-tensor FP8 with scales
-      from the previous steps' amax history; expert weights stay per-expert
-      parameters: **44.1 ms/iter**.
-
-      **Forward: 16.1 ms**
-
-      .. raw:: html
-         :file: profile_dsv3_fp8_delayed_fwd.svg
-
-      **Backward: 28.7 ms**
-
-      .. raw:: html
-         :file: profile_dsv3_fp8_delayed_bwd.svg
 
    .. tab:: FP8 current scaling
 
