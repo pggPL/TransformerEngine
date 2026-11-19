@@ -93,7 +93,7 @@ attention block and the MoE. Reproduce with ``examples/pytorch/kimi_k3``.
 The ``nsys`` traces of rank 0 below are redrawn as one iteration, forward and
 backward pass as separate images on the same time scale. Every rectangle is
 one kernel on the compute stream at its measured time; gaps are GPU idle time.
-Hover a kernel for its group, name and duration; the images scroll sideways.
+Hover a kernel for its group, name and duration.
 
 .. tabs::
 
@@ -103,17 +103,13 @@ Hover a kernel for its group, name and duration; the images scroll sideways.
 
       **Forward:** 58.5 ms
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_kimi_kda_bf16_fwd.svg
+      .. raw:: html
+         :file: profile_kimi_kda_bf16_fwd.svg
 
       **Backward:** 102.6 ms
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_kimi_kda_bf16_bwd.svg
+      .. raw:: html
+         :file: profile_kimi_kda_bf16_bwd.svg
 
    .. tab:: KDA layer (MXFP8, fused grouped MLP)
 
@@ -124,17 +120,13 @@ Hover a kernel for its group, name and duration; the images scroll sideways.
 
       **Forward:** 40.0 ms
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_kimi_kda_mxfp8_fwd.svg
+      .. raw:: html
+         :file: profile_kimi_kda_mxfp8_fwd.svg
 
       **Backward:** 71.5 ms
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_kimi_kda_mxfp8_bwd.svg
+      .. raw:: html
+         :file: profile_kimi_kda_mxfp8_bwd.svg
 
    .. tab:: MLA layer (BF16)
 
@@ -142,17 +134,13 @@ Hover a kernel for its group, name and duration; the images scroll sideways.
 
       **Forward:** 44.9 ms
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_kimi_mla_bf16_fwd.svg
+      .. raw:: html
+         :file: profile_kimi_mla_bf16_fwd.svg
 
       **Backward:** 64.3 ms
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_kimi_mla_bf16_bwd.svg
+      .. raw:: html
+         :file: profile_kimi_mla_bf16_bwd.svg
 
    .. tab:: MLA layer (MXFP8, fused grouped MLP)
 
@@ -160,17 +148,13 @@ Hover a kernel for its group, name and duration; the images scroll sideways.
 
       **Forward:** 23.4 ms
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_kimi_mla_mxfp8_fwd.svg
+      .. raw:: html
+         :file: profile_kimi_mla_mxfp8_fwd.svg
 
       **Backward:** 36.9 ms
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_kimi_mla_mxfp8_bwd.svg
+      .. raw:: html
+         :file: profile_kimi_mla_mxfp8_bwd.svg
 
 Across the four traces the GPU is idle for at most 0.2 ms per iteration, so
 the timelines are kernel time. The MoE dominates both layer types: the

@@ -77,7 +77,7 @@ a forward and a backward image on a common time scale; every rectangle is one
 kernel on the compute stream at its measured time, labelled with the layer
 operation it executes (for quantization: the precision and the operand), and
 gaps are GPU idle time. Hover a kernel for its group, name and duration; the
-images are wider than the page, scroll them sideways. ms/iter are from runs
+ms/iter are from runs
 without the profiler.
 
 .. list-table::
@@ -99,17 +99,13 @@ without the profiler.
 
       **Forward: 15.7 ms**
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_dsv3_mxfp8_fwd.svg
+      .. raw:: html
+         :file: profile_dsv3_mxfp8_fwd.svg
 
       **Backward: 27.7 ms**
 
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_dsv3_mxfp8_bwd.svg
+      .. raw:: html
+         :file: profile_dsv3_mxfp8_bwd.svg
 
 Usage
 -----
