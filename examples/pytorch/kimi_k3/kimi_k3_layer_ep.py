@@ -53,7 +53,11 @@ def _parse_args(argv=None):
         ),
     )
     p.add_argument("--attention", choices=["kda", "mla"], default="kda")
-    p.add_argument("--recipe", choices=["none", "fp8_block", "mxfp8", "nvfp4"], default="none")
+    p.add_argument(
+        "--recipe",
+        choices=["none", "fp8_delayed", "fp8_cs", "fp8_block", "mxfp8", "nvfp4"],
+        default="none",
+    )
     p.add_argument(
         "--ep-buffer-per-call",
         action="store_true",
@@ -86,6 +90,8 @@ def _parse_args(argv=None):
 
 
 RECIPES = {
+    "fp8_delayed": te_recipe.DelayedScaling,
+    "fp8_cs": te_recipe.Float8CurrentScaling,
     "fp8_block": te_recipe.Float8BlockScaling,
     "mxfp8": te_recipe.MXFP8BlockScaling,
     "nvfp4": te_recipe.NVFP4BlockScaling,

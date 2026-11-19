@@ -33,6 +33,8 @@ bash run_kimi_k3_layer_ep.sh --kimi --attention mla       # the MLA layer (every
 bash run_kimi_k3_layer_ep.sh --kimi --recipe mxfp8        # MXFP8 experts and projections
 NVTE_CUTEDSL_FUSED_GROUPED_MLP=1 bash run_kimi_k3_layer_ep.sh --kimi --recipe mxfp8
 bash run_kimi_k3_layer_ep.sh --kimi --recipe fp8_block               # FP8 block scaling
+bash run_kimi_k3_layer_ep.sh --kimi --recipe fp8_delayed             # FP8 delayed scaling (no --single-grouped-weight)
+bash run_kimi_k3_layer_ep.sh --kimi --recipe fp8_cs                  # FP8 current scaling
 NVTE_CUTEDSL_FUSED_GROUPED_MLP=1 bash run_kimi_k3_layer_ep.sh --kimi --recipe nvfp4   # NVFP4 experts
 NSYS=1 bash run_kimi_k3_layer_ep.sh --kimi                # nsys report in results/
 ```
