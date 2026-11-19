@@ -13,6 +13,7 @@ from transformer_engine.pytorch.module import Linear, LayerNormLinear
 from transformer_engine.pytorch.attention import DotProductAttention
 from transformer_engine.pytorch.distributed import allreduce, get_distributed_world_size
 from transformer_engine.pytorch.attention.mla_rope import (
+    HAVE_TRITON,
     apply_mla_rope_kv,
     apply_mla_rope_q,
     build_rope_tables,
@@ -276,8 +277,24 @@ class MultiLatentAttention(torch.nn.Module):
 
         if self.rope:
             cos, sin = self._rope_tables_for(seq_len, hidden_states.device)
+            # q has no other consumer, so the Triton kernel may rotate it in place
+            # instead of cloning the full tensor first.
+            in_place = (
+                HAVE_TRITON
+                and self.qkv_format == "sbhd"
+                and self.qk_rope_head_dim >= 2
+                and self.qk_rope_head_dim & (self.qk_rope_head_dim - 1) == 0
+                and q.is_contiguous()
+                and not torch.compiler.is_compiling()
+            )
             q = apply_mla_rope_q(
-                q, cos, sin, self.qk_nope_head_dim, self.qk_rope_head_dim, self.qkv_format
+                q,
+                cos,
+                sin,
+                self.qk_nope_head_dim,
+                self.qk_rope_head_dim,
+                self.qkv_format,
+                in_place=in_place,
             )
             k, v = apply_mla_rope_kv(
                 kv,

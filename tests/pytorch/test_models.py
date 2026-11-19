@@ -455,3 +455,27 @@ def test_kimi_layer_stack_attn_res():
     for layer in layers[1:]:
         layer.mlp.update_expert_bias()
         assert torch.isfinite(layer.mlp.expert_bias).all()
+
+
+def test_mla_in_place_rope_matches_clone(monkeypatch):
+    """Rotating q in place inside MultiLatentAttention must equal the out-of-place path."""
+    import transformer_engine.pytorch.models.deepseek_v3.multi_latent_attention as mla_module
+
+    torch.manual_seed(0)
+    mla = MultiLatentAttention(HIDDEN, HEADS, params_dtype=DTYPE, **MLA_KWARGS)
+    x = _input()
+    out = mla(x)
+    out.sum().backward()
+    grads = [x.grad.clone()] + [p.grad.clone() for p in mla.parameters()]
+
+    original = mla_module.apply_mla_rope_q
+    monkeypatch.setattr(
+        mla_module, "apply_mla_rope_q", lambda *a, **k: original(*a, **{**k, "in_place": False})
+    )
+    x.grad = None
+    mla.zero_grad()
+    ref = mla(x)
+    ref.sum().backward()
+    torch.testing.assert_close(out, ref, rtol=0, atol=0)
+    for got, want in zip([x.grad] + [p.grad for p in mla.parameters()], grads):
+        torch.testing.assert_close(got, want, rtol=0, atol=0)
