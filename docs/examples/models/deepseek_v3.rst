@@ -69,15 +69,17 @@ Precision
 Profile on 1 GB200 node
 -----------------------
 
-``nsys`` traces of rank 0 on one GB200 node: ``DeepSeekV3Layer`` with expert
-parallelism over the 4 GPUs, 8 local experts per GPU (32 routed experts),
-top-k 8, 16384 tokens per GPU, DeepSeek-V3 dimensions, ``single_grouped_weight``
-expert parameters, this revision of the layer. Each tab shows one iteration as
-a forward and a backward image with time running downwards; every rectangle
-is one kernel on the compute stream at its measured time, labelled on the
-right with the layer operation it executes (for quantization: the precision
-and the operand), and gaps are GPU idle time. Hover a kernel for its group,
-name and duration. ms/iter are from runs without the profiler.
+``nsys`` traces of rank 0 on one GB200 node: DeepSeek-V3 dimensions, 16384
+tokens per GPU, expert parallelism over the 4 GPUs (8 local experts per GPU,
+top-k 8). Each tab shows one iteration as a forward and a backward image with
+time running downwards:
+
+- one rectangle per kernel, labelled with the layer operation it executes
+  (for quantization: the precision and the operand); gaps are GPU idle time,
+- hover a kernel for its group, name and duration,
+- "expert weights" says whether the experts use one grouped
+  ``single_grouped_weight`` parameter or per-expert parameters,
+- ms/iter are from runs without the profiler.
 
 .. list-table::
    :header-rows: 1
@@ -85,26 +87,107 @@ name and duration. ms/iter are from runs without the profiler.
    * - Precision
      - ms / iter
      - Mtok / s
+     - expert weights
+   * - BF16
+     - 59.2
+     - 1.11
+     - grouped
+   * - FP8 delayed scaling
+     - 44.1
+     - 1.49
+     - per expert (grouped parameters unsupported with delayed scaling)
+   * - FP8 current scaling
+     - 45.3
+     - 1.45
+     - grouped
    * - MXFP8, fused grouped MLP
-     - 43.4
-     - 1.51
+     - 42.9
+     - 1.53
+     - grouped
+   * - NVFP4, fused grouped MLP
+     - 36.5
+     - 1.79
+     - per expert (grouped NVFP4 weight quantization not available yet)
 
 .. tabs::
+
+   .. tab:: BF16
+
+      No quantization; the experts run as BF16 grouped GEMMs with a separate
+      SwiGLU kernel: **59.2 ms/iter**.
+
+      **Forward: 21.4 ms**
+
+      .. raw:: html
+         :file: profile_dsv3_bf16_fwd.svg
+
+      **Backward: 37.9 ms**
+
+      .. raw:: html
+         :file: profile_dsv3_bf16_bwd.svg
+
+   .. tab:: FP8 delayed scaling
+
+      ``te.autocast(recipe=DelayedScaling())``: per-tensor FP8 with scales
+      from the previous steps' amax history; expert weights stay per-expert
+      parameters: **44.1 ms/iter**.
+
+      **Forward: 16.1 ms**
+
+      .. raw:: html
+         :file: profile_dsv3_fp8_delayed_fwd.svg
+
+      **Backward: 28.7 ms**
+
+      .. raw:: html
+         :file: profile_dsv3_fp8_delayed_bwd.svg
+
+   .. tab:: FP8 current scaling
+
+      ``te.autocast(recipe=Float8CurrentScaling())``: per-tensor FP8 with an
+      amax reduction before every cast, unfused grouped GEMMs:
+      **45.3 ms/iter**.
+
+      **Forward: 16.4 ms**
+
+      .. raw:: html
+         :file: profile_dsv3_fp8_cs_fwd.svg
+
+      **Backward: 29.0 ms**
+
+      .. raw:: html
+         :file: profile_dsv3_fp8_cs_bwd.svg
 
    .. tab:: MXFP8 (fused grouped MLP)
 
       ``te.autocast(recipe=MXFP8BlockScaling())`` with the cuDNN fused grouped
-      MLP: **43.4 ms/iter**, 0.1 ms of the iteration with an idle GPU.
+      MLP: **42.9 ms/iter**.
 
-      **Forward: 15.7 ms**
+      **Forward: 15.4 ms**
 
       .. raw:: html
          :file: profile_dsv3_mxfp8_fwd.svg
 
-      **Backward: 27.7 ms**
+      **Backward: 27.9 ms**
 
       .. raw:: html
          :file: profile_dsv3_mxfp8_bwd.svg
+
+   .. tab:: NVFP4 (fused grouped MLP)
+
+      ``te.autocast(recipe=NVFP4BlockScaling())`` with the cuDNN fused grouped
+      MLP; inputs and gradients are quantized by the random Hadamard transform
+      kernel, expert weights per expert: **36.5 ms/iter**.
+
+      **Forward: 12.8 ms**
+
+      .. raw:: html
+         :file: profile_dsv3_nvfp4_fwd.svg
+
+      **Backward: 23.7 ms**
+
+      .. raw:: html
+         :file: profile_dsv3_nvfp4_bwd.svg
 
 Usage
 -----
