@@ -82,6 +82,7 @@ def _parse_args(argv=None):
 
 
 _RECIPES = {
+    "fp8_delayed": te_recipe.DelayedScaling,
     "fp8_cs": te_recipe.Float8CurrentScaling,
     "fp8_block": te_recipe.Float8BlockScaling,
     "mxfp8": te_recipe.MXFP8BlockScaling,
