@@ -73,12 +73,11 @@ Profile on 1 GB200 node
 parallelism over the 4 GPUs, 8 local experts per GPU (32 routed experts),
 top-k 8, 16384 tokens per GPU, DeepSeek-V3 dimensions, ``single_grouped_weight``
 expert parameters, this revision of the layer. Each tab shows one iteration as
-a forward and a backward image on a common time scale; every rectangle is one
-kernel on the compute stream at its measured time, labelled with the layer
-operation it executes (for quantization: the precision and the operand), and
-gaps are GPU idle time. Hover a kernel for its group, name and duration; the
-ms/iter are from runs
-without the profiler.
+a forward and a backward image with time running downwards; every rectangle
+is one kernel on the compute stream at its measured time, labelled on the
+right with the layer operation it executes (for quantization: the precision
+and the operand), and gaps are GPU idle time. Hover a kernel for its group,
+name and duration. ms/iter are from runs without the profiler.
 
 .. list-table::
    :header-rows: 1
