@@ -1,317 +1,317 @@
-<svg xmlns='http://www.w3.org/2000/svg' width='680' height='2590' viewBox='0 0 680 2590'>
-<rect width='680' height='2590' fill='white'/>
-<rect x='40' y='40.00' width='240' height='4.43' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;68 us at 0.000 ms</title></rect>
-<rect x='40' y='44.53' width='240' height='5.39' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;83 us at 0.070 ms</title></rect>
-<rect x='40' y='50.00' width='240' height='0.80' fill='#0d9488'><title>quantize (MXFP8)&#10;transformer_engine::&#10;4 us at 0.154 ms</title></rect>
-<rect x='40' y='50.28' width='240' height='29.26' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;449 us at 0.158 ms</title></rect>
-<rect x='40' y='79.30' width='240' height='28.30' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;435 us at 0.604 ms</title></rect>
-<rect x='40' y='107.65' width='240' height='89.38' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::gated_kernel::quantize_gated_mxfp8_kernel&#10;1373 us at 1.039 ms</title></rect>
-<rect x='40' y='197.10' width='240' height='0.80' fill='#0d9488'><title>quantize (MXFP8)&#10;transformer_engine::&#10;5 us at 2.413 ms</title></rect>
-<rect x='40' y='197.41' width='240' height='61.98' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;952 us at 2.418 ms</title></rect>
-<rect x='40' y='259.13' width='240' height='60.03' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;922 us at 3.366 ms</title></rect>
-<rect x='40' y='319.24' width='240' height='4.75' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;73 us at 4.289 ms</title></rect>
-<rect x='40' y='324.02' width='240' height='13.70' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;210 us at 4.363 ms</title></rect>
-<rect x='40' y='337.56' width='240' height='15.18' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;233 us at 4.571 ms</title></rect>
-<rect x='40' y='352.82' width='240' height='13.22' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;203 us at 4.805 ms</title></rect>
-<rect x='40' y='366.10' width='240' height='0.82' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;13 us at 5.009 ms</title></rect>
-<rect x='40' y='366.98' width='240' height='35.78' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_dispatch_kernel&#10;550 us at 5.023 ms</title></rect>
-<rect x='40' y='402.82' width='240' height='31.98' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_dup_kernel&#10;491 us at 5.573 ms</title></rect>
-<rect x='40' y='434.87' width='240' height='47.29' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::group_quantize_kernel::group_quantize_mxfp8_kern&#10;726 us at 6.066 ms</title></rect>
-<rect x='40' y='482.23' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 6.793 ms</title></rect>
-<rect x='40' y='482.44' width='240' height='0.80' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;7 us at 6.796 ms</title></rect>
-<rect x='40' y='482.97' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 6.804 ms</title></rect>
-<rect x='40' y='483.11' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_db&#10;2 us at 6.807 ms</title></rect>
-<rect x='40' y='483.29' width='240' height='182.17' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_dbiasBloc&#10;2798 us at 6.809 ms</title></rect>
-<rect x='40' y='665.52' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 9.609 ms</title></rect>
-<rect x='40' y='665.66' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradB&#10;2 us at 9.611 ms</title></rect>
-<rect x='40' y='665.87' width='240' height='120.11' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockSca&#10;1845 us at 9.614 ms</title></rect>
-<rect x='40' y='786.06' width='240' height='0.80' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::&#10;8 us at 11.460 ms</title></rect>
-<rect x='40' y='786.66' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 11.469 ms</title></rect>
-<rect x='40' y='786.84' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 11.472 ms</title></rect>
-<rect x='40' y='786.98' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGro&#10;2 us at 11.474 ms</title></rect>
-<rect x='40' y='787.16' width='240' height='232.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGroupedGem&#10;3576 us at 11.477 ms</title></rect>
-<rect x='40' y='1020.02' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::&#10;1 us at 15.054 ms</title></rect>
-<rect x='40' y='1020.17' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradB&#10;2 us at 15.056 ms</title></rect>
-<rect x='40' y='1020.39' width='240' height='252.32' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockSca&#10;3876 us at 15.060 ms</title></rect>
-<rect x='40' y='1272.80' width='240' height='29.86' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_reduce_kernel&#10;459 us at 18.937 ms</title></rect>
-<rect x='40' y='1302.77' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 19.397 ms</title></rect>
-<rect x='40' y='1302.99' width='240' height='0.80' fill='#fdba74'><title>NCCL EP permute / scan&#10;void nccl_ep::ht::combine_prob_input_to_compact_kernel&#10;8 us at 19.401 ms</title></rect>
-<rect x='40' y='1303.58' width='240' height='76.52' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_combine_kernel&#10;1175 us at 19.410 ms</title></rect>
-<rect x='40' y='1380.15' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 20.586 ms</title></rect>
-<rect x='40' y='1380.34' width='240' height='0.81' fill='#a3e635'><title>router / permute&#10;void at::native::_scatter_gather_elementwise_kernel&#10;12 us at 20.589 ms</title></rect>
-<rect x='40' y='1381.20' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 20.602 ms</title></rect>
-<rect x='40' y='1381.38' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 20.605 ms</title></rect>
-<rect x='40' y='1381.55' width='240' height='0.80' fill='#a3e635'><title>router / permute&#10;void transformer_engine::fused_router::fused_topk_backward_selected_indices_kernel&#10;8 us at 20.607 ms</title></rect>
-<rect x='40' y='1382.15' width='240' height='0.80' fill='#a8a29e'><title>dtype casts (bf16 &lt;-&gt; fp32)&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 20.617 ms</title></rect>
-<rect x='40' y='1382.35' width='240' height='2.80' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_192x64_64x7_2x1_2cta_v_bz_splitK_NTT&#10;43 us at 20.620 ms</title></rect>
-<rect x='40' y='1385.00' width='240' height='0.80' fill='#60a5fa'><title>dense GEMM&#10;void cublasLt::splitKreduce_kernel&#10;6 us at 20.660 ms</title></rect>
-<rect x='40' y='1385.35' width='240' height='2.86' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NNT&#10;44 us at 20.666 ms</title></rect>
-<rect x='40' y='1388.26' width='240' height='6.64' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;102 us at 20.711 ms</title></rect>
-<rect x='40' y='1394.96' width='240' height='2.66' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;41 us at 20.813 ms</title></rect>
-<rect x='40' y='1397.65' width='240' height='18.14' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;279 us at 20.855 ms</title></rect>
-<rect x='40' y='1415.54' width='240' height='19.18' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;295 us at 21.130 ms</title></rect>
-<rect x='40' y='1434.80' width='240' height='6.27' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;96 us at 21.425 ms</title></rect>
-<rect x='40' y='1441.30' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 21.525 ms</title></rect>
-<rect x='40' y='1441.56' width='240' height='34.75' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;534 us at 21.529 ms</title></rect>
-<rect x='40' y='1476.38' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;8 us at 22.064 ms</title></rect>
-<rect x='40' y='1476.94' width='240' height='6.49' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;100 us at 22.073 ms</title></rect>
-<rect x='40' y='1483.49' width='240' height='4.84' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;74 us at 22.173 ms</title></rect>
-<rect x='40' y='1488.33' width='240' height='56.82' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;873 us at 22.248 ms</title></rect>
-<rect x='40' y='1544.90' width='240' height='57.28' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;880 us at 23.117 ms</title></rect>
-<rect x='40' y='1602.25' width='240' height='10.90' fill='#f472b6'><title>elementwise math (PyTorch)&#10;void at::native::vectorized_elementwise_kernel&#10;167 us at 23.998 ms</title></rect>
-<rect x='40' y='1613.23' width='240' height='10.95' fill='#f472b6'><title>elementwise math (PyTorch)&#10;void at::native::vectorized_elementwise_kernel&#10;168 us at 24.166 ms</title></rect>
-<rect x='40' y='1624.26' width='240' height='10.55' fill='#f472b6'><title>elementwise math (PyTorch)&#10;void at::native::vectorized_elementwise_kernel&#10;162 us at 24.336 ms</title></rect>
-<rect x='40' y='1634.88' width='240' height='8.22' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;126 us at 24.499 ms</title></rect>
-<rect x='40' y='1643.11' width='240' height='59.90' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;920 us at 24.625 ms</title></rect>
-<rect x='40' y='1702.77' width='240' height='60.51' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;929 us at 25.542 ms</title></rect>
-<rect x='40' y='1763.34' width='240' height='19.69' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::compute_dot_do_o_specialized&#10;302 us at 26.472 ms</title></rect>
-<rect x='40' y='1783.10' width='240' height='304.62' fill='#7c3aed'><title>attention (cuDNN)&#10;cudnn_generated_fort_native_sdpa_sm100_flash_bprop_f16_knob_2_64x128x192_1x4x1_cga1x1x1_ke&#10;4679 us at 26.776 ms</title></rect>
-<rect x='40' y='2087.80' width='240' height='17.68' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::convert_dq_to_16bits&#10;272 us at 31.456 ms</title></rect>
-<rect x='40' y='2105.55' width='240' height='3.54' fill='#f472b6'><title>elementwise math (PyTorch)&#10;void at::native::reduce_kernel&#10;54 us at 31.729 ms</title></rect>
-<rect x='40' y='2109.16' width='240' height='150.82' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;void at::native::&#10;2317 us at 31.784 ms</title></rect>
-<rect x='40' y='2260.05' width='240' height='16.17' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;248 us at 34.102 ms</title></rect>
-<rect x='40' y='2276.23' width='240' height='9.79' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;150 us at 34.351 ms</title></rect>
-<rect x='40' y='2285.81' width='240' height='10.01' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;154 us at 34.498 ms</title></rect>
-<rect x='40' y='2295.87' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_tuned_kernel&#10;11 us at 34.652 ms</title></rect>
-<rect x='40' y='2296.65' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_tuned_kernel&#10;4 us at 34.664 ms</title></rect>
-<rect x='40' y='2297.00' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;void at::native::&#10;8 us at 34.670 ms</title></rect>
-<rect x='40' y='2297.62' width='240' height='0.80' fill='#0d9488'><title>quantize (MXFP8)&#10;transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *, &#10;2 us at 34.679 ms</title></rect>
-<rect x='40' y='2297.83' width='240' height='0.80' fill='#0d9488'><title>quantize (MXFP8)&#10;transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *, &#10;2 us at 34.682 ms</title></rect>
-<rect x='40' y='2298.02' width='240' height='0.80' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;10 us at 34.685 ms</title></rect>
-<rect x='40' y='2298.71' width='240' height='4.80' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;74 us at 34.696 ms</title></rect>
-<rect x='40' y='2303.25' width='240' height='3.77' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_256x128_128x5_4x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;58 us at 34.766 ms</title></rect>
-<rect x='40' y='2307.09' width='240' height='6.27' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;96 us at 34.825 ms</title></rect>
-<rect x='40' y='2313.44' width='240' height='12.17' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;187 us at 34.922 ms</title></rect>
-<rect x='40' y='2325.64' width='240' height='19.83' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;305 us at 35.110 ms</title></rect>
-<rect x='40' y='2345.26' width='240' height='20.82' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;320 us at 35.411 ms</title></rect>
-<rect x='40' y='2366.16' width='240' height='4.70' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;72 us at 35.732 ms</title></rect>
-<rect x='40' y='2370.93' width='240' height='1.17' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;18 us at 35.805 ms</title></rect>
-<rect x='40' y='2372.15' width='240' height='1.25' fill='#0d9488'><title>quantize (MXFP8)&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;19 us at 35.824 ms</title></rect>
-<rect x='40' y='2373.41' width='240' height='8.59' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;132 us at 35.843 ms</title></rect>
-<rect x='40' y='2381.75' width='240' height='9.52' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_256x128_128x5_2x4f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;146 us at 35.971 ms</title></rect>
-<rect x='40' y='2391.33' width='240' height='6.29' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;97 us at 36.119 ms</title></rect>
-<rect x='40' y='2397.80' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 36.218 ms</title></rect>
-<rect x='40' y='2398.05' width='240' height='34.90' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;536 us at 36.222 ms</title></rect>
-<rect x='40' y='2433.03' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 36.759 ms</title></rect>
-<rect x='40' y='2433.60' width='240' height='6.40' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;98 us at 36.768 ms</title></rect>
+<svg xmlns='http://www.w3.org/2000/svg' width='680' height='2637' viewBox='0 0 680 2637'>
+<rect width='680' height='2637' fill='white'/>
+<rect x='40' y='40.00' width='240' height='3.96' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;63 us at 0.000 ms</title></rect>
+<rect x='40' y='44.04' width='240' height='4.84' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;77 us at 0.064 ms</title></rect>
+<rect x='40' y='48.95' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::swizzle_columnwise_chunk_kernel(const unsigned char *, unsigned &#10;3 us at 0.143 ms</title></rect>
+<rect x='40' y='49.17' width='240' height='23.26' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;371 us at 0.146 ms</title></rect>
+<rect x='40' y='72.23' width='240' height='22.81' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;363 us at 0.514 ms</title></rect>
+<rect x='40' y='95.09' width='240' height='75.65' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::gated_kernel::quantize_gated_mxfp8_kernel&#10;1206 us at 0.878 ms</title></rect>
+<rect x='40' y='170.82' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::swizzle_columnwise_chunk_kernel(const unsigned char *, unsigned &#10;4 us at 2.085 ms</title></rect>
+<rect x='40' y='171.10' width='240' height='56.08' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;894 us at 2.090 ms</title></rect>
+<rect x='40' y='227.00' width='240' height='57.17' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;911 us at 2.980 ms</title></rect>
+<rect x='40' y='284.24' width='240' height='4.55' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;72 us at 3.893 ms</title></rect>
+<rect x='40' y='288.80' width='240' height='13.58' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;216 us at 3.966 ms</title></rect>
+<rect x='40' y='302.19' width='240' height='15.04' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;240 us at 4.179 ms</title></rect>
+<rect x='40' y='317.30' width='240' height='12.50' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;199 us at 4.420 ms</title></rect>
+<rect x='40' y='329.85' width='240' height='0.82' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;13 us at 4.620 ms</title></rect>
+<rect x='40' y='330.73' width='240' height='108.74' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_dispatch_kernel&#10;1733 us at 4.634 ms</title></rect>
+<rect x='40' y='439.56' width='240' height='30.64' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_dup_kernel&#10;488 us at 6.368 ms</title></rect>
+<rect x='40' y='470.27' width='240' height='46.09' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::group_quantize_kernel::group_quantize_mxfp8_kern&#10;735 us at 6.858 ms</title></rect>
+<rect x='40' y='516.44' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 7.594 ms</title></rect>
+<rect x='40' y='516.65' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::grouped_swizzle_col_scaling_uniform_shape_kernel&#10;8 us at 7.597 ms</title></rect>
+<rect x='40' y='517.20' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_db&#10;1 us at 7.606 ms</title></rect>
+<rect x='40' y='517.32' width='240' height='178.12' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_dbiasBloc&#10;2839 us at 7.608 ms</title></rect>
+<rect x='40' y='695.49' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradB&#10;2 us at 10.448 ms</title></rect>
+<rect x='40' y='695.66' width='240' height='116.01' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockSca&#10;1849 us at 10.450 ms</title></rect>
+<rect x='40' y='811.75' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::grouped_swizzle_col_scaling_uniform_shape_kernel&#10;12 us at 12.301 ms</title></rect>
+<rect x='40' y='812.58' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 12.314 ms</title></rect>
+<rect x='40' y='812.72' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGro&#10;1 us at 12.316 ms</title></rect>
+<rect x='40' y='812.84' width='240' height='225.37' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedquantgrouped_gemm_quantBlockScaledMoEGroupedGem&#10;3592 us at 12.318 ms</title></rect>
+<rect x='40' y='1038.26' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradB&#10;2 us at 15.911 ms</title></rect>
+<rect x='40' y='1038.45' width='240' height='250.69' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockSca&#10;3996 us at 15.914 ms</title></rect>
+<rect x='40' y='1289.19' width='240' height='28.50' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_reduce_kernel&#10;454 us at 19.910 ms</title></rect>
+<rect x='40' y='1317.75' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 20.366 ms</title></rect>
+<rect x='40' y='1317.97' width='240' height='0.80' fill='#fdba74'><title>NCCL EP permute / scan&#10;void nccl_ep::ht::combine_prob_input_to_compact_kernel&#10;8 us at 20.369 ms</title></rect>
+<rect x='40' y='1318.54' width='240' height='113.31' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_combine_kernel&#10;1806 us at 20.378 ms</title></rect>
+<rect x='40' y='1431.92' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 22.185 ms</title></rect>
+<rect x='40' y='1432.11' width='240' height='0.80' fill='#a3e635'><title>router / permute&#10;void at::native::_scatter_gather_elementwise_kernel&#10;12 us at 22.188 ms</title></rect>
+<rect x='40' y='1432.95' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 22.202 ms</title></rect>
+<rect x='40' y='1433.11' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 22.204 ms</title></rect>
+<rect x='40' y='1433.25' width='240' height='0.80' fill='#a3e635'><title>router / permute&#10;void transformer_engine::fused_router::fused_topk_backward_selected_indices_kernel&#10;8 us at 22.207 ms</title></rect>
+<rect x='40' y='1433.84' width='240' height='0.80' fill='#a8a29e'><title>dtype casts (bf16 &lt;-&gt; fp32)&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 22.216 ms</title></rect>
+<rect x='40' y='1434.03' width='240' height='2.71' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_192x64_64x7_2x1_2cta_v_bz_splitK_NTT&#10;43 us at 22.219 ms</title></rect>
+<rect x='40' y='1436.59' width='240' height='0.80' fill='#60a5fa'><title>dense GEMM&#10;void cublasLt::splitKreduce_kernel&#10;6 us at 22.260 ms</title></rect>
+<rect x='40' y='1436.94' width='240' height='2.81' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_128x256_64x6_2x1_2cta_v_bz_NNT&#10;45 us at 22.265 ms</title></rect>
+<rect x='40' y='1439.82' width='240' height='6.37' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;101 us at 22.311 ms</title></rect>
+<rect x='40' y='1446.24' width='240' height='2.58' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;41 us at 22.414 ms</title></rect>
+<rect x='40' y='1448.84' width='240' height='17.25' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;275 us at 22.455 ms</title></rect>
+<rect x='40' y='1465.82' width='240' height='17.32' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;276 us at 22.726 ms</title></rect>
+<rect x='40' y='1483.20' width='240' height='5.96' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;95 us at 23.003 ms</title></rect>
+<rect x='40' y='1489.28' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 23.100 ms</title></rect>
+<rect x='40' y='1489.52' width='240' height='32.41' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;517 us at 23.103 ms</title></rect>
+<rect x='40' y='1522.00' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 23.621 ms</title></rect>
+<rect x='40' y='1522.53' width='240' height='6.19' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;99 us at 23.629 ms</title></rect>
+<rect x='40' y='1528.78' width='240' height='4.58' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;73 us at 23.729 ms</title></rect>
+<rect x='40' y='1533.37' width='240' height='55.41' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;883 us at 23.802 ms</title></rect>
+<rect x='40' y='1588.54' width='240' height='55.81' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;890 us at 24.682 ms</title></rect>
+<rect x='40' y='1644.40' width='240' height='10.41' fill='#f472b6'><title>elementwise math (PyTorch)&#10;void at::native::vectorized_elementwise_kernel&#10;166 us at 25.572 ms</title></rect>
+<rect x='40' y='1654.87' width='240' height='10.46' fill='#f472b6'><title>elementwise math (PyTorch)&#10;void at::native::vectorized_elementwise_kernel&#10;167 us at 25.739 ms</title></rect>
+<rect x='40' y='1665.41' width='240' height='10.13' fill='#f472b6'><title>elementwise math (PyTorch)&#10;void at::native::vectorized_elementwise_kernel&#10;161 us at 25.907 ms</title></rect>
+<rect x='40' y='1675.62' width='240' height='7.82' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;125 us at 26.070 ms</title></rect>
+<rect x='40' y='1683.46' width='240' height='57.97' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;924 us at 26.195 ms</title></rect>
+<rect x='40' y='1741.21' width='240' height='58.21' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;928 us at 27.115 ms</title></rect>
+<rect x='40' y='1799.48' width='240' height='19.15' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::compute_dot_do_o_specialized&#10;305 us at 28.044 ms</title></rect>
+<rect x='40' y='1818.69' width='240' height='285.91' fill='#7c3aed'><title>attention (cuDNN)&#10;cudnn_generated_fort_native_sdpa_sm100_flash_bprop_f16_knob_2_64x128x192_1x4x1_cga1x1x1_ke&#10;4557 us at 28.350 ms</title></rect>
+<rect x='40' y='2104.66' width='240' height='16.80' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::convert_dq_to_16bits&#10;268 us at 32.908 ms</title></rect>
+<rect x='40' y='2121.52' width='240' height='3.35' fill='#f472b6'><title>elementwise math (PyTorch)&#10;void at::native::reduce_kernel&#10;53 us at 33.177 ms</title></rect>
+<rect x='40' y='2124.95' width='240' height='140.85' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;void at::native::anon::CatArrayBatchedCopy&#10;2245 us at 33.231 ms</title></rect>
+<rect x='40' y='2265.88' width='240' height='15.51' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;247 us at 35.477 ms</title></rect>
+<rect x='40' y='2281.42' width='240' height='9.46' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;151 us at 35.725 ms</title></rect>
+<rect x='40' y='2290.67' width='240' height='9.76' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;156 us at 35.873 ms</title></rect>
+<rect x='40' y='2300.51' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_tuned_kernel&#10;10 us at 36.030 ms</title></rect>
+<rect x='40' y='2301.19' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_tuned_kernel&#10;4 us at 36.040 ms</title></rect>
+<rect x='40' y='2301.50' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;void at::native::anon::CatArrayBatchedCopy_vectorized&#10;8 us at 36.045 ms</title></rect>
+<rect x='40' y='2302.05' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *, &#10;2 us at 36.054 ms</title></rect>
+<rect x='40' y='2302.24' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::dispatch::mxfp8::quantize_kernel::zero_scales_kernel(unsigned char *, &#10;2 us at 36.057 ms</title></rect>
+<rect x='40' y='2302.43' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;9 us at 36.060 ms</title></rect>
+<rect x='40' y='2303.05' width='240' height='4.51' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;72 us at 36.070 ms</title></rect>
+<rect x='40' y='2307.26' width='240' height='3.65' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_256x128_128x5_4x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;58 us at 36.137 ms</title></rect>
+<rect x='40' y='2310.98' width='240' height='6.03' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;96 us at 36.196 ms</title></rect>
+<rect x='40' y='2317.07' width='240' height='11.62' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;185 us at 36.293 ms</title></rect>
+<rect x='40' y='2328.72' width='240' height='20.46' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;326 us at 36.479 ms</title></rect>
+<rect x='40' y='2349.00' width='240' height='20.19' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x2f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;322 us at 36.802 ms</title></rect>
+<rect x='40' y='2369.26' width='240' height='4.36' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;69 us at 37.125 ms</title></rect>
+<rect x='40' y='2373.70' width='240' height='1.08' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;17 us at 37.196 ms</title></rect>
+<rect x='40' y='2374.85' width='240' height='1.15' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::mxfp8::quantize_kernel::specialized::quantize_mxfp8_ker&#10;18 us at 37.214 ms</title></rect>
+<rect x='40' y='2376.02' width='240' height='9.01' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_128x256_128x6_2x1_2cta_v_bz_Avec32UE8M0_Bvec32UE8M0_NNT&#10;144 us at 37.233 ms</title></rect>
+<rect x='40' y='2384.77' width='240' height='9.79' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_qqtst_256x128_128x5_2x4f_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NTT&#10;156 us at 37.372 ms</title></rect>
+<rect x='40' y='2394.61' width='240' height='6.01' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;96 us at 37.529 ms</title></rect>
+<rect x='40' y='2400.74' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 37.627 ms</title></rect>
+<rect x='40' y='2400.92' width='240' height='32.39' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;516 us at 37.630 ms</title></rect>
+<rect x='40' y='2433.38' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 38.147 ms</title></rect>
+<rect x='40' y='2433.91' width='240' height='6.09' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;97 us at 38.156 ms</title></rect>
 <line x1='34' y1='40.0' x2='40' y2='40.0' stroke='#6b7280'/>
 <text x='31.0' y='44.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0 ms</text>
-<line x1='34' y1='105.1' x2='40' y2='105.1' stroke='#6b7280'/>
-<text x='31.0' y='109.1' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1 ms</text>
-<line x1='34' y1='170.2' x2='40' y2='170.2' stroke='#6b7280'/>
-<text x='31.0' y='174.2' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2 ms</text>
-<line x1='34' y1='235.3' x2='40' y2='235.3' stroke='#6b7280'/>
-<text x='31.0' y='239.3' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3 ms</text>
-<line x1='34' y1='300.4' x2='40' y2='300.4' stroke='#6b7280'/>
-<text x='31.0' y='304.4' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4 ms</text>
-<line x1='34' y1='365.5' x2='40' y2='365.5' stroke='#6b7280'/>
-<text x='31.0' y='369.5' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5 ms</text>
-<line x1='34' y1='430.6' x2='40' y2='430.6' stroke='#6b7280'/>
-<text x='31.0' y='434.6' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6 ms</text>
-<line x1='34' y1='495.7' x2='40' y2='495.7' stroke='#6b7280'/>
-<text x='31.0' y='499.7' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7 ms</text>
-<line x1='34' y1='560.8' x2='40' y2='560.8' stroke='#6b7280'/>
-<text x='31.0' y='564.8' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>8 ms</text>
-<line x1='34' y1='625.9' x2='40' y2='625.9' stroke='#6b7280'/>
-<text x='31.0' y='629.9' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>9 ms</text>
-<line x1='34' y1='691.0' x2='40' y2='691.0' stroke='#6b7280'/>
-<text x='31.0' y='695.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>10 ms</text>
-<line x1='34' y1='756.1' x2='40' y2='756.1' stroke='#6b7280'/>
-<text x='31.0' y='760.1' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>11 ms</text>
-<line x1='34' y1='821.2' x2='40' y2='821.2' stroke='#6b7280'/>
-<text x='31.0' y='825.2' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>12 ms</text>
-<line x1='34' y1='886.3' x2='40' y2='886.3' stroke='#6b7280'/>
-<text x='31.0' y='890.3' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>13 ms</text>
-<line x1='34' y1='951.4' x2='40' y2='951.4' stroke='#6b7280'/>
-<text x='31.0' y='955.4' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>14 ms</text>
-<line x1='34' y1='1016.5' x2='40' y2='1016.5' stroke='#6b7280'/>
-<text x='31.0' y='1020.5' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>15 ms</text>
-<line x1='34' y1='1081.6' x2='40' y2='1081.6' stroke='#6b7280'/>
-<text x='31.0' y='1085.6' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>16 ms</text>
-<line x1='34' y1='1146.7' x2='40' y2='1146.7' stroke='#6b7280'/>
-<text x='31.0' y='1150.7' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>17 ms</text>
-<line x1='34' y1='1211.8' x2='40' y2='1211.8' stroke='#6b7280'/>
-<text x='31.0' y='1215.8' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>18 ms</text>
-<line x1='34' y1='1276.9' x2='40' y2='1276.9' stroke='#6b7280'/>
-<text x='31.0' y='1280.9' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>19 ms</text>
-<line x1='34' y1='1342.0' x2='40' y2='1342.0' stroke='#6b7280'/>
-<text x='31.0' y='1346.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>20 ms</text>
-<line x1='34' y1='1407.1' x2='40' y2='1407.1' stroke='#6b7280'/>
-<text x='31.0' y='1411.1' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>21 ms</text>
-<line x1='34' y1='1472.2' x2='40' y2='1472.2' stroke='#6b7280'/>
-<text x='31.0' y='1476.2' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>22 ms</text>
-<line x1='34' y1='1537.3' x2='40' y2='1537.3' stroke='#6b7280'/>
-<text x='31.0' y='1541.3' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>23 ms</text>
-<line x1='34' y1='1602.4' x2='40' y2='1602.4' stroke='#6b7280'/>
-<text x='31.0' y='1606.4' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>24 ms</text>
-<line x1='34' y1='1667.5' x2='40' y2='1667.5' stroke='#6b7280'/>
-<text x='31.0' y='1671.5' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>25 ms</text>
-<line x1='34' y1='1732.6' x2='40' y2='1732.6' stroke='#6b7280'/>
-<text x='31.0' y='1736.6' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>26 ms</text>
-<line x1='34' y1='1797.7' x2='40' y2='1797.7' stroke='#6b7280'/>
-<text x='31.0' y='1801.7' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>27 ms</text>
-<line x1='34' y1='1862.8' x2='40' y2='1862.8' stroke='#6b7280'/>
-<text x='31.0' y='1866.8' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>28 ms</text>
-<line x1='34' y1='1927.9' x2='40' y2='1927.9' stroke='#6b7280'/>
-<text x='31.0' y='1931.9' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>29 ms</text>
-<line x1='34' y1='1993.0' x2='40' y2='1993.0' stroke='#6b7280'/>
-<text x='31.0' y='1997.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>30 ms</text>
-<line x1='34' y1='2058.1' x2='40' y2='2058.1' stroke='#6b7280'/>
-<text x='31.0' y='2062.1' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>31 ms</text>
-<line x1='34' y1='2123.2' x2='40' y2='2123.2' stroke='#6b7280'/>
-<text x='31.0' y='2127.2' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>32 ms</text>
-<line x1='34' y1='2188.3' x2='40' y2='2188.3' stroke='#6b7280'/>
-<text x='31.0' y='2192.3' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>33 ms</text>
-<line x1='34' y1='2253.4' x2='40' y2='2253.4' stroke='#6b7280'/>
-<text x='31.0' y='2257.4' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>34 ms</text>
-<line x1='34' y1='2318.5' x2='40' y2='2318.5' stroke='#6b7280'/>
-<text x='31.0' y='2322.5' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>35 ms</text>
-<line x1='34' y1='2383.6' x2='40' y2='2383.6' stroke='#6b7280'/>
-<text x='31.0' y='2387.6' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>36 ms</text>
-<line x1='280' y1='42.2' x2='294' y2='39.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='42.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>memset  68 us</text>
-<line x1='280' y1='47.4' x2='294' y2='52.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='55.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  88 us</text>
-<line x1='280' y1='64.9' x2='294' y2='65.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='68.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc2 dgrad  0.45 ms</text>
-<line x1='280' y1='93.4' x2='294' y2='90.4' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='93.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc2 wgrad  0.43 ms</text>
-<line x1='280' y1='152.5' x2='294' y2='149.5' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='152.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  1.38 ms</text>
-<line x1='280' y1='228.4' x2='294' y2='225.4' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='228.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc1 dgrad  0.95 ms</text>
-<line x1='280' y1='289.1' x2='294' y2='286.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='289.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc1 wgrad  0.92 ms</text>
-<line x1='280' y1='321.6' x2='294' y2='318.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='321.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  73 us</text>
-<line x1='280' y1='330.9' x2='294' y2='331.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='334.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>up_proj dgrad  0.21 ms</text>
-<line x1='280' y1='345.2' x2='294' y2='344.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='347.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>up_proj wgrad  0.23 ms</text>
-<line x1='280' y1='359.9' x2='294' y2='357.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='360.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>post-expert RMSNorm bwd  0.22 ms</text>
-<line x1='280' y1='384.9' x2='294' y2='381.9' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='384.9' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine  0.55 ms</text>
-<line x1='280' y1='418.8' x2='294' y2='415.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='418.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>EP permute  0.49 ms</text>
-<line x1='280' y1='458.5' x2='294' y2='455.5' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='458.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize recv tokens  0.73 ms</text>
-<line x1='280' y1='574.3' x2='294' y2='571.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='574.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc2 dgrad + dGLU  2.80 ms</text>
-<line x1='280' y1='725.8' x2='294' y2='722.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='725.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc2 wgrad  1.85 ms</text>
-<line x1='280' y1='903.5' x2='294' y2='900.5' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='903.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc1 dgrad  3.58 ms</text>
-<line x1='280' y1='1146.4' x2='294' y2='1143.4' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1146.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc1 wgrad  3.88 ms</text>
-<line x1='280' y1='1287.7' x2='294' y2='1284.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1287.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>EP permute  0.46 ms</text>
-<line x1='280' y1='1341.8' x2='294' y2='1338.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1341.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine  1.18 ms</text>
-<line x1='280' y1='1380.7' x2='294' y2='1377.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1380.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router  12 us</text>
-<line x1='280' y1='1383.9' x2='294' y2='1390.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1393.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router gate dgrad  46 us</text>
-<line x1='280' y1='1386.8' x2='294' y2='1403.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1406.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router gate wgrad  44 us</text>
-<line x1='280' y1='1391.6' x2='294' y2='1416.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1419.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add  0.10 ms</text>
-<line x1='280' y1='1396.3' x2='294' y2='1429.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1432.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  41 us</text>
-<line x1='280' y1='1406.7' x2='294' y2='1442.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1445.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>down_proj dgrad  0.28 ms</text>
-<line x1='280' y1='1425.1' x2='294' y2='1455.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1458.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>down_proj wgrad  0.29 ms</text>
-<line x1='280' y1='1437.9' x2='294' y2='1468.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1471.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add  96 us</text>
-<line x1='280' y1='1459.2' x2='294' y2='1481.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1484.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>post-attention RMSNorm bwd  0.54 ms</text>
-<line x1='280' y1='1480.2' x2='294' y2='1494.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1497.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add  100 us</text>
-<line x1='280' y1='1485.9' x2='294' y2='1507.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1510.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  74 us</text>
-<line x1='280' y1='1516.7' x2='294' y2='1520.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1523.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>out_proj dgrad  0.87 ms</text>
-<line x1='280' y1='1573.5' x2='294' y2='1570.5' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1573.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>out_proj wgrad  0.88 ms</text>
-<line x1='280' y1='1618.5' x2='294' y2='1615.5' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1618.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>elementwise  0.50 ms</text>
-<line x1='280' y1='1639.0' x2='294' y2='1636.0' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1639.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  0.13 ms</text>
-<line x1='280' y1='1673.1' x2='294' y2='1670.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1673.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>output gate dgrad  0.92 ms</text>
-<line x1='280' y1='1733.0' x2='294' y2='1730.0' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1733.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>output gate wgrad  0.93 ms</text>
-<line x1='280' y1='1934.4' x2='294' y2='1931.4' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1934.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>attention bwd  5.26 ms</text>
-<line x1='280' y1='2107.3' x2='294' y2='2104.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2107.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>elementwise  54 us</text>
-<line x1='280' y1='2184.6' x2='294' y2='2181.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2184.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>layout copy  2.32 ms</text>
-<line x1='280' y1='2268.1' x2='294' y2='2265.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2268.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  0.25 ms</text>
-<line x1='280' y1='2281.1' x2='294' y2='2278.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2281.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_up dgrad  0.15 ms</text>
-<line x1='280' y1='2290.8' x2='294' y2='2291.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2294.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_up wgrad  0.15 ms</text>
-<line x1='280' y1='2296.4' x2='294' y2='2304.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2307.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv-latent RMSNorm bwd  16 us</text>
-<line x1='280' y1='2298.2' x2='294' y2='2317.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2320.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  16 us</text>
-<line x1='280' y1='2301.1' x2='294' y2='2330.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2333.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_down dgrad  74 us</text>
-<line x1='280' y1='2305.1' x2='294' y2='2343.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2346.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_down wgrad  58 us</text>
-<line x1='280' y1='2310.2' x2='294' y2='2356.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2359.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add  96 us</text>
-<line x1='280' y1='2319.5' x2='294' y2='2369.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2372.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  0.19 ms</text>
-<line x1='280' y1='2335.6' x2='294' y2='2382.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2385.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_up dgrad  0.30 ms</text>
-<line x1='280' y1='2355.7' x2='294' y2='2395.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2398.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_up wgrad  0.32 ms</text>
-<line x1='280' y1='2369.1' x2='294' y2='2408.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2411.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q-latent RMSNorm bwd  91 us</text>
-<line x1='280' y1='2372.8' x2='294' y2='2421.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2424.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize  19 us</text>
-<line x1='280' y1='2377.7' x2='294' y2='2434.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2437.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_down dgrad  0.13 ms</text>
-<line x1='280' y1='2386.5' x2='294' y2='2447.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2450.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_down wgrad  0.15 ms</text>
-<line x1='280' y1='2394.5' x2='294' y2='2460.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2463.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add  97 us</text>
-<line x1='280' y1='2415.8' x2='294' y2='2473.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2476.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>input RMSNorm bwd  0.54 ms</text>
-<line x1='280' y1='2436.8' x2='294' y2='2486.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='2489.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add  98 us</text>
-<rect x='40' y='2480' width='12' height='12' fill='#16a34a' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='57.0' y='2490.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>RMSNorm</text>
-<rect x='123.1' y='2480' width='12' height='12' fill='#0d9488' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='140.1' y='2490.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize (MXFP8)</text>
-<rect x='262.9' y='2480' width='12' height='12' fill='#60a5fa' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='279.9' y='2490.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>dense GEMM</text>
-<rect x='364.9' y='2480' width='12' height='12' fill='#d1d5db' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='381.9' y='2490.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>layout copies (contiguous / cat / clone)</text>
-<rect x='40' y='2498' width='12' height='12' fill='#e5e7eb' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='57.0' y='2508.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>other</text>
-<rect x='110.5' y='2498' width='12' height='12' fill='#7c3aed' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='127.5' y='2508.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>attention (cuDNN)</text>
-<rect x='256.6' y='2498' width='12' height='12' fill='#f472b6' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='273.6' y='2508.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>elementwise math (PyTorch)</text>
-<rect x='459.4' y='2498' width='12' height='12' fill='#fb7185' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='476.4' y='2508.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>residual / grad-accumulation add</text>
-<rect x='40' y='2516' width='12' height='12' fill='#a8a29e' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='57.0' y='2526.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>dtype casts (bf16 &lt;-&gt; fp32)</text>
-<rect x='249.1' y='2516' width='12' height='12' fill='#a3e635' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='266.1' y='2526.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>router / permute</text>
-<rect x='388.9' y='2516' width='12' height='12' fill='#9ca3af' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='405.9' y='2526.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>memset</text>
-<rect x='465.7' y='2516' width='12' height='12' fill='#fdba74' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='482.7' y='2526.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL EP permute / scan</text>
-<rect x='40' y='2534' width='12' height='12' fill='#facc15' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='57.0' y='2544.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL collective</text>
-<rect x='173.5' y='2534' width='12' height='12' fill='#ea580c' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='190.5' y='2544.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine</text>
-<rect x='376.29999999999995' y='2534' width='12' height='12' fill='#1d4ed8' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='393.3' y='2544.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8)</text>
+<line x1='34' y1='102.7' x2='40' y2='102.7' stroke='#6b7280'/>
+<text x='31.0' y='106.7' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>1 ms</text>
+<line x1='34' y1='165.5' x2='40' y2='165.5' stroke='#6b7280'/>
+<text x='31.0' y='169.5' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>2 ms</text>
+<line x1='34' y1='228.2' x2='40' y2='228.2' stroke='#6b7280'/>
+<text x='31.0' y='232.2' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>3 ms</text>
+<line x1='34' y1='291.0' x2='40' y2='291.0' stroke='#6b7280'/>
+<text x='31.0' y='295.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>4 ms</text>
+<line x1='34' y1='353.7' x2='40' y2='353.7' stroke='#6b7280'/>
+<text x='31.0' y='357.7' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>5 ms</text>
+<line x1='34' y1='416.4' x2='40' y2='416.4' stroke='#6b7280'/>
+<text x='31.0' y='420.4' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>6 ms</text>
+<line x1='34' y1='479.2' x2='40' y2='479.2' stroke='#6b7280'/>
+<text x='31.0' y='483.2' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>7 ms</text>
+<line x1='34' y1='541.9' x2='40' y2='541.9' stroke='#6b7280'/>
+<text x='31.0' y='545.9' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>8 ms</text>
+<line x1='34' y1='604.7' x2='40' y2='604.7' stroke='#6b7280'/>
+<text x='31.0' y='608.7' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>9 ms</text>
+<line x1='34' y1='667.4' x2='40' y2='667.4' stroke='#6b7280'/>
+<text x='31.0' y='671.4' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>10 ms</text>
+<line x1='34' y1='730.1' x2='40' y2='730.1' stroke='#6b7280'/>
+<text x='31.0' y='734.1' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>11 ms</text>
+<line x1='34' y1='792.9' x2='40' y2='792.9' stroke='#6b7280'/>
+<text x='31.0' y='796.9' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>12 ms</text>
+<line x1='34' y1='855.6' x2='40' y2='855.6' stroke='#6b7280'/>
+<text x='31.0' y='859.6' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>13 ms</text>
+<line x1='34' y1='918.4' x2='40' y2='918.4' stroke='#6b7280'/>
+<text x='31.0' y='922.4' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>14 ms</text>
+<line x1='34' y1='981.1' x2='40' y2='981.1' stroke='#6b7280'/>
+<text x='31.0' y='985.1' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>15 ms</text>
+<line x1='34' y1='1043.8' x2='40' y2='1043.8' stroke='#6b7280'/>
+<text x='31.0' y='1047.8' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>16 ms</text>
+<line x1='34' y1='1106.6' x2='40' y2='1106.6' stroke='#6b7280'/>
+<text x='31.0' y='1110.6' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>17 ms</text>
+<line x1='34' y1='1169.3' x2='40' y2='1169.3' stroke='#6b7280'/>
+<text x='31.0' y='1173.3' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>18 ms</text>
+<line x1='34' y1='1232.1' x2='40' y2='1232.1' stroke='#6b7280'/>
+<text x='31.0' y='1236.1' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>19 ms</text>
+<line x1='34' y1='1294.8' x2='40' y2='1294.8' stroke='#6b7280'/>
+<text x='31.0' y='1298.8' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>20 ms</text>
+<line x1='34' y1='1357.6' x2='40' y2='1357.6' stroke='#6b7280'/>
+<text x='31.0' y='1361.6' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>21 ms</text>
+<line x1='34' y1='1420.3' x2='40' y2='1420.3' stroke='#6b7280'/>
+<text x='31.0' y='1424.3' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>22 ms</text>
+<line x1='34' y1='1483.0' x2='40' y2='1483.0' stroke='#6b7280'/>
+<text x='31.0' y='1487.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>23 ms</text>
+<line x1='34' y1='1545.8' x2='40' y2='1545.8' stroke='#6b7280'/>
+<text x='31.0' y='1549.8' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>24 ms</text>
+<line x1='34' y1='1608.5' x2='40' y2='1608.5' stroke='#6b7280'/>
+<text x='31.0' y='1612.5' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>25 ms</text>
+<line x1='34' y1='1671.3' x2='40' y2='1671.3' stroke='#6b7280'/>
+<text x='31.0' y='1675.3' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>26 ms</text>
+<line x1='34' y1='1734.0' x2='40' y2='1734.0' stroke='#6b7280'/>
+<text x='31.0' y='1738.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>27 ms</text>
+<line x1='34' y1='1796.7' x2='40' y2='1796.7' stroke='#6b7280'/>
+<text x='31.0' y='1800.7' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>28 ms</text>
+<line x1='34' y1='1859.5' x2='40' y2='1859.5' stroke='#6b7280'/>
+<text x='31.0' y='1863.5' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>29 ms</text>
+<line x1='34' y1='1922.2' x2='40' y2='1922.2' stroke='#6b7280'/>
+<text x='31.0' y='1926.2' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>30 ms</text>
+<line x1='34' y1='1985.0' x2='40' y2='1985.0' stroke='#6b7280'/>
+<text x='31.0' y='1989.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>31 ms</text>
+<line x1='34' y1='2047.7' x2='40' y2='2047.7' stroke='#6b7280'/>
+<text x='31.0' y='2051.7' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>32 ms</text>
+<line x1='34' y1='2110.4' x2='40' y2='2110.4' stroke='#6b7280'/>
+<text x='31.0' y='2114.4' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>33 ms</text>
+<line x1='34' y1='2173.2' x2='40' y2='2173.2' stroke='#6b7280'/>
+<text x='31.0' y='2177.2' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>34 ms</text>
+<line x1='34' y1='2235.9' x2='40' y2='2235.9' stroke='#6b7280'/>
+<text x='31.0' y='2239.9' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>35 ms</text>
+<line x1='34' y1='2298.7' x2='40' y2='2298.7' stroke='#6b7280'/>
+<text x='31.0' y='2302.7' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>36 ms</text>
+<line x1='34' y1='2361.4' x2='40' y2='2361.4' stroke='#6b7280'/>
+<text x='31.0' y='2365.4' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>37 ms</text>
+<line x1='34' y1='2424.1' x2='40' y2='2424.1' stroke='#6b7280'/>
+<text x='31.0' y='2428.1' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>38 ms</text>
+<line x1='280' y1='42.0' x2='294' y2='39.0' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='42.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>memset  63 us</text>
+<line x1='280' y1='46.6' x2='294' y2='52.0' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='55.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: shared fc2 grad output  82 us</text>
+<line x1='280' y1='60.8' x2='294' y2='65.0' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='68.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc2 dgrad  0.37 ms</text>
+<line x1='280' y1='83.6' x2='294' y2='80.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='83.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc2 wgrad  0.36 ms</text>
+<line x1='280' y1='133.1' x2='294' y2='130.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='133.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: shared SiTU-GLU grad  1.21 ms</text>
+<line x1='280' y1='199.1' x2='294' y2='196.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='199.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc1 dgrad  0.89 ms</text>
+<line x1='280' y1='255.6' x2='294' y2='252.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='255.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc1 wgrad  0.91 ms</text>
+<line x1='280' y1='286.5' x2='294' y2='283.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='286.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: up_proj grad output  72 us</text>
+<line x1='280' y1='295.6' x2='294' y2='296.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='299.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>up_proj dgrad  0.22 ms</text>
+<line x1='280' y1='309.7' x2='294' y2='309.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='312.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>up_proj wgrad  0.24 ms</text>
+<line x1='280' y1='324.0' x2='294' y2='322.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='325.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>post-expert RMSNorm bwd  0.21 ms</text>
+<line x1='280' y1='385.1' x2='294' y2='382.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='385.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine  1.73 ms</text>
+<line x1='280' y1='454.9' x2='294' y2='451.9' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='454.9' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>EP permute  0.49 ms</text>
+<line x1='280' y1='493.3' x2='294' y2='490.3' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='493.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: recv grad (combine bwd)  0.73 ms</text>
+<line x1='280' y1='516.8' x2='294' y2='513.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='516.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>memset  11 us</text>
+<line x1='280' y1='606.3' x2='294' y2='603.3' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='606.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc2 dgrad + dGLU  2.84 ms</text>
+<line x1='280' y1='754.0' x2='294' y2='751.0' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='754.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc2 wgrad  1.86 ms</text>
+<line x1='280' y1='925.5' x2='294' y2='922.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='925.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc1 dgrad  3.59 ms</text>
+<line x1='280' y1='1163.7' x2='294' y2='1160.7' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1163.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc1 wgrad  4.00 ms</text>
+<line x1='280' y1='1303.4' x2='294' y2='1300.4' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1303.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>EP permute  0.45 ms</text>
+<line x1='280' y1='1375.2' x2='294' y2='1372.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1375.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine  1.81 ms</text>
+<line x1='280' y1='1432.5' x2='294' y2='1429.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1432.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router  12 us</text>
+<line x1='280' y1='1435.5' x2='294' y2='1442.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1445.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router gate dgrad  47 us</text>
+<line x1='280' y1='1438.3' x2='294' y2='1455.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1458.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router gate wgrad  45 us</text>
+<line x1='280' y1='1443.0' x2='294' y2='1468.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1471.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad accumulation (MoE input)  0.10 ms</text>
+<line x1='280' y1='1447.5' x2='294' y2='1481.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1484.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: down_proj grad output  41 us</text>
+<line x1='280' y1='1457.5' x2='294' y2='1494.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1497.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>down_proj dgrad  0.27 ms</text>
+<line x1='280' y1='1474.5' x2='294' y2='1507.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1510.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>down_proj wgrad  0.28 ms</text>
+<line x1='280' y1='1486.2' x2='294' y2='1520.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1523.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad accumulation (MoE input)  95 us</text>
+<line x1='280' y1='1506.0' x2='294' y2='1533.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1536.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>post-attention RMSNorm bwd  0.52 ms</text>
+<line x1='280' y1='1525.6' x2='294' y2='1546.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1549.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad (residual, MoE)  99 us</text>
+<line x1='280' y1='1531.1' x2='294' y2='1559.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1562.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: out_proj grad output  73 us</text>
+<line x1='280' y1='1561.1' x2='294' y2='1572.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1575.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>out_proj dgrad  0.88 ms</text>
+<line x1='280' y1='1616.4' x2='294' y2='1613.4' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1616.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>out_proj wgrad  0.89 ms</text>
+<line x1='280' y1='1660.0' x2='294' y2='1657.0' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1660.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>elementwise  0.50 ms</text>
+<line x1='280' y1='1679.5' x2='294' y2='1676.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1679.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: output gate grad output  0.12 ms</text>
+<line x1='280' y1='1712.4' x2='294' y2='1709.4' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1712.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>output gate dgrad  0.92 ms</text>
+<line x1='280' y1='1770.3' x2='294' y2='1767.3' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1770.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>output gate wgrad  0.93 ms</text>
+<line x1='280' y1='1960.5' x2='294' y2='1957.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1960.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>attention bwd  5.13 ms</text>
+<line x1='280' y1='2123.2' x2='294' y2='2120.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2123.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>elementwise  53 us</text>
+<line x1='280' y1='2195.4' x2='294' y2='2192.4' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2195.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>layout copy  2.25 ms</text>
+<line x1='280' y1='2273.6' x2='294' y2='2270.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2273.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: kv_up grad output  0.25 ms</text>
+<line x1='280' y1='2286.1' x2='294' y2='2283.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2286.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_up dgrad  0.15 ms</text>
+<line x1='280' y1='2295.5' x2='294' y2='2296.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2299.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_up wgrad  0.16 ms</text>
+<line x1='280' y1='2301.0' x2='294' y2='2309.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2312.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv-latent RMSNorm bwd  15 us</text>
+<line x1='280' y1='2305.3' x2='294' y2='2322.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2325.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_down dgrad  72 us</text>
+<line x1='280' y1='2309.1' x2='294' y2='2335.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2338.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_down wgrad  58 us</text>
+<line x1='280' y1='2314.0' x2='294' y2='2348.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2351.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad accumulation (attention input)  96 us</text>
+<line x1='280' y1='2322.9' x2='294' y2='2361.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2364.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: q_up grad output  0.19 ms</text>
+<line x1='280' y1='2338.9' x2='294' y2='2374.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2377.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_up dgrad  0.33 ms</text>
+<line x1='280' y1='2359.1' x2='294' y2='2387.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2390.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_up wgrad  0.32 ms</text>
+<line x1='280' y1='2372.0' x2='294' y2='2400.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2403.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q-latent RMSNorm bwd  88 us</text>
+<line x1='280' y1='2375.4' x2='294' y2='2413.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2416.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;MXFP8: q_down grad output  18 us</text>
+<line x1='280' y1='2380.5' x2='294' y2='2426.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2429.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_down dgrad  0.14 ms</text>
+<line x1='280' y1='2389.7' x2='294' y2='2439.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2442.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_down wgrad  0.16 ms</text>
+<line x1='280' y1='2397.6' x2='294' y2='2452.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2455.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad accumulation (attention input)  96 us</text>
+<line x1='280' y1='2417.4' x2='294' y2='2465.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2468.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>input RMSNorm bwd  0.52 ms</text>
+<line x1='280' y1='2437.0' x2='294' y2='2478.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='2481.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad (residual, attention)  97 us</text>
+<rect x='40' y='2527' width='12' height='12' fill='#16a34a' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='57.0' y='2537.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>RMSNorm</text>
+<rect x='123.1' y='2527' width='12' height='12' fill='#0d9488' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='140.1' y='2537.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize</text>
+<rect x='212.5' y='2527' width='12' height='12' fill='#60a5fa' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='229.5' y='2537.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>dense GEMM</text>
+<rect x='314.5' y='2527' width='12' height='12' fill='#d1d5db' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='331.5' y='2537.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>layout copies (contiguous / cat / clone)</text>
+<rect x='40' y='2545' width='12' height='12' fill='#e5e7eb' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='57.0' y='2555.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>other</text>
+<rect x='110.5' y='2545' width='12' height='12' fill='#7c3aed' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='127.5' y='2555.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>attention (cuDNN)</text>
+<rect x='256.6' y='2545' width='12' height='12' fill='#f472b6' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='273.6' y='2555.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>elementwise math (PyTorch)</text>
+<rect x='459.4' y='2545' width='12' height='12' fill='#fb7185' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='476.4' y='2555.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>residual / grad-accumulation add</text>
+<rect x='40' y='2563' width='12' height='12' fill='#a8a29e' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='57.0' y='2573.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>dtype casts (bf16 &lt;-&gt; fp32)</text>
+<rect x='249.1' y='2563' width='12' height='12' fill='#a3e635' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='266.1' y='2573.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>router / permute</text>
+<rect x='388.9' y='2563' width='12' height='12' fill='#9ca3af' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='405.9' y='2573.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>memset</text>
+<rect x='465.7' y='2563' width='12' height='12' fill='#fdba74' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='482.7' y='2573.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL EP permute / scan</text>
+<rect x='40' y='2581' width='12' height='12' fill='#facc15' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='57.0' y='2591.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL collective</text>
+<rect x='173.5' y='2581' width='12' height='12' fill='#ea580c' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='190.5' y='2591.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine</text>
+<rect x='376.29999999999995' y='2581' width='12' height='12' fill='#1d4ed8' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='393.3' y='2591.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8)</text>
 </svg>
