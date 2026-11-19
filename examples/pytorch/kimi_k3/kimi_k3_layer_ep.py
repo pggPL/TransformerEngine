@@ -53,7 +53,7 @@ def _parse_args(argv=None):
         ),
     )
     p.add_argument("--attention", choices=["kda", "mla"], default="kda")
-    p.add_argument("--recipe", choices=["none", "mxfp8"], default="none")
+    p.add_argument("--recipe", choices=["none", "fp8_block", "mxfp8", "nvfp4"], default="none")
     p.add_argument(
         "--ep-buffer-per-call",
         action="store_true",
@@ -85,10 +85,17 @@ def _parse_args(argv=None):
     return args
 
 
+RECIPES = {
+    "fp8_block": te_recipe.Float8BlockScaling,
+    "mxfp8": te_recipe.MXFP8BlockScaling,
+    "nvfp4": te_recipe.NVFP4BlockScaling,
+}
+
+
 def _autocast(name):
     if name == "none":
         return nullcontext()
-    return te.autocast(enabled=True, recipe=te_recipe.MXFP8BlockScaling())
+    return te.autocast(enabled=True, recipe=RECIPES[name]())
 
 
 def main():

@@ -32,6 +32,8 @@ bash run_kimi_k3_layer_ep.sh --kimi                       # Kimi-K3 layer dims
 bash run_kimi_k3_layer_ep.sh --kimi --attention mla       # the MLA layer (every 4th layer)
 bash run_kimi_k3_layer_ep.sh --kimi --recipe mxfp8        # MXFP8 experts and projections
 NVTE_CUTEDSL_FUSED_GROUPED_MLP=1 bash run_kimi_k3_layer_ep.sh --kimi --recipe mxfp8
+bash run_kimi_k3_layer_ep.sh --kimi --recipe fp8_block               # FP8 block scaling
+NVTE_CUTEDSL_FUSED_GROUPED_MLP=1 bash run_kimi_k3_layer_ep.sh --kimi --recipe nvfp4   # NVFP4 experts
 NSYS=1 bash run_kimi_k3_layer_ep.sh --kimi                # nsys report in results/
 ```
 
@@ -47,3 +49,6 @@ warmup iterations from the pooled histograms of all ranks.
 
 See the `Kimi-K3` page of the documentation (`docs/examples/models/kimi_k3.rst`) for the
 measurements and the redrawn traces.
+
+`--single-grouped-weight` stores each expert GEMM's weights as one grouped parameter, so
+the MXFP8 weight quantization is one kernel per GEMM instead of one per expert.
