@@ -69,108 +69,47 @@ Precision
 Profile on 1 GB200 node
 -----------------------
 
-``nsys`` traces of rank 0 on one GB200 node: 4 GPUs, expert parallelism over
-all four, 8 local experts per GPU (32 routed experts), top-k 8, 16384 tokens
-per GPU, DeepSeek-V3 dimensions, this revision of
-``examples/pytorch/deepseek_v3`` with 5 warmup and 10 timed iterations. Each
-tab shows one iteration as a forward and a backward image on a common time
-scale; every rectangle is one kernel on the compute
-stream at its measured time, attributed to forward or backward by the host
-call that launched it, and gaps are GPU idle time. Hover a kernel for its
-group, name and duration; the images are wider than the page, scroll them
-sideways. The ms/iter numbers are from runs without the profiler.
+``nsys`` traces of rank 0 on one GB200 node: ``DeepSeekV3Layer`` with expert
+parallelism over the 4 GPUs, 8 local experts per GPU (32 routed experts),
+top-k 8, 16384 tokens per GPU, DeepSeek-V3 dimensions, ``single_grouped_weight``
+expert parameters, this revision of the layer. Each tab shows one iteration as
+a forward and a backward image on a common time scale; every rectangle is one
+kernel on the compute stream at its measured time, labelled with the layer
+operation it executes (for quantization: the precision and the operand), and
+gaps are GPU idle time. Hover a kernel for its group, name and duration; the
+images are wider than the page, scroll them sideways. ms/iter are from runs
+without the profiler.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Precision
+     - ms / iter
+     - Mtok / s
+   * - MXFP8, fused grouped MLP
+     - 43.4
+     - 1.51
 
 .. tabs::
 
-   .. tab:: Baseline: plain PyTorch
+   .. tab:: MXFP8 (fused grouped MLP)
 
-      ``--impl naive``: **96.2 ms/iter** (0.68 Mtok/s), 95.3 ms of kernels,
-      1.4 ms of the iteration with an idle GPU. Sigmoid router in plain
-      PyTorch, ``all_to_all_single`` dispatch and combine, a Python loop over
-      the eight local experts with dense SwiGLU MLPs, ``index_copy`` /
-      ``index_add`` to place the rows.
-
-      **Forward: 34.2 ms**
-
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_dsv3_naive_fwd.svg
-
-      **Backward: 62.7 ms**
-
-      .. container:: scroll-x
-
-         .. raw:: html
-            :file: profile_dsv3_naive_bwd.svg
-
-   .. tab:: Optimized with TE (MXFP8, fused grouped MLP)
-
-      ``DeepSeekV3MoE`` with NCCL expert parallelism under
-      ``te.autocast(recipe=MXFP8BlockScaling())``, the cuDNN fused grouped MLP
-      and ``single_grouped_weight=True`` (one grouped weight parameter per
-      expert GEMM, so the expert weights are quantized by one kernel per step):
-      **43.4 ms/iter** (1.51 Mtok/s), 0.1 ms of the iteration with an idle GPU.
+      ``te.autocast(recipe=MXFP8BlockScaling())`` with the cuDNN fused grouped
+      MLP: **43.4 ms/iter**, 0.1 ms of the iteration with an idle GPU.
 
       **Forward: 15.7 ms**
 
       .. container:: scroll-x
 
          .. raw:: html
-            :file: profile_dsv3_te_mxfp8_fwd.svg
+            :file: profile_dsv3_mxfp8_fwd.svg
 
       **Backward: 27.7 ms**
 
       .. container:: scroll-x
 
          .. raw:: html
-            :file: profile_dsv3_te_mxfp8_bwd.svg
-
-      The experts are twelve cuDNN kernels per iteration (fc1 + SwiGLU, fc2,
-      dGLU, wgrad) totalling 11.5 ms, there is no separate activation kernel,
-      and the quantization that feeds them costs 3.6 ms. NCCL EP dispatch and
-      combine (4.6 ms) plus their local permutes (2.2 ms) replace the
-      all-to-all, the sort / scatter work and the host syncs of the baseline.
-      At this shape the attention (9.5 ms) and the dense MLA projections
-      (7.8 ms) are as large as the expert MLP, and the stream is never idle.
-
-TE MoE vs. plain PyTorch MoE
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Same layer, 8 local experts per GPU, only the MoE block differs. ``naive``
-is an expert-parallel MoE written in plain PyTorch (``all_to_all_single``
-dispatch and combine, a Python loop over the local experts with dense SwiGLU
-MLPs); ``naive_grouped`` keeps the all-to-all but runs the experts as one TE
-grouped GEMM; ``te`` is ``DeepSeekV3MoE`` with NCCL expert parallelism.
-Median of three runs, ms per iteration.
-
-.. list-table::
-   :header-rows: 1
-
-   * - MoE implementation
-     - 4 GB200 (32 experts)
-     - 4 GB300 (32 experts)
-     - 8 GB300 (64 experts)
-   * - ``naive``: all_to_all + loop over experts
-     - 28.61
-     - 27.21
-     - 27.70
-   * - ``naive_grouped``: all_to_all + TE grouped GEMM
-     - 17.79
-     - 16.72
-     - 17.13
-   * - ``te``: NCCL EP + grouped GEMM
-     - 13.68
-     - 12.37
-     - 14.09
-   * - ``te``, MXFP8 (unfused grouped GEMM)
-     - 10.99
-     - 10.32
-     - 12.11
-   * - ``te``, MXFP8 fused grouped MLP
-     - 10.11
-     - 9.49
-     - 10.45
+            :file: profile_dsv3_mxfp8_bwd.svg
 
 Usage
 -----
