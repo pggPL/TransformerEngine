@@ -105,15 +105,43 @@ if HAVE_TRITON:
         return dy * sig * (1.0 + pre * (1.0 - sig))
 
     @triton.jit
-    def conv_silu_split_bwd_kernel(
+    def conv_silu_dpre_kernel(
         X,
         W,
         dY,
-        dX,
-        dW_partial,
+        dPRE,
         S,
         C: tl.constexpr,
         col0,
+        stride_x_s,
+        stride_x_b,
+        KSIZE: tl.constexpr,
+        BLOCK_S: tl.constexpr,
+        BLOCK_C: tl.constexpr,
+    ):
+        """dL/d(conv output) of one of q, k, v (``col0`` = its first channel), in x's layout."""
+        pid_s = tl.program_id(0)
+        pid_b = tl.program_id(1)
+        pid_c = tl.program_id(2)
+        local_cols = pid_c * BLOCK_C + tl.arange(0, BLOCK_C)
+        cols = col0 + local_cols
+        mask_c = local_cols < C
+        rows = pid_s * BLOCK_S + tl.arange(0, BLOCK_S)
+        x_ptr = X + pid_b.to(tl.int64) * stride_x_b
+        dpre = _dpre(x_ptr, W, dY, rows, cols, local_cols, pid_b, S, C, stride_x_s, mask_c, KSIZE)
+        mask = (rows[:, None] < S) & mask_c[None, :]
+        off = pid_b.to(tl.int64) * stride_x_b + rows[:, None].to(tl.int64) * stride_x_s + cols[None, :]
+        tl.store(dPRE + off, dpre, mask=mask)
+
+    @triton.jit
+    def conv_silu_dx_dw_kernel(
+        X,
+        W,
+        dPRE,
+        dX,
+        dW_partial,
+        S,
+        C3: tl.constexpr,
         stride_x_s,
         stride_x_b,
         BLOCKS_PER_PROG,
@@ -121,14 +149,15 @@ if HAVE_TRITON:
         BLOCK_S: tl.constexpr,
         BLOCK_C: tl.constexpr,
     ):
-        """Backward kernel for one of q, k, v (``col0`` = its first channel)."""
+        """dx and per-program partial dw from the stored dpre (kernel size 4)."""
         pid_s = tl.program_id(0)
         pid_b = tl.program_id(1)
         pid_c = tl.program_id(2)
-        local_cols = pid_c * BLOCK_C + tl.arange(0, BLOCK_C)
-        cols = col0 + local_cols
-        mask_c = local_cols < C
-        x_ptr = X + pid_b.to(tl.int64) * stride_x_b
+        cols = pid_c * BLOCK_C + tl.arange(0, BLOCK_C)
+        mask_c = cols < C3
+        base = pid_b.to(tl.int64) * stride_x_b
+        x_ptr = X + base
+        d_ptr = dPRE + base
         w0 = tl.load(W + cols * KSIZE + 0, mask=mask_c, other=0.0)
         w1 = tl.load(W + cols * KSIZE + 1, mask=mask_c, other=0.0)
         w2 = tl.load(W + cols * KSIZE + 2, mask=mask_c, other=0.0)
@@ -139,23 +168,20 @@ if HAVE_TRITON:
         dw3 = tl.zeros((BLOCK_C,), dtype=tl.float32)
         for i in range(BLOCKS_PER_PROG):
             rows = (pid_s * BLOCKS_PER_PROG + i) * BLOCK_S + tl.arange(0, BLOCK_S)
-            dpre = _dpre(x_ptr, W, dY, rows, cols, local_cols, pid_b, S, C, stride_x_s, mask_c, KSIZE)
-            dw0 += tl.sum(dpre * _load_rows(x_ptr, rows - 3, cols, stride_x_s, S, mask_c), axis=0)
-            dw1 += tl.sum(dpre * _load_rows(x_ptr, rows - 2, cols, stride_x_s, S, mask_c), axis=0)
-            dw2 += tl.sum(dpre * _load_rows(x_ptr, rows - 1, cols, stride_x_s, S, mask_c), axis=0)
-            dw3 += tl.sum(dpre * _load_rows(x_ptr, rows, cols, stride_x_s, S, mask_c), axis=0)
-            dx = w3[None, :] * dpre
-            dpre = _dpre(x_ptr, W, dY, rows + 1, cols, local_cols, pid_b, S, C, stride_x_s, mask_c, KSIZE)
-            dx += w2[None, :] * dpre
-            dpre = _dpre(x_ptr, W, dY, rows + 2, cols, local_cols, pid_b, S, C, stride_x_s, mask_c, KSIZE)
-            dx += w1[None, :] * dpre
-            dpre = _dpre(x_ptr, W, dY, rows + 3, cols, local_cols, pid_b, S, C, stride_x_s, mask_c, KSIZE)
-            dx += w0[None, :] * dpre
+            d0 = _load_rows(d_ptr, rows, cols, stride_x_s, S, mask_c)
+            dx = w3[None, :] * d0
+            dx += w2[None, :] * _load_rows(d_ptr, rows + 1, cols, stride_x_s, S, mask_c)
+            dx += w1[None, :] * _load_rows(d_ptr, rows + 2, cols, stride_x_s, S, mask_c)
+            dx += w0[None, :] * _load_rows(d_ptr, rows + 3, cols, stride_x_s, S, mask_c)
+            dw0 += tl.sum(d0 * _load_rows(x_ptr, rows - 3, cols, stride_x_s, S, mask_c), axis=0)
+            dw1 += tl.sum(d0 * _load_rows(x_ptr, rows - 2, cols, stride_x_s, S, mask_c), axis=0)
+            dw2 += tl.sum(d0 * _load_rows(x_ptr, rows - 1, cols, stride_x_s, S, mask_c), axis=0)
+            dw3 += tl.sum(d0 * _load_rows(x_ptr, rows, cols, stride_x_s, S, mask_c), axis=0)
             mask = (rows[:, None] < S) & mask_c[None, :]
-            dx_off = pid_b.to(tl.int64) * stride_x_b + rows[:, None].to(tl.int64) * stride_x_s
-            tl.store(dX + dx_off + cols[None, :], dx.to(dX.dtype.element_ty), mask=mask)
+            off = base + rows[:, None].to(tl.int64) * stride_x_s + cols[None, :]
+            tl.store(dX + off, dx.to(dX.dtype.element_ty), mask=mask)
         partial_row = pid_b * tl.num_programs(0) + pid_s
-        dw_off = (partial_row.to(tl.int64) * (3 * C) + cols) * KSIZE
+        dw_off = (partial_row.to(tl.int64) * C3 + cols) * KSIZE
         tl.store(dW_partial + dw_off + 0, dw0, mask=mask_c)
         tl.store(dW_partial + dw_off + 1, dw1, mask=mask_c)
         tl.store(dW_partial + dw_off + 2, dw2, mask=mask_c)
@@ -291,29 +317,43 @@ if HAVE_TRITON:
             C = x.shape[-1] // 3
             ksize = weight.shape[-1]
             dx = torch.empty_like(x)
+            dpre = torch.empty(x.shape, dtype=torch.float32, device=x.device)
             block_c = _conv_block_c(C)
-            n_blocks_s = triton.cdiv(S, _CONV_BWD_BLOCK_S * _CONV_BWD_BLOCKS_PER_PROG)
-            dw_partial = torch.empty(
-                B * n_blocks_s, 3 * C, ksize, dtype=torch.float32, device=x.device
-            )
-            grid = (n_blocks_s, B, C // block_c)
+            grid = (triton.cdiv(S, _CONV_BLOCK_S), B, C // block_c)
             for part, dy in enumerate((dq, dk, dv)):
-                conv_silu_split_bwd_kernel[grid](
+                conv_silu_dpre_kernel[grid](
                     x,
                     weight,
                     dy.contiguous(),
-                    dx,
-                    dw_partial,
+                    dpre,
                     S,
                     C,
                     part * C,
                     x.stride(seq_dim),
                     x.stride(1 - seq_dim),
-                    _CONV_BWD_BLOCKS_PER_PROG,
                     KSIZE=ksize,
-                    BLOCK_S=_CONV_BWD_BLOCK_S,
+                    BLOCK_S=_CONV_BLOCK_S,
                     BLOCK_C=block_c,
                 )
+            n_blocks_s = triton.cdiv(S, _CONV_BWD_BLOCK_S * _CONV_BWD_BLOCKS_PER_PROG)
+            dw_partial = torch.empty(
+                B * n_blocks_s, 3 * C, ksize, dtype=torch.float32, device=x.device
+            )
+            conv_silu_dx_dw_kernel[(n_blocks_s, B, 3 * C // block_c)](
+                x,
+                weight,
+                dpre,
+                dx,
+                dw_partial,
+                S,
+                3 * C,
+                x.stride(seq_dim),
+                x.stride(1 - seq_dim),
+                _CONV_BWD_BLOCKS_PER_PROG,
+                KSIZE=ksize,
+                BLOCK_S=_CONV_BWD_BLOCK_S,
+                BLOCK_C=block_c,
+            )
             return dx, dw_partial.sum(dim=0), None
 
     class _GatedRMSNorm(torch.autograd.Function):
@@ -383,13 +423,13 @@ if HAVE_TRITON:
 
 
 _CONV_BLOCK_S = 64
-_CONV_BWD_BLOCK_S = 32
+_CONV_BWD_BLOCK_S = 16
 _CONV_BWD_BLOCKS_PER_PROG = 8
 _NORM_BLOCK_T = 32
 
 
 def _conv_block_c(channels: int) -> int:
-    for block in (64, 32, 16):
+    for block in (128, 64, 32, 16):
         if channels % block == 0:
             return block
     return 0
