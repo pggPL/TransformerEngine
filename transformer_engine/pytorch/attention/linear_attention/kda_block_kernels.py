@@ -73,7 +73,7 @@ if HAVE_TRITON:
         BLOCK_S: tl.constexpr,
         BLOCK_C: tl.constexpr,
     ):
-        """Conv silu split fwd kernel kernel."""
+        """Forward kernel."""
         pid_s = tl.program_id(0)
         pid_b = tl.program_id(1)
         pid_c = tl.program_id(2)
@@ -121,7 +121,7 @@ if HAVE_TRITON:
         BLOCK_S: tl.constexpr,
         BLOCK_C: tl.constexpr,
     ):
-        """Conv silu split bwd kernel kernel."""
+        """Backward kernel."""
         pid_s = tl.program_id(0)
         pid_b = tl.program_id(1)
         pid_c = tl.program_id(2)
@@ -175,7 +175,7 @@ if HAVE_TRITON:
         D: tl.constexpr,
         BLOCK_T: tl.constexpr,
     ):
-        """Gated rmsnorm fwd kernel kernel."""
+        """Forward kernel."""
         pid_t = tl.program_id(0)
         h = tl.program_id(1)
         t = pid_t * BLOCK_T + tl.arange(0, BLOCK_T)
@@ -215,7 +215,7 @@ if HAVE_TRITON:
         D: tl.constexpr,
         BLOCK_T: tl.constexpr,
     ):
-        """Gated rmsnorm bwd kernel kernel."""
+        """Backward kernel."""
         pid_t = tl.program_id(0)
         h = tl.program_id(1)
         t = pid_t * BLOCK_T + tl.arange(0, BLOCK_T)
