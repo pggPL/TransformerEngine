@@ -94,8 +94,8 @@ time running downwards:
      - 1.12
      - grouped
    * - FP8 current scaling
-     - 44.7
-     - 1.46
+     - 42.2
+     - 1.55
      - grouped
    * - MXFP8, fused grouped MLP
      - 42.7
@@ -113,12 +113,12 @@ time running downwards:
       No quantization; the experts run through the BF16 cuDNN fused grouped
       MLP: **58.7 ms/iter**.
 
-      **Forward: 22.8 ms**
+      **Forward: 23.4 ms**
 
       .. raw:: html
          :file: profile_dsv3_bf16_fwd.svg
 
-      **Backward: 37.3 ms**
+      **Backward: 36.4 ms**
 
       .. raw:: html
          :file: profile_dsv3_bf16_bwd.svg
@@ -127,14 +127,14 @@ time running downwards:
 
       ``te.autocast(recipe=Float8CurrentScaling())``: per-tensor FP8 with an
       amax reduction before every cast, unfused grouped GEMMs:
-      **44.7 ms/iter**.
+      **42.2 ms/iter**.
 
-      **Forward: 16.5 ms**
+      **Forward: 15.7 ms**
 
       .. raw:: html
          :file: profile_dsv3_fp8_cs_fwd.svg
 
-      **Backward: 29.1 ms**
+      **Backward: 27.1 ms**
 
       .. raw:: html
          :file: profile_dsv3_fp8_cs_bwd.svg
@@ -144,12 +144,12 @@ time running downwards:
       ``te.autocast(recipe=MXFP8BlockScaling())`` with the cuDNN fused grouped
       MLP: **42.7 ms/iter**.
 
-      **Forward: 15.3 ms**
+      **Forward: 15.4 ms**
 
       .. raw:: html
          :file: profile_dsv3_mxfp8_fwd.svg
 
-      **Backward: 28.4 ms**
+      **Backward: 27.9 ms**
 
       .. raw:: html
          :file: profile_dsv3_mxfp8_bwd.svg
@@ -165,7 +165,7 @@ time running downwards:
       .. raw:: html
          :file: profile_dsv3_nvfp4_fwd.svg
 
-      **Backward: 23.7 ms**
+      **Backward: 22.8 ms**
 
       .. raw:: html
          :file: profile_dsv3_nvfp4_bwd.svg

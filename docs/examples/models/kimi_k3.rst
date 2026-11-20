@@ -98,13 +98,13 @@ a backward image with time running downwards:
      - expert weights
    * - KDA
      - BF16
-     - 125.6
-     - 0.52
+     - 101.0
+     - 0.65
      - grouped
    * - KDA
      - FP8 current scaling
-     - 92.0
-     - 0.71
+     - 69.0
+     - 0.95
      - grouped
    * - KDA
      - MXFP8, fused grouped MLP
@@ -118,13 +118,13 @@ a backward image with time running downwards:
      - per expert (grouped NVFP4 weight quantization not available yet)
    * - MLA
      - BF16
-     - 108.2
-     - 0.61
+     - 85.6
+     - 0.77
      - grouped
    * - MLA
      - FP8 current scaling
-     - 80.6
-     - 0.81
+     - 58.7
+     - 1.12
      - grouped
    * - MLA
      - MXFP8, fused grouped MLP
@@ -146,14 +146,14 @@ a backward image with time running downwards:
          .. tab:: BF16
 
             No quantization; the experts run as BF16 grouped GEMMs with a separate
-            SiTU-GLU kernel: **125.6 ms/iter**.
+            SiTU-GLU kernel: **101.0 ms/iter**.
 
-            **Forward: 45.4 ms**
+            **Forward: 33.1 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_bf16_fwd.svg
 
-            **Backward: 80.9 ms**
+            **Backward: 67.6 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_bf16_bwd.svg
@@ -161,14 +161,14 @@ a backward image with time running downwards:
          .. tab:: FP8 current scaling
 
             ``te.autocast(recipe=Float8CurrentScaling())``: per-tensor FP8 with an
-            amax reduction before every cast, unfused grouped GEMMs: **92.0 ms/iter**.
+            amax reduction before every cast, unfused grouped GEMMs: **69.0 ms/iter**.
 
-            **Forward: 34.8 ms**
+            **Forward: 24.1 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_fp8_cs_fwd.svg
 
-            **Backward: 57.6 ms**
+            **Backward: 46.1 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_fp8_cs_bwd.svg
@@ -211,14 +211,14 @@ a backward image with time running downwards:
          .. tab:: BF16
 
             No quantization; the experts run as BF16 grouped GEMMs with a separate
-            SiTU-GLU kernel: **108.2 ms/iter**.
+            SiTU-GLU kernel: **85.6 ms/iter**.
 
-            **Forward: 41.5 ms**
+            **Forward: 30.5 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_bf16_fwd.svg
 
-            **Backward: 67.8 ms**
+            **Backward: 55.2 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_bf16_bwd.svg
@@ -226,14 +226,14 @@ a backward image with time running downwards:
          .. tab:: FP8 current scaling
 
             ``te.autocast(recipe=Float8CurrentScaling())``: per-tensor FP8 with an
-            amax reduction before every cast, unfused grouped GEMMs: **80.6 ms/iter**.
+            amax reduction before every cast, unfused grouped GEMMs: **58.7 ms/iter**.
 
-            **Forward: 34.2 ms**
+            **Forward: 22.0 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_fp8_cs_fwd.svg
 
-            **Backward: 47.6 ms**
+            **Backward: 37.3 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_fp8_cs_bwd.svg
