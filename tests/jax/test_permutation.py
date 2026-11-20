@@ -955,3 +955,36 @@ class TestHighLevelPermutationAPI:
         roundtrip_grad = jax.grad(roundtrip_loss)(inp)
         assert roundtrip_grad.shape == inp.shape
         assert not jnp.any(jnp.isnan(roundtrip_grad))
+
+
+@pytest.mark.triton
+@pytest.mark.parametrize("dtype", [jnp.float32, jnp.float16, jnp.bfloat16])
+@pytest.mark.parametrize("align_size", [None, 4])
+@pytest.mark.parametrize("padding_grad", [10.0, float("inf"), float("nan")])
+def test_dispatch_zero_prob_backward(dtype, align_size, padding_grad):
+    routing = jnp.array([[1, 1], [0, 1]], dtype=jnp.int32)
+    probs = jnp.array([[0.75, 0.0], [0.0, 0.25]], dtype=jnp.float32)
+    inp = jnp.arange(258, dtype=dtype).reshape(2, 129)
+    second_expert = 1 if align_size is None else align_size
+
+    def dispatch(x, p):
+        return token_dispatch(x, routing, num_out_tokens=3, probs=p, align_size=align_size)[:2]
+
+    @jax.jit
+    def forward_backward(x, p):
+        (out, permuted_probs), pullback = jax.vjp(dispatch, x, p)
+        grad = jnp.full_like(out, padding_grad).at[0].set(1).at[second_expert + 1].set(100)
+        probs_grad = jnp.full_like(permuted_probs, 17)
+        probs_grad = probs_grad.at[0].set(7).at[second_expert].set(11)
+        probs_grad = probs_grad.at[second_expert + 1].set(13)
+        return out, permuted_probs, pullback((grad, probs_grad))
+
+    output, permuted_probs, (inp_grad, probs_grad) = forward_backward(inp, probs)
+    expected = jnp.zeros_like(output).at[0].set(inp[0]).at[second_expert + 1].set(inp[1])
+    expected_probs = jnp.zeros_like(permuted_probs).at[0].set(0.75)
+    expected_probs = expected_probs.at[second_expert + 1].set(0.25)
+    assert_allclose(output, expected, rtol=0, atol=0)
+    assert_allclose(permuted_probs, expected_probs, rtol=0, atol=0)
+    expected_grad = jnp.ones_like(inp).at[1].set(100)
+    assert_allclose(inp_grad, expected_grad, rtol=0, atol=0)
+    assert_allclose(probs_grad, jnp.array([[7.0, 11.0], [0.0, 13.0]]), rtol=0, atol=0)

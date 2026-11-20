@@ -481,6 +481,7 @@ def moe_permute_mask_map_backward(
     permuted_act_grad: torch.Tensor,
     permuted_probs_grad: Optional[torch.Tensor],
     row_id_map: torch.Tensor,
+    fwd_probs: Optional[torch.Tensor],
     pad_offsets: Optional[torch.Tensor],
     num_tokens: int,
     num_experts: int,
@@ -490,12 +491,13 @@ def moe_permute_mask_map_backward(
     act_grad, probs_grad = triton_permutation.unpermute_with_mask_map(
         permuted_act_grad,
         row_id_map,
-        None,
+        fwd_probs,
         permuted_probs_grad,
         pad_offsets,
         num_tokens,
         num_experts,
         hidden_size,
+        mask_zero_probs=fwd_probs is not None,
     )
     if probs_grad is None:
         probs_grad = torch.empty(0, device=permuted_act_grad.device)
@@ -507,6 +509,7 @@ def _moe_permute_mask_map_backward_fake(  # pylint: disable=unused-argument
     permuted_act_grad: torch.Tensor,
     permuted_probs_grad: Optional[torch.Tensor],
     row_id_map: torch.Tensor,
+    fwd_probs: Optional[torch.Tensor],
     pad_offsets: Optional[torch.Tensor],
     num_tokens: int,
     num_experts: int,
@@ -532,7 +535,7 @@ def _moe_permute_mask_map_setup_context(ctx, inputs, output):
     inp, routing_map, _num_out_tokens, probs, pad_offsets = inputs
     _output_tensor, row_id_map, _permuted_probs = output
     ctx.empty_input = inp.size(0) == 0
-    ctx.save_for_backward(row_id_map, pad_offsets)
+    ctx.save_for_backward(row_id_map, pad_offsets, probs)
     ctx.num_experts = routing_map.size(1)
     ctx.num_tokens = inp.size(0)
     ctx.hidden_size = inp.size(1) if not ctx.empty_input else 0
@@ -558,7 +561,7 @@ def _moe_permute_mask_map_backward_wrapper(
         grad_output, QuantizedTensor
     ), "The backward of moe_permute does not support FP8."
 
-    row_id_map, pad_offsets = ctx.saved_tensors
+    row_id_map, pad_offsets, fwd_probs = ctx.saved_tensors
 
     # Pass permuted_probs_grad only if it has content
     probs_grad_input = grad_permuted_probs if grad_permuted_probs.numel() > 0 else None
@@ -567,6 +570,7 @@ def _moe_permute_mask_map_backward_wrapper(
         grad_output,
         probs_grad_input,
         row_id_map,
+        fwd_probs,
         pad_offsets,
         ctx.num_tokens,
         ctx.num_experts,
@@ -958,6 +962,8 @@ def moe_permute_with_probs(
         The tensor of probabilities corresponding to the permuted tokens and is
         of shape [num_tokens, num_experts]. It will be permuted with the tokens
         according to the routing_map.
+        Zero-probability entries produce zero activation rows and no input activation gradient.
+        Gradients of the probabilities are preserved.
     routing_map : torch.Tensor
         The token to expert mapping tensor of shape [num_tokens, num_experts] and dtype 'int32'.
         The values in it: 1 means the token is routed to this expert and 0 means not.
@@ -997,6 +1003,8 @@ def moe_permute_and_pad_with_probs(
         The tensor of probabilities corresponding to the permuted tokens and is
         of shape [num_tokens, num_experts]. It will be permuted with the tokens
         according to the routing_map.
+        Zero-probability entries produce zero activation rows and no input activation gradient.
+        Gradients of the probabilities are preserved.
     routing_map: torch.Tensor
         The token to expert mapping tensor of shape [num_tokens, num_experts] and dtype 'int32'.
         The values in it: 1 means the token is routed to this expert and 0 means not.

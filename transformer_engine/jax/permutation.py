@@ -136,6 +136,8 @@ def token_dispatch(
     probs : Optional[jnp.ndarray]
         Optional routing probabilities of shape [batch, sequence, num_experts] or
         [num_tokens, num_experts]. If provided, permuted_probs will be returned.
+        Zero-probability entries produce zero activation rows and no input activation gradient.
+        Gradients of the probabilities are preserved.
     align_size : Optional[int]
         Optional alignment size for padding. If provided, outputs will be padded to
         align each expert's tokens to a multiple of this size. The output buffer is
@@ -250,7 +252,7 @@ def _token_dispatch_fwd_rule(
         Optional[jnp.ndarray],
         jnp.ndarray,
     ],
-    Tuple[jnp.ndarray, Optional[jnp.ndarray], int, int, int, bool],
+    Tuple[jnp.ndarray, Optional[jnp.ndarray], int, int, int, Optional[jnp.ndarray]],
 ]:
     """Forward pass rule for token_dispatch."""
     # Validate input dimensions
@@ -275,8 +277,6 @@ def _token_dispatch_fwd_rule(
 
     # Always compute row_id_map internally from routing_map
     row_id_map = make_row_id_map(routing_map, num_tokens, num_experts)
-
-    with_probs = probs is not None
 
     # Compute tokens_per_expert from routing_map (actual counts)
     # This is well-optimized by XLA as a simple column-wise reduction
@@ -332,7 +332,7 @@ def _token_dispatch_fwd_rule(
     # out_tokens_per_expert is:
     #   - target_tokens_per_expert (aligned) when using padding
     #   - tokens_per_expert (actual) when not using padding
-    residuals = (row_id_map, pad_offsets, num_tokens, num_experts, hidden_size, with_probs)
+    residuals = (row_id_map, pad_offsets, num_tokens, num_experts, hidden_size, probs)
     return (
         output,
         permuted_probs,
@@ -347,7 +347,7 @@ def _token_dispatch_bwd_rule(
     _worst_case_out_tokens: int,
     _align_size: Optional[int],
     _use_padding: bool,
-    residuals: Tuple[jnp.ndarray, Optional[jnp.ndarray], int, int, int, bool],
+    residuals: Tuple[jnp.ndarray, Optional[jnp.ndarray], int, int, int, Optional[jnp.ndarray]],
     g: Tuple[
         jnp.ndarray,
         Optional[jnp.ndarray],
@@ -361,7 +361,8 @@ def _token_dispatch_bwd_rule(
     Returns gradients for (inp, routing_map, probs).
     routing_map gradient is None since it's a discrete routing decision.
     """
-    row_id_map, pad_offsets, num_tokens, num_experts, hidden_size, with_probs = residuals
+    row_id_map, pad_offsets, num_tokens, num_experts, hidden_size, probs = residuals
+    with_probs = probs is not None
     output_grad, permuted_probs_grad, _, _, _ = g  # Ignore row_id_map, pad_offsets, target grads
 
     # Backward: unpermute gradients (gather from experts back to tokens)
@@ -369,22 +370,24 @@ def _token_dispatch_bwd_rule(
         inp_grad, probs_grad = unpermute_with_mask_map_and_unpad(
             output_grad,
             row_id_map,
-            None,  # No merging probs
+            probs,  # Mask rows zeroed by the dispatch forward.
             permuted_probs_grad if with_probs else None,
             pad_offsets,
             num_tokens,
             num_experts,
             hidden_size,
+            mask_zero_probs=with_probs,
         )
     else:
         inp_grad, probs_grad = unpermute_with_mask_map(
             output_grad,
             row_id_map,
-            None,  # No merging probs
+            probs,  # Mask rows zeroed by the dispatch forward.
             permuted_probs_grad if with_probs else None,
             num_tokens,
             num_experts,
             hidden_size,
+            mask_zero_probs=with_probs,
         )
 
     # Return gradients for (inp, routing_map, probs)

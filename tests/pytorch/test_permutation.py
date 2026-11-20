@@ -1943,6 +1943,66 @@ def test_permutation_mask_map_alongside_probs_empty_input(te_dtype, use_torch_co
     )
 
 
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("use_torch_compile", [False, True])
+@pytest.mark.parametrize("align_size", [None, 4])
+@pytest.mark.parametrize("padding_grad", [10.0, float("inf"), float("nan")])
+def test_permutation_zero_prob_backward(dtype, use_torch_compile, align_size, padding_grad):
+    routing = torch.tensor([[1, 1], [0, 1]], device="cuda", dtype=torch.int32)
+    probs = torch.tensor([[0.75, 0.0], [0.0, 0.25]], device="cuda", requires_grad=True)
+    inp = torch.arange(258, device="cuda", dtype=dtype).reshape(2, 129).requires_grad_()
+
+    def dispatch(x, p):
+        if align_size is None:
+            return te_permute_with_probs(x, p, routing, 3)[:2]
+        if use_torch_compile:
+            # The public padding wrapper has a data-dependent torch.equal branch.
+            pad_offsets = torch.tensor([0, align_size - 1], device="cuda")
+            out, _, pp = torch.ops.te_moe.permute_mask_map_fwd(
+                x, routing, 2 * align_size, p, pad_offsets
+            )
+            return out, pp
+        return te_permute_and_pad_with_probs(
+            x, p, routing, routing.sum(dim=0), align_size=align_size
+        )[:2]
+
+    output, permuted_probs = _maybe_compile(dispatch, use_torch_compile)(inp, probs)
+    second_expert = 1 if align_size is None else align_size
+    expected = torch.zeros_like(output)
+    expected[0] = inp.detach()[0]
+    expected[second_expert + 1] = inp.detach()[1]
+    torch.testing.assert_close(output, expected, rtol=0, atol=0)
+    expected_probs = torch.zeros_like(permuted_probs)
+    expected_probs[0], expected_probs[second_expert + 1] = 0.75, 0.25
+    torch.testing.assert_close(permuted_probs, expected_probs, rtol=0, atol=0)
+
+    # A transposed buffer also checks noncontiguous incoming activation gradients.
+    grad = torch.full((129, output.shape[0]), padding_grad, device="cuda", dtype=dtype).T
+    grad[0], grad[second_expert + 1] = 1, 100
+    probs_grad = torch.full_like(permuted_probs, 17)
+    probs_grad[0], probs_grad[second_expert], probs_grad[second_expert + 1] = 7, 11, 13
+    torch.autograd.backward((output, permuted_probs), (grad, probs_grad))
+    expected_grad = torch.empty_like(inp)
+    expected_grad[0], expected_grad[1] = 1, 100
+    torch.testing.assert_close(inp.grad, expected_grad, rtol=0, atol=0)
+    torch.testing.assert_close(
+        probs.grad, torch.tensor([[7.0, 11.0], [0.0, 13.0]], device="cuda"), rtol=0, atol=0
+    )
+
+
+def test_permutation_zero_prob_output_modified_inplace():
+    routing = torch.tensor([[1, 1], [0, 1]], device="cuda", dtype=torch.int32)
+    probs = torch.tensor([[0.75, 0.0], [0.0, 0.25]], device="cuda", requires_grad=True)
+    inp = torch.ones((2, 129), device="cuda", requires_grad=True)
+    output, permuted_probs, _ = te_permute_with_probs(inp, probs, routing, 3)
+    permuted_probs.add_(1)
+    torch.autograd.backward(
+        (output, permuted_probs), (torch.ones_like(output), torch.ones_like(permuted_probs))
+    )
+    torch.testing.assert_close(inp.grad, torch.ones_like(inp), rtol=0, atol=0)
+    torch.testing.assert_close(probs.grad, routing.to(probs.dtype), rtol=0, atol=0)
+
+
 # Only run FP8 tests on H100.
 fp8_available, reason_for_no_fp8 = te.is_fp8_available(return_reason=True)
 mxfp8_available, reason_for_no_mxfp8 = te.is_mxfp8_available(return_reason=True)

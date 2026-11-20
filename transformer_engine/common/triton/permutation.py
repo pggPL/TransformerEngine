@@ -11,7 +11,6 @@ from triton.language import core
 from triton.language.standard import _log2
 from packaging import version
 
-
 _PERMUTATION_AUTOTUNE_BLOCK_SIZES = (64, 128, 256, 512, 1024, 2048, 4096)
 
 
@@ -348,6 +347,7 @@ def _unpermute_kernel(
     hidden_size: tl.constexpr,
     PROBS_LOAD_WIDTH: tl.constexpr,
     WITH_MERGING_PROBS: tl.constexpr,
+    MASK_ZERO_PROBS: tl.constexpr,
     PERMUTE_PROBS: tl.constexpr,
     FUSION_UNPAD: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
@@ -393,15 +393,18 @@ def _unpermute_kernel(
         if FUSION_UNPAD:
             pad_off = tl.load(pad_offsets_ptr + expert_idx)
             src_row = src_row + pad_off
-        input_off = src_row * stride_input_token + current_offset * stride_input_hidden
-        inp = tl.load(input_ptr + input_off, mask=mask)
-        inp = inp.to(compute_type)
+        load_input = True
         if WITH_MERGING_PROBS:
             merging_prob_off = (
                 pid_t * stride_merging_probs_token + expert_idx * stride_merging_probs_expert
             )
-            merging_prob = tl.load(merging_probs_ptr + merging_prob_off).to(compute_type)
-            inp *= merging_prob
+            merging_prob = tl.load(merging_probs_ptr + merging_prob_off)
+            if MASK_ZERO_PROBS:
+                load_input = merging_prob != 0.0
+        input_off = src_row * stride_input_token + current_offset * stride_input_hidden
+        inp = tl.load(input_ptr + input_off, mask=mask & load_input, other=0).to(compute_type)
+        if WITH_MERGING_PROBS and not MASK_ZERO_PROBS:
+            inp *= merging_prob.to(compute_type)
         accumulator += inp
         if PERMUTE_PROBS:
             if pid_h == 0:
