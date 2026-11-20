@@ -49,6 +49,15 @@ __device__ __forceinline__ float block_reduce_sum(float value, float *smem) {
   return warp == 0 ? reducer.reduce(value, sum) : value;
 }
 
+const int32_t *num_rows_pointer(const NVTETensor nvte_num_rows, const char *api_name) {
+  if (nvte_num_rows == nullptr) return nullptr;
+  const Tensor *num_rows = convertNVTETensorCheck(nvte_num_rows);
+  NVTE_CHECK(num_rows->data.dtype == DType::kInt32, api_name,
+             ": num_rows must be an int32 device scalar.");
+  NVTE_CHECK(num_rows->data.numel() == 1, api_name, ": num_rows must hold one element.");
+  return reinterpret_cast<const int32_t *>(num_rows->data.dptr);
+}
+
 // ---------------------------------------------------------------------------
 // Device helpers: fused Act / DAct (IEEE sigmoid / expf)
 // ---------------------------------------------------------------------------
@@ -83,8 +92,9 @@ __device__ __forceinline__ void gated_backward_values(const float act_in, const 
     }
     gate_elt = fminf(fmaxf(-param.limit, gate_in), param.limit) + param.glu_linear_offset;
   } else if constexpr (std::is_same<ParamOP, SiTUGLUParam>::value) {
-    dgate_elt = dsitu_up<float, float>(gate_in, param);
-    gate_elt = situ_up<float, float>(gate_in, param);
+    const float t = fast_tanhf(gate_in / param.beta2);
+    gate_elt = param.beta2 * t;
+    dgate_elt = 1.0f - t * t;
   }
 
   if constexpr (std::is_same<ParamOP, ClampedSwiGLUParam>::value) {
@@ -102,6 +112,11 @@ __device__ __forceinline__ void gated_backward_values(const float act_in, const 
       act_elt = ActOP(act_in, param);
       dact_elt = DActOP(act_in, param);
     }
+  } else if constexpr (std::is_same<ParamOP, SiTUGLUParam>::value) {
+    const float t = fast_tanhf(act_in / param.beta1);
+    const float s = sigmoidf(act_in);
+    act_elt = param.beta1 * t * s;
+    dact_elt = (1.0f - t * t) * s + param.beta1 * t * s * (1.0f - s);
   } else {
     act_elt = ActOP(act_in, param);
     dact_elt = DActOP(act_in, param);
@@ -121,10 +136,16 @@ template <int nvec, typename InputT, typename ScaleT, typename OutputT, typename
 __global__ void __launch_bounds__(kThreads, 4)
     scaled_gated_forward_kernel(const InputT *__restrict__ input,
                                 const ScaleT *__restrict__ act_scales, OutputT *__restrict__ output,
-                                const size_t rows, const size_t hidden, const size_t segment_size,
+                                const int32_t *__restrict__ num_rows, const size_t rows,
+                                const size_t hidden, const size_t segment_size,
                                 const size_t num_segments, const size_t num_vectors_per_segment,
                                 const ParamOP param) {
-  const size_t total_vectors = rows * num_segments * num_vectors_per_segment;
+  size_t active_rows = rows;
+  if (num_rows != nullptr) {
+    const int32_t n = *num_rows;
+    active_rows = n < 0 ? 0 : std::min(rows, static_cast<size_t>(n));
+  }
+  const size_t total_vectors = active_rows * num_segments * num_vectors_per_segment;
   for (size_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < total_vectors;
        tid += gridDim.x * blockDim.x) {
     const size_t vector_idx = tid % num_vectors_per_segment;
@@ -160,13 +181,21 @@ __global__ void __launch_bounds__(kReductionThreads, 4)
                                  const InputT *__restrict__ input,
                                  const ScaleT *__restrict__ act_scales,
                                  OutputT *__restrict__ grad_input,
-                                 GradScaleT *__restrict__ grad_act_scales, const size_t rows,
+                                 GradScaleT *__restrict__ grad_act_scales,
+                                 const int32_t *__restrict__ num_rows, const size_t rows,
                                  const size_t hidden, const size_t segment_size,
                                  const size_t num_segments, const size_t num_vectors_per_segment,
                                  const ParamOP param) {
   __shared__ float smem[kReductionWarps];
   const size_t row = blockIdx.x;
   (void)rows;
+  if (num_rows != nullptr && static_cast<int64_t>(row) >= static_cast<int64_t>(*num_rows)) {
+    // Padding row: nothing reads its grad_input, the scale grad must not be garbage.
+    if constexpr (ComputeScaleGrad) {
+      if (threadIdx.x == 0) grad_act_scales[row] = static_cast<GradScaleT>(0.0f);
+    }
+    return;
+  }
   float scale_grad = 0.0f;
   const float scale = static_cast<float>(act_scales[row]);
 
@@ -390,7 +419,8 @@ using namespace detail::scaled_activation;
 template <typename ParamOP, float (*ActOP)(float, const ParamOP &)>
 void launch_scaled_gated_forward(const NVTETensor nvte_input, const NVTETensor nvte_act_scales,
                                  NVTETensor nvte_output, ParamOP param, int64_t glu_interleave_size,
-                                 cudaStream_t stream, const char *api_name) {
+                                 cudaStream_t stream, const char *api_name,
+                                 const NVTETensor nvte_num_rows) {
   const Tensor *input = convertNVTETensorCheck(nvte_input);
   const Tensor *act_scales = convertNVTETensorCheck(nvte_act_scales);
   Tensor *output = convertNVTETensorCheck(nvte_output);
@@ -399,6 +429,7 @@ void launch_scaled_gated_forward(const NVTETensor nvte_input, const NVTETensor n
   check_gated_forward_tensors(input, act_scales, output, glu_interleave_size, api_name, &rows,
                               &hidden);
   if (rows == 0 || hidden == 0) return;
+  const int32_t *num_rows_ptr = num_rows_pointer(nvte_num_rows, api_name);
 
   TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(input->data.dtype, InputT, {
     TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(act_scales->data.dtype, ScaleT, {
@@ -420,12 +451,14 @@ void launch_scaled_gated_forward(const NVTETensor nvte_input, const NVTETensor n
             DIVUP(rows * num_segments * num_vectors, static_cast<size_t>(kThreads)), 65535));
         if (use_vector) {
           scaled_gated_forward_kernel<nvec, InputT, ScaleT, OutputT, ParamOP, ActOP>
-              <<<blocks, kThreads, 0, stream>>>(input_ptr, scale_ptr, output_ptr, rows, hidden,
-                                                segment_size, num_segments, num_vectors, param);
+              <<<blocks, kThreads, 0, stream>>>(input_ptr, scale_ptr, output_ptr, num_rows_ptr,
+                                                rows, hidden, segment_size, num_segments,
+                                                num_vectors, param);
         } else {
           scaled_gated_forward_kernel<1, InputT, ScaleT, OutputT, ParamOP, ActOP>
-              <<<blocks, kThreads, 0, stream>>>(input_ptr, scale_ptr, output_ptr, rows, hidden,
-                                                segment_size, num_segments, segment_size, param);
+              <<<blocks, kThreads, 0, stream>>>(input_ptr, scale_ptr, output_ptr, num_rows_ptr,
+                                                rows, hidden, segment_size, num_segments,
+                                                segment_size, param);
         }
       });
     });
@@ -439,7 +472,7 @@ void launch_scaled_gated_backward(const NVTETensor nvte_grad_output, const NVTET
                                   const NVTETensor nvte_act_scales, NVTETensor nvte_grad_input,
                                   NVTETensor nvte_grad_act_scales, ParamOP param,
                                   int64_t glu_interleave_size, cudaStream_t stream,
-                                  const char *api_name) {
+                                  const char *api_name, const NVTETensor nvte_num_rows) {
   const Tensor *grad_output = convertNVTETensorCheck(nvte_grad_output);
   const Tensor *input = convertNVTETensorCheck(nvte_input);
   const Tensor *act_scales = convertNVTETensorCheck(nvte_act_scales);
@@ -451,6 +484,7 @@ void launch_scaled_gated_backward(const NVTETensor nvte_grad_output, const NVTET
   check_gated_backward_tensors(grad_output, input, act_scales, grad_input, grad_act_scales,
                                glu_interleave_size, api_name, &rows, &hidden);
   if (rows == 0 || hidden == 0) return;
+  const int32_t *num_rows_ptr = num_rows_pointer(nvte_num_rows, api_name);
 
   TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(grad_output->data.dtype, GradT, {
     TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(input->data.dtype, InputT, {
@@ -478,14 +512,14 @@ void launch_scaled_gated_backward(const NVTETensor nvte_grad_output, const NVTET
               scaled_gated_backward_kernel<nvec, false, GradT, InputT, ScaleT, OutputT, OutputT,
                                            ParamOP, ActOP, DActOP>
                   <<<static_cast<int>(rows), reduction_threads, 0, stream>>>(
-                      grad_ptr, input_ptr, scale_ptr, grad_input_ptr, nullptr, rows, hidden,
-                      segment_size, num_segments, num_vectors, param);
+                      grad_ptr, input_ptr, scale_ptr, grad_input_ptr, nullptr, num_rows_ptr, rows,
+                      hidden, segment_size, num_segments, num_vectors, param);
             } else {
               scaled_gated_backward_kernel<1, false, GradT, InputT, ScaleT, OutputT, OutputT,
                                            ParamOP, ActOP, DActOP>
                   <<<static_cast<int>(rows), reduction_threads, 0, stream>>>(
-                      grad_ptr, input_ptr, scale_ptr, grad_input_ptr, nullptr, rows, hidden,
-                      segment_size, num_segments, segment_size, param);
+                      grad_ptr, input_ptr, scale_ptr, grad_input_ptr, nullptr, num_rows_ptr, rows,
+                      hidden, segment_size, num_segments, segment_size, param);
             }
           } else {
             TRANSFORMER_ENGINE_TYPE_SWITCH_NON_FP8ONLY(grad_act_scales->data.dtype, GradScaleT, {
@@ -494,14 +528,15 @@ void launch_scaled_gated_backward(const NVTETensor nvte_grad_output, const NVTET
                 scaled_gated_backward_kernel<nvec, true, GradT, InputT, ScaleT, OutputT, GradScaleT,
                                              ParamOP, ActOP, DActOP>
                     <<<static_cast<int>(rows), reduction_threads, 0, stream>>>(
-                        grad_ptr, input_ptr, scale_ptr, grad_input_ptr, grad_act_scales_ptr, rows,
-                        hidden, segment_size, num_segments, num_vectors, param);
+                        grad_ptr, input_ptr, scale_ptr, grad_input_ptr, grad_act_scales_ptr,
+                        num_rows_ptr, rows, hidden, segment_size, num_segments, num_vectors, param);
               } else {
                 scaled_gated_backward_kernel<1, true, GradT, InputT, ScaleT, OutputT, GradScaleT,
                                              ParamOP, ActOP, DActOP>
                     <<<static_cast<int>(rows), reduction_threads, 0, stream>>>(
-                        grad_ptr, input_ptr, scale_ptr, grad_input_ptr, grad_act_scales_ptr, rows,
-                        hidden, segment_size, num_segments, segment_size, param);
+                        grad_ptr, input_ptr, scale_ptr, grad_input_ptr, grad_act_scales_ptr,
+                        num_rows_ptr, rows, hidden, segment_size, num_segments, segment_size,
+                        param);
               }
             });
           }
@@ -630,29 +665,28 @@ void launch_scaled_unary_backward(const NVTETensor nvte_grad_output, const NVTET
 // Explicit instantiations
 // ---------------------------------------------------------------------------
 
-template void launch_scaled_gated_forward<Empty, silu<fp32, fp32>>(const NVTETensor,
-                                                                   const NVTETensor, NVTETensor,
-                                                                   Empty, int64_t, cudaStream_t,
-                                                                   const char *);
+template void launch_scaled_gated_forward<Empty, silu<fp32, fp32>>(
+    const NVTETensor, const NVTETensor, NVTETensor, Empty, int64_t, cudaStream_t, const char *,
+    const NVTETensor);
 template void launch_scaled_gated_backward<Empty, silu<fp32, fp32>, dsilu<fp32, fp32>>(
     const NVTETensor, const NVTETensor, const NVTETensor, NVTETensor, NVTETensor, Empty, int64_t,
-    cudaStream_t, const char *);
+    cudaStream_t, const char *, const NVTETensor);
 
 template void launch_scaled_gated_forward<ClampedSwiGLUParam, clamped_silu<fp32, fp32>>(
     const NVTETensor, const NVTETensor, NVTETensor, ClampedSwiGLUParam, int64_t, cudaStream_t,
-    const char *);
+    const char *, const NVTETensor);
 template void launch_scaled_gated_backward<ClampedSwiGLUParam, clamped_silu<fp32, fp32>,
                                            clamped_dsilu<fp32, fp32>>(
     const NVTETensor, const NVTETensor, const NVTETensor, NVTETensor, NVTETensor,
-    ClampedSwiGLUParam, int64_t, cudaStream_t, const char *);
+    ClampedSwiGLUParam, int64_t, cudaStream_t, const char *, const NVTETensor);
 
 template void launch_scaled_gated_forward<SiTUGLUParam, situ_gate<fp32, fp32>>(
     const NVTETensor, const NVTETensor, NVTETensor, SiTUGLUParam, int64_t, cudaStream_t,
-    const char *);
+    const char *, const NVTETensor);
 template void
 launch_scaled_gated_backward<SiTUGLUParam, situ_gate<fp32, fp32>, dsitu_gate<fp32, fp32>>(
     const NVTETensor, const NVTETensor, const NVTETensor, NVTETensor, NVTETensor, SiTUGLUParam,
-    int64_t, cudaStream_t, const char *);
+    int64_t, cudaStream_t, const char *, const NVTETensor);
 
 template void launch_scaled_unary_forward<Empty, srelu<fp32, fp32>>(const NVTETensor,
                                                                     const NVTETensor, NVTETensor,

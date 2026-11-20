@@ -331,10 +331,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   /* Scaled activation */
   m.def("scaled_swiglu", transformer_engine::pytorch::scaled_swiglu, "Scaled SwiGLU activation",
         py::arg("input"), py::arg("act_scales"), py::arg("quantizer"),
-        py::arg("glu_interleave_size") = 0);
+        py::arg("glu_interleave_size") = 0, py::arg("num_rows") = py::none());
   m.def("scaled_situglu", transformer_engine::pytorch::scaled_situglu, "Scaled SiTU-GLU activation",
         py::arg("input"), py::arg("act_scales"), py::arg("quantizer"), py::arg("beta1") = 4.0f,
-        py::arg("beta2") = 25.0f, py::arg("glu_interleave_size") = 0);
+        py::arg("beta2") = 25.0f, py::arg("glu_interleave_size") = 0,
+        py::arg("num_rows") = py::none());
   m.def("scaled_clamped_swiglu", transformer_engine::pytorch::scaled_clamped_swiglu,
         "Scaled clamped SwiGLU activation", py::arg("input"), py::arg("act_scales"),
         py::arg("quantizer"), py::arg("limit") = 7.0f, py::arg("alpha") = 1.702f,
@@ -343,11 +344,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("input"), py::arg("act_scales"), py::arg("quantizer"));
   m.def("scaled_dswiglu", transformer_engine::pytorch::scaled_dswiglu, "Scaled SwiGLU backward",
         py::arg("grad"), py::arg("fwd_input"), py::arg("act_scales"), py::arg("quantizer"),
-        py::arg("glu_interleave_size") = 0, py::arg("compute_scale_grad") = true);
+        py::arg("glu_interleave_size") = 0, py::arg("compute_scale_grad") = true,
+        py::arg("num_rows") = py::none());
   m.def("scaled_dsituglu", transformer_engine::pytorch::scaled_dsituglu, "Scaled SiTU-GLU backward",
         py::arg("grad"), py::arg("fwd_input"), py::arg("act_scales"), py::arg("quantizer"),
         py::arg("beta1") = 4.0f, py::arg("beta2") = 25.0f, py::arg("glu_interleave_size") = 0,
-        py::arg("compute_scale_grad") = true);
+        py::arg("compute_scale_grad") = true, py::arg("num_rows") = py::none());
   m.def("scaled_clamped_dswiglu", transformer_engine::pytorch::scaled_clamped_dswiglu,
         "Scaled clamped SwiGLU backward", py::arg("grad"), py::arg("fwd_input"),
         py::arg("act_scales"), py::arg("quantizer"), py::arg("limit") = 7.0f,

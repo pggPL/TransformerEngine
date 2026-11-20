@@ -1,142 +1,127 @@
-<svg xmlns='http://www.w3.org/2000/svg' width='680' height='1926' viewBox='0 0 680 1926'>
-<rect width='680' height='1926' fill='white'/>
-<rect x='40' y='40.00' width='240' height='4.35' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;62 us at 0.000 ms</title></rect>
-<rect x='40' y='44.41' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 0.063 ms</title></rect>
-<rect x='40' y='44.56' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 0.065 ms</title></rect>
-<rect x='40' y='44.71' width='240' height='3.08' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;44 us at 0.067 ms</title></rect>
-<rect x='40' y='47.86' width='240' height='7.37' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;105 us at 0.112 ms</title></rect>
-<rect x='40' y='55.31' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::swizzle_row_scaling_kernel&#10;6 us at 0.219 ms</title></rect>
-<rect x='40' y='55.82' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 0.226 ms</title></rect>
-<rect x='40' y='56.00' width='240' height='4.87' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;70 us at 0.229 ms</title></rect>
-<rect x='40' y='60.94' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 0.299 ms</title></rect>
-<rect x='40' y='61.07' width='240' height='4.44' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_2x2f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;63 us at 0.301 ms</title></rect>
-<rect x='40' y='65.58' width='240' height='4.38' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::fp8::kernel::cast_fp8_gated_kernel&#10;63 us at 0.365 ms</title></rect>
-<rect x='40' y='70.01' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 0.429 ms</title></rect>
-<rect x='40' y='70.16' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 0.431 ms</title></rect>
-<rect x='40' y='70.33' width='240' height='1.86' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;27 us at 0.433 ms</title></rect>
-<rect x='40' y='72.27' width='240' height='5.08' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;73 us at 0.461 ms</title></rect>
-<rect x='40' y='77.43' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::swizzle_row_scaling_kernel&#10;5 us at 0.535 ms</title></rect>
-<rect x='40' y='77.83' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 0.540 ms</title></rect>
-<rect x='40' y='77.97' width='240' height='11.49' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;164 us at 0.542 ms</title></rect>
-<rect x='40' y='89.52' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 0.707 ms</title></rect>
-<rect x='40' y='89.67' width='240' height='10.53' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;150 us at 0.710 ms</title></rect>
-<rect x='40' y='100.28' width='240' height='75.57' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_dispatch_kernel&#10;1080 us at 0.861 ms</title></rect>
-<rect x='40' y='175.94' width='240' height='33.56' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_dup_kernel&#10;479 us at 1.942 ms</title></rect>
-<rect x='40' y='209.58' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 2.423 ms</title></rect>
-<rect x='40' y='209.74' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::anon::GraphSafeMultiZeroAmaxKernel(unsigned long, float *, float *)&#10;1 us at 2.425 ms</title></rect>
-<rect x='40' y='209.89' width='240' height='24.32' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::GraphSafeGroupHadamardAmaxTmaKernel&#10;347 us at 2.427 ms</title></rect>
-<rect x='40' y='234.31' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 2.776 ms</title></rect>
-<rect x='40' y='234.51' width='240' height='68.52' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::group_row_col_rht_gemm_device_graph_safe&#10;979 us at 2.779 ms</title></rect>
-<rect x='40' y='303.08' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.758 ms</title></rect>
-<rect x='40' y='303.25' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;void at::native::anon::CatArrayBatchedCopy_alignedK_contig&#10;2 us at 3.761 ms</title></rect>
-<rect x='40' y='303.45' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;_nvfp4_global_scale_pair_kernel&#10;2 us at 3.764 ms</title></rect>
-<rect x='40' y='303.70' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::multi_tensor_swizzle_row_scaling_kernel&#10;8 us at 3.767 ms</title></rect>
-<rect x='40' y='304.33' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::anon::kernel(transformer_engine::copy_&#10;2 us at 3.776 ms</title></rect>
-<rect x='40' y='304.52' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 3.779 ms</title></rect>
-<rect x='40' y='304.68' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_db&#10;1 us at 3.781 ms</title></rect>
-<rect x='40' y='304.83' width='240' height='51.85' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_dbiasBloc&#10;741 us at 3.783 ms</title></rect>
-<rect x='40' y='356.74' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 4.525 ms</title></rect>
-<rect x='40' y='356.89' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::anon::GraphSafeMultiZeroAmaxKernel(unsigned long, float *, float *)&#10;1 us at 4.527 ms</title></rect>
-<rect x='40' y='357.04' width='240' height='13.98' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::GraphSafeGroupHadamardAmaxTmaKernel&#10;200 us at 4.529 ms</title></rect>
-<rect x='40' y='371.15' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 4.731 ms</title></rect>
-<rect x='40' y='371.36' width='240' height='39.88' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::group_row_col_rht_gemm_device_graph_safe&#10;570 us at 4.734 ms</title></rect>
-<rect x='40' y='411.32' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;_nvfp4_global_scale_pair_kernel&#10;2 us at 5.305 ms</title></rect>
-<rect x='40' y='411.55' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::anon::kernel(transformer_engine::copy_&#10;1 us at 5.308 ms</title></rect>
-<rect x='40' y='411.71' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradB&#10;2 us at 5.310 ms</title></rect>
-<rect x='40' y='411.90' width='240' height='43.79' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockSca&#10;626 us at 5.313 ms</title></rect>
-<rect x='40' y='455.75' width='240' height='0.90' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::multi_tensor_swizzle_row_scaling_kernel&#10;13 us at 5.939 ms</title></rect>
-<rect x='40' y='456.71' width='240' height='0.80' fill='#1d4ed8'><title>grouped GEMM (experts)&#10;anon::setup_grouped_gemm_kernel(void **, void **, void **, void **, int *, int *, int *, i&#10;8 us at 5.953 ms</title></rect>
-<rect x='40' y='457.41' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 5.963 ms</title></rect>
-<rect x='40' y='457.61' width='240' height='86.83' fill='#1d4ed8'><title>grouped GEMM (experts)&#10;nvjet_sm100_ootst_128x256_256x5_2x1_2cta_v_abatch_bbatch_bx_Avec16UE4M3_Bvec16UE4M3_ptrGro&#10;1240 us at 5.966 ms</title></rect>
-<rect x='40' y='544.52' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;_nvfp4_global_scale_pair_kernel&#10;2 us at 7.207 ms</title></rect>
-<rect x='40' y='544.74' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::anon::kernel(transformer_engine::copy_&#10;1 us at 7.211 ms</title></rect>
-<rect x='40' y='544.92' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradB&#10;2 us at 7.213 ms</title></rect>
-<rect x='40' y='545.16' width='240' height='83.63' fill='#1d4ed8'><title>fused grouped MLP (cuDNN, MXFP8)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockSca&#10;1195 us at 7.217 ms</title></rect>
-<rect x='40' y='628.86' width='240' height='35.47' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_reduce_kernel&#10;507 us at 8.412 ms</title></rect>
-<rect x='40' y='664.39' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 8.920 ms</title></rect>
-<rect x='40' y='664.56' width='240' height='0.80' fill='#fdba74'><title>NCCL EP permute / scan&#10;void nccl_ep::ht::combine_prob_input_to_compact_kernel&#10;5 us at 8.922 ms</title></rect>
-<rect x='40' y='664.99' width='240' height='81.83' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_combine_kernel&#10;1169 us at 8.928 ms</title></rect>
-<rect x='40' y='746.90' width='240' height='6.71' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;96 us at 10.099 ms</title></rect>
-<rect x='40' y='753.69' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 10.196 ms</title></rect>
-<rect x='40' y='753.88' width='240' height='0.81' fill='#a3e635'><title>router / permute&#10;void at::native::_scatter_gather_elementwise_kernel&#10;12 us at 10.198 ms</title></rect>
-<rect x='40' y='754.78' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 10.211 ms</title></rect>
-<rect x='40' y='754.93' width='240' height='0.80' fill='#a3e635'><title>router / permute&#10;void transformer_engine::fused_router::fused_topk_backward_selected_indices_kernel&#10;7 us at 10.213 ms</title></rect>
-<rect x='40' y='755.52' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 10.222 ms</title></rect>
-<rect x='40' y='755.70' width='240' height='3.19' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_192x32_64x7_2x1_2cta_v_bz_splitK_NTT&#10;46 us at 10.224 ms</title></rect>
-<rect x='40' y='758.79' width='240' height='0.80' fill='#60a5fa'><title>dense GEMM&#10;void cublasLt::splitKreduce_kernel&#10;4 us at 10.268 ms</title></rect>
-<rect x='40' y='759.02' width='240' height='2.83' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x256_64x4_2x1_2cta_v_bz_NNT&#10;40 us at 10.272 ms</title></rect>
-<rect x='40' y='761.93' width='240' height='7.06' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;101 us at 10.313 ms</title></rect>
-<rect x='40' y='769.15' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 10.416 ms</title></rect>
-<rect x='40' y='769.37' width='240' height='35.65' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;509 us at 10.420 ms</title></rect>
-<rect x='40' y='805.09' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 10.930 ms</title></rect>
-<rect x='40' y='805.66' width='240' height='6.89' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;98 us at 10.938 ms</title></rect>
-<rect x='40' y='812.61' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 11.037 ms</title></rect>
-<rect x='40' y='812.74' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 11.039 ms</title></rect>
-<rect x='40' y='812.89' width='240' height='2.92' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;42 us at 11.041 ms</title></rect>
-<rect x='40' y='815.90' width='240' height='7.68' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;110 us at 11.084 ms</title></rect>
-<rect x='40' y='823.68' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 11.195 ms</title></rect>
-<rect x='40' y='823.85' width='240' height='36.37' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;520 us at 11.198 ms</title></rect>
-<rect x='40' y='860.30' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 11.719 ms</title></rect>
-<rect x='40' y='860.44' width='240' height='36.10' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;516 us at 11.721 ms</title></rect>
-<rect x='40' y='896.60' width='240' height='28.65' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::compute_dot_do_o_specialized&#10;409 us at 12.237 ms</title></rect>
-<rect x='40' y='925.31' width='240' height='427.86' fill='#7c3aed'><title>attention (cuDNN)&#10;cudnn_generated_fort_native_sdpa_sm100_flash_bprop_f16_knob_2_64x128x192_1x4x1_cga1x1x1_ke&#10;6112 us at 12.647 ms</title></rect>
-<rect x='40' y='1353.24' width='240' height='24.64' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::convert_dq_to_16bits&#10;352 us at 18.761 ms</title></rect>
-<rect x='40' y='1377.97' width='240' height='24.76' fill='#86efac'><title>RoPE&#10;rotary_bwd_kv_kernel&#10;354 us at 19.114 ms</title></rect>
-<rect x='40' y='1402.82' width='240' height='7.66' fill='#9ca3af'><title>memset&#10;memset&#10;109 us at 19.469 ms</title></rect>
-<rect x='40' y='1410.56' width='240' height='16.39' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;memcpy&#10;234 us at 19.579 ms</title></rect>
-<rect x='40' y='1427.03' width='240' height='16.30' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;memcpy&#10;233 us at 19.815 ms</title></rect>
-<rect x='40' y='1443.39' width='240' height='16.23' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;memcpy&#10;232 us at 20.048 ms</title></rect>
-<rect x='40' y='1459.68' width='240' height='16.17' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;memcpy&#10;231 us at 20.281 ms</title></rect>
-<rect x='40' y='1475.93' width='240' height='9.39' fill='#86efac'><title>RoPE&#10;rotary_bwd_q_kernel&#10;134 us at 20.513 ms</title></rect>
-<rect x='40' y='1485.40' width='240' height='16.47' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;memcpy&#10;235 us at 20.649 ms</title></rect>
-<rect x='40' y='1501.96' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 20.885 ms</title></rect>
-<rect x='40' y='1502.13' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 20.888 ms</title></rect>
-<rect x='40' y='1502.27' width='240' height='10.93' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;156 us at 20.890 ms</title></rect>
-<rect x='40' y='1513.27' width='240' height='32.46' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;464 us at 21.047 ms</title></rect>
-<rect x='40' y='1545.79' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;1 us at 21.511 ms</title></rect>
-<rect x='40' y='1545.92' width='240' height='7.55' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_2x2_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;108 us at 21.513 ms</title></rect>
-<rect x='40' y='1553.53' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 21.622 ms</title></rect>
-<rect x='40' y='1553.68' width='240' height='7.67' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_2x2f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;110 us at 21.624 ms</title></rect>
-<rect x='40' y='1561.43' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_tuned_kernel&#10;10 us at 21.735 ms</title></rect>
-<rect x='40' y='1562.21' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_tuned_kernel&#10;4 us at 21.746 ms</title></rect>
-<rect x='40' y='1562.56' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;void at::native::anon::CatArrayBatchedCopy_vectorized&#10;7 us at 21.751 ms</title></rect>
-<rect x='40' y='1563.15' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 21.759 ms</title></rect>
-<rect x='40' y='1563.28' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 21.761 ms</title></rect>
-<rect x='40' y='1563.40' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 21.763 ms</title></rect>
-<rect x='40' y='1563.52' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;4 us at 21.765 ms</title></rect>
-<rect x='40' y='1563.90' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::nvfp4::quantize_transpose_tuned_kernel::quantize_transp&#10;10 us at 21.770 ms</title></rect>
-<rect x='40' y='1564.65' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::HadamardTransformKernel&#10;10 us at 21.781 ms</title></rect>
-<rect x='40' y='1565.38' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::nvfp4::quantize_transpose_tuned_kernel::quantize_transp&#10;9 us at 21.791 ms</title></rect>
-<rect x='40' y='1566.06' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::swizzle_rowwise_full_width_kernel(const unsigned char *, unsigne&#10;3 us at 21.801 ms</title></rect>
-<rect x='40' y='1566.29' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::swizzle_row_scaling_kernel&#10;6 us at 21.804 ms</title></rect>
-<rect x='40' y='1566.76' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::swizzle_rowwise_full_width_kernel(const unsigned char *, unsigne&#10;3 us at 21.811 ms</title></rect>
-<rect x='40' y='1567.01' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;1 us at 21.814 ms</title></rect>
-<rect x='40' y='1567.12' width='240' height='4.13' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;59 us at 21.816 ms</title></rect>
-<rect x='40' y='1571.32' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;1 us at 21.876 ms</title></rect>
-<rect x='40' y='1571.46' width='240' height='2.70' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_256x128_256x4_4x1_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;39 us at 21.878 ms</title></rect>
-<rect x='40' y='1574.24' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 21.918 ms</title></rect>
-<rect x='40' y='1574.39' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 21.920 ms</title></rect>
-<rect x='40' y='1574.53' width='240' height='8.13' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;116 us at 21.922 ms</title></rect>
-<rect x='40' y='1582.73' width='240' height='24.79' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;354 us at 22.039 ms</title></rect>
-<rect x='40' y='1607.57' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;1 us at 22.394 ms</title></rect>
-<rect x='40' y='1607.70' width='240' height='16.65' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;238 us at 22.396 ms</title></rect>
-<rect x='40' y='1624.41' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;1 us at 22.634 ms</title></rect>
-<rect x='40' y='1624.56' width='240' height='15.34' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;219 us at 22.637 ms</title></rect>
-<rect x='40' y='1639.98' width='240' height='4.79' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;68 us at 22.857 ms</title></rect>
-<rect x='40' y='1644.85' width='240' height='1.17' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;17 us at 22.926 ms</title></rect>
-<rect x='40' y='1646.09' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 22.944 ms</title></rect>
-<rect x='40' y='1646.23' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 22.946 ms</title></rect>
-<rect x='40' y='1646.36' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;8 us at 22.948 ms</title></rect>
-<rect x='40' y='1647.00' width='240' height='2.65' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;38 us at 22.957 ms</title></rect>
-<rect x='40' y='1649.73' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 22.996 ms</title></rect>
-<rect x='40' y='1649.89' width='240' height='5.32' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;76 us at 22.998 ms</title></rect>
-<rect x='40' y='1655.29' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 23.076 ms</title></rect>
-<rect x='40' y='1655.45' width='240' height='6.01' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_256x128_256x4_2x2f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;86 us at 23.078 ms</title></rect>
-<rect x='40' y='1661.54' width='240' height='6.66' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;95 us at 23.165 ms</title></rect>
-<rect x='40' y='1668.35' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 23.262 ms</title></rect>
-<rect x='40' y='1668.54' width='240' height='35.45' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;506 us at 23.265 ms</title></rect>
-<rect x='40' y='1704.05' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 23.772 ms</title></rect>
-<rect x='40' y='1704.60' width='240' height='6.83' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;98 us at 23.780 ms</title></rect>
+<svg xmlns='http://www.w3.org/2000/svg' width='680' height='1853' viewBox='0 0 680 1853'>
+<rect width='680' height='1853' fill='white'/>
+<rect x='40' y='40.00' width='240' height='4.34' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;62 us at 0.000 ms</title></rect>
+<rect x='40' y='44.39' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 0.063 ms</title></rect>
+<rect x='40' y='44.53' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 0.065 ms</title></rect>
+<rect x='40' y='44.69' width='240' height='3.19' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;46 us at 0.067 ms</title></rect>
+<rect x='40' y='47.96' width='240' height='8.47' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;121 us at 0.114 ms</title></rect>
+<rect x='40' y='56.51' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::swizzle_row_scaling_kernel&#10;6 us at 0.236 ms</title></rect>
+<rect x='40' y='57.04' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 0.243 ms</title></rect>
+<rect x='40' y='57.22' width='240' height='5.42' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;77 us at 0.246 ms</title></rect>
+<rect x='40' y='62.69' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 0.324 ms</title></rect>
+<rect x='40' y='62.83' width='240' height='4.79' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_2x2f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;68 us at 0.326 ms</title></rect>
+<rect x='40' y='67.70' width='240' height='4.84' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::fp8::kernel::cast_fp8_gated_kernel&#10;69 us at 0.396 ms</title></rect>
+<rect x='40' y='72.61' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 0.466 ms</title></rect>
+<rect x='40' y='72.77' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 0.468 ms</title></rect>
+<rect x='40' y='72.93' width='240' height='1.91' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;27 us at 0.470 ms</title></rect>
+<rect x='40' y='74.92' width='240' height='5.67' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;81 us at 0.499 ms</title></rect>
+<rect x='40' y='80.66' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::swizzle_row_scaling_kernel&#10;5 us at 0.581 ms</title></rect>
+<rect x='40' y='81.07' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;1 us at 0.587 ms</title></rect>
+<rect x='40' y='81.20' width='240' height='11.78' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;168 us at 0.589 ms</title></rect>
+<rect x='40' y='93.05' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;1 us at 0.758 ms</title></rect>
+<rect x='40' y='93.19' width='240' height='10.44' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;149 us at 0.760 ms</title></rect>
+<rect x='40' y='103.71' width='240' height='65.95' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_dispatch_kernel&#10;942 us at 0.910 ms</title></rect>
+<rect x='40' y='169.74' width='240' height='34.01' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_dup_kernel&#10;486 us at 1.853 ms</title></rect>
+<rect x='40' y='203.83' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 2.340 ms</title></rect>
+<rect x='40' y='203.98' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::GraphSafeMultiZeroAmaxKernel(unsigned long, float *, float *)&#10;1 us at 2.343 ms</title></rect>
+<rect x='40' y='204.11' width='240' height='24.70' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::GraphSafeGroupHadamardAmaxTmaKernel&#10;353 us at 2.344 ms</title></rect>
+<rect x='40' y='228.97' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 2.700 ms</title></rect>
+<rect x='40' y='229.17' width='240' height='76.51' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::group_row_col_rht_gemm_device_graph_safe&#10;1093 us at 2.702 ms</title></rect>
+<rect x='40' y='305.75' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 3.796 ms</title></rect>
+<rect x='40' y='305.94' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;void at::native::anon::CatArrayBatchedCopy_alignedK_contig&#10;2 us at 3.799 ms</title></rect>
+<rect x='40' y='306.15' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;_nvfp4_global_scale_pair_kernel&#10;2 us at 3.802 ms</title></rect>
+<rect x='40' y='306.36' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::multi_tensor_swizzle_row_scaling_kernel&#10;9 us at 3.805 ms</title></rect>
+<rect x='40' y='307.04' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::anon::kernel(transformer_engine::copy_&#10;2 us at 3.815 ms</title></rect>
+<rect x='40' y='307.23' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;void at::native::vectorized_elementwise_kernel&#10;1 us at 3.818 ms</title></rect>
+<rect x='40' y='307.41' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_db&#10;2 us at 3.820 ms</title></rect>
+<rect x='40' y='307.57' width='240' height='52.98' fill='#1d4ed8'><title>fused grouped MLP (cuDNN)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupeddglumoe_blockscaled_grouped_gemm_dglu_dbiasBloc&#10;757 us at 3.822 ms</title></rect>
+<rect x='40' y='360.62' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 4.580 ms</title></rect>
+<rect x='40' y='360.78' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::GraphSafeMultiZeroAmaxKernel(unsigned long, float *, float *)&#10;1 us at 4.583 ms</title></rect>
+<rect x='40' y='360.95' width='240' height='14.19' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::GraphSafeGroupHadamardAmaxTmaKernel&#10;203 us at 4.585 ms</title></rect>
+<rect x='40' y='375.27' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 4.790 ms</title></rect>
+<rect x='40' y='375.50' width='240' height='44.75' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::group_row_col_rht_gemm_device_graph_safe&#10;639 us at 4.793 ms</title></rect>
+<rect x='40' y='420.33' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;_nvfp4_global_scale_pair_kernel&#10;2 us at 5.433 ms</title></rect>
+<rect x='40' y='420.51' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::anon::kernel(transformer_engine::copy_&#10;1 us at 5.436 ms</title></rect>
+<rect x='40' y='420.66' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradB&#10;2 us at 5.438 ms</title></rect>
+<rect x='40' y='420.89' width='240' height='45.28' fill='#1d4ed8'><title>fused grouped MLP (cuDNN)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockSca&#10;647 us at 5.441 ms</title></rect>
+<rect x='40' y='466.23' width='240' height='0.93' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::multi_tensor_swizzle_row_scaling_kernel&#10;13 us at 6.089 ms</title></rect>
+<rect x='40' y='467.23' width='240' height='0.80' fill='#1d4ed8'><title>grouped GEMM (experts)&#10;anon::setup_grouped_gemm_kernel(void **, void **, void **, void **, int *, int *, int *, i&#10;9 us at 6.103 ms</title></rect>
+<rect x='40' y='468.07' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 6.115 ms</title></rect>
+<rect x='40' y='468.30' width='240' height='87.49' fill='#1d4ed8'><title>grouped GEMM (experts)&#10;nvjet_sm100_ootst_128x256_256x5_2x1_2cta_v_abatch_bbatch_bx_Avec16UE4M3_Bvec16UE4M3_ptrGro&#10;1250 us at 6.119 ms</title></rect>
+<rect x='40' y='555.87' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;_nvfp4_global_scale_pair_kernel&#10;2 us at 7.370 ms</title></rect>
+<rect x='40' y='556.08' width='240' height='0.80' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;transformer_engine::copy_host_to_device_via_kernel::anon::kernel(transformer_engine::copy_&#10;2 us at 7.373 ms</title></rect>
+<rect x='40' y='556.27' width='240' height='0.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN)&#10;cudnn_kernel_helper_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradB&#10;2 us at 7.375 ms</title></rect>
+<rect x='40' y='556.48' width='240' height='83.80' fill='#1d4ed8'><title>fused grouped MLP (cuDNN)&#10;cudnn_kernel_kernel_cudnngemmcutedslgroupedwgradmoe_blockscaled_grouped_gemm_wgradBlockSca&#10;1197 us at 7.378 ms</title></rect>
+<rect x='40' y='640.35' width='240' height='35.43' fill='#fdba74'><title>NCCL EP permute / scan&#10;nccl_ep_jit_local_permute_reduce_kernel&#10;506 us at 8.576 ms</title></rect>
+<rect x='40' y='675.84' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 9.083 ms</title></rect>
+<rect x='40' y='676.03' width='240' height='0.80' fill='#fdba74'><title>NCCL EP permute / scan&#10;void nccl_ep::ht::combine_prob_input_to_compact_kernel&#10;5 us at 9.086 ms</title></rect>
+<rect x='40' y='676.47' width='240' height='70.19' fill='#ea580c'><title>NCCL EP dispatch / combine&#10;nccl_ep_jit_ht_combine_kernel&#10;1003 us at 9.092 ms</title></rect>
+<rect x='40' y='746.77' width='240' height='6.72' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;96 us at 10.097 ms</title></rect>
+<rect x='40' y='753.57' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 10.194 ms</title></rect>
+<rect x='40' y='753.76' width='240' height='0.82' fill='#a3e635'><title>router / permute&#10;void at::native::_scatter_gather_elementwise_kernel&#10;12 us at 10.197 ms</title></rect>
+<rect x='40' y='754.64' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 10.209 ms</title></rect>
+<rect x='40' y='754.80' width='240' height='0.80' fill='#a3e635'><title>router / permute&#10;void transformer_engine::fused_router::fused_topk_backward_selected_indices_kernel&#10;8 us at 10.211 ms</title></rect>
+<rect x='40' y='755.40' width='240' height='0.80' fill='#a8a29e'><title>dtype casts (bf16 &lt;-&gt; fp32)&#10;void at::native::vectorized_elementwise_kernel&#10;2 us at 10.220 ms</title></rect>
+<rect x='40' y='755.57' width='240' height='3.23' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_192x32_64x7_2x1_2cta_v_bz_splitK_NTT&#10;46 us at 10.222 ms</title></rect>
+<rect x='40' y='758.68' width='240' height='0.80' fill='#60a5fa'><title>dense GEMM&#10;void cublasLt::splitKreduce_kernel&#10;4 us at 10.267 ms</title></rect>
+<rect x='40' y='758.94' width='240' height='3.18' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_tst_256x256_64x4_2x1_2cta_v_bz_NNT&#10;45 us at 10.271 ms</title></rect>
+<rect x='40' y='762.20' width='240' height='7.09' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;101 us at 10.317 ms</title></rect>
+<rect x='40' y='769.40' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;1 us at 10.420 ms</title></rect>
+<rect x='40' y='769.62' width='240' height='35.70' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;510 us at 10.423 ms</title></rect>
+<rect x='40' y='805.40' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 10.934 ms</title></rect>
+<rect x='40' y='806.00' width='240' height='6.87' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;98 us at 10.943 ms</title></rect>
+<rect x='40' y='812.93' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 11.042 ms</title></rect>
+<rect x='40' y='813.10' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 11.044 ms</title></rect>
+<rect x='40' y='813.27' width='240' height='3.00' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;43 us at 11.047 ms</title></rect>
+<rect x='40' y='816.35' width='240' height='8.82' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;126 us at 11.091 ms</title></rect>
+<rect x='40' y='825.25' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 11.218 ms</title></rect>
+<rect x='40' y='825.40' width='240' height='38.41' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;549 us at 11.220 ms</title></rect>
+<rect x='40' y='863.87' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 11.770 ms</title></rect>
+<rect x='40' y='864.02' width='240' height='37.06' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;529 us at 11.772 ms</title></rect>
+<rect x='40' y='901.13' width='240' height='28.04' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::compute_dot_do_o_specialized&#10;401 us at 12.302 ms</title></rect>
+<rect x='40' y='929.25' width='240' height='436.37' fill='#7c3aed'><title>attention (cuDNN)&#10;cudnn_generated_fort_native_sdpa_sm100_flash_bprop_f16_knob_2_64x128x192_1x4x1_cga1x1x1_ke&#10;6234 us at 12.704 ms</title></rect>
+<rect x='40' y='1365.70' width='240' height='25.05' fill='#7c3aed'><title>attention (cuDNN)&#10;void cudnn::fusion::convert_dq_to_16bits&#10;358 us at 18.939 ms</title></rect>
+<rect x='40' y='1390.84' width='240' height='24.76' fill='#86efac'><title>RoPE&#10;rotary_bwd_kv_kernel&#10;354 us at 19.298 ms</title></rect>
+<rect x='40' y='1415.67' width='240' height='19.60' fill='#86efac'><title>RoPE&#10;rotary_bwd_q_kernel&#10;280 us at 19.652 ms</title></rect>
+<rect x='40' y='1435.36' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 19.934 ms</title></rect>
+<rect x='40' y='1435.50' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 19.936 ms</title></rect>
+<rect x='40' y='1435.65' width='240' height='11.06' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;158 us at 19.938 ms</title></rect>
+<rect x='40' y='1446.76' width='240' height='38.50' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;550 us at 20.097 ms</title></rect>
+<rect x='40' y='1485.34' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 20.648 ms</title></rect>
+<rect x='40' y='1485.50' width='240' height='8.48' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_2x2_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;121 us at 20.650 ms</title></rect>
+<rect x='40' y='1494.08' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;1 us at 20.773 ms</title></rect>
+<rect x='40' y='1494.23' width='240' height='7.63' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_2x2f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;109 us at 20.775 ms</title></rect>
+<rect x='40' y='1501.93' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_tuned_kernel&#10;11 us at 20.885 ms</title></rect>
+<rect x='40' y='1502.79' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_tuned_kernel&#10;4 us at 20.897 ms</title></rect>
+<rect x='40' y='1503.11' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 20.902 ms</title></rect>
+<rect x='40' y='1503.24' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 20.903 ms</title></rect>
+<rect x='40' y='1503.39' width='240' height='8.08' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;115 us at 20.906 ms</title></rect>
+<rect x='40' y='1511.55' width='240' height='25.70' fill='#0d9488'><title>quantize&#10;void transformer_engine::detail::anon::row_col_rht_gemm_device&#10;367 us at 21.022 ms</title></rect>
+<rect x='40' y='1537.34' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 21.391 ms</title></rect>
+<rect x='40' y='1537.50' width='240' height='16.95' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;242 us at 21.393 ms</title></rect>
+<rect x='40' y='1554.52' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 21.636 ms</title></rect>
+<rect x='40' y='1554.66' width='240' height='14.45' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;206 us at 21.638 ms</title></rect>
+<rect x='40' y='1569.17' width='240' height='4.76' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;68 us at 21.845 ms</title></rect>
+<rect x='40' y='1574.00' width='240' height='1.23' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;18 us at 21.914 ms</title></rect>
+<rect x='40' y='1575.30' width='240' height='1.41' fill='#d1d5db'><title>layout copies (contiguous / cat / clone)&#10;void at::native::anon::CatArrayBatchedCopy_vectorized&#10;20 us at 21.933 ms</title></rect>
+<rect x='40' y='1576.80' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 21.954 ms</title></rect>
+<rect x='40' y='1576.96' width='240' height='0.80' fill='#e5e7eb'><title>other&#10;transformer_engine::fused_attn::extract_seed_and_offset(long *, bool, long *, unsigned lon&#10;1 us at 21.957 ms</title></rect>
+<rect x='40' y='1577.10' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::ZeroAmaxKernel(float *, float *, float *)&#10;1 us at 21.959 ms</title></rect>
+<rect x='40' y='1577.27' width='240' height='0.87' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::HadamardAmaxTmaKernel&#10;12 us at 21.961 ms</title></rect>
+<rect x='40' y='1578.20' width='240' height='1.68' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::nvfp4::quantize_transpose_tuned_kernel::quantize_transp&#10;24 us at 21.974 ms</title></rect>
+<rect x='40' y='1579.94' width='240' height='2.50' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::HadamardTransformKernel&#10;36 us at 21.999 ms</title></rect>
+<rect x='40' y='1582.49' width='240' height='1.37' fill='#0d9488'><title>quantize&#10;void transformer_engine::dispatch::nvfp4::quantize_transpose_tuned_kernel::quantize_transp&#10;20 us at 22.036 ms</title></rect>
+<rect x='40' y='1583.93' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::swizzle_rowwise_full_width_kernel(const unsigned char *, unsigne&#10;4 us at 22.056 ms</title></rect>
+<rect x='40' y='1584.30' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;void transformer_engine::anon::swizzle_row_scaling_kernel&#10;7 us at 22.061 ms</title></rect>
+<rect x='40' y='1584.85' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::anon::swizzle_rowwise_full_width_kernel(const unsigned char *, unsigne&#10;4 us at 22.069 ms</title></rect>
+<rect x='40' y='1585.21' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 22.074 ms</title></rect>
+<rect x='40' y='1585.39' width='240' height='7.58' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_4x4f_2cta_v_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;108 us at 22.077 ms</title></rect>
+<rect x='40' y='1593.04' width='240' height='0.80' fill='#0d9488'><title>quantize&#10;transformer_engine::nvfp4_recipe::compute_nvfp4_per_tensor_scale_kernel(float, const float&#10;2 us at 22.186 ms</title></rect>
+<rect x='40' y='1593.22' width='240' height='6.74' fill='#60a5fa'><title>dense GEMM&#10;nvjet_sm100_ootst_128x256_256x5_2x2f_2cta_h_bx_Avec16UE4M3_Bvec16UE4M3_TNT&#10;96 us at 22.189 ms</title></rect>
+<rect x='40' y='1600.14' width='240' height='0.80' fill='#9ca3af'><title>memset&#10;memset&#10;2 us at 22.288 ms</title></rect>
+<rect x='40' y='1600.37' width='240' height='36.24' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_general_kernel&#10;518 us at 22.291 ms</title></rect>
+<rect x='40' y='1636.68' width='240' height='0.80' fill='#16a34a'><title>RMSNorm&#10;void transformer_engine::normalization::rmsnorm_bwd_finalize_general_kernel&#10;7 us at 22.810 ms</title></rect>
+<rect x='40' y='1637.28' width='240' height='6.83' fill='#fb7185'><title>residual / grad-accumulation add&#10;void at::native::vectorized_elementwise_kernel&#10;98 us at 22.818 ms</title></rect>
 <line x1='34' y1='40.0' x2='40' y2='40.0' stroke='#6b7280'/>
 <text x='31.0' y='44.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>0 ms</text>
 <line x1='34' y1='110.0' x2='40' y2='110.0' stroke='#6b7280'/>
@@ -183,156 +168,148 @@
 <text x='31.0' y='1514.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>21 ms</text>
 <line x1='34' y1='1580.0' x2='40' y2='1580.0' stroke='#6b7280'/>
 <text x='31.0' y='1584.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>22 ms</text>
-<line x1='34' y1='1650.0' x2='40' y2='1650.0' stroke='#6b7280'/>
-<text x='31.0' y='1654.0' text-anchor='end' font-family='Helvetica, Arial, sans-serif' font-size='10' font-weight='normal' fill='#6b7280'>23 ms</text>
 <line x1='280' y1='42.2' x2='294' y2='39.2' stroke='#9ca3af' stroke-width='0.8'/>
 <text x='298.0' y='42.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>memset  62 us</text>
-<line x1='280' y1='46.1' x2='294' y2='52.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='55.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>other  48 us</text>
-<line x1='280' y1='51.9' x2='294' y2='65.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='68.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: shared fc2 grad output (RHT)  0.12 ms</text>
-<line x1='280' y1='58.5' x2='294' y2='78.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='81.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc2 dgrad  72 us</text>
-<line x1='280' y1='63.3' x2='294' y2='91.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='94.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc2 wgrad  63 us</text>
-<line x1='280' y1='67.8' x2='294' y2='104.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='107.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: shared SwiGLU (amax pass)  63 us</text>
-<line x1='280' y1='71.1' x2='294' y2='117.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='120.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>other  31 us</text>
-<line x1='280' y1='75.1' x2='294' y2='130.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='133.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: shared SwiGLU grad (RHT)  81 us</text>
-<line x1='280' y1='83.8' x2='294' y2='143.2' stroke='#9ca3af' stroke-width='0.8'/>
+<line x1='280' y1='46.3' x2='294' y2='52.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='55.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NVFP4 amax (Hadamard transform)  46 us</text>
+<line x1='280' y1='52.6' x2='294' y2='65.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='68.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: shared fc2 grad output (RHT)  0.13 ms</text>
+<line x1='280' y1='60.0' x2='294' y2='78.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='81.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc2 dgrad  80 us</text>
+<line x1='280' y1='65.2' x2='294' y2='91.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='94.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc2 wgrad  68 us</text>
+<line x1='280' y1='70.1' x2='294' y2='104.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='107.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: shared SwiGLU (amax pass)  69 us</text>
+<line x1='280' y1='73.9' x2='294' y2='117.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='120.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NVFP4 amax (Hadamard transform)  27 us</text>
+<line x1='280' y1='78.0' x2='294' y2='130.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='133.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: shared SwiGLU grad (RHT)  89 us</text>
+<line x1='280' y1='87.2' x2='294' y2='143.2' stroke='#9ca3af' stroke-width='0.8'/>
 <text x='298.0' y='146.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc1 dgrad  0.17 ms</text>
-<line x1='280' y1='94.9' x2='294' y2='156.2' stroke='#9ca3af' stroke-width='0.8'/>
+<line x1='280' y1='98.4' x2='294' y2='156.2' stroke='#9ca3af' stroke-width='0.8'/>
 <text x='298.0' y='159.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>shared fc1 wgrad  0.15 ms</text>
-<line x1='280' y1='138.1' x2='294' y2='169.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='172.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine  1.08 ms</text>
-<line x1='280' y1='192.7' x2='294' y2='189.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='192.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>EP permute  0.48 ms</text>
-<line x1='280' y1='221.9' x2='294' y2='218.9' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='221.9' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>other  0.35 ms</text>
-<line x1='280' y1='268.8' x2='294' y2='265.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='268.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: recv grad (combine bwd) (RHT)  0.98 ms</text>
-<line x1='280' y1='303.8' x2='294' y2='300.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='303.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>layout copy  17 us</text>
-<line x1='280' y1='330.7' x2='294' y2='327.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='330.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc2 dgrad + dGLU  0.74 ms</text>
-<line x1='280' y1='363.9' x2='294' y2='360.9' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='363.9' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>other  0.20 ms</text>
-<line x1='280' y1='391.4' x2='294' y2='388.4' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='391.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: experts SwiGLU grad (RHT)  0.57 ms</text>
-<line x1='280' y1='434.2' x2='294' y2='431.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='434.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc2 wgrad  0.64 ms</text>
-<line x1='280' y1='501.1' x2='294' y2='498.1' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='501.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc1 dgrad  1.24 ms</text>
-<line x1='280' y1='586.9' x2='294' y2='583.9' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='586.9' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc1 wgrad  1.20 ms</text>
-<line x1='280' y1='646.6' x2='294' y2='643.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='646.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>EP permute  0.51 ms</text>
-<line x1='280' y1='705.9' x2='294' y2='702.9' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='705.9' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine  1.17 ms</text>
-<line x1='280' y1='750.3' x2='294' y2='747.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='750.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad accumulation (MoE input)  96 us</text>
-<line x1='280' y1='754.3' x2='294' y2='760.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='763.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router  12 us</text>
-<line x1='280' y1='757.4' x2='294' y2='773.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='776.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router gate dgrad  48 us</text>
-<line x1='280' y1='760.4' x2='294' y2='786.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='789.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router gate wgrad  40 us</text>
-<line x1='280' y1='765.5' x2='294' y2='799.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='802.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad accumulation (MoE input)  0.10 ms</text>
-<line x1='280' y1='787.5' x2='294' y2='812.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='815.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>pre-MLP RMSNorm bwd  0.52 ms</text>
-<line x1='280' y1='809.1' x2='294' y2='825.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='828.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad (residual, MoE)  98 us</text>
-<line x1='280' y1='814.2' x2='294' y2='838.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='841.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>other  46 us</text>
-<line x1='280' y1='819.8' x2='294' y2='851.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='854.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: out_proj grad output (RHT)  0.11 ms</text>
-<line x1='280' y1='842.1' x2='294' y2='864.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='867.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>out_proj dgrad  0.52 ms</text>
-<line x1='280' y1='878.5' x2='294' y2='877.3' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='880.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>out_proj wgrad  0.52 ms</text>
-<line x1='280' y1='1137.2' x2='294' y2='1134.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1137.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>attention bwd  6.88 ms</text>
-<line x1='280' y1='1390.4' x2='294' y2='1387.4' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1390.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>RoPE k/v bwd  0.35 ms</text>
-<line x1='280' y1='1406.7' x2='294' y2='1403.7' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1406.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>memset  0.11 ms</text>
-<line x1='280' y1='1443.2' x2='294' y2='1440.2' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1443.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>layout copy  0.93 ms</text>
-<line x1='280' y1='1480.6' x2='294' y2='1477.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1480.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>RoPE q bwd  0.13 ms</text>
-<line x1='280' y1='1493.6' x2='294' y2='1490.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1493.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>layout copy  0.24 ms</text>
-<line x1='280' y1='1507.6' x2='294' y2='1504.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1507.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>other  0.16 ms</text>
-<line x1='280' y1='1529.6' x2='294' y2='1526.6' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1529.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: kv_up grad output (RHT)  0.47 ms</text>
-<line x1='280' y1='1549.8' x2='294' y2='1546.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1549.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_up dgrad  0.11 ms</text>
-<line x1='280' y1='1557.5' x2='294' y2='1559.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1562.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_up wgrad  0.11 ms</text>
-<line x1='280' y1='1562.0' x2='294' y2='1572.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1575.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv-latent RMSNorm bwd  15 us</text>
-<line x1='280' y1='1566.2' x2='294' y2='1585.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1588.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: kv_down grad output  25 us</text>
-<line x1='280' y1='1569.3' x2='294' y2='1598.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1601.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_down dgrad  61 us</text>
-<line x1='280' y1='1572.8' x2='294' y2='1611.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1614.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_down wgrad  39 us</text>
-<line x1='280' y1='1578.5' x2='294' y2='1624.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1627.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>other  0.12 ms</text>
-<line x1='280' y1='1595.2' x2='294' y2='1637.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1640.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: q_up grad output (RHT)  0.36 ms</text>
-<line x1='280' y1='1616.1' x2='294' y2='1650.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1653.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_up dgrad  0.24 ms</text>
-<line x1='280' y1='1632.2' x2='294' y2='1663.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1666.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_up wgrad  0.22 ms</text>
-<line x1='280' y1='1643.0' x2='294' y2='1676.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1679.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q-latent RMSNorm bwd  86 us</text>
-<line x1='280' y1='1646.5' x2='294' y2='1689.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1692.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>other  12 us</text>
-<line x1='280' y1='1648.4' x2='294' y2='1702.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1705.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: q_down grad output (RHT)  41 us</text>
-<line x1='280' y1='1652.6' x2='294' y2='1715.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1718.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_down dgrad  79 us</text>
-<line x1='280' y1='1658.5' x2='294' y2='1728.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1731.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_down wgrad  86 us</text>
-<line x1='280' y1='1664.9' x2='294' y2='1741.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1744.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad accumulation (attention input)  95 us</text>
-<line x1='280' y1='1686.5' x2='294' y2='1754.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1757.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>input RMSNorm bwd  0.51 ms</text>
-<line x1='280' y1='1708.0' x2='294' y2='1767.8' stroke='#9ca3af' stroke-width='0.8'/>
-<text x='298.0' y='1770.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad (residual, attention)  98 us</text>
-<rect x='40' y='1816' width='12' height='12' fill='#16a34a' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='57.0' y='1826.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>RMSNorm</text>
-<rect x='123.1' y='1816' width='12' height='12' fill='#e5e7eb' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='140.1' y='1826.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>other</text>
-<rect x='193.6' y='1816' width='12' height='12' fill='#0d9488' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='210.6' y='1826.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize</text>
-<rect x='283.0' y='1816' width='12' height='12' fill='#60a5fa' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='300.0' y='1826.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>dense GEMM</text>
-<rect x='385.0' y='1816' width='12' height='12' fill='#d1d5db' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='402.0' y='1826.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>layout copies (contiguous / cat / clone)</text>
-<rect x='40' y='1834' width='12' height='12' fill='#86efac' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='57.0' y='1844.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>RoPE</text>
-<rect x='104.2' y='1834' width='12' height='12' fill='#7c3aed' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='121.2' y='1844.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>attention (cuDNN)</text>
-<rect x='250.3' y='1834' width='12' height='12' fill='#fb7185' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='267.3' y='1844.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>residual / grad-accumulation add</text>
-<rect x='40' y='1852' width='12' height='12' fill='#a3e635' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='57.0' y='1862.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>router / permute</text>
-<rect x='179.8' y='1852' width='12' height='12' fill='#9ca3af' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='196.8' y='1862.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>memset</text>
-<rect x='256.6' y='1852' width='12' height='12' fill='#fdba74' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='273.6' y='1862.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL EP permute / scan</text>
-<rect x='434.20000000000005' y='1852' width='12' height='12' fill='#facc15' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='451.2' y='1862.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL collective</text>
-<rect x='40' y='1870' width='12' height='12' fill='#ea580c' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='57.0' y='1880.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine</text>
-<rect x='242.79999999999998' y='1870' width='12' height='12' fill='#1d4ed8' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='259.8' y='1880.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN, MXFP8)</text>
-<rect x='40' y='1888' width='12' height='12' fill='#1d4ed8' stroke='#9ca3af' stroke-width='0.5'/>
-<text x='57.0' y='1898.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>grouped GEMM (experts)</text>
+<line x1='280' y1='136.7' x2='294' y2='169.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='172.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine  0.94 ms</text>
+<line x1='280' y1='186.7' x2='294' y2='183.7' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='186.7' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>EP permute  0.49 ms</text>
+<line x1='280' y1='216.5' x2='294' y2='213.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='216.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NVFP4 amax (Hadamard transform)  0.35 ms</text>
+<line x1='280' y1='267.4' x2='294' y2='264.4' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='267.4' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: recv grad (combine bwd) (RHT)  1.09 ms</text>
+<line x1='280' y1='306.5' x2='294' y2='303.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='306.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>layout copy  17 us</text>
+<line x1='280' y1='334.0' x2='294' y2='331.0' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='334.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc2 dgrad + dGLU  0.76 ms</text>
+<line x1='280' y1='368.0' x2='294' y2='365.0' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='368.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NVFP4 amax (Hadamard transform)  0.20 ms</text>
+<line x1='280' y1='398.0' x2='294' y2='395.0' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='398.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: experts SwiGLU grad (RHT)  0.64 ms</text>
+<line x1='280' y1='443.9' x2='294' y2='440.9' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='443.9' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc2 wgrad  0.66 ms</text>
+<line x1='280' y1='512.1' x2='294' y2='509.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='512.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc1 dgrad  1.25 ms</text>
+<line x1='280' y1='598.3' x2='294' y2='595.3' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='598.3' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>experts fc1 wgrad  1.20 ms</text>
+<line x1='280' y1='658.1' x2='294' y2='655.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='658.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>EP permute  0.51 ms</text>
+<line x1='280' y1='711.6' x2='294' y2='708.6' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='711.6' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine  1.00 ms</text>
+<line x1='280' y1='750.1' x2='294' y2='747.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='750.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad accumulation (MoE input)  96 us</text>
+<line x1='280' y1='754.2' x2='294' y2='760.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='763.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router  12 us</text>
+<line x1='280' y1='757.3' x2='294' y2='773.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='776.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router gate dgrad  49 us</text>
+<line x1='280' y1='760.5' x2='294' y2='786.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='789.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>router gate wgrad  45 us</text>
+<line x1='280' y1='765.7' x2='294' y2='799.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='802.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad accumulation (MoE input)  0.10 ms</text>
+<line x1='280' y1='787.8' x2='294' y2='812.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='815.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>pre-MLP RMSNorm bwd  0.52 ms</text>
+<line x1='280' y1='809.4' x2='294' y2='825.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='828.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad (residual, MoE)  98 us</text>
+<line x1='280' y1='814.8' x2='294' y2='838.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='841.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NVFP4 amax (Hadamard transform)  43 us</text>
+<line x1='280' y1='820.9' x2='294' y2='851.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='854.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: out_proj grad output (RHT)  0.13 ms</text>
+<line x1='280' y1='844.7' x2='294' y2='864.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='867.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>out_proj dgrad  0.55 ms</text>
+<line x1='280' y1='882.5' x2='294' y2='879.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='882.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>out_proj wgrad  0.53 ms</text>
+<line x1='280' y1='1145.9' x2='294' y2='1142.9' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1145.9' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>attention bwd  6.99 ms</text>
+<line x1='280' y1='1403.2' x2='294' y2='1400.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1403.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>RoPE k/v bwd  0.35 ms</text>
+<line x1='280' y1='1425.5' x2='294' y2='1422.5' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1425.5' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>RoPE q bwd  0.28 ms</text>
+<line x1='280' y1='1441.2' x2='294' y2='1438.2' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1441.2' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NVFP4 amax (Hadamard transform)  0.16 ms</text>
+<line x1='280' y1='1466.1' x2='294' y2='1463.1' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1466.1' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: kv_up grad output (RHT)  0.55 ms</text>
+<line x1='280' y1='1489.8' x2='294' y2='1486.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1489.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_up dgrad  0.12 ms</text>
+<line x1='280' y1='1498.0' x2='294' y2='1499.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1502.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv_up wgrad  0.11 ms</text>
+<line x1='280' y1='1502.5' x2='294' y2='1512.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1515.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>kv-latent RMSNorm bwd  16 us</text>
+<line x1='280' y1='1507.4' x2='294' y2='1525.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1528.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NVFP4 amax (Hadamard transform)  0.12 ms</text>
+<line x1='280' y1='1524.5' x2='294' y2='1538.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1541.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: q_up grad output (RHT)  0.37 ms</text>
+<line x1='280' y1='1546.1' x2='294' y2='1551.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1554.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_up dgrad  0.24 ms</text>
+<line x1='280' y1='1561.9' x2='294' y2='1564.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1567.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q_up wgrad  0.21 ms</text>
+<line x1='280' y1='1572.2' x2='294' y2='1577.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1580.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>q-latent RMSNorm bwd  87 us</text>
+<line x1='280' y1='1576.0' x2='294' y2='1590.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1593.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>layout copy  20 us</text>
+<line x1='280' y1='1577.7' x2='294' y2='1603.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1606.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NVFP4 amax (Hadamard transform)  12 us</text>
+<line x1='280' y1='1579.0' x2='294' y2='1616.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1619.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: qkv_down grad output  24 us</text>
+<line x1='280' y1='1581.2' x2='294' y2='1629.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1632.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>NVFP4 amax (Hadamard transform)  36 us</text>
+<line x1='280' y1='1583.9' x2='294' y2='1642.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1645.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>quantize bf16-&gt;NVFP4: qkv_down grad output  41 us</text>
+<line x1='280' y1='1589.3' x2='294' y2='1655.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1658.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>qkv_down dgrad  0.11 ms</text>
+<line x1='280' y1='1596.6' x2='294' y2='1668.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1671.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>qkv_down wgrad  96 us</text>
+<line x1='280' y1='1618.8' x2='294' y2='1681.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1684.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>input RMSNorm bwd  0.53 ms</text>
+<line x1='280' y1='1640.7' x2='294' y2='1694.8' stroke='#9ca3af' stroke-width='0.8'/>
+<text x='298.0' y='1697.8' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='10.5' font-weight='normal' fill='#374151'>add grad (residual, attention)  98 us</text>
+<rect x='40' y='1743' width='12' height='12' fill='#16a34a' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='57.0' y='1753.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>RMSNorm</text>
+<rect x='123.1' y='1743' width='12' height='12' fill='#0d9488' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='140.1' y='1753.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>quantize</text>
+<rect x='212.5' y='1743' width='12' height='12' fill='#60a5fa' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='229.5' y='1753.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>dense GEMM</text>
+<rect x='314.5' y='1743' width='12' height='12' fill='#d1d5db' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='331.5' y='1753.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>layout copies (contiguous / cat / clone)</text>
+<rect x='40' y='1761' width='12' height='12' fill='#86efac' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='57.0' y='1771.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>RoPE</text>
+<rect x='104.2' y='1761' width='12' height='12' fill='#e5e7eb' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='121.2' y='1771.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>other</text>
+<rect x='174.7' y='1761' width='12' height='12' fill='#7c3aed' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='191.7' y='1771.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>attention (cuDNN)</text>
+<rect x='320.79999999999995' y='1761' width='12' height='12' fill='#fb7185' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='337.8' y='1771.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>residual / grad-accumulation add</text>
+<rect x='40' y='1779' width='12' height='12' fill='#a8a29e' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='57.0' y='1789.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>dtype casts (bf16 &lt;-&gt; fp32)</text>
+<rect x='249.1' y='1779' width='12' height='12' fill='#a3e635' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='266.1' y='1789.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>router / permute</text>
+<rect x='388.9' y='1779' width='12' height='12' fill='#9ca3af' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='405.9' y='1789.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>memset</text>
+<rect x='465.7' y='1779' width='12' height='12' fill='#fdba74' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='482.7' y='1789.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL EP permute / scan</text>
+<rect x='40' y='1797' width='12' height='12' fill='#facc15' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='57.0' y='1807.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL collective</text>
+<rect x='173.5' y='1797' width='12' height='12' fill='#ea580c' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='190.5' y='1807.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>NCCL EP dispatch / combine</text>
+<rect x='376.29999999999995' y='1797' width='12' height='12' fill='#1d4ed8' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='393.3' y='1807.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>fused grouped MLP (cuDNN)</text>
+<rect x='40' y='1815' width='12' height='12' fill='#1d4ed8' stroke='#9ca3af' stroke-width='0.5'/>
+<text x='57.0' y='1825.0' text-anchor='start' font-family='Helvetica, Arial, sans-serif' font-size='11' font-weight='normal' fill='#374151'>grouped GEMM (experts)</text>
 </svg>

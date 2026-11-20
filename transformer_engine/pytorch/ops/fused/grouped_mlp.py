@@ -2976,6 +2976,10 @@ class _GroupedMLP_CuTeGEMMBase(FusedOperation):
             activation_grad_extra = (None,)
         else:
             activation_grad_extra = (grad_scales,) if grad_scales is not None else ()
+        # Row-count inputs of the activation take no gradient.
+        activation_grad_extra += (None,) * (
+            self.basic_ops[1].num_extra_inputs - len(activation_grad_extra)
+        )
         return (
             grad_input,
             [fc1_grad_params, (), fc2_grad_params],
@@ -3425,17 +3429,17 @@ def fuse_bf16_grouped_mlp_ops(ops, *, recipe, fused_op_cls=None):
     window, ops = ops[:3], ops[3:]
     while len(window) == 3:
         matches_pattern = _bf16_window_matches(window)
-        if matches_pattern and (
-            window[0].split_alignment % _BF16_M_ALIGNMENT != 0
-            or window[2].split_alignment % _BF16_M_ALIGNMENT != 0
-        ):
-            warnings.warn(
-                "BF16 grouped MLP fusion was skipped because both GroupedLinear operations "
-                f"require split_alignment to be divisible by {_BF16_M_ALIGNMENT} "
-                f"(got {window[0].split_alignment} and {window[2].split_alignment}).",
-                stacklevel=2,
-            )
-            matches_pattern = False
+        if matches_pattern:
+            fc1_alignment = window[0]._resolve_split_alignment(recipe)
+            fc2_alignment = window[2]._resolve_split_alignment(recipe)
+            if fc1_alignment % _BF16_M_ALIGNMENT != 0 or fc2_alignment % _BF16_M_ALIGNMENT != 0:
+                warnings.warn(
+                    "BF16 grouped MLP fusion was skipped because both GroupedLinear operations "
+                    f"require split_alignment to be divisible by {_BF16_M_ALIGNMENT} "
+                    f"(got {fc1_alignment} and {fc2_alignment}).",
+                    stacklevel=2,
+                )
+                matches_pattern = False
         if matches_pattern:
             out.append(fused_op_cls(fc1=window[0], activation=window[1], fc2=window[2]))
             window = ops[:3]
@@ -4046,6 +4050,10 @@ class GroupedMLP_CuTeGEMMGLUBf16(FusedOperation):
             activation_grad_extra = (None,)
         else:
             activation_grad_extra = (grad_scales,) if grad_scales is not None else ()
+        # Row-count inputs of the activation take no gradient.
+        activation_grad_extra += (None,) * (
+            self.basic_ops[1].num_extra_inputs - len(activation_grad_extra)
+        )
         # Autograd sums FC2's dscales with dprob when both use the same probs tensor.
         fc2_grad_extra = (None, fc2_grad_scales) if fc2_op._scale_bias else (None,)
         return (

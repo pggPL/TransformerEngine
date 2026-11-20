@@ -12,6 +12,7 @@ import torch
 from transformer_engine.pytorch.module import Linear, LayerNormLinear
 from transformer_engine.pytorch.attention import DotProductAttention
 from transformer_engine.pytorch.distributed import allreduce, get_distributed_world_size
+from transformer_engine.pytorch.triton.sigmoid_gate import sigmoid_gate
 from transformer_engine.pytorch.attention.mla_rope import (
     HAVE_TRITON,
     apply_mla_rope_kv,
@@ -45,8 +46,9 @@ class MultiLatentAttention(torch.nn.Module):
     Multi-Latent Attention as used in DeepSeekV3.
 
     Queries and key-values are projected through low-rank latents
-    (``q_lora_rank``, ``kv_lora_rank``); RMSNorm on each latent is fused into
-    the up-projection (:class:`LayerNormLinear` with RMSNorm). Each query/key
+    (``q_lora_rank``, ``kv_lora_rank``) by one down-projection GEMM
+    (``qkv_down_proj``, also producing the shared rope head); RMSNorm on each
+    latent is fused into the up-projection (:class:`LayerNormLinear` with RMSNorm). Each query/key
     head is split into a ``qk_nope_head_dim`` part and a ``qk_rope_head_dim``
     part; RoPE is applied only to the rope part, and the key rope part comes
     from a single shared head broadcast to all heads. Attention runs through
@@ -163,7 +165,11 @@ class MultiLatentAttention(torch.nn.Module):
         common = {"bias": False, "params_dtype": params_dtype, "device": device}
         tp = {"tp_group": tp_group, "tp_size": tp_size}
 
-        self.q_down_proj = Linear(hidden_size, q_lora_rank, **common)
+        self.q_lora_rank = q_lora_rank
+        # One GEMM for both latents and the shared rope head.
+        self.qkv_down_proj = Linear(
+            hidden_size, q_lora_rank + kv_lora_rank + qk_rope_head_dim, **common
+        )
         self.q_up_proj = LayerNormLinear(
             q_lora_rank,
             num_attention_heads * self.qk_head_dim,
@@ -173,7 +179,6 @@ class MultiLatentAttention(torch.nn.Module):
             **tp,
             **common,
         )
-        self.kv_down_proj = Linear(hidden_size, kv_lora_rank + qk_rope_head_dim, **common)
         self.kv_up_proj = LayerNormLinear(
             kv_lora_rank,
             num_attention_heads * (qk_nope_head_dim + v_head_dim),
@@ -264,11 +269,12 @@ class MultiLatentAttention(torch.nn.Module):
         seq_len = hidden_states.shape[seq_dim]
         heads = self.num_attention_heads_per_partition
 
-        q = self.q_up_proj(self.q_down_proj(hidden_states))
-        q = q.view(*q.shape[:-1], heads, self.qk_head_dim)
-
-        kv_down = self.kv_down_proj(hidden_states)
-        kv_latent, k_pos = torch.split(kv_down, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1)
+        q_latent, kv_latent, k_pos = torch.split(
+            self.qkv_down_proj(hidden_states),
+            [self.q_lora_rank, self.kv_lora_rank, self.qk_rope_head_dim],
+            dim=-1,
+        )
+        q = self.q_up_proj(q_latent)
         if self.kv_up_proj.tp_size > 1:
             # k_pos is shared across TP ranks; its attention gradients must be summed.
             k_pos = _ReduceGrad.apply(k_pos, self.kv_up_proj.tp_group)
@@ -277,8 +283,8 @@ class MultiLatentAttention(torch.nn.Module):
 
         if self.rope:
             cos, sin = self._rope_tables_for(seq_len, hidden_states.device)
-            # q has no other consumer, so the Triton kernel may rotate it in place
-            # instead of cloning the full tensor first.
+            # q has no other consumer, so the Triton kernel may rotate the projection
+            # output in place (before the head view) instead of cloning it.
             in_place = (
                 HAVE_TRITON
                 and self.qkv_format == "sbhd"
@@ -287,6 +293,8 @@ class MultiLatentAttention(torch.nn.Module):
                 and q.is_contiguous()
                 and not torch.compiler.is_compiling()
             )
+            if not in_place:
+                q = q.view(*q.shape[:-1], heads, self.qk_head_dim)
             q = apply_mla_rope_q(
                 q,
                 cos,
@@ -296,6 +304,7 @@ class MultiLatentAttention(torch.nn.Module):
                 self.qkv_format,
                 in_place=in_place,
             )
+            q = q.view(*q.shape[:-1], heads, self.qk_head_dim) if q.dim() == 3 else q
             k, v = apply_mla_rope_kv(
                 kv,
                 k_pos.unsqueeze(-2),
@@ -307,10 +316,18 @@ class MultiLatentAttention(torch.nn.Module):
                 self.qkv_format,
             )
         else:
-            k_nope, v = torch.split(kv, [self.qk_nope_head_dim, self.v_head_dim], dim=-1)
-            k_pos = k_pos.unsqueeze(-2).expand(*k_nope.shape[:-1], self.qk_rope_head_dim)
-            k = torch.cat([k_nope, k_pos], dim=-1)
-            v = v.contiguous()
+            q = q.view(*q.shape[:-1], heads, self.qk_head_dim)
+            k, v = apply_mla_rope_kv(
+                kv,
+                k_pos.unsqueeze(-2),
+                None,
+                None,
+                self.qk_nope_head_dim,
+                self.qk_rope_head_dim,
+                self.v_head_dim,
+                self.qkv_format,
+                rotate=False,
+            )
 
         context = self.core_attention(
             q,
@@ -321,5 +338,5 @@ class MultiLatentAttention(torch.nn.Module):
             attn_mask_type=attn_mask_type,
         )
         if self.gate_proj is not None:
-            context = context * torch.sigmoid(self.gate_proj(hidden_states))
+            context = sigmoid_gate(context, self.gate_proj(hidden_states))
         return self.out_proj(context)

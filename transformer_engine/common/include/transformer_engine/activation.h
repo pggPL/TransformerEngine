@@ -459,6 +459,22 @@ void nvte_scaled_situglu(const NVTETensor input, const NVTETensor act_scales, NV
                          float beta1, float beta2, int64_t glu_interleave_size,
                          cudaStream_t stream);
 
+/*! \brief nvte_scaled_swiglu restricted to the first ``*num_rows`` rows.
+ *
+ *  ``num_rows`` is an int32 device scalar; rows at or beyond it are neither read
+ *  nor written (e.g. the unused capacity of an expert-parallel receive buffer).
+ */
+void nvte_scaled_swiglu_bounded(const NVTETensor input, const NVTETensor act_scales,
+                                NVTETensor output, const NVTETensor num_rows,
+                                int64_t glu_interleave_size, cudaStream_t stream);
+
+/*! \brief nvte_scaled_situglu restricted to the first ``*num_rows`` rows (see
+ *         nvte_scaled_swiglu_bounded).
+ */
+void nvte_scaled_situglu_bounded(const NVTETensor input, const NVTETensor act_scales,
+                                 NVTETensor output, const NVTETensor num_rows, float beta1,
+                                 float beta2, int64_t glu_interleave_size, cudaStream_t stream);
+
 /*! \brief Computes ScaledClampedSwiGLU without materializing GLU deinterleave.
  *
  *  Computes output = ClampedSwiGLU(input) * act_scales[:, None].
@@ -635,6 +651,22 @@ void nvte_scaled_dsituglu(const NVTETensor grad, const NVTETensor input,
                           const NVTETensor act_scales, NVTETensor grad_input,
                           NVTETensor grad_act_scales, float beta1, float beta2,
                           int64_t glu_interleave_size, cudaStream_t stream);
+
+/*! \brief nvte_scaled_dswiglu restricted to the first ``*num_rows`` rows; the scale
+ *         gradient of the remaining rows is set to zero.
+ */
+void nvte_scaled_dswiglu_bounded(const NVTETensor grad, const NVTETensor input,
+                                 const NVTETensor act_scales, NVTETensor grad_input,
+                                 NVTETensor grad_act_scales, const NVTETensor num_rows,
+                                 int64_t glu_interleave_size, cudaStream_t stream);
+
+/*! \brief nvte_scaled_dsituglu restricted to the first ``*num_rows`` rows (see
+ *         nvte_scaled_dswiglu_bounded).
+ */
+void nvte_scaled_dsituglu_bounded(const NVTETensor grad, const NVTETensor input,
+                                  const NVTETensor act_scales, NVTETensor grad_input,
+                                  NVTETensor grad_act_scales, const NVTETensor num_rows, float beta1,
+                                  float beta2, int64_t glu_interleave_size, cudaStream_t stream);
 
 /*! \brief Computes ScaledClampedSwiGLU backward without materializing GLU deinterleave.
  *

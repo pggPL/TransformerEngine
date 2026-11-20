@@ -26,9 +26,10 @@ Attention (:class:`~transformer_engine.pytorch.models.MultiLatentAttention`)
   pass, with optional YaRN context extension
   (:func:`~transformer_engine.pytorch.attention.mla_rope.build_rope_tables`).
 * :class:`~transformer_engine.pytorch.LayerNormLinear` with RMSNorm, so the
-  latent normalizations are fused into the up-projections;
-  :class:`~transformer_engine.pytorch.Linear` with column and row tensor
-  parallelism for the projections.
+  latent normalizations are fused into the up-projections; one
+  :class:`~transformer_engine.pytorch.Linear` computes both latents and the
+  shared rope head (``qkv_down_proj``), and column and row tensor
+  parallelism applies to the up and output projections.
 
 MoE (:class:`~transformer_engine.pytorch.models.DeepSeekV3MoE`)
 
@@ -89,35 +90,35 @@ time running downwards:
      - Mtok / s
      - expert weights
    * - BF16
-     - 59.2
-     - 1.11
+     - 58.7
+     - 1.12
      - grouped
    * - FP8 current scaling
-     - 45.3
-     - 1.45
+     - 42.2
+     - 1.55
      - grouped
    * - MXFP8, fused grouped MLP
-     - 42.9
-     - 1.53
+     - 42.7
+     - 1.54
      - grouped
    * - NVFP4, fused grouped MLP
-     - 36.5
-     - 1.79
+     - 35.6
+     - 1.84
      - per expert (grouped NVFP4 weight quantization not available yet)
 
 .. tabs::
 
    .. tab:: BF16
 
-      No quantization; the experts run as BF16 grouped GEMMs with a separate
-      SwiGLU kernel: **59.2 ms/iter**.
+      No quantization; the experts run through the BF16 cuDNN fused grouped
+      MLP: **58.7 ms/iter**.
 
-      **Forward: 21.4 ms**
+      **Forward: 23.4 ms**
 
       .. raw:: html
          :file: profile_dsv3_bf16_fwd.svg
 
-      **Backward: 37.9 ms**
+      **Backward: 36.4 ms**
 
       .. raw:: html
          :file: profile_dsv3_bf16_bwd.svg
@@ -126,14 +127,14 @@ time running downwards:
 
       ``te.autocast(recipe=Float8CurrentScaling())``: per-tensor FP8 with an
       amax reduction before every cast, unfused grouped GEMMs:
-      **45.3 ms/iter**.
+      **42.2 ms/iter**.
 
-      **Forward: 16.4 ms**
+      **Forward: 15.7 ms**
 
       .. raw:: html
          :file: profile_dsv3_fp8_cs_fwd.svg
 
-      **Backward: 29.0 ms**
+      **Backward: 27.1 ms**
 
       .. raw:: html
          :file: profile_dsv3_fp8_cs_bwd.svg
@@ -141,7 +142,7 @@ time running downwards:
    .. tab:: MXFP8 (fused grouped MLP)
 
       ``te.autocast(recipe=MXFP8BlockScaling())`` with the cuDNN fused grouped
-      MLP: **42.9 ms/iter**.
+      MLP: **42.7 ms/iter**.
 
       **Forward: 15.4 ms**
 
@@ -157,14 +158,14 @@ time running downwards:
 
       ``te.autocast(recipe=NVFP4BlockScaling())`` with the cuDNN fused grouped
       MLP; inputs and gradients are quantized by the random Hadamard transform
-      kernel, expert weights per expert: **36.5 ms/iter**.
+      kernel, expert weights per expert: **35.6 ms/iter**.
 
-      **Forward: 12.8 ms**
+      **Forward: 12.9 ms**
 
       .. raw:: html
          :file: profile_dsv3_nvfp4_fwd.svg
 
-      **Backward: 23.7 ms**
+      **Backward: 22.8 ms**
 
       .. raw:: html
          :file: profile_dsv3_nvfp4_bwd.svg
