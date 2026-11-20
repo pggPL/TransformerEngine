@@ -61,6 +61,20 @@ DeepSeek-V3
 .. autoapiclass:: transformer_engine.pytorch.models.MultiLatentAttention(hidden_size, num_attention_heads, **kwargs)
   :members: forward
 
+Kimi-K3
+~~~~~~~
+
+.. autoapiclass:: transformer_engine.pytorch.models.KimiK3Layer(hidden_size, num_attention_heads, layer_number, **kwargs)
+  :members: forward
+
+.. autoapiclass:: transformer_engine.pytorch.models.KimiK3MoE(hidden_size, moe_ffn_hidden_size, num_experts, **kwargs)
+  :members: forward, update_expert_bias
+
+.. autoapiclass:: transformer_engine.pytorch.models.KimiLinearAttention(hidden_size, num_attention_heads, **kwargs)
+  :members: forward
+
+.. autoapifunction:: transformer_engine.pytorch.models.kimi_k3.attn_res_pool
+
 Other
 -----
 
@@ -338,9 +352,13 @@ Operation fuser
 
 .. autoapiclass:: transformer_engine.pytorch.ops.ScaledSwiGLU
 
+.. autoapiclass:: transformer_engine.pytorch.ops.ScaledSiTUGLU
+
 .. autoapiclass:: transformer_engine.pytorch.ops.SiLU
 
 .. autoapiclass:: transformer_engine.pytorch.ops.SwiGLU
+
+.. autoapiclass:: transformer_engine.pytorch.ops.SiTUGLU
 
 .. autoapifunction:: transformer_engine.pytorch.triton.mhc.mhc_fused_sinkhorn
 

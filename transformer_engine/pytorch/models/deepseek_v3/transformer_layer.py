@@ -79,6 +79,7 @@ class DeepSeekV3Layer(torch.nn.Module):
             "routed_scaling_factor",
             "shared_expert_ffn_hidden_size",
             "expert_bias_update_rate",
+            "single_grouped_weight",
             "ep_group",
             "ep_max_tokens_per_rank",
         }

@@ -52,11 +52,16 @@ def _parse_args(argv=None):
         ),
     )
     p.add_argument("--impl", choices=["te", "naive", "naive_grouped"], default="te")
-    p.add_argument("--recipe", choices=["none", "mxfp8"], default="none")
+    p.add_argument("--recipe", choices=["none", *_RECIPES], default="none")
     p.add_argument(
         "--ep-buffer-per-call",
         action="store_true",
         help="Let the layer create a new EpBuffer per forward instead of reusing one.",
+    )
+    p.add_argument(
+        "--single-grouped-weight",
+        action="store_true",
+        help="One grouped weight parameter per expert GEMM (one quantize kernel per step).",
     )
     p.add_argument("--warmup", type=int, default=5)
     p.add_argument("--iters", type=int, default=10)
@@ -68,7 +73,7 @@ def _parse_args(argv=None):
     if args.tokens_per_rank <= 0 or args.tokens_per_rank % 4:
         p.error("--tokens-per-rank must be a positive multiple of 4")
     if args.impl != "te" and args.recipe != "none":
-        p.error("--recipe mxfp8 is only supported with --impl te")
+        p.error("--recipe is only supported with --impl te")
     if args.dsv3:
         args.hidden, args.num_heads, args.moe_ffn = 7168, 128, 2048
         args.q_lora_rank, args.kv_lora_rank = 1536, 512
@@ -76,10 +81,19 @@ def _parse_args(argv=None):
     return args
 
 
+_RECIPES = {
+    "fp8_delayed": te_recipe.DelayedScaling,
+    "fp8_cs": te_recipe.Float8CurrentScaling,
+    "fp8_block": te_recipe.Float8BlockScaling,
+    "mxfp8": te_recipe.MXFP8BlockScaling,
+    "nvfp4": te_recipe.NVFP4BlockScaling,
+}
+
+
 def _autocast(name):
     if name == "none":
         return nullcontext()
-    return te.autocast(enabled=True, recipe=te_recipe.MXFP8BlockScaling())
+    return te.autocast(enabled=True, recipe=_RECIPES[name]())
 
 
 class NaiveMoE(torch.nn.Module):
@@ -207,6 +221,7 @@ def main():
         moe_ffn_hidden_size=args.moe_ffn,
         shared_expert_ffn_hidden_size=args.moe_ffn,
         topk=args.topk,
+        single_grouped_weight=args.single_grouped_weight,
         ep_group=ep_group,
         ep_max_tokens_per_rank=args.tokens_per_rank,
     )
@@ -245,9 +260,10 @@ def main():
     def step():
         layer.zero_grad(set_to_none=True)
         x.grad = None
-        with _autocast(args.recipe):
+        with torch.cuda.nvtx.range("forward"), _autocast(args.recipe):
             out = layer(x, ep_buffer=ep_buffer)
-        out.backward(torch.ones_like(out))
+        with torch.cuda.nvtx.range("backward"):
+            out.backward(torch.ones_like(out))
 
     for _ in range(args.warmup):
         step()
@@ -268,7 +284,7 @@ def main():
         tok_s = args.tokens_per_rank * world_size / (ms / 1e3)
         print(
             f"DeepSeekV3Layer impl={args.impl}:"
-            f" ranks={world_size} experts={num_experts} topk={args.topk} tokens/rank={args.tokens_per_rank} hidden={args.hidden} recipe={args.recipe} fused_mlp={os.environ.get('NVTE_CUTEDSL_FUSED_GROUPED_MLP', '0')} ep_buffer={'per_call' if ep_buffer is None else 'reused'} fwd+bwd"
+            f" ranks={world_size} experts={num_experts} topk={args.topk} tokens/rank={args.tokens_per_rank} hidden={args.hidden} recipe={args.recipe} fused_mlp={os.environ.get('NVTE_CUTEDSL_FUSED_GROUPED_MLP', '0')} single_grouped_weight={int(args.single_grouped_weight)} ep_buffer={'per_call' if ep_buffer is None else 'reused'} fwd+bwd"
             f" {ms:.3f} ms/iter ({tok_s / 1e6:.2f} Mtok/s)",
             flush=True,
         )
