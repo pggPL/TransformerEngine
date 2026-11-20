@@ -202,13 +202,14 @@ if HAVE_TRITON:
         tl.store(Q + x_left_off, x_left, mask=mask)
         tl.store(Q + x_right_off, x_right, mask=mask)
 
-    @triton.autotune(configs=_AUTOTUNE_CONFIGS, key=["emb_dim", "head_num"], restore_value=["DO"])
+    @triton.autotune(configs=_AUTOTUNE_CONFIGS, key=["emb_dim", "head_num"])
     @triton.jit
     def rotary_bwd_q_kernel(
         DO,
+        OUT,
         COS,
         SIN,
-        qk_head_dim,
+        qk_head_dim: tl.constexpr,
         emb_dim: tl.constexpr,
         head_num: tl.constexpr,
         batch_size,
@@ -219,8 +220,9 @@ if HAVE_TRITON:
         cp_rank,
         cp_size,
         BLOCK_H: tl.constexpr,
+        BLOCK_NOPE: tl.constexpr,
     ):
-        """In-place RoPE bwd on the trailing rope slice of dq."""
+        """RoPE bwd of dq into OUT: nope slice copied, rope slice counter-rotated."""
         pid_m = tl.program_id(axis=0)
         pid_head = tl.program_id(axis=1)
         if cu_seqlens_q is None:
@@ -237,8 +239,13 @@ if HAVE_TRITON:
         sin_right = sin_right.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
         head_offsets = pid_head * BLOCK_H + tl.arange(0, BLOCK_H)
         DO = DO + pid_m * stride_x_seq
-        x_off = head_offsets[:, None] * stride_x_nheads + qk_head_dim
+        OUT = OUT + pid_m * stride_x_seq
         mask = head_offsets[:, None] < head_num
+        nope_cols = tl.arange(0, BLOCK_NOPE)
+        nope_off = head_offsets[:, None] * stride_x_nheads + nope_cols[None, :]
+        nope_mask = mask & (nope_cols[None, :] < qk_head_dim)
+        tl.store(OUT + nope_off, tl.load(DO + nope_off, mask=nope_mask), mask=nope_mask)
+        x_off = head_offsets[:, None] * stride_x_nheads + qk_head_dim
         x_left_off = x_off + tl.arange(0, emb_dim // 2)[None, :]
         x_right_off = x_left_off + emb_dim // 2
         x_left = tl.load(DO + x_left_off, mask=mask)
@@ -247,8 +254,8 @@ if HAVE_TRITON:
         x_2 = -x_left * sin_left + x_right * cos_right
         x_1_off = x_off + tl.arange(0, emb_dim // 2)[None, :] * 2
         x_2_off = x_1_off + 1
-        tl.store(DO + x_1_off, x_1, mask=mask)
-        tl.store(DO + x_2_off, x_2, mask=mask)
+        tl.store(OUT + x_1_off, x_1, mask=mask)
+        tl.store(OUT + x_2_off, x_2, mask=mask)
 
     @triton.autotune(configs=_AUTOTUNE_CONFIGS, key=["emb_dim", "k_dim", "v_dim", "head_num"])
     @triton.jit
@@ -451,7 +458,9 @@ if HAVE_TRITON:
         def backward(ctx, dq):
             """Counter-rotate the rope slice of dq."""
             cos, sin = ctx.saved_tensors
-            dq = dq.clone(memory_format=torch.contiguous_format)
+            if not dq.is_contiguous():
+                dq = dq.contiguous()
+            dq_out = torch.empty_like(dq)
             s, b, nheads, head_dim_nope, head_dim_rope = ctx.dims
 
             def grid(meta):
@@ -459,6 +468,7 @@ if HAVE_TRITON:
 
             rotary_bwd_q_kernel[grid](
                 dq,
+                dq_out,
                 cos,
                 sin,
                 head_dim_nope,
@@ -471,8 +481,9 @@ if HAVE_TRITON:
                 dq.stride(2),
                 0,
                 1,
+                BLOCK_NOPE=triton.next_power_of_2(head_dim_nope),
             )
-            return dq, None, None, None, None, None
+            return dq_out, None, None, None, None, None
 
     class _MLARoPEKVTriton(torch.autograd.Function):
         """kv [s, b, h, nope+v] + shared rope head [s, b, 1, rope] -> (k, v)."""
