@@ -426,6 +426,27 @@ def test_mla_nope_output_gate_matches_reference():
     torch.testing.assert_close(out, ref, rtol=0.05, atol=0.05)
 
 
+def test_sigmoid_gate_matches_reference():
+    from transformer_engine.pytorch.triton import sigmoid_gate as sg
+
+    if not sg.HAVE_TRITON:
+        pytest.skip("requires Triton")
+    torch.manual_seed(0)
+    x = torch.randn(SEQ_LEN, BATCH, HIDDEN, dtype=DTYPE, device="cuda", requires_grad=True)
+    gate = torch.randn(SEQ_LEN, BATCH, HIDDEN, dtype=DTYPE, device="cuda", requires_grad=True)
+    dy = torch.randn(SEQ_LEN, BATCH, HIDDEN, dtype=DTYPE, device="cuda")
+
+    out = sg.sigmoid_gate(x, gate)
+    out.backward(dy)
+    ref = (x.detach().float() * torch.sigmoid(gate.detach().float())).to(DTYPE)
+    torch.testing.assert_close(out, ref)
+    sgf = torch.sigmoid(gate.detach().float())
+    torch.testing.assert_close(x.grad, (dy.float() * sgf).to(DTYPE))
+    torch.testing.assert_close(
+        gate.grad, (dy.float() * x.detach().float() * sgf * (1 - sgf)).to(DTYPE)
+    )
+
+
 @pytest.mark.parametrize("shared", [False, True], ids=["no_shared", "shared"])
 def test_kimi_moe_matches_dense_reference(shared):
     torch.manual_seed(0)

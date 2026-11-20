@@ -12,6 +12,7 @@ import torch
 from transformer_engine.pytorch.module import Linear, LayerNormLinear
 from transformer_engine.pytorch.attention import DotProductAttention
 from transformer_engine.pytorch.distributed import allreduce, get_distributed_world_size
+from transformer_engine.pytorch.triton.sigmoid_gate import sigmoid_gate
 from transformer_engine.pytorch.attention.mla_rope import (
     HAVE_TRITON,
     apply_mla_rope_kv,
@@ -334,5 +335,5 @@ class MultiLatentAttention(torch.nn.Module):
             attn_mask_type=attn_mask_type,
         )
         if self.gate_proj is not None:
-            context = context * torch.sigmoid(self.gate_proj(hidden_states))
+            context = sigmoid_gate(context, self.gate_proj(hidden_states))
         return self.out_proj(context)
