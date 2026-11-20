@@ -23,12 +23,17 @@ Attention
   keys, the sigmoid of the write strength and the safe decay gate
   ``gate_lower_bound * sigmoid(exp(A_log) * (g + dt_bias))``.
   :class:`~transformer_engine.pytorch.models.KimiLinearAttention` adds the
-  projections, the causal short convolution and the gated output norm around
-  it.
+  projections around it and two fused Triton kernels: SiLU of the causal short
+  convolution, written directly as the q, k and v tensors in the layout the
+  recurrence consumes, and the per-head RMSNorm times the sigmoid gate on its
+  output. Both compute in float32 and replace the layout copies, dtype casts
+  and separate elementwise kernels of the plain PyTorch formulation.
 * :class:`~transformer_engine.pytorch.models.MultiLatentAttention` from the
   DeepSeek-V3 layer in its NoPE variant (``rope=False``) with a sigmoid output
   gate (``output_gate=True``): the same cuDNN fused attention with
-  asymmetric head sizes and fused latent RMSNorms.
+  asymmetric head sizes, fused latent RMSNorms and one down-projection GEMM.
+  The keys are assembled by the fused MLA RoPE kernel without rotation, and
+  the output gate is one fused kernel.
 
 MoE (:class:`~transformer_engine.pytorch.models.KimiK3MoE`)
 

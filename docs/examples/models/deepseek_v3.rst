@@ -26,9 +26,10 @@ Attention (:class:`~transformer_engine.pytorch.models.MultiLatentAttention`)
   pass, with optional YaRN context extension
   (:func:`~transformer_engine.pytorch.attention.mla_rope.build_rope_tables`).
 * :class:`~transformer_engine.pytorch.LayerNormLinear` with RMSNorm, so the
-  latent normalizations are fused into the up-projections;
-  :class:`~transformer_engine.pytorch.Linear` with column and row tensor
-  parallelism for the projections.
+  latent normalizations are fused into the up-projections; one
+  :class:`~transformer_engine.pytorch.Linear` computes both latents and the
+  shared rope head (``qkv_down_proj``), and column and row tensor
+  parallelism applies to the up and output projections.
 
 MoE (:class:`~transformer_engine.pytorch.models.DeepSeekV3MoE`)
 
