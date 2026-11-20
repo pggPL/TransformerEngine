@@ -877,7 +877,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
     multiple_results = True
     # Outer primitive has 5 tensor inputs: inp, row_id_map, merging_probs, permuted_probs, pad_offsets
     # Static args for outer primitive: num_tokens, num_experts, hidden_size,
-    #                                  with_merging_probs, with_probs, with_unpad
+    #                                  with_merging_probs, with_probs, with_unpad, mask_zero_probs
     # Inner primitive has adds output_buf, unpermuted_probs_buf
     impl_static_args = (
         5,
@@ -886,6 +886,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
         8,
         9,
         10,
+        11,
     )
     inner_primitive = None
     outer_primitive = None
@@ -906,10 +907,11 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
         with_merging_probs,
         with_probs,
         with_unpad,
+        mask_zero_probs,
     ):
         """Shape/dtype inference for unpermute."""
         del row_id_map_aval, merging_probs_aval, with_merging_probs, pad_offsets_aval, with_unpad
-        del output_buf_aval, unpermuted_probs_buf_aval
+        del output_buf_aval, unpermuted_probs_buf_aval, mask_zero_probs
 
         output_shape = (num_tokens, hidden_size)
         output_aval = jax.core.ShapedArray(output_shape, inp_aval.dtype)
@@ -937,6 +939,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
         with_merging_probs,
         with_probs,
         with_unpad,
+        mask_zero_probs,
     ):
         """Forward to inner primitive."""
         assert UnpermuteWithMaskMapPrimitive.inner_primitive is not None
@@ -963,6 +966,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
             with_merging_probs=with_merging_probs,
             with_probs=with_probs,
             with_unpad=with_unpad,
+            mask_zero_probs=mask_zero_probs,
         )
 
     @staticmethod
@@ -982,6 +986,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
         with_merging_probs,
         with_probs,
         with_unpad,
+        mask_zero_probs,
     ):
         """MLIR lowering using triton_call_lowering."""
         # Compute strides
@@ -1038,6 +1043,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
                 "hidden_size": hidden_size,
                 "PROBS_LOAD_WIDTH": triton.next_power_of_2(num_experts),
                 "WITH_MERGING_PROBS": with_merging_probs,
+                "MASK_ZERO_PROBS": mask_zero_probs,
                 "PERMUTE_PROBS": with_probs,
                 "FUSION_UNPAD": with_unpad,
                 "BLOCK_SIZE": block_size,
@@ -1052,6 +1058,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
         with_merging_probs,
         with_probs,
         with_unpad,
+        mask_zero_probs,
         mesh,
         arg_infos,
         result_infos,
@@ -1063,6 +1070,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
         - Output (num_tokens, hidden_size) gets same token dim sharding
         """
         del num_tokens, num_experts, hidden_size, with_merging_probs, with_unpad, result_infos
+        del mask_zero_probs
         row_id_map_spec = get_padded_spec(arg_infos[1])
         # Output has same token dimension sharding as row_id_map
         output_sharding = NamedSharding(
@@ -1092,6 +1100,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
         with_merging_probs,
         with_probs,
         with_unpad,
+        mask_zero_probs,
         mesh,
         arg_infos,
         result_infos,
@@ -1138,6 +1147,7 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
                 with_merging_probs=with_merging_probs,
                 with_probs=with_probs,
                 with_unpad=with_unpad,
+                mask_zero_probs=mask_zero_probs,
             )
 
         return mesh, sharded_impl, out_shardings, arg_shardings
@@ -1150,12 +1160,13 @@ class UnpermuteWithMaskMapPrimitive(BasePrimitive):
         with_merging_probs,
         with_probs,
         with_unpad,
+        mask_zero_probs,
         mesh,
         value_types,
         result_types,
     ):
         """Shardy sharding rule for this primitive."""
-        del num_tokens, num_experts, hidden_size, mesh, value_types, result_types
+        del num_tokens, num_experts, hidden_size, mesh, value_types, result_types, mask_zero_probs
         prefix = "UnpermuteWithMaskMap"
         # inp: (num_out_tokens, hidden_size)
         inp_spec = (f"{prefix}_out_tokens", f"{prefix}_hidden")
@@ -2080,6 +2091,7 @@ def unpermute_with_mask_map(
     num_tokens: int,
     num_experts: int,
     hidden_size: int,
+    mask_zero_probs: bool = False,
 ) -> Tuple[jnp.ndarray, Optional[jnp.ndarray]]:
     """
     Unpermute the input tensor based on the row_id_map.
@@ -2101,6 +2113,9 @@ def unpermute_with_mask_map(
         Number of experts in the permuted tensor.
     hidden_size : int
         Hidden size of the permuted tensor.
+
+    mask_zero_probs : bool
+        Use merging_probs to skip zero-probability rows instead of weighting them.
 
     Returns
     -------
@@ -2132,6 +2147,7 @@ def unpermute_with_mask_map(
         with_merging_probs=with_merging_probs,
         with_probs=with_probs,
         with_unpad=False,
+        mask_zero_probs=mask_zero_probs,
     )
 
     if not with_probs:
@@ -2149,6 +2165,7 @@ def unpermute_with_mask_map_and_unpad(
     num_tokens: int,
     num_experts: int,
     hidden_size: int,
+    mask_zero_probs: bool = False,
 ) -> Tuple[jnp.ndarray, Optional[jnp.ndarray]]:
     """
     Unpermute the input tensor based on the row_id_map with fused unpadding.
@@ -2172,6 +2189,9 @@ def unpermute_with_mask_map_and_unpad(
         Number of experts.
     hidden_size : int
         Hidden size of the tensor.
+
+    mask_zero_probs : bool
+        Use merging_probs to skip zero-probability rows instead of weighting them.
 
     Returns
     -------
@@ -2201,6 +2221,7 @@ def unpermute_with_mask_map_and_unpad(
         with_merging_probs=with_merging_probs,
         with_probs=with_probs,
         with_unpad=True,
+        mask_zero_probs=mask_zero_probs,
     )
 
     if not with_probs:

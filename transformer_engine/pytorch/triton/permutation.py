@@ -228,6 +228,7 @@ def unpermute_with_mask_map(
     num_tokens: int,
     num_experts: int,
     hidden_size: int,
+    mask_zero_probs: bool = False,
 ):
     """
     Unpermute the input tensor based on the row_id_map.
@@ -252,6 +253,8 @@ def unpermute_with_mask_map(
         Number of experts in the permuted tensor.
     hidden_size : int
         Hidden size of the permuted tensor.
+    mask_zero_probs : bool
+        Use merging_probs to skip zero-probability rows instead of weighting them.
     """
     output = torch.empty((num_tokens, hidden_size), dtype=inp.dtype, device=te_device_type())
     if permuted_probs is not None:
@@ -289,6 +292,7 @@ def unpermute_with_mask_map(
         hidden_size,
         PROBS_LOAD_WIDTH=triton.next_power_of_2(num_experts),
         WITH_MERGING_PROBS=merging_probs is not None,
+        MASK_ZERO_PROBS=mask_zero_probs,
         PERMUTE_PROBS=permuted_probs is not None,
         FUSION_UNPAD=pad_offsets is not None,
     )
