@@ -23,6 +23,11 @@ from transformer_engine.pytorch.models import (
 )
 from transformer_engine.pytorch.models.deepseek_v3.moe import expert_bias_from_qb_histogram
 from transformer_engine.pytorch.models.kimi_k3 import attn_res_pool
+from transformer_engine.pytorch.models.kimi_k3.kimi_linear_attention import (
+    _causal_depthwise_conv1d,
+    _gated_rmsnorm,
+)
+from transformer_engine.pytorch.attention.linear_attention import kda_block_kernels
 from utils import make_recipe, quantization_tols
 
 SEQ_LEN = 128
@@ -309,6 +314,85 @@ def test_kimi_linear_attention_forward_backward(qkv_format):
         assert getattr(attention, name).dtype == torch.float32
 
 
+@pytest.mark.skipif(not kda_block_kernels.HAVE_TRITON, reason="Triton is required")
+@pytest.mark.parametrize("qkv_format", ["sbhd", "bshd"])
+def test_kda_conv_silu_kernel_matches_reference(qkv_format):
+    torch.manual_seed(0)
+    seq_dim = 0 if qkv_format == "sbhd" else 1
+    channels, ksize = 3 * HEADS * 64, 4
+    shape = (SEQ_LEN, BATCH, channels) if seq_dim == 0 else (BATCH, SEQ_LEN, channels)
+    x = torch.randn(shape, dtype=DTYPE, device="cuda", requires_grad=True)
+    weight = torch.randn(channels, ksize, dtype=torch.float32, device="cuda", requires_grad=True)
+
+    q, k, v = kda_block_kernels.causal_conv_silu_split(x, weight, seq_dim)
+    ref = _causal_depthwise_conv1d(x, weight, seq_dim)
+    if seq_dim == 0:
+        ref = ref.transpose(0, 1)
+    ref_q, ref_k, ref_v = ref.chunk(3, dim=-1)
+    for out, expected in ((q, ref_q), (k, ref_k), (v, ref_v)):
+        assert out.shape == (BATCH, SEQ_LEN, channels // 3)
+        torch.testing.assert_close(out, expected)
+
+    grads = [torch.randn_like(t) for t in (q, k, v)]
+    torch.autograd.backward((q, k, v), grads)
+    dx, dw = x.grad.clone(), weight.grad.clone()
+    x.grad = None
+    weight.grad = None
+    torch.autograd.backward((ref_q, ref_k, ref_v), grads)
+    torch.testing.assert_close(dx, x.grad)
+    torch.testing.assert_close(dw, weight.grad, rtol=1e-3, atol=1e-2)
+
+
+@pytest.mark.skipif(not kda_block_kernels.HAVE_TRITON, reason="Triton is required")
+@pytest.mark.parametrize("qkv_format", ["sbhd", "bshd"])
+def test_kda_gated_rmsnorm_kernel_matches_reference(qkv_format):
+    torch.manual_seed(0)
+    seq_dim = 0 if qkv_format == "sbhd" else 1
+    head_dim, eps = 64, 1e-5
+    o = torch.randn(BATCH, SEQ_LEN, HEADS * head_dim, dtype=DTYPE, device="cuda", requires_grad=True)
+    g_shape = (SEQ_LEN, BATCH, HEADS * head_dim) if seq_dim == 0 else o.shape
+    g = torch.randn(g_shape, dtype=DTYPE, device="cuda", requires_grad=True)
+    weight = torch.rand(head_dim, dtype=torch.float32, device="cuda", requires_grad=True) + 0.5
+
+    out = kda_block_kernels.gated_rmsnorm(o, g, weight, eps, seq_dim, HEADS)
+    ref_o = o.transpose(0, 1) if seq_dim == 0 else o
+    ref = _gated_rmsnorm(ref_o, g, weight, eps, head_dim)
+    assert out.shape == g.shape
+    torch.testing.assert_close(out, ref)
+
+    dy = torch.randn_like(out)
+    out.backward(dy)
+    grads = [t.grad.clone() for t in (o, g, weight)]
+    for t in (o, g, weight):
+        t.grad = None
+    ref.backward(dy)
+    torch.testing.assert_close(grads[0], o.grad)
+    torch.testing.assert_close(grads[1], g.grad)
+    torch.testing.assert_close(grads[2], weight.grad, rtol=1e-3, atol=1e-2)
+
+
+@pytest.mark.skipif(not kda_block_kernels.HAVE_TRITON, reason="Triton is required")
+def test_kimi_linear_attention_fused_glue_matches_fallback():
+    torch.manual_seed(0)
+    attention = KimiLinearAttention(HIDDEN, HEADS, head_dim=64, params_dtype=DTYPE)
+    _use_reference_kda(attention)
+    assert attention.fused_glue
+    x = _input()
+    out = attention(x)
+    out.float().pow(2).mean().backward()
+    grads = [x.grad.clone()] + [p.grad.clone() for p in attention.parameters()]
+    x.grad = None
+    attention.zero_grad()
+
+    attention.fused_glue = False
+    ref = attention(x)
+    ref.float().pow(2).mean().backward()
+    torch.testing.assert_close(out, ref)
+    ref_grads = [x.grad] + [p.grad for p in attention.parameters()]
+    for got, expected in zip(grads, ref_grads):
+        torch.testing.assert_close(got, expected, rtol=2e-2, atol=2e-2)
+
+
 def test_mla_nope_output_gate_matches_reference():
     torch.manual_seed(0)
     mla = MultiLatentAttention(
@@ -325,10 +409,12 @@ def test_mla_nope_output_gate_matches_reference():
     )
     eps = mla.q_up_proj.eps
     xf = x.detach()
-    q = _rmsnorm(xf @ mla.q_down_proj.weight.T, mla.q_up_proj.layer_norm_weight, eps)
+    q_lora, kv_lora = MLA_KWARGS["q_lora_rank"], MLA_KWARGS["kv_lora_rank"]
+    q_latent, latent, k_pos = torch.split(
+        xf @ mla.qkv_down_proj.weight.T, [q_lora, kv_lora, rope], dim=-1
+    )
+    q = _rmsnorm(q_latent, mla.q_up_proj.layer_norm_weight, eps)
     q = (q @ mla.q_up_proj.weight.T).view(SEQ_LEN, BATCH, HEADS, nope + rope)
-    kv_down = xf @ mla.kv_down_proj.weight.T
-    latent, k_pos = torch.split(kv_down, [MLA_KWARGS["kv_lora_rank"], rope], dim=-1)
     kv = _rmsnorm(latent, mla.kv_up_proj.layer_norm_weight, eps) @ mla.kv_up_proj.weight.T
     k_nope, v = torch.split(kv.view(SEQ_LEN, BATCH, HEADS, nope + v_dim), [nope, v_dim], dim=-1)
     k = torch.cat([k_nope, k_pos.unsqueeze(-2).expand(-1, -1, HEADS, -1)], dim=-1)

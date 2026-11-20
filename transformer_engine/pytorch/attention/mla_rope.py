@@ -276,18 +276,15 @@ if HAVE_TRITON:
         cp_rank,
         cp_size,
         BLOCK_H: tl.constexpr,
+        ROTATE: tl.constexpr,
     ):
-        """Fwd: build (key, value) from kv and the shared rotated rope head."""
+        """Fwd: build (key, value) from kv and the shared (rotated) rope head."""
         pid_m = tl.program_id(axis=0)
         pid_head = tl.program_id(axis=1)
         if cu_seqlens_kv is None:
             token_idx = pid_m // batch_size
         else:
             token_idx = _get_thd_token_idx(cu_seqlens_kv, pid_m, seq_num, cp_rank, cp_size)
-        cos_left = tl.load(COS + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
-        sin_left = tl.load(SIN + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
-        cos_right = tl.load(COS + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
-        sin_right = tl.load(SIN + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
         head_offsets = pid_head * BLOCK_H + tl.arange(0, BLOCK_H)
         KV_ptr = KV + pid_m * stride_kv_seq
         kv_off = head_offsets[:, None] * stride_kv_nheads
@@ -303,18 +300,30 @@ if HAVE_TRITON:
         tl.store(K_ptr + k_out_off, k, mask=mask)
         tl.store(V_ptr + v_out_off, v, mask=mask)
         EMB = K_POS_EMB + pid_m * stride_emb_seq
-        x_1 = tl.load(EMB + tl.arange(0, emb_dim // 2) * 2)
-        x_2 = tl.load(EMB + tl.arange(0, emb_dim // 2) * 2 + 1)
-        x_left = x_1 * cos_left - x_2 * sin_left
-        x_right = x_2 * cos_right + x_1 * sin_right
-        x_left = x_left.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
-        x_right = x_right.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
         x_left_off = (
             tl.arange(0, BLOCK_H)[:, None] * stride_k_nheads
             + k_dim
             + tl.arange(0, emb_dim // 2)[None, :]
         )
         x_right_off = x_left_off + emb_dim // 2
+        if ROTATE:
+            cos_left = tl.load(COS + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
+            sin_left = tl.load(SIN + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
+            cos_right = tl.load(
+                COS + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2)
+            )
+            sin_right = tl.load(
+                SIN + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2)
+            )
+            x_1 = tl.load(EMB + tl.arange(0, emb_dim // 2) * 2)
+            x_2 = tl.load(EMB + tl.arange(0, emb_dim // 2) * 2 + 1)
+            x_left = x_1 * cos_left - x_2 * sin_left
+            x_right = x_2 * cos_right + x_1 * sin_right
+        else:
+            x_left = tl.load(EMB + tl.arange(0, emb_dim // 2))
+            x_right = tl.load(EMB + emb_dim // 2 + tl.arange(0, emb_dim // 2))
+        x_left = x_left.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
+        x_right = x_right.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
         tl.store(K_ptr + x_left_off, x_left, mask=mask)
         tl.store(K_ptr + x_right_off, x_right, mask=mask)
 
@@ -344,6 +353,7 @@ if HAVE_TRITON:
         cp_rank,
         cp_size,
         BLOCK_H: tl.constexpr,
+        ROTATE: tl.constexpr,
     ):
         """Bwd: scatter (dk, dv) into dkv and reduce rope-slice grads into demb."""
         pid_m = tl.program_id(axis=0)
@@ -382,19 +392,23 @@ if HAVE_TRITON:
             x_right_accum = tl.sum(x_right_accum, axis=0)
             x_left_accum = x_left_accum.to(dEMB.dtype.element_ty)
             x_right_accum = x_right_accum.to(dEMB.dtype.element_ty)
-            cos_left = tl.load(COS + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
-            sin_left = tl.load(SIN + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
-            cos_right = tl.load(
-                COS + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2)
-            )
-            sin_right = tl.load(
-                SIN + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2)
-            )
-            x_1 = x_left_accum * cos_left + x_right_accum * sin_right
-            x_2 = -x_left_accum * sin_left + x_right_accum * cos_right
             dEMB_ptr = dEMB + pid_m * stride_demb_seq
-            tl.store(dEMB_ptr + tl.arange(0, emb_dim // 2) * 2, x_1)
-            tl.store(dEMB_ptr + tl.arange(0, emb_dim // 2) * 2 + 1, x_2)
+            if ROTATE:
+                cos_left = tl.load(COS + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
+                sin_left = tl.load(SIN + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
+                cos_right = tl.load(
+                    COS + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2)
+                )
+                sin_right = tl.load(
+                    SIN + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2)
+                )
+                x_1 = x_left_accum * cos_left + x_right_accum * sin_right
+                x_2 = -x_left_accum * sin_left + x_right_accum * cos_right
+                tl.store(dEMB_ptr + tl.arange(0, emb_dim // 2) * 2, x_1)
+                tl.store(dEMB_ptr + tl.arange(0, emb_dim // 2) * 2 + 1, x_2)
+            else:
+                tl.store(dEMB_ptr + tl.arange(0, emb_dim // 2), x_left_accum)
+                tl.store(dEMB_ptr + emb_dim // 2 + tl.arange(0, emb_dim // 2), x_right_accum)
 
     def _token_stride(tensor: torch.Tensor) -> int:
         return tensor.stride(1) if tensor.dim() == 4 else tensor.stride(0)
@@ -464,7 +478,7 @@ if HAVE_TRITON:
         """kv [s, b, h, nope+v] + shared rope head [s, b, 1, rope] -> (k, v)."""
 
         @staticmethod
-        def forward(ctx, kv, k_pos_emb, cos, sin, head_dim_nope, head_dim_rope, head_dim_v):
+        def forward(ctx, kv, k_pos_emb, cos, sin, head_dim_nope, head_dim_rope, head_dim_v, rotate):
             """Build (k, v) from kv and the shared rope head."""
             if not kv.is_contiguous():
                 kv = kv.contiguous()
@@ -498,9 +512,11 @@ if HAVE_TRITON:
                 o_value.stride(2),
                 0,
                 1,
+                ROTATE=rotate,
             )
             ctx.save_for_backward(cos, sin)
             ctx.dims = (s, b, nheads, head_dim_nope, head_dim_rope, head_dim_v)
+            ctx.rotate = rotate
             return o_key, o_value
 
         @staticmethod
@@ -539,8 +555,9 @@ if HAVE_TRITON:
                 _token_stride(d_emb),
                 0,
                 1,
+                ROTATE=ctx.rotate,
             )
-            return d_kv, d_emb, None, None, None, None, None
+            return d_kv, d_emb, None, None, None, None, None, None
 
 
 def _rotate_interleaved_to_neox(x, cos_table, sin_table, seq_dim):
@@ -639,11 +656,13 @@ def apply_mla_rope_kv(
     head_dim_rope: int,
     head_dim_v: int,
     tensor_format: str = "sbhd",
+    rotate: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Assemble keys and values using a shared rotary key head.
 
     ``k_pos_emb`` is rotated as the rotary channels in :func:`apply_mla_rope_q` and
-    appended to the non-rotary key channels of every head.
+    appended to the non-rotary key channels of every head. With ``rotate=False``
+    (NoPE) it is appended unchanged and the tables may be ``None``.
 
     Parameters
     ----------
@@ -663,6 +682,8 @@ def apply_mla_rope_kv(
         Number of non-rotary key, rotary key and value channels per head.
     tensor_format : {"sbhd", "bshd"}, default = "sbhd"
         Input and output layout.
+    rotate : bool, default = True
+        Rotate ``k_pos_emb``; ``False`` copies it as is.
 
     Returns
     -------
@@ -685,12 +706,15 @@ def apply_mla_rope_kv(
         and all(_is_power_of_two(dim) for dim in (head_dim_nope, head_dim_rope, head_dim_v))
     ):
         return _MLARoPEKVTriton.apply(
-            kv, k_pos_emb, cos_table, sin_table, head_dim_nope, head_dim_rope, head_dim_v
+            kv, k_pos_emb, cos_table, sin_table, head_dim_nope, head_dim_rope, head_dim_v, rotate
         )
     seq_dim = 0 if tensor_format == "sbhd" else 1
     k_nope = kv[..., :head_dim_nope]
     v = kv[..., head_dim_nope : head_dim_nope + head_dim_v]
-    k_rope = _rotate_interleaved_to_neox(k_pos_emb, cos_table, sin_table, seq_dim)
+    if rotate:
+        k_rope = _rotate_interleaved_to_neox(k_pos_emb, cos_table, sin_table, seq_dim)
+    else:
+        k_rope = k_pos_emb
     k_rope = k_rope.expand(*k_nope.shape[:-1], -1)
     return torch.cat((k_nope, k_rope), dim=-1), v.contiguous()
 

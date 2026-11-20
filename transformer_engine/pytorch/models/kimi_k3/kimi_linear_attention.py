@@ -11,6 +11,13 @@ import torch
 
 from transformer_engine.pytorch.module import Linear
 from transformer_engine.pytorch.attention import KimiDeltaAttention
+from transformer_engine.pytorch.attention.linear_attention.kda_block_kernels import (
+    HAVE_TRITON,
+    causal_conv_silu_split,
+    conv_silu_split_supported,
+    gated_rmsnorm,
+    gated_rmsnorm_supported,
+)
 
 __all__ = ["KimiLinearAttention"]
 
@@ -26,6 +33,16 @@ def _causal_depthwise_conv1d(x: torch.Tensor, weight: torch.Tensor, seq_dim: int
     return torch.nn.functional.silu(out).movedim(-1, seq_dim).to(x.dtype)
 
 
+def _gated_rmsnorm(
+    out: torch.Tensor, gate: torch.Tensor, weight: torch.Tensor, eps: float, head_dim: int
+) -> torch.Tensor:
+    """``RMSNorm(out) * weight * sigmoid(gate)`` per head in float32, cast back to ``gate.dtype``."""
+    out = out.reshape(*out.shape[:-1], -1, head_dim).float()
+    out = out * torch.rsqrt(out.pow(2).mean(dim=-1, keepdim=True) + eps) * weight
+    gate = gate.view(*gate.shape[:-1], -1, head_dim).float()
+    return (out * torch.sigmoid(gate)).to(gate.dtype).reshape(*gate.shape[:-2], -1)
+
+
 class KimiLinearAttention(torch.nn.Module):
     """
     Kimi Delta Attention (KDA) block as used in Kimi-K3 and Kimi Linear.
@@ -39,6 +56,9 @@ class KimiLinearAttention(torch.nn.Module):
     per head, gated by ``sigmoid(g(x))`` and projected back to the hidden size.
 
     The recurrence runs through the cuDNN frontend KDA kernel (Blackwell+).
+    The short convolution with SiLU and the gated output norm run as fused
+    Triton kernels that also handle the layout changes around the recurrence;
+    without Triton they fall back to PyTorch operations.
     Tensor parallelism is not supported yet.
 
     Parameters
@@ -103,8 +123,10 @@ class KimiLinearAttention(torch.nn.Module):
             torch.ones(head_dim, dtype=torch.float32, device=device)
         )
         self.out_proj = Linear(projection_size, hidden_size, **common)
+        # The fused kernels write q, k, v in bshd regardless of the layer layout.
+        self.fused_glue = HAVE_TRITON and head_dim & (head_dim - 1) == 0
         self.core_attention = KimiDeltaAttention(
-            num_attention_heads, head_dim, qkv_format=qkv_format
+            num_attention_heads, head_dim, qkv_format="bshd" if self.fused_glue else qkv_format
         )
         self.reset_recurrence_parameters()
 
@@ -126,11 +148,25 @@ class KimiLinearAttention(torch.nn.Module):
         seq_dim = 0 if self.qkv_format == "sbhd" else 1
         heads, head_dim = self.num_attention_heads, self.head_dim
         token_shape = hidden_states.shape[:-1]
+        core_format = self.core_attention.qkv_format
 
-        qkv = _causal_depthwise_conv1d(self.qkv_proj(hidden_states), self.conv_weight, seq_dim)
-        q, k, v = (t.view(*token_shape, heads, head_dim) for t in qkv.chunk(3, dim=-1))
-        g = self.f_b_proj(self.f_a_proj(hidden_states)).view(*token_shape, heads, head_dim)
+        qkv = self.qkv_proj(hidden_states)
+        f_a = self.f_a_proj(hidden_states)
         beta = self.b_proj(hidden_states)
+        gate = self.g_proj(hidden_states)
+
+        if self.fused_glue and conv_silu_split_supported(qkv, self.conv_weight):
+            q, k, v = causal_conv_silu_split(qkv, self.conv_weight, seq_dim)
+            q, k, v = (t.view(*t.shape[:-1], heads, head_dim) for t in (q, k, v))
+        else:
+            qkv = _causal_depthwise_conv1d(qkv, self.conv_weight, seq_dim)
+            q, k, v = (t.view(*token_shape, heads, head_dim) for t in qkv.chunk(3, dim=-1))
+            if core_format != self.qkv_format:
+                q, k, v = (t.transpose(0, 1).contiguous() for t in (q, k, v))
+        if core_format != self.qkv_format:
+            f_a = f_a.transpose(0, 1).contiguous()
+            beta = beta.transpose(0, 1).contiguous()
+        g = self.f_b_proj(f_a).view(*f_a.shape[:-1], heads, head_dim)
 
         out = self.core_attention(
             q,
@@ -146,9 +182,10 @@ class KimiLinearAttention(torch.nn.Module):
             gate_lower_bound=self.gate_lower_bound,
         )
 
-        out = out.view(*token_shape, heads, head_dim).float()
-        out = out * torch.rsqrt(out.pow(2).mean(dim=-1, keepdim=True) + self.layernorm_epsilon)
-        out = out * self.o_norm_weight
-        gate = self.g_proj(hidden_states).view(*token_shape, heads, head_dim).float()
-        out = (out * torch.sigmoid(gate)).to(hidden_states.dtype)
-        return self.out_proj(out.reshape(*token_shape, heads * head_dim))
+        if core_format == "bshd" and gated_rmsnorm_supported(out, gate, heads):
+            out = gated_rmsnorm(out, gate, self.o_norm_weight, self.layernorm_epsilon, seq_dim, heads)
+        else:
+            if core_format != self.qkv_format:
+                out = out.transpose(0, 1)
+            out = _gated_rmsnorm(out, gate, self.o_norm_weight, self.layernorm_epsilon, head_dim)
+        return self.out_proj(out)
