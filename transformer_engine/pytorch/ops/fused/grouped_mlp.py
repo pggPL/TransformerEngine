@@ -3425,17 +3425,17 @@ def fuse_bf16_grouped_mlp_ops(ops, *, recipe, fused_op_cls=None):
     window, ops = ops[:3], ops[3:]
     while len(window) == 3:
         matches_pattern = _bf16_window_matches(window)
-        if matches_pattern and (
-            window[0].split_alignment % _BF16_M_ALIGNMENT != 0
-            or window[2].split_alignment % _BF16_M_ALIGNMENT != 0
-        ):
-            warnings.warn(
-                "BF16 grouped MLP fusion was skipped because both GroupedLinear operations "
-                f"require split_alignment to be divisible by {_BF16_M_ALIGNMENT} "
-                f"(got {window[0].split_alignment} and {window[2].split_alignment}).",
-                stacklevel=2,
-            )
-            matches_pattern = False
+        if matches_pattern:
+            fc1_alignment = window[0]._resolve_split_alignment(recipe)
+            fc2_alignment = window[2]._resolve_split_alignment(recipe)
+            if fc1_alignment % _BF16_M_ALIGNMENT != 0 or fc2_alignment % _BF16_M_ALIGNMENT != 0:
+                warnings.warn(
+                    "BF16 grouped MLP fusion was skipped because both GroupedLinear operations "
+                    f"require split_alignment to be divisible by {_BF16_M_ALIGNMENT} "
+                    f"(got {fc1_alignment} and {fc2_alignment}).",
+                    stacklevel=2,
+                )
+                matches_pattern = False
         if matches_pattern:
             out.append(fused_op_cls(fc1=window[0], activation=window[1], fc2=window[2]))
             window = ops[:3]

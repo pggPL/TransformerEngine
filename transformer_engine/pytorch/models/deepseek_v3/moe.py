@@ -59,7 +59,12 @@ def make_glu_mlp(
             dense_act(),
             te_ops.Linear(ffn_hidden_size, hidden_size, **common),
         )
-    grouped = {"single_grouped_weight": single_grouped_weight, **common}
+    # 256-row expert splits qualify for the fused grouped MLP kernels (bf16 and block scaled).
+    grouped = {
+        "single_grouped_weight": single_grouped_weight,
+        "split_alignment": _FUSED_MLP_ROWS,
+        **common,
+    }
     return te_ops.Sequential(
         te_ops.GroupedLinear(num_experts, hidden_size, 2 * ffn_hidden_size, **grouped),
         grouped_act(glu_interleave_size=32),
@@ -343,11 +348,11 @@ class DeepSeekV3MoE(torch.nn.Module):
         tokens_per_expert = routing_map.sum(dim=0)
         self._last_tokens_per_expert = tokens_per_expert.detach()
 
-        # Quantized grouped GEMMs need every expert's row count aligned.
-        align = 1
+        # Grouped GEMMs need every expert's row count aligned to the declared split alignment.
+        align = self.experts[0].split_alignment or 1
         if FP8GlobalStateManager.is_fp8_enabled():
             recipe = FP8GlobalStateManager.get_fp8_recipe()
-            align = get_align_size_for_quantization(recipe)
+            align = max(align, get_align_size_for_quantization(recipe))
             if recipe.mxfp8() or recipe.nvfp4():
                 align = max(align, _FUSED_MLP_ROWS)
             elif recipe.float8_block_scaling():
@@ -363,9 +368,9 @@ class DeepSeekV3MoE(torch.nn.Module):
             pad_offsets = None
 
         # The fused grouped MLP requires the total row count to be a multiple
-        # of 128; rows beyond sum(tokens_per_expert) fall outside every group.
+        # of the alignment; rows beyond sum(tokens_per_expert) fall outside every group.
         num_rows = permuted.shape[0]
-        pad = (-num_rows) % 128
+        pad = (-num_rows) % max(align, 128)
         if pad:
             permuted = torch.nn.functional.pad(permuted, (0, 0, 0, pad))
             permuted_probs = torch.nn.functional.pad(permuted_probs, (0, pad))
