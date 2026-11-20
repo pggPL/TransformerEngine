@@ -275,7 +275,6 @@ class MultiLatentAttention(torch.nn.Module):
             dim=-1,
         )
         q = self.q_up_proj(q_latent)
-        q = q.view(*q.shape[:-1], heads, self.qk_head_dim)
         if self.kv_up_proj.tp_size > 1:
             # k_pos is shared across TP ranks; its attention gradients must be summed.
             k_pos = _ReduceGrad.apply(k_pos, self.kv_up_proj.tp_group)
@@ -284,8 +283,8 @@ class MultiLatentAttention(torch.nn.Module):
 
         if self.rope:
             cos, sin = self._rope_tables_for(seq_len, hidden_states.device)
-            # q has no other consumer, so the Triton kernel may rotate it in place
-            # instead of cloning the full tensor first.
+            # q has no other consumer, so the Triton kernel may rotate the projection
+            # output in place (before the head view) instead of cloning it.
             in_place = (
                 HAVE_TRITON
                 and self.qkv_format == "sbhd"
@@ -294,6 +293,8 @@ class MultiLatentAttention(torch.nn.Module):
                 and q.is_contiguous()
                 and not torch.compiler.is_compiling()
             )
+            if not in_place:
+                q = q.view(*q.shape[:-1], heads, self.qk_head_dim)
             q = apply_mla_rope_q(
                 q,
                 cos,
@@ -303,6 +304,7 @@ class MultiLatentAttention(torch.nn.Module):
                 self.qkv_format,
                 in_place=in_place,
             )
+            q = q.view(*q.shape[:-1], heads, self.qk_head_dim) if q.dim() == 3 else q
             k, v = apply_mla_rope_kv(
                 kv,
                 k_pos.unsqueeze(-2),
@@ -314,6 +316,7 @@ class MultiLatentAttention(torch.nn.Module):
                 self.qkv_format,
             )
         else:
+            q = q.view(*q.shape[:-1], heads, self.qk_head_dim)
             k, v = apply_mla_rope_kv(
                 kv,
                 k_pos.unsqueeze(-2),

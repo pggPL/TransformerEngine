@@ -430,13 +430,16 @@ if HAVE_TRITON:
                 ctx.mark_dirty(q)
             else:
                 q = q.clone(memory_format=torch.contiguous_format)
-            s, b, nheads, _ = q.shape
+            # A 3D [s, b, h * d] input (the projection output itself) avoids the
+            # CopySlices backward that an in-place update of a view would create.
+            q4 = q.view(*q.shape[:2], -1, head_dim_nope + head_dim_rope)
+            s, b, nheads, _ = q4.shape
 
             def grid(meta):
                 return (s * b, triton.cdiv(nheads, meta["BLOCK_H"]))
 
             rotary_fwd_q_kernel[grid](
-                q,
+                q4,
                 cos,
                 sin,
                 head_dim_nope,
@@ -445,8 +448,8 @@ if HAVE_TRITON:
                 b,
                 None,
                 None,
-                _token_stride(q),
-                q.stride(2),
+                _token_stride(q4),
+                q4.stride(2),
                 0,
                 1,
             )
@@ -462,13 +465,15 @@ if HAVE_TRITON:
                 dq = dq.contiguous()
             dq_out = torch.empty_like(dq)
             s, b, nheads, head_dim_nope, head_dim_rope = ctx.dims
+            dq4 = dq.view(s, b, nheads, head_dim_nope + head_dim_rope)
+            dq_out4 = dq_out.view(s, b, nheads, head_dim_nope + head_dim_rope)
 
             def grid(meta):
                 return (s * b, triton.cdiv(nheads, meta["BLOCK_H"]))
 
             rotary_bwd_q_kernel[grid](
-                dq,
-                dq_out,
+                dq4,
+                dq_out4,
                 cos,
                 sin,
                 head_dim_nope,
@@ -477,8 +482,8 @@ if HAVE_TRITON:
                 b,
                 None,
                 None,
-                _token_stride(dq),
-                dq.stride(2),
+                _token_stride(dq4),
+                dq4.stride(2),
                 0,
                 1,
                 BLOCK_NOPE=triton.next_power_of_2(head_dim_nope),
@@ -611,6 +616,9 @@ def apply_mla_rope_q(
     q : torch.Tensor
         CUDA query tensor of shape ``[s, b, h, head_dim_nope + head_dim_rope]``
         for ``sbhd``, or ``[b, s, h, head_dim_nope + head_dim_rope]`` for ``bshd``.
+        With ``in_place=True`` it may also be the flat ``[s, b, h * (head_dim_nope +
+        head_dim_rope)]`` projection output, which keeps the in-place update off a
+        view (no ``CopySlices`` in the backward).
     cos_table, sin_table : torch.Tensor
         Contiguous FP32 tables of shape ``[s, head_dim_rope]`` on the same device
         as ``q``, as returned by :func:`build_rope_tables`.
@@ -647,6 +655,8 @@ def apply_mla_rope_q(
     )
     if in_place and (not use_triton or not q.is_contiguous()):
         raise ValueError("in_place=True requires contiguous sbhd input and Triton RoPE support")
+    if q.dim() == 3 and not in_place:
+        raise ValueError("a flat [s, b, h * d] query is only supported with in_place=True")
     if in_place and torch.compiler.is_compiling():
         raise RuntimeError("in_place=True is not supported under torch.compile")
     if use_triton:

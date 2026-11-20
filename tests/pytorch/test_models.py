@@ -576,9 +576,13 @@ def test_mla_in_place_rope_matches_clone(monkeypatch):
     grads = [x.grad.clone()] + [p.grad.clone() for p in mla.parameters()]
 
     original = mla_module.apply_mla_rope_q
-    monkeypatch.setattr(
-        mla_module, "apply_mla_rope_q", lambda *a, **k: original(*a, **{**k, "in_place": False})
-    )
+
+    def out_of_place(q, *a, **k):
+        if q.dim() == 3:
+            q = q.view(*q.shape[:2], HEADS, -1)
+        return original(q, *a, **{**k, "in_place": False})
+
+    monkeypatch.setattr(mla_module, "apply_mla_rope_q", out_of_place)
     x.grad = None
     mla.zero_grad()
     ref = mla(x)
