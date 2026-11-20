@@ -482,6 +482,7 @@ class _ScaledGLU(BasicOperation):
         self,
         input_: torch.Tensor,
         scales: torch.Tensor,
+        num_rows: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
 
@@ -490,6 +491,7 @@ class _ScaledGLU(BasicOperation):
         grad_output: torch.Tensor,
         input_: torch.Tensor,
         scales: torch.Tensor,
+        num_rows: Optional[torch.Tensor] = None,
         *,
         compute_scale_grad: bool,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
