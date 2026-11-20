@@ -58,6 +58,56 @@ void nvte_scaled_dsituglu(const NVTETensor grad, const NVTETensor input,
       "nvte_scaled_dsituglu");
 }
 
+void nvte_scaled_swiglu_bounded(const NVTETensor input, const NVTETensor act_scales,
+                                NVTETensor output, const NVTETensor num_rows,
+                                int64_t glu_interleave_size, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_scaled_swiglu_bounded);
+  using namespace transformer_engine;
+  Empty param = {};
+  launch_scaled_gated_forward<Empty, silu<fp32, fp32>>(input, act_scales, output, param,
+                                                       glu_interleave_size, stream,
+                                                       "nvte_scaled_swiglu_bounded", num_rows);
+}
+
+void nvte_scaled_dswiglu_bounded(const NVTETensor grad, const NVTETensor input,
+                                 const NVTETensor act_scales, NVTETensor grad_input,
+                                 NVTETensor grad_act_scales, const NVTETensor num_rows,
+                                 int64_t glu_interleave_size, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_scaled_dswiglu_bounded);
+  using namespace transformer_engine;
+  Empty param = {};
+  launch_scaled_gated_backward<Empty, silu<fp32, fp32>, dsilu<fp32, fp32>>(
+      grad, input, act_scales, grad_input, grad_act_scales, param, glu_interleave_size, stream,
+      "nvte_scaled_dswiglu_bounded", num_rows);
+}
+
+void nvte_scaled_situglu_bounded(const NVTETensor input, const NVTETensor act_scales,
+                                 NVTETensor output, const NVTETensor num_rows, float beta1,
+                                 float beta2, int64_t glu_interleave_size, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_scaled_situglu_bounded);
+  using namespace transformer_engine;
+  NVTE_CHECK(beta1 > 0.0f && std::isfinite(beta1), "beta1 must be finite and positive.");
+  NVTE_CHECK(beta2 > 0.0f && std::isfinite(beta2), "beta2 must be finite and positive.");
+  SiTUGLUParam param = {beta1, beta2};
+  launch_scaled_gated_forward<SiTUGLUParam, situ_gate<fp32, fp32>>(
+      input, act_scales, output, param, glu_interleave_size, stream,
+      "nvte_scaled_situglu_bounded", num_rows);
+}
+
+void nvte_scaled_dsituglu_bounded(const NVTETensor grad, const NVTETensor input,
+                                  const NVTETensor act_scales, NVTETensor grad_input,
+                                  NVTETensor grad_act_scales, const NVTETensor num_rows, float beta1,
+                                  float beta2, int64_t glu_interleave_size, cudaStream_t stream) {
+  NVTE_API_CALL(nvte_scaled_dsituglu_bounded);
+  using namespace transformer_engine;
+  NVTE_CHECK(beta1 > 0.0f && std::isfinite(beta1), "beta1 must be finite and positive.");
+  NVTE_CHECK(beta2 > 0.0f && std::isfinite(beta2), "beta2 must be finite and positive.");
+  SiTUGLUParam param = {beta1, beta2};
+  launch_scaled_gated_backward<SiTUGLUParam, situ_gate<fp32, fp32>, dsitu_gate<fp32, fp32>>(
+      grad, input, act_scales, grad_input, grad_act_scales, param, glu_interleave_size, stream,
+      "nvte_scaled_dsituglu_bounded", num_rows);
+}
+
 void nvte_scaled_clamped_swiglu(const NVTETensor input, const NVTETensor act_scales,
                                 NVTETensor output, float limit, float alpha,
                                 float glu_linear_offset, int64_t glu_interleave_size,

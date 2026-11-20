@@ -450,7 +450,12 @@ class ClampedSwiGLU(BasicOperation):
 
 
 class _ScaledGLU(BasicOperation):
-    """SwiGLU-family activation with per-row scales (fused grouped MLP middle op)."""
+    """SwiGLU-family activation with per-row scales (fused grouped MLP middle op).
+
+    With ``row_counts_input=True`` a second extra input holds the per-group row
+    counts; only the first ``sum(counts)`` rows are computed (rows beyond them, e.g.
+    the unused capacity of an expert-parallel buffer, are left untouched).
+    """
 
     num_extra_inputs: int = 1
 
@@ -459,9 +464,13 @@ class _ScaledGLU(BasicOperation):
         glu_interleave_size: Optional[int] = None,
         *,
         activation_recompute_in_mlp: bool = False,
+        row_counts_input: bool = False,
     ) -> None:
+        if row_counts_input:
+            self.num_extra_inputs = 2
         super().__init__()
         self.glu_interleave_size: Optional[int] = glu_interleave_size
+        self.row_counts_input: bool = row_counts_input
         if activation_recompute_in_mlp:
             raise ValueError(
                 f"{self.__class__.__name__} does not support activation recomputation "
@@ -519,6 +528,9 @@ class _ScaledGLU(BasicOperation):
             )
 
         extra_input = basic_op_extra_inputs[0][0]
+        num_rows = None
+        if self.row_counts_input:
+            num_rows = basic_op_extra_inputs[0][1].sum(dtype=torch.int32)
         # Determine compute dtype
         dtype = maybe_autocast_dtype(default_dtype=input_.dtype)
         extra_input_dtype = maybe_autocast_dtype(default_dtype=extra_input.dtype)
@@ -526,7 +538,7 @@ class _ScaledGLU(BasicOperation):
         # Prepare the activation input in the compute dtype.
         input_ = maybe_dequantize(input_, dtype)
         scales = maybe_dequantize(extra_input, extra_input_dtype)
-        out = self._scaled_glu_forward(input_, scales)
+        out = self._scaled_glu_forward(input_, scales, num_rows)
 
         # Save state for backward pass
         ctx = basic_op_ctxs[0]
@@ -540,6 +552,7 @@ class _ScaledGLU(BasicOperation):
             ctx.save_for_backward(
                 input_,
                 scales if ctx.input_requires_grad or ctx.extra_input_requires_grad else None,
+                num_rows,
             )
 
         return out, [()]
@@ -562,7 +575,7 @@ class _ScaledGLU(BasicOperation):
             )
 
         ctx = basic_op_ctxs[0]
-        input_, scales = ctx.saved_tensors
+        input_, scales, num_rows = ctx.saved_tensors
         input_ = maybe_dequantize(input_, ctx.dtype)
         if scales is not None:
             scales = maybe_dequantize(scales, ctx.extra_input_dtype)
@@ -572,6 +585,7 @@ class _ScaledGLU(BasicOperation):
             grad_output,
             input_,
             scales,
+            num_rows,
             compute_scale_grad=ctx.extra_input_requires_grad,
         )
         if not ctx.input_requires_grad:
@@ -580,7 +594,8 @@ class _ScaledGLU(BasicOperation):
         # Clear input tensor if possible
         clear_tensor_data(ctx.saved_tensors[0])  # input_
 
-        return grad_input, [()], [(grad_extra_input,)]
+        grad_extra_inputs = (grad_extra_input, None) if self.row_counts_input else (grad_extra_input,)
+        return grad_input, [()], [grad_extra_inputs]
 
 
 class ScaledSwiGLU(_ScaledGLU):
@@ -605,12 +620,14 @@ class ScaledSwiGLU(_ScaledGLU):
         self,
         input_: torch.Tensor,
         scales: torch.Tensor,
+        num_rows: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         return tex.scaled_swiglu(
             input_,
             scales,
             None,
             int(self.glu_interleave_size or 0),
+            num_rows,
         )
 
     def _scaled_glu_backward(
@@ -618,6 +635,7 @@ class ScaledSwiGLU(_ScaledGLU):
         grad_output: torch.Tensor,
         input_: torch.Tensor,
         scales: torch.Tensor,
+        num_rows: Optional[torch.Tensor] = None,
         *,
         compute_scale_grad: bool,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -628,6 +646,7 @@ class ScaledSwiGLU(_ScaledGLU):
             None,
             int(self.glu_interleave_size or 0),
             compute_scale_grad,
+            num_rows,
         )
 
 
@@ -657,10 +676,12 @@ class ScaledSiTUGLU(_ScaledGLU):
         activation_recompute_in_mlp: bool = False,
         beta1: float = 4.0,
         beta2: float = 25.0,
+        row_counts_input: bool = False,
     ) -> None:
         super().__init__(
             glu_interleave_size,
             activation_recompute_in_mlp=activation_recompute_in_mlp,
+            row_counts_input=row_counts_input,
         )
         self.beta1 = float(beta1)
         self.beta2 = float(beta2)
@@ -673,6 +694,7 @@ class ScaledSiTUGLU(_ScaledGLU):
         self,
         input_: torch.Tensor,
         scales: torch.Tensor,
+        num_rows: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         return tex.scaled_situglu(
             input_,
@@ -681,6 +703,7 @@ class ScaledSiTUGLU(_ScaledGLU):
             self.beta1,
             self.beta2,
             int(self.glu_interleave_size or 0),
+            num_rows,
         )
 
     def _scaled_glu_backward(
@@ -688,6 +711,7 @@ class ScaledSiTUGLU(_ScaledGLU):
         grad_output: torch.Tensor,
         input_: torch.Tensor,
         scales: torch.Tensor,
+        num_rows: Optional[torch.Tensor] = None,
         *,
         compute_scale_grad: bool,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -700,6 +724,7 @@ class ScaledSiTUGLU(_ScaledGLU):
             self.beta2,
             int(self.glu_interleave_size or 0),
             compute_scale_grad,
+            num_rows,
         )
 
 
@@ -752,7 +777,10 @@ class ScaledClampedQGeGLU(_ScaledGLU):
         self,
         input_: torch.Tensor,
         scales: torch.Tensor,
+        num_rows: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        if num_rows is not None:
+            raise NotImplementedError("row_counts_input is not supported for ScaledClampedQGeGLU")
         clamped = self._clamped
         return tex.scaled_clamped_swiglu(
             input_,
@@ -769,6 +797,7 @@ class ScaledClampedQGeGLU(_ScaledGLU):
         grad_output: torch.Tensor,
         input_: torch.Tensor,
         scales: torch.Tensor,
+        num_rows: Optional[torch.Tensor] = None,
         *,
         compute_scale_grad: bool,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:

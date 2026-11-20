@@ -67,7 +67,7 @@ def make_glu_mlp(
     }
     return te_ops.Sequential(
         te_ops.GroupedLinear(num_experts, hidden_size, 2 * ffn_hidden_size, **grouped),
-        grouped_act(glu_interleave_size=32),
+        grouped_act(glu_interleave_size=32, row_counts_input=True),
         te_ops.GroupedLinear(num_experts, ffn_hidden_size, hidden_size, **grouped),
     )
 
@@ -300,6 +300,7 @@ class DeepSeekV3MoE(torch.nn.Module):
             dispatch.set_extra_output_channel(1, "routing_weights", output_to_caller=False)
             fc1.set_extra_input_channel(0, "tokens_per_expert")
             activation_op.set_extra_input_channel(0, "routing_weights")
+            activation_op.set_extra_input_channel(1, "tokens_per_expert")
             fc2.set_extra_input_channel(0, "tokens_per_expert")
             self.experts = te_ops.Sequential(
                 {"dispatch": dispatch, "0": fc1, "1": activation_op, "2": fc2, "combine": combine}
@@ -376,7 +377,11 @@ class DeepSeekV3MoE(torch.nn.Module):
             permuted_probs = torch.nn.functional.pad(permuted_probs, (0, pad))
 
         out = self.experts(
-            permuted, tokens_per_expert, permuted_probs.to(tokens.dtype), tokens_per_expert
+            permuted,
+            tokens_per_expert,
+            permuted_probs.to(tokens.dtype),
+            tokens_per_expert,
+            tokens_per_expert,
         )
         return moe_unpermute(
             out[:num_rows], row_id_map, restore_shape=tokens.shape, pad_offsets=pad_offsets

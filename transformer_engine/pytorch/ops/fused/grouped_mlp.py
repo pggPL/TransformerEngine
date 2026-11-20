@@ -2976,6 +2976,10 @@ class _GroupedMLP_CuTeGEMMBase(FusedOperation):
             activation_grad_extra = (None,)
         else:
             activation_grad_extra = (grad_scales,) if grad_scales is not None else ()
+        # Row-count inputs of the activation take no gradient.
+        activation_grad_extra += (None,) * (
+            self.basic_ops[1].num_extra_inputs - len(activation_grad_extra)
+        )
         return (
             grad_input,
             [fc1_grad_params, (), fc2_grad_params],
@@ -4046,6 +4050,10 @@ class GroupedMLP_CuTeGEMMGLUBf16(FusedOperation):
             activation_grad_extra = (None,)
         else:
             activation_grad_extra = (grad_scales,) if grad_scales is not None else ()
+        # Row-count inputs of the activation take no gradient.
+        activation_grad_extra += (None,) * (
+            self.basic_ops[1].num_extra_inputs - len(activation_grad_extra)
+        )
         # Autograd sums FC2's dscales with dprob when both use the same probs tensor.
         fc2_grad_extra = (None, fc2_grad_scales) if fc2_op._scale_bias else (None,)
         return (

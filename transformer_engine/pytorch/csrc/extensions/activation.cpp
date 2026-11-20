@@ -458,14 +458,27 @@ py::tuple scaled_dactivation_helper(const at::Tensor& grad, const at::Tensor& in
 }
 
 py::object scaled_swiglu(const at::Tensor& input, const at::Tensor& act_scales,
-                         py::handle quantizer, int64_t glu_interleave_size) {
+                         py::handle quantizer, int64_t glu_interleave_size,
+                         std::optional<at::Tensor> num_rows) {
+  if (num_rows.has_value()) {
+    const TensorWrapper& num_rows_nvte = makeTransformerEngineTensor(*num_rows);
+    return scaled_activation_helper<nvte_scaled_swiglu_bounded>(
+        input, act_scales, quantizer, /*shape_divisor=*/2, num_rows_nvte.data(),
+        glu_interleave_size);
+  }
   return scaled_activation_helper<nvte_scaled_swiglu>(input, act_scales, quantizer,
                                                       /*shape_divisor=*/2, glu_interleave_size);
 }
 
 py::object scaled_situglu(const at::Tensor& input, const at::Tensor& act_scales,
                           py::handle quantizer, float beta1, float beta2,
-                          int64_t glu_interleave_size) {
+                          int64_t glu_interleave_size, std::optional<at::Tensor> num_rows) {
+  if (num_rows.has_value()) {
+    const TensorWrapper& num_rows_nvte = makeTransformerEngineTensor(*num_rows);
+    return scaled_activation_helper<nvte_scaled_situglu_bounded>(
+        input, act_scales, quantizer, /*shape_divisor=*/2, num_rows_nvte.data(), beta1, beta2,
+        glu_interleave_size);
+  }
   return scaled_activation_helper<nvte_scaled_situglu>(
       input, act_scales, quantizer, /*shape_divisor=*/2, beta1, beta2, glu_interleave_size);
 }
@@ -486,14 +499,28 @@ py::object scaled_srelu(const at::Tensor& input, const at::Tensor& act_scales,
 
 py::tuple scaled_dswiglu(const at::Tensor& grad, const at::Tensor& input,
                          const at::Tensor& act_scales, py::handle quantizer,
-                         int64_t glu_interleave_size, bool compute_scale_grad) {
+                         int64_t glu_interleave_size, bool compute_scale_grad,
+                         std::optional<at::Tensor> num_rows) {
+  if (num_rows.has_value()) {
+    const TensorWrapper& num_rows_nvte = makeTransformerEngineTensor(*num_rows);
+    return scaled_dactivation_helper<nvte_scaled_dswiglu_bounded>(
+        grad, input, act_scales, quantizer, compute_scale_grad, num_rows_nvte.data(),
+        glu_interleave_size);
+  }
   return scaled_dactivation_helper<nvte_scaled_dswiglu>(grad, input, act_scales, quantizer,
                                                         compute_scale_grad, glu_interleave_size);
 }
 
 py::tuple scaled_dsituglu(const at::Tensor& grad, const at::Tensor& input,
                           const at::Tensor& act_scales, py::handle quantizer, float beta1,
-                          float beta2, int64_t glu_interleave_size, bool compute_scale_grad) {
+                          float beta2, int64_t glu_interleave_size, bool compute_scale_grad,
+                          std::optional<at::Tensor> num_rows) {
+  if (num_rows.has_value()) {
+    const TensorWrapper& num_rows_nvte = makeTransformerEngineTensor(*num_rows);
+    return scaled_dactivation_helper<nvte_scaled_dsituglu_bounded>(
+        grad, input, act_scales, quantizer, compute_scale_grad, num_rows_nvte.data(), beta1,
+        beta2, glu_interleave_size);
+  }
   return scaled_dactivation_helper<nvte_scaled_dsituglu>(
       grad, input, act_scales, quantizer, compute_scale_grad, beta1, beta2, glu_interleave_size);
 }

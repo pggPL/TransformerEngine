@@ -63,7 +63,8 @@ Alignment row_vector_alignment(const size_t lead_dim, const int nvec, const Ptrs
 template <typename ParamOP, float (*ActOP)(float, const ParamOP &)>
 void launch_scaled_gated_forward(const NVTETensor input, const NVTETensor act_scales,
                                  NVTETensor output, ParamOP param, int64_t glu_interleave_size,
-                                 cudaStream_t stream, const char *api_name);
+                                 cudaStream_t stream, const char *api_name,
+                                 const NVTETensor num_rows = nullptr);
 
 template <typename ParamOP, float (*ActOP)(float, const ParamOP &),
           float (*DActOP)(float, const ParamOP &)>
@@ -71,7 +72,7 @@ void launch_scaled_gated_backward(const NVTETensor grad, const NVTETensor input,
                                   const NVTETensor act_scales, NVTETensor grad_input,
                                   NVTETensor grad_act_scales, ParamOP param,
                                   int64_t glu_interleave_size, cudaStream_t stream,
-                                  const char *api_name);
+                                  const char *api_name, const NVTETensor num_rows = nullptr);
 
 template <typename ParamOP, float (*ActOP)(float, const ParamOP &)>
 void launch_scaled_unary_forward(const NVTETensor input, const NVTETensor act_scales,
