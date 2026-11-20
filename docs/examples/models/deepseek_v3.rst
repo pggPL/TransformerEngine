@@ -90,35 +90,35 @@ time running downwards:
      - Mtok / s
      - expert weights
    * - BF16
-     - 59.2
-     - 1.11
+     - 58.7
+     - 1.12
      - grouped
    * - FP8 current scaling
-     - 45.3
-     - 1.45
+     - 44.7
+     - 1.46
      - grouped
    * - MXFP8, fused grouped MLP
-     - 42.9
-     - 1.53
+     - 42.7
+     - 1.54
      - grouped
    * - NVFP4, fused grouped MLP
-     - 36.5
-     - 1.79
+     - 35.6
+     - 1.84
      - per expert (grouped NVFP4 weight quantization not available yet)
 
 .. tabs::
 
    .. tab:: BF16
 
-      No quantization; the experts run as BF16 grouped GEMMs with a separate
-      SwiGLU kernel: **59.2 ms/iter**.
+      No quantization; the experts run through the BF16 cuDNN fused grouped
+      MLP: **58.7 ms/iter**.
 
-      **Forward: 21.4 ms**
+      **Forward: 22.8 ms**
 
       .. raw:: html
          :file: profile_dsv3_bf16_fwd.svg
 
-      **Backward: 37.9 ms**
+      **Backward: 37.3 ms**
 
       .. raw:: html
          :file: profile_dsv3_bf16_bwd.svg
@@ -127,14 +127,14 @@ time running downwards:
 
       ``te.autocast(recipe=Float8CurrentScaling())``: per-tensor FP8 with an
       amax reduction before every cast, unfused grouped GEMMs:
-      **45.3 ms/iter**.
+      **44.7 ms/iter**.
 
-      **Forward: 16.4 ms**
+      **Forward: 16.5 ms**
 
       .. raw:: html
          :file: profile_dsv3_fp8_cs_fwd.svg
 
-      **Backward: 29.0 ms**
+      **Backward: 29.1 ms**
 
       .. raw:: html
          :file: profile_dsv3_fp8_cs_bwd.svg
@@ -142,14 +142,14 @@ time running downwards:
    .. tab:: MXFP8 (fused grouped MLP)
 
       ``te.autocast(recipe=MXFP8BlockScaling())`` with the cuDNN fused grouped
-      MLP: **42.9 ms/iter**.
+      MLP: **42.7 ms/iter**.
 
-      **Forward: 15.4 ms**
+      **Forward: 15.3 ms**
 
       .. raw:: html
          :file: profile_dsv3_mxfp8_fwd.svg
 
-      **Backward: 27.9 ms**
+      **Backward: 28.4 ms**
 
       .. raw:: html
          :file: profile_dsv3_mxfp8_bwd.svg
@@ -158,9 +158,9 @@ time running downwards:
 
       ``te.autocast(recipe=NVFP4BlockScaling())`` with the cuDNN fused grouped
       MLP; inputs and gradients are quantized by the random Hadamard transform
-      kernel, expert weights per expert: **36.5 ms/iter**.
+      kernel, expert weights per expert: **35.6 ms/iter**.
 
-      **Forward: 12.8 ms**
+      **Forward: 12.9 ms**
 
       .. raw:: html
          :file: profile_dsv3_nvfp4_fwd.svg

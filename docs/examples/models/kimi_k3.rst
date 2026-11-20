@@ -98,43 +98,43 @@ a backward image with time running downwards:
      - expert weights
    * - KDA
      - BF16
-     - 162.9
-     - 0.40
+     - 125.6
+     - 0.52
      - grouped
    * - KDA
      - FP8 current scaling
-     - 130.0
-     - 0.50
+     - 92.0
+     - 0.71
      - grouped
    * - KDA
      - MXFP8, fused grouped MLP
-     - 110.3
-     - 0.59
+     - 69.7
+     - 0.94
      - grouped
    * - KDA
      - NVFP4, fused grouped MLP
-     - 89.5
-     - 0.73
+     - 51.2
+     - 1.28
      - per expert (grouped NVFP4 weight quantization not available yet)
    * - MLA
      - BF16
-     - 113.9
-     - 0.58
+     - 108.2
+     - 0.61
      - grouped
    * - MLA
      - FP8 current scaling
-     - 87.4
-     - 0.75
+     - 80.6
+     - 0.81
      - grouped
    * - MLA
      - MXFP8, fused grouped MLP
-     - 61.9
-     - 1.06
+     - 58.2
+     - 1.13
      - grouped
    * - MLA
      - NVFP4, fused grouped MLP
-     - 48.0
-     - 1.37
+     - 43.4
+     - 1.51
      - per expert (grouped NVFP4 weight quantization not available yet)
 
 .. tabs::
@@ -146,14 +146,14 @@ a backward image with time running downwards:
          .. tab:: BF16
 
             No quantization; the experts run as BF16 grouped GEMMs with a separate
-            SiTU-GLU kernel: **162.9 ms/iter**.
+            SiTU-GLU kernel: **125.6 ms/iter**.
 
-            **Forward: 59.7 ms**
+            **Forward: 45.4 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_bf16_fwd.svg
 
-            **Backward: 103.7 ms**
+            **Backward: 80.9 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_bf16_bwd.svg
@@ -161,14 +161,14 @@ a backward image with time running downwards:
          .. tab:: FP8 current scaling
 
             ``te.autocast(recipe=Float8CurrentScaling())``: per-tensor FP8 with an
-            amax reduction before every cast, unfused grouped GEMMs: **130.0 ms/iter**.
+            amax reduction before every cast, unfused grouped GEMMs: **92.0 ms/iter**.
 
-            **Forward: 50.9 ms**
+            **Forward: 34.8 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_fp8_cs_fwd.svg
 
-            **Backward: 79.5 ms**
+            **Backward: 57.6 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_fp8_cs_bwd.svg
@@ -176,14 +176,14 @@ a backward image with time running downwards:
          .. tab:: MXFP8 (fused grouped MLP)
 
             ``te.autocast(recipe=MXFP8BlockScaling())`` with the cuDNN fused grouped
-            MLP: **110.3 ms/iter**.
+            MLP: **69.7 ms/iter**.
 
-            **Forward: 39.7 ms**
+            **Forward: 22.7 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_mxfp8_fwd.svg
 
-            **Backward: 70.4 ms**
+            **Backward: 46.9 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_mxfp8_bwd.svg
@@ -192,14 +192,14 @@ a backward image with time running downwards:
 
             ``te.autocast(recipe=NVFP4BlockScaling())`` with the cuDNN fused grouped
             MLP; inputs and gradients are quantized by the random Hadamard
-            transform kernel, expert weights per expert: **89.5 ms/iter**.
+            transform kernel, expert weights per expert: **51.2 ms/iter**.
 
-            **Forward: 33.2 ms**
+            **Forward: 16.9 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_nvfp4_fwd.svg
 
-            **Backward: 56.7 ms**
+            **Backward: 34.2 ms**
 
             .. raw:: html
                :file: profile_kimi_kda_nvfp4_bwd.svg
@@ -211,14 +211,14 @@ a backward image with time running downwards:
          .. tab:: BF16
 
             No quantization; the experts run as BF16 grouped GEMMs with a separate
-            SiTU-GLU kernel: **113.9 ms/iter**.
+            SiTU-GLU kernel: **108.2 ms/iter**.
 
-            **Forward: 44.4 ms**
+            **Forward: 41.5 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_bf16_fwd.svg
 
-            **Backward: 70.4 ms**
+            **Backward: 67.8 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_bf16_bwd.svg
@@ -226,14 +226,14 @@ a backward image with time running downwards:
          .. tab:: FP8 current scaling
 
             ``te.autocast(recipe=Float8CurrentScaling())``: per-tensor FP8 with an
-            amax reduction before every cast, unfused grouped GEMMs: **87.4 ms/iter**.
+            amax reduction before every cast, unfused grouped GEMMs: **80.6 ms/iter**.
 
-            **Forward: 35.1 ms**
+            **Forward: 34.2 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_fp8_cs_fwd.svg
 
-            **Backward: 53.0 ms**
+            **Backward: 47.6 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_fp8_cs_bwd.svg
@@ -241,14 +241,14 @@ a backward image with time running downwards:
          .. tab:: MXFP8 (fused grouped MLP)
 
             ``te.autocast(recipe=MXFP8BlockScaling())`` with the cuDNN fused grouped
-            MLP: **61.9 ms/iter**.
+            MLP: **58.2 ms/iter**.
 
-            **Forward: 23.4 ms**
+            **Forward: 21.7 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_mxfp8_fwd.svg
 
-            **Backward: 38.3 ms**
+            **Backward: 36.1 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_mxfp8_bwd.svg
@@ -257,14 +257,14 @@ a backward image with time running downwards:
 
             ``te.autocast(recipe=NVFP4BlockScaling())`` with the cuDNN fused grouped
             MLP; inputs and gradients are quantized by the random Hadamard
-            transform kernel, expert weights per expert: **48.0 ms/iter**.
+            transform kernel, expert weights per expert: **43.4 ms/iter**.
 
-            **Forward: 19.1 ms**
+            **Forward: 16.3 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_nvfp4_fwd.svg
 
-            **Backward: 28.8 ms**
+            **Backward: 27.9 ms**
 
             .. raw:: html
                :file: profile_kimi_mla_nvfp4_bwd.svg
