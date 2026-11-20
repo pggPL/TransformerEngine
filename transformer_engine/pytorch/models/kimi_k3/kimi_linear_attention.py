@@ -37,10 +37,11 @@ def _gated_rmsnorm(
     out: torch.Tensor, gate: torch.Tensor, weight: torch.Tensor, eps: float, head_dim: int
 ) -> torch.Tensor:
     """``RMSNorm(out) * weight * sigmoid(gate)`` per head in float32, cast back to ``gate.dtype``."""
+    dtype = gate.dtype
     out = out.reshape(*out.shape[:-1], -1, head_dim).float()
     out = out * torch.rsqrt(out.pow(2).mean(dim=-1, keepdim=True) + eps) * weight
     gate = gate.view(*gate.shape[:-1], -1, head_dim).float()
-    return (out * torch.sigmoid(gate)).to(gate.dtype).reshape(*gate.shape[:-2], -1)
+    return (out * torch.sigmoid(gate)).to(dtype).reshape(*gate.shape[:-2], -1)
 
 
 class KimiLinearAttention(torch.nn.Module):

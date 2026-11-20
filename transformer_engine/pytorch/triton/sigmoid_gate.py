@@ -23,10 +23,12 @@ if HAVE_TRITON:
 
     @triton.jit
     def _sigmoid(x):
+        """Sigmoid."""
         return 1.0 / (1.0 + tl.exp(-x))
 
     @triton.jit
     def sigmoid_gate_fwd_kernel(X, G, Y, numel, BLOCK: tl.constexpr):
+        """Forward kernel."""
         offs = tl.program_id(0).to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
         mask = offs < numel
         x = tl.load(X + offs, mask=mask, other=0.0).to(tl.float32)
@@ -35,6 +37,7 @@ if HAVE_TRITON:
 
     @triton.jit
     def sigmoid_gate_bwd_kernel(X, G, dY, dX, dG, numel, BLOCK: tl.constexpr):
+        """Backward kernel."""
         offs = tl.program_id(0).to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
         mask = offs < numel
         x = tl.load(X + offs, mask=mask, other=0.0).to(tl.float32)
@@ -47,6 +50,7 @@ if HAVE_TRITON:
     class _SigmoidGate(torch.autograd.Function):
         @staticmethod
         def forward(ctx, x, gate):
+            """Forward pass."""
             x = x.contiguous()
             gate = gate.contiguous()
             y = torch.empty_like(x)
@@ -57,6 +61,7 @@ if HAVE_TRITON:
 
         @staticmethod
         def backward(ctx, dy):
+            """Backward pass."""
             x, gate = ctx.saved_tensors
             dy = dy.contiguous()
             dx = torch.empty_like(x)

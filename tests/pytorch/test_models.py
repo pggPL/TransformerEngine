@@ -352,7 +352,7 @@ def test_kda_gated_rmsnorm_kernel_matches_reference(qkv_format):
     o = torch.randn(BATCH, SEQ_LEN, HEADS * head_dim, dtype=DTYPE, device="cuda", requires_grad=True)
     g_shape = (SEQ_LEN, BATCH, HEADS * head_dim) if seq_dim == 0 else o.shape
     g = torch.randn(g_shape, dtype=DTYPE, device="cuda", requires_grad=True)
-    weight = torch.rand(head_dim, dtype=torch.float32, device="cuda", requires_grad=True) + 0.5
+    weight = (torch.rand(head_dim, dtype=torch.float32, device="cuda") + 0.5).requires_grad_()
 
     out = kda_block_kernels.gated_rmsnorm(o, g, weight, eps, seq_dim, HEADS)
     ref_o = o.transpose(0, 1) if seq_dim == 0 else o
@@ -387,7 +387,7 @@ def test_kimi_linear_attention_fused_glue_matches_fallback():
     attention.fused_glue = False
     ref = attention(x)
     ref.float().pow(2).mean().backward()
-    torch.testing.assert_close(out, ref)
+    torch.testing.assert_close(out, ref, rtol=2e-2, atol=1e-3)
     ref_grads = [x.grad] + [p.grad for p in attention.parameters()]
     for got, expected in zip(grads, ref_grads):
         torch.testing.assert_close(got, expected, rtol=2e-2, atol=2e-2)

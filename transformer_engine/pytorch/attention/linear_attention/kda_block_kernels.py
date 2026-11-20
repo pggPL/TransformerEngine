@@ -38,10 +38,12 @@ if HAVE_TRITON:
 
     @triton.jit
     def _sigmoid(x):
+        """Sigmoid."""
         return 1.0 / (1.0 + tl.exp(-x))
 
     @triton.jit
     def _load_rows(X, rows, cols, stride_s, S, mask_c):
+        """Load rows."""
         mask = (rows[:, None] >= 0) & (rows[:, None] < S) & mask_c[None, :]
         off = rows[:, None].to(tl.int64) * stride_s + cols[None, :]
         return tl.load(X + off, mask=mask, other=0.0).to(tl.float32)
@@ -71,6 +73,7 @@ if HAVE_TRITON:
         BLOCK_S: tl.constexpr,
         BLOCK_C: tl.constexpr,
     ):
+        """Conv silu split fwd kernel kernel."""
         pid_s = tl.program_id(0)
         pid_b = tl.program_id(1)
         pid_c = tl.program_id(2)
@@ -92,6 +95,7 @@ if HAVE_TRITON:
 
     @triton.jit
     def _load_dy(dQ, dK, dV, part, off, mask):
+        """Load dy."""
         if part == 0:
             dy = tl.load(dQ + off, mask=mask, other=0.0)
         elif part == 1:
@@ -117,6 +121,7 @@ if HAVE_TRITON:
         BLOCK_S: tl.constexpr,
         BLOCK_C: tl.constexpr,
     ):
+        """Conv silu split bwd kernel kernel."""
         pid_s = tl.program_id(0)
         pid_b = tl.program_id(1)
         pid_c = tl.program_id(2)
@@ -170,6 +175,7 @@ if HAVE_TRITON:
         D: tl.constexpr,
         BLOCK_T: tl.constexpr,
     ):
+        """Gated rmsnorm fwd kernel kernel."""
         pid_t = tl.program_id(0)
         h = tl.program_id(1)
         t = pid_t * BLOCK_T + tl.arange(0, BLOCK_T)
@@ -209,6 +215,7 @@ if HAVE_TRITON:
         D: tl.constexpr,
         BLOCK_T: tl.constexpr,
     ):
+        """Gated rmsnorm bwd kernel kernel."""
         pid_t = tl.program_id(0)
         h = tl.program_id(1)
         t = pid_t * BLOCK_T + tl.arange(0, BLOCK_T)
@@ -244,6 +251,7 @@ if HAVE_TRITON:
 
         @staticmethod
         def forward(ctx, x, weight, seq_dim):
+            """Forward pass."""
             S = x.shape[seq_dim]
             B = x.shape[1 - seq_dim]
             C = x.shape[-1] // 3
@@ -272,6 +280,7 @@ if HAVE_TRITON:
 
         @staticmethod
         def backward(ctx, dq, dk, dv):
+            """Backward pass."""
             x, weight = ctx.saved_tensors
             seq_dim = ctx.seq_dim
             S = x.shape[seq_dim]
@@ -309,6 +318,7 @@ if HAVE_TRITON:
 
         @staticmethod
         def forward(ctx, o, g, weight, eps, seq_dim, num_heads):
+            """Forward pass."""
             o = o.contiguous()
             weight = weight.contiguous()
             S, B = o.shape[1], o.shape[0]
@@ -337,6 +347,7 @@ if HAVE_TRITON:
 
         @staticmethod
         def backward(ctx, dy):
+            """Backward pass."""
             o, g, weight = ctx.saved_tensors
             eps, seq_dim, num_heads = ctx.args
             S, B = o.shape[1], o.shape[0]
