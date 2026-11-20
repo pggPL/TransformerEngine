@@ -139,32 +139,36 @@ __device__ inline OType dsilu(const IType val, const Empty& e) {
   return cval * dsigmoid<float, float>(cval, e) + sigmoid<float, float>(cval, e);
 }
 
+// tanh(x) = 1 - 2 / (exp(2x) + 1) with the fast exponential; exact at the limits and
+// within a few float ulps elsewhere, so it is safe for bf16 and fp8 outputs.
+__device__ inline float fast_tanhf(const float x) {
+  return 1.0f - __fdividef(2.0f, __expf(2.0f * x) + 1.0f);
+}
+
 template <typename OType, typename IType>
 __device__ inline OType situ_gate(const IType val, const SiTUGLUParam& p) {
   const float x = static_cast<float>(val);
-  Empty e = {};
-  return p.beta1 * tanhf(x / p.beta1) * sigmoid<float, float>(x, e);
+  return p.beta1 * fast_tanhf(x / p.beta1) * sigmoidf(x);
 }
 
 template <typename OType, typename IType>
 __device__ inline OType dsitu_gate(const IType val, const SiTUGLUParam& p) {
   const float x = static_cast<float>(val);
-  const float t = tanhf(x / p.beta1);
-  Empty e = {};
-  const float s = sigmoid<float, float>(x, e);
+  const float t = fast_tanhf(x / p.beta1);
+  const float s = sigmoidf(x);
   return (1.0f - t * t) * s + p.beta1 * t * s * (1.0f - s);
 }
 
 template <typename OType, typename IType>
 __device__ inline OType situ_up(const IType val, const SiTUGLUParam& p) {
   const float x = static_cast<float>(val);
-  return p.beta2 * tanhf(x / p.beta2);
+  return p.beta2 * fast_tanhf(x / p.beta2);
 }
 
 template <typename OType, typename IType>
 __device__ inline OType dsitu_up(const IType val, const SiTUGLUParam& p) {
   const float x = static_cast<float>(val);
-  const float t = tanhf(x / p.beta2);
+  const float t = fast_tanhf(x / p.beta2);
   return 1.0f - t * t;
 }
 

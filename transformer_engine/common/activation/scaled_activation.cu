@@ -83,8 +83,9 @@ __device__ __forceinline__ void gated_backward_values(const float act_in, const 
     }
     gate_elt = fminf(fmaxf(-param.limit, gate_in), param.limit) + param.glu_linear_offset;
   } else if constexpr (std::is_same<ParamOP, SiTUGLUParam>::value) {
-    dgate_elt = dsitu_up<float, float>(gate_in, param);
-    gate_elt = situ_up<float, float>(gate_in, param);
+    const float t = fast_tanhf(gate_in / param.beta2);
+    gate_elt = param.beta2 * t;
+    dgate_elt = 1.0f - t * t;
   }
 
   if constexpr (std::is_same<ParamOP, ClampedSwiGLUParam>::value) {
@@ -102,6 +103,11 @@ __device__ __forceinline__ void gated_backward_values(const float act_in, const 
       act_elt = ActOP(act_in, param);
       dact_elt = DActOP(act_in, param);
     }
+  } else if constexpr (std::is_same<ParamOP, SiTUGLUParam>::value) {
+    const float t = fast_tanhf(act_in / param.beta1);
+    const float s = sigmoidf(act_in);
+    act_elt = param.beta1 * t * s;
+    dact_elt = (1.0f - t * t) * s + param.beta1 * t * s * (1.0f - s);
   } else {
     act_elt = ActOP(act_in, param);
     dact_elt = DActOP(act_in, param);
