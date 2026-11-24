@@ -393,8 +393,6 @@ def fused_topk_with_score_function(
 ):
     """
     Fused topk with score function router. Supports ``torch.compile(fullgraph=True)``.
-    Equal routing scores prefer the smaller expert index; tied group scores prefer the smaller
-    group index.
 
     Parameters
     ----------
@@ -561,7 +559,6 @@ def fused_compute_score_for_moe_aux_loss(
     """
     Fused compute scores for MoE aux loss, subset of the fused_topk_with_score_function.
     Supports ``torch.compile(fullgraph=True)`` for forward and backward.
-    Equal scores prefer the smaller expert index.
 
     Parameters
     ----------

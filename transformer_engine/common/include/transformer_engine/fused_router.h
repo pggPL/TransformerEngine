@@ -69,8 +69,6 @@ void nvte_fused_topk_with_score_function_forward(
 
 /*! \brief Apply topk + softmax/sigmoid to the input tensor. Grouped topk is supported.
  *
- *  Equal scores prefer smaller expert indices; tied group scores prefer smaller group indices.
- *
  *  \param[in]     logits          Logits from the gating GEMM.
  *  \param[in]     num_tokens      Number of tokens.
  *  \param[in]     num_experts     Number of experts.
@@ -332,8 +330,6 @@ void nvte_fused_score_for_moe_aux_loss_forward(const NVTETensor logits, int num_
                                                cudaStream_t stream);
 
 /*! \brief Forward pass for computing scores/routing map for auxiliary loss.
- *
- *  Equal scores prefer smaller expert indices.
  *
  *  \param[in]     logits          Logits from the gating GEMM.
  *  \param[in]     num_tokens      Number of tokens.

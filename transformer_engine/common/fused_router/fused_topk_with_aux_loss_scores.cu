@@ -25,7 +25,11 @@
  * fused_topk_backward_selected_indices_kernel and fused_score_for_moe_aux_loss_backward_kernel),
  * so the outputs are bitwise identical to them for finite logits.
  *
- * Equal scores prefer the smaller expert or group index, as in the generic kernels.
+ * Tie-breaking of the naive warp top-k: lane i scans experts i, i + 32, ... with a strict '>',
+ * and the xor 16/8/4/2/1 butterfly keeps its own candidate on equal values, so among equal values
+ * the expert with the smaller 5-bit reversal of (e % 32) wins, then the smaller e / 32.
+ * tie_rank() encodes that order (smaller wins), so each lane can keep a sorted list of its own
+ * experts and the warp can merge them with a single (value, rank) argmax per selected expert.
  */
 
 #include <cuda_runtime.h>
@@ -54,6 +58,11 @@ constexpr int kBwdThreadsPerBlock = 256;
 static_assert(kExpertsPerLane == 8 && kLanesPerGroup == 4, "layout assumes 256 experts, 8 groups");
 static_assert(kTopk / kGroupTopk == 2, "group score is the sum of the group's top-2");
 
+__device__ __forceinline__ int bitrev5(int x) {
+  return static_cast<int>(__brev(static_cast<unsigned>(x)) >> 27);
+}
+__device__ __forceinline__ int tie_rank(int e) { return (bitrev5(e & 31) << 3) | (e >> 5); }
+__device__ __forceinline__ int expert_of_rank(int r) { return bitrev5(r >> 3) | ((r & 7) << 5); }
 constexpr int kNoRank = 0x7fffffff;
 
 // (va, ra) precedes (vb, rb) in the naive top-k order
@@ -189,7 +198,7 @@ __global__ void __launch_bounds__(kWarpsPerBlock *kThreadsPerWarp)
 
     int rank[kExpertsPerLane];
 #pragma unroll
-    for (int i = 0; i < kExpertsPerLane; ++i) rank[i] = e0 + i;
+    for (int i = 0; i < kExpertsPerLane; ++i) rank[i] = tie_rank(e0 + i);
 
     // ---- Aux-loss scores: s / (sum(s) + eps), with warp_reduce_on_shmem's summation order
     {
@@ -220,7 +229,7 @@ __global__ void __launch_bounds__(kWarpsPerBlock *kThreadsPerWarp)
         lane_group_best<kThreadsPerWarp>(v, r);
         if (r == ar[0]) {  // this lane owns the winner
           pop_front(a, ar);
-          atomicAdd(&aux_count_smem[r], 1);
+          atomicAdd(&aux_count_smem[expert_of_rank(r)], 1);
         }
       }
     }
@@ -256,7 +265,7 @@ __global__ void __launch_bounds__(kWarpsPerBlock *kThreadsPerWarp)
 #pragma unroll
         for (int h = 0; h < kNumGroups; ++h) {
           const float other = __shfl_sync(0xffffffffu, group_score, h * kLanesPerGroup);
-          preceding += precedes(other, h, group_score, group) ? 1 : 0;
+          preceding += precedes(other, bitrev5(h), group_score, bitrev5(group)) ? 1 : 0;
         }
         if (preceding >= kGroupTopk) {
 #pragma unroll
@@ -271,7 +280,7 @@ __global__ void __launch_bounds__(kWarpsPerBlock *kThreadsPerWarp)
         float best = v[0];
         int best_rank = vr[0];
         lane_group_best<kThreadsPerWarp>(best, best_rank);
-        const int e = best_rank;
+        const int e = expert_of_rank(best_rank);
         if (best_rank == vr[0]) {
           pop_front(v, vr);
           if (tokens_per_expert != nullptr) atomicAdd(&route_count_smem[e], 1);
@@ -440,7 +449,8 @@ void check_config(int num_experts, int topk, int num_groups, int group_topk, int
              ", group_topk=", group_topk);
 }
 
-// Restrict numerical parity to the generic kernels' naive top-k path.
+// The kernel reproduces the tie-breaking of the separate kernels' naive top-k. They use radix
+// selection, which breaks ties differently, when topk >= NVTE_RADIX_TOPK_THRESHOLD.
 bool separate_topk_is_naive(int topk) { return topk < get_radix_topk_threshold(); }
 
 void check_aligned(const void *ptr, const char *name) {
@@ -460,7 +470,8 @@ void fused_topk_with_aux_loss_scores_forward(const Tensor &logits, int num_token
   NVTE_CHECK(separate_topk_is_naive(topk),
              "fused top-k with aux-loss scores requires topk < NVTE_RADIX_TOPK_THRESHOLD; got ",
              "topk=", topk, ", NVTE_RADIX_TOPK_THRESHOLD=", get_radix_topk_threshold(),
-             ". Numerical parity requires the separate kernels to use the naive top-k path.");
+             ". At or above the threshold the separate top-k kernels use radix selection, whose "
+             "tie-breaking this kernel does not reproduce.");
   NVTE_CHECK(num_tokens >= 0, "num_tokens must be non-negative, got ", num_tokens);
   const std::vector<size_t> dense_shape{static_cast<size_t>(num_tokens),
                                         static_cast<size_t>(num_experts)};

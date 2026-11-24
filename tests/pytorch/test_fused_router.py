@@ -373,11 +373,6 @@ def test_router_compile_opcheck(dtype, routing_map_format, index_dtype, histogra
             )
 
 
-def stable_topk(scores, k):
-    indices = torch.argsort(scores, dim=-1, descending=True, stable=True)[..., :k]
-    return scores.gather(-1, indices), indices
-
-
 # Pytorch-based group topk
 def group_limited_topk(
     scores: torch.Tensor,
@@ -387,10 +382,10 @@ def group_limited_topk(
     num_groups: int,
     group_topk: int,
 ):
-    group_scores = stable_topk(scores.view(num_tokens, num_groups, -1), topk // group_topk)[0].sum(
-        dim=-1
+    group_scores = (
+        scores.view(num_tokens, num_groups, -1).topk(topk // group_topk, dim=-1)[0].sum(dim=-1)
     )
-    group_idx = stable_topk(group_scores, group_topk)[1]
+    group_idx = torch.topk(group_scores, k=group_topk, dim=-1, sorted=False)[1]
     group_mask = torch.zeros_like(group_scores)
     group_mask.scatter_(1, group_idx, 1)
 
@@ -402,7 +397,7 @@ def group_limited_topk(
     )
 
     masked_scores = scores.masked_fill(~score_mask.bool(), float("-inf"))
-    probs, top_indices = stable_topk(masked_scores, topk)
+    probs, top_indices = torch.topk(masked_scores, k=topk, dim=-1)
 
     return probs, top_indices
 
@@ -431,7 +426,7 @@ def topk_score_function_pytorch(
                 group_topk=group_topk,
             )
         else:
-            return stable_topk(scores, topk)
+            return torch.topk(scores, k=topk, dim=1)
 
     if score_function == "softmax":
         if use_pre_softmax:
@@ -479,7 +474,7 @@ def qb_topk_score_function_pytorch(
     num_experts = original_shape[-1]
     raw_scores = torch.sigmoid(logits.float()).reshape(-1, num_experts)
     biased_scores = raw_scores + expert_bias
-    topk_plus_one_scores, topk_plus_one_indices = stable_topk(biased_scores, topk + 1)
+    topk_plus_one_scores, topk_plus_one_indices = torch.topk(biased_scores, k=topk + 1, dim=-1)
     cutoff = topk_plus_one_scores.min(dim=-1).values
     cutoff_candidates = topk_plus_one_indices.masked_fill(
         topk_plus_one_scores != cutoff.unsqueeze(1), -1
@@ -523,46 +518,6 @@ def qb_topk_score_function_pytorch(
     }
 
 
-@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-@pytest.mark.parametrize("num_experts,topk", [(8, 2), (65, 8), (65, 9), (256, 16)])
-@pytest.mark.parametrize("score_function", ["softmax", "sigmoid", "sqrtsoftplus"])
-def test_topk_ties_prefer_lower_expert_index(dtype, num_experts, topk, score_function):
-    logits = torch.zeros(3, num_experts, device="cuda", dtype=dtype)
-    logits[1] = torch.arange(num_experts, device="cuda") % 4
-    logits[2, -1] = 1
-    expected = stable_topk(logits.float(), topk)[1]
-    indices = torch.empty(3, topk, device="cuda", dtype=torch.int64)
-    _, actual = fused_topk_with_score_function(
-        logits, topk, False, None, None, 1.0, score_function, None, topk_indices=indices
-    )
-    torch.testing.assert_close(actual.sort(-1).values, expected.sort(-1).values)
-    expected_map = torch.zeros_like(logits, dtype=torch.bool).scatter_(1, expected, True)
-    for layout in ("bytemap", "bitmap_u8"):
-        actual_map, _ = fused_compute_score_for_moe_aux_loss(
-            logits, topk, score_function, routing_map_format=layout
-        )
-        if layout == "bitmap_u8":
-            shifts = torch.arange(num_experts, device="cuda")
-            actual_map = ((actual_map[:, shifts // 8] >> (shifts % 8)) & 1).bool()
-        torch.testing.assert_close(actual_map, expected_map)
-
-
-@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-def test_grouped_topk_ties_prefer_lower_group_index(dtype):
-    logits = torch.full((3, 256), -1.0, device="cuda", dtype=dtype)
-    logits.view(3, 8, 32)[:, :, :2] = 1
-    expected = torch.tensor([0, 1, 32, 33, 64, 65, 96, 97], device="cuda").expand(3, 8)
-    indices = torch.empty_like(expected)
-    fused_topk_with_score_function(
-        logits, 8, False, 8, 4, 1.0, "sigmoid", None, topk_indices=indices
-    )
-    torch.testing.assert_close(indices, expected)
-    _, combined_indices, _, _ = te_router.fused_topk_with_aux_loss_scores(
-        logits, 8, 8, 4, 1.0, "sigmoid", None
-    )
-    torch.testing.assert_close(combined_indices, expected)
-
-
 # Pytorch-based compute routing scores for aux loss
 def compute_scores_for_aux_loss_pytorch(
     logits: torch.Tensor, topk: int, score_function: str
@@ -578,7 +533,7 @@ def compute_scores_for_aux_loss_pytorch(
     else:
         raise ValueError(f"Invalid score_function: {score_function}")
 
-    _, top_indices = stable_topk(scores, topk)
+    _, top_indices = torch.topk(scores, k=topk, dim=1)
     routing_map = torch.zeros_like(logits).int().scatter(1, top_indices, 1).bool()
     return routing_map, scores
 
@@ -2243,22 +2198,6 @@ def test_fused_topk_with_aux_loss_scores(dtype, num_tokens, grouped, with_bias, 
         tokens_per_expert=route_counts,
     )
     ((probs.float() * grad_probs.float()).sum() + (aux_scores * grad_scores).sum()).backward()
-
-    if mode == "ties":
-        _, expected_map = topk_score_function_pytorch(
-            logits,
-            topk,
-            num_groups=num_groups,
-            group_topk=group_topk,
-            score_function="sigmoid",
-            expert_bias=expert_bias,
-        )
-        actual_map = torch.zeros_like(logits, dtype=torch.bool).scatter_(
-            1, topk_indices.long(), True
-        )
-        torch.testing.assert_close(actual_map, expected_map)
-        expected_aux_map, _ = compute_scores_for_aux_loss_pytorch(logits, topk, "sigmoid")
-        torch.testing.assert_close(aux_counts, expected_aux_map.sum(0))
 
     assert probs.dtype == dtype and probs.shape == (num_tokens, topk)
     assert torch.equal(topk_indices, ref[1])

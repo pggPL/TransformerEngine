@@ -255,7 +255,7 @@ constexpr int kMaxExpertsRadixTopk = 255 * 32;  // 8160
  *   Phase 2 — Gather (single pass over E):
  *     Collect elements strictly greater than the K-th value (same uint order),
  *     then fill remaining slots with elements equal to the K-th value (ties
- *     broken by ascending index).
+ *     broken by ascending index for determinism matching torch.topk).
  *     Write indices and scores to the output arrays.
  *
  * Register pressure optimization: pack 16 bucket counts into 4 registers
@@ -263,7 +263,7 @@ constexpr int kMaxExpertsRadixTopk = 255 * 32;  // 8160
  * total_counts[16] required 32 registers, causing massive spill to local
  * memory on large kernels (81% of L1 traffic on E=2304, K=36).
  *
- * Tie-breaking: (value DESC, index ASC).
+ * Tie-breaking: (value DESC, index ASC) — matches torch.topk behavior.
  *
  * Constraints:
  *   - 0 < topk <= data_size
@@ -429,7 +429,7 @@ __device__ inline void naive_topk_and_mask_smallk(CompType *scores, int data_siz
 #pragma unroll
   for (int k = 0; k < K; ++k) {
     CompType val = -std::numeric_limits<CompType>::infinity();
-    int index = std::numeric_limits<int>::max();
+    int index = (lane_id < data_size) ? lane_id : -1;
     for (int i = lane_id; i < data_size; i += kThreadsPerWarp) {
       bool masked = false;
 #pragma unroll
@@ -438,7 +438,7 @@ __device__ inline void naive_topk_and_mask_smallk(CompType *scores, int data_siz
       }
       if (masked) continue;
       CompType cur_val = scores[i];
-      if (cur_val > val || (cur_val == val && i < index)) {
+      if (cur_val > val) {
         val = cur_val;
         index = i;
       }
@@ -446,7 +446,7 @@ __device__ inline void naive_topk_and_mask_smallk(CompType *scores, int data_siz
     for (int s = kThreadsPerWarp / 2; s > 0; s /= 2) {
       auto shuffled_val = __shfl_xor_sync(0xffffffff, val, s);
       auto shuffled_index = __shfl_xor_sync(0xffffffff, index, s);
-      if (shuffled_val > val || (shuffled_val == val && shuffled_index < index)) {
+      if (shuffled_val > val) {
         val = shuffled_val;
         index = shuffled_index;
       }
@@ -479,15 +479,16 @@ __device__ inline void naive_topk_and_mask_generic(CompType *scores, int data_si
   // After looping topk times, the topk_indices will be the topk indices
   for (int k = 0; k < topk; k++) {
     // Find the max value and its index
-    CompType val = -std::numeric_limits<CompType>::infinity();
-    int index = std::numeric_limits<int>::max();
+    CompType val = (lane_id < data_size && !is_masked(k, lane_id))
+                       ? scores[lane_id]
+                       : -std::numeric_limits<CompType>::infinity();
+    int index = (lane_id < data_size) ? lane_id : 0;
     // Some value is handled in local thread
     // Thread 0 is responsible for the: 0-th, 32-th, 64-th, 96-th ...
     // Reduce the value in local thread
-    for (int i = lane_id; i < data_size; i += kThreadsPerWarp) {
-      if (is_masked(k, i)) continue;
-      CompType cur_val = scores[i];
-      if (cur_val > val || (cur_val == val && i < index)) {
+    for (int i = lane_id + kThreadsPerWarp; i < data_size; i += kThreadsPerWarp) {
+      CompType cur_val = (is_masked(k, i)) ? -std::numeric_limits<CompType>::infinity() : scores[i];
+      if (cur_val > val) {
         val = cur_val;
         index = i;
       }
@@ -496,7 +497,7 @@ __device__ inline void naive_topk_and_mask_generic(CompType *scores, int data_si
     for (int s = 16; s > 0; s /= 2) {
       auto shuffled_val = __shfl_xor_sync(0xffffffff, val, s);
       auto shuffled_index = __shfl_xor_sync(0xffffffff, index, s);
-      if (shuffled_val > val || (shuffled_val == val && shuffled_index < index)) {
+      if (shuffled_val > val) {
         val = shuffled_val;
         index = shuffled_index;
       }
