@@ -106,6 +106,8 @@ def fused_topk_with_score_function(
     When compute_aux_scores=True, runs the score-for-aux-loss kernel instead:
     score_function(logits) -> top-k (clean, no bias/groups/scaling).
     Returns dense scores (all expert positions) and routing_map.
+    Equal routing scores prefer the smaller expert index; tied group scores prefer the smaller
+    group index.
     The expert_bias, use_pre_softmax, num_groups, group_topk, and scaling_factor
     parameters are ignored in this mode.
 

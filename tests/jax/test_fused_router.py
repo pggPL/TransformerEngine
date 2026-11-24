@@ -684,3 +684,38 @@ def test_score_for_aux_loss_bitmap_vs_bytemap(dtype, num_tokens, num_experts, to
     assert jnp.array_equal(
         routing_map_bit, packed_expected
     ), "Bitmap routing_map (aux-loss path) disagrees with packed bytemap"
+
+
+@pytest.mark.parametrize("dtype", [jnp.float32, jnp.bfloat16])
+@pytest.mark.parametrize("num_experts,topk", [(8, 2), (65, 8), (65, 9), (256, 16)])
+@pytest.mark.parametrize("score_function", ["softmax", "sigmoid", "sqrtsoftplus"])
+def test_topk_ties_prefer_lower_expert_index(dtype, num_experts, topk, score_function):
+    logits = jnp.zeros((3, num_experts), dtype)
+    logits = logits.at[1].set(jnp.arange(num_experts) % 4).at[2, -1].set(1)
+    expected = jax.lax.top_k(logits.astype(jnp.float32), topk)[1]
+    expected_map = (
+        jnp.zeros_like(logits, dtype=jnp.bool_)
+        .at[jnp.arange(logits.shape[0])[:, None], expected]
+        .set(True)
+    )
+    for aux in (False, True):
+
+        def route(x):
+            return fused_topk_with_score_function(
+                x, topk, False, -1, -1, 1.0, score_function, None, compute_aux_scores=aux
+            )[1]
+
+        assert jnp.array_equal(jax.jit(route)(logits), expected_map)
+
+
+@pytest.mark.parametrize("dtype", [jnp.float32, jnp.bfloat16])
+def test_grouped_topk_ties_prefer_lower_group_index(dtype):
+    logits = jnp.full((3, 8, 32), -1.0, dtype).at[:, :, :2].set(1).reshape(3, 256)
+    expected = jnp.array([0, 1, 32, 33, 64, 65, 96, 97])
+    expected_map = jnp.zeros_like(logits, dtype=jnp.bool_).at[:, expected].set(True)
+
+    def route(x):
+        return fused_topk_with_score_function(x, 8, False, 8, 4, 1.0, "sigmoid", None)
+
+    _, actual_map = jax.jit(route)(logits)
+    assert jnp.array_equal(actual_map, expected_map)
