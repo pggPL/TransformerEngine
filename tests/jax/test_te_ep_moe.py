@@ -1612,7 +1612,21 @@ class TestTeEpMoeAuxLoss:
         single-device reference over the global batch."""
         coeff = 1e-2
         block = make_block(aux_loss_coeff=coeff, **config)
+        default_init = block.kernel_init
+
+        def kernel_init(key, shape, dtype):
+            if shape == (HIDDEN, NUM_EXPERTS):
+                return jnp.eye(HIDDEN, NUM_EXPERTS, dtype=dtype)
+            return default_init(key, shape, dtype)
+
+        block = block.clone(kernel_init=kernel_init)
         x = _make_inputs(jax.random.PRNGKey(24))
+        # Distinct BF16 logits avoid backend-dependent top-k tie breaking.
+        logits = jnp.broadcast_to(
+            jnp.arange(NUM_EXPERTS, dtype=DTYPE) / 2 - 2, (BATCH, SEQ, NUM_EXPERTS)
+        )
+        logits = jax.random.permutation(jax.random.PRNGKey(26), logits, axis=-1, independent=True)
+        x = x.at[..., :NUM_EXPERTS].set(logits)
         variables, _, aux, _ = _init_apply(block, mesh, x, jax.random.PRNGKey(25))
 
         with _ctx(mesh):
