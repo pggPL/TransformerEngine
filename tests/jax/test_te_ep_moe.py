@@ -284,6 +284,18 @@ def mesh(use_cudnn_fusion):
 # -----------------------------------------------------------------------------
 
 
+def _reference_top_k(scores, k):
+    num_experts = scores.shape[-1]
+    threshold = int(os.environ.get("NVTE_RADIX_TOPK_THRESHOLD", "16"))
+    if k >= threshold and num_experts <= 8160:
+        return jax.lax.top_k(scores, k)
+    # Match the naive router's warp-reduction order for equal scores.
+    order = sorted(range(num_experts), key=lambda e: (int(f"{e % 32:05b}"[::-1], 2), e // 32))
+    order = jnp.asarray(order, dtype=jnp.int32)
+    values, positions = jax.lax.top_k(scores[..., order], k)
+    return values, order[positions]
+
+
 @partial(
     jax.jit,
     static_argnames=(
@@ -334,7 +346,7 @@ def _pure_jax_moe_reference(
         weights = weights / (weights.sum(axis=-1, keepdims=True) + 1e-20)
     elif score_function == "softmax":
         # use_pre_softmax=False: topk on raw logits, then softmax over K.
-        top_logits, top_indices = jax.lax.top_k(logits, k=K)
+        top_logits, top_indices = _reference_top_k(logits, K)
         weights = jax.nn.softmax(top_logits, axis=-1)  # [T, K], sums to 1
     elif score_function in ("sigmoid", "sqrtsoftplus"):
         if score_function == "sigmoid":
@@ -343,10 +355,10 @@ def _pure_jax_moe_reference(
             scores = jnp.sqrt(jax.nn.softplus(logits))  # [T, E]
         if expert_bias is not None and expert_bias.shape != (0,):
             scores_for_routing = scores + expert_bias.astype(jnp.float32)[None, :]
-            _, top_indices = jax.lax.top_k(scores_for_routing, k=K)
+            _, top_indices = _reference_top_k(scores_for_routing, K)
             weights = jnp.take_along_axis(scores, top_indices, axis=-1)
         else:
-            weights, top_indices = jax.lax.top_k(scores, k=K)
+            weights, top_indices = _reference_top_k(scores, K)
         # Sigmoid weights are normalized when K > 1 (matches the kernel).
         if K > 1:
             weights = weights / (weights.sum(axis=-1, keepdims=True) + 1e-20)
